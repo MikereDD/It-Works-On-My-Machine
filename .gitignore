@@ -1,0 +1,19 @@
+# outputs
+*.mkv
+*.mp4
+*.iso
+*.log
+
+# local config / secrets
+**/config.ps1
+**/config.sh
+
+# temp / junk
+*.tmp
+*.bak
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# PowerShell
+*.ps1.xml
