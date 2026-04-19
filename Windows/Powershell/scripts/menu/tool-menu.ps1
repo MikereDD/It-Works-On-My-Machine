@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file:     tool-menu.ps1
 # author:   Mike Redd
-# version:  2.9
+# version:  3.0
 # created:  2026-03-30
 # updated:  2026-04-19
 # desc:     Unified script launcher (Admin + Personal + Games)
@@ -38,7 +38,7 @@ if (Test-Path $corePath) {
 }
 
 $ScriptName    = "Tool Menu"
-$ScriptVersion = "2.9"
+$ScriptVersion = "3.0"
 $ScriptAuthor  = "Mike Redd"
 
 # ── Base script paths ─────────────────────────────────────────
@@ -61,19 +61,18 @@ $AdminTools = @(
 )
 
 $PersonalTools = @(
-    [PSCustomObject]@{ Name="SpeedtestMenu";    File="speedtest-menu.ps1" }
-    [PSCustomObject]@{ Name="WeatherFetch";     File="weatherfetch-menu.ps1" }
-    [PSCustomObject]@{ Name="ImdbDump";         File="imdbdump.ps1" }
-    [PSCustomObject]@{ Name="ImdbThumbGrab";    File="imdbthumbgrab.ps1" }
-    [PSCustomObject]@{ Name="MiNfoCreate";      File="minfocreate.ps1" }
-
-    [PSCustomObject]@{ Name="CD Image FLAC Ripper"; File="cd-image-flac.ps1" }
-    [PSCustomObject]@{ Name="CD Track FLAC Ripper"; File="cd-tracks-flac.ps1" }
-    [PSCustomObject]@{ Name="DVD Encoder";        File="dvd-ripper-encoder.ps1" }
-    [PSCustomObject]@{ Name="Blu-ray Backup";     File="bluray-backup.ps1" }
-    [PSCustomObject]@{ Name="M2TS Largest Copy";  File="m2ts-largest-copy.ps1" }
-    [PSCustomObject]@{ Name="Blu-ray Encoder";    File="BRencoder.ps1" }
-    [PSCustomObject]@{ Name="WebRipper";          File="web-ripper.ps1" }
+    [PSCustomObject]@{ Name="SpeedtestMenu";         File="speedtest-menu.ps1" }
+    [PSCustomObject]@{ Name="WeatherFetch";          File="weatherfetch-menu.ps1" }
+    [PSCustomObject]@{ Name="ImdbDump";              File="imdbdump.ps1" }
+    [PSCustomObject]@{ Name="ImdbThumbGrab";         File="imdbthumbgrab.ps1" }
+    [PSCustomObject]@{ Name="MiNfoCreate";           File="minfocreate.ps1" }
+    [PSCustomObject]@{ Name="CD Image FLAC Ripper";  File="cd-image-flac.ps1" }
+    [PSCustomObject]@{ Name="CD Track FLAC Ripper";  File="cd-tracks-flac.ps1" }
+    [PSCustomObject]@{ Name="DVD Encoder";           File="dvd-ripper-encoder.ps1" }
+    [PSCustomObject]@{ Name="Blu-ray Backup";        File="bluray-backup.ps1" }
+    [PSCustomObject]@{ Name="M2TS Largest Copy";     File="m2ts-largest-copy.ps1" }
+    [PSCustomObject]@{ Name="Blu-ray Encoder";       File="BRencoder.ps1" }
+    [PSCustomObject]@{ Name="WebRipper";             File="web-ripper.ps1" }
 )
 
 $GameTools = @(
@@ -88,7 +87,7 @@ $GameTools = @(
 # ── Header ────────────────────────────────────────────────────
 function Show-Header {
     Clear-UiScreen
-    $BoxWidth = Get-UiBoxWidth -MaxWidth 52 -MinWidth 40
+    $BoxWidth = Get-UiBoxWidth -MaxWidth 72 -MinWidth 48
 
     Write-UiHeader -Title $ScriptName -Subtitle "v$ScriptVersion  by $ScriptAuthor" -Width $BoxWidth
     Write-UiRow "User" "$env:USERNAME@$env:COMPUTERNAME"
@@ -98,4 +97,91 @@ function Show-Header {
     Write-UiBlankLine
 }
 
-# ── (rest of your file unchanged) ─────────────────────────────
+# ── Menu ──────────────────────────────────────────────────────
+function Show-Menu {
+    $index = 1
+    $script:ToolMap = @{}
+
+    Write-UiDivider
+    Write-Host "  $($global:UI_CYN)$($global:UI_B)Admin Tools$($global:UI_R)"
+    foreach ($tool in $AdminTools) {
+        $path = Join-Path $AdminPath $tool.File
+        $exists = Test-Path $path
+        $color = if ($exists) { $global:UI_GRN } else { $global:UI_RED }
+        $suffix = if ($exists) { "" } else { " (missing)" }
+        Write-Host ("  {0}{1,2}){2}  {3}{4}{5}" -f $color, $index, $global:UI_R, $global:UI_WHT, $tool.Name, "$suffix$($global:UI_R)")
+        if ($exists) { $script:ToolMap["$index"] = $path }
+        $index++
+    }
+
+    Write-UiDivider
+    Write-Host "  $($global:UI_CYN)$($global:UI_B)Personal Tools$($global:UI_R)"
+    foreach ($tool in $PersonalTools) {
+        $path = Join-Path $PersonalPath $tool.File
+        $exists = Test-Path $path
+        $color = if ($exists) { $global:UI_GRN } else { $global:UI_RED }
+        $suffix = if ($exists) { "" } else { " (missing)" }
+        Write-Host ("  {0}{1,2}){2}  {3}{4}{5}" -f $color, $index, $global:UI_R, $global:UI_WHT, $tool.Name, "$suffix$($global:UI_R)")
+        if ($exists) { $script:ToolMap["$index"] = $path }
+        $index++
+    }
+
+    Write-UiDivider
+    Write-Host "  $($global:UI_CYN)$($global:UI_B)Games$($global:UI_R)"
+    foreach ($tool in $GameTools) {
+        $path = Join-Path $GamesPath $tool.File
+        $exists = Test-Path $path
+        $color = if ($exists) { $global:UI_GRN } else { $global:UI_RED }
+        $suffix = if ($exists) { "" } else { " (missing)" }
+        Write-Host ("  {0}{1,2}){2}  {3}{4}{5}" -f $color, $index, $global:UI_R, $global:UI_WHT, $tool.Name, "$suffix$($global:UI_R)")
+        if ($exists) { $script:ToolMap["$index"] = $path }
+        $index++
+    }
+
+    Write-UiDivider
+    Write-Host "  $($global:UI_GRY) Q)$($global:UI_R)  Quit"
+    Write-UiBlankLine
+}
+
+# ── Launch helper ─────────────────────────────────────────────
+function Start-ToolScript {
+    param(
+        [Parameter(Mandatory)]
+        [string]$ScriptPath
+    )
+
+    if (-not (Test-Path $ScriptPath)) {
+        Write-CoreError "Script not found: $ScriptPath"
+        Pause-Core "Press Enter to return..."
+        return
+    }
+
+    try {
+        & $ScriptPath
+    } catch {
+        Write-CoreError "Launch failed: $($_.Exception.Message)"
+        Pause-Core "Press Enter to return..."
+    }
+}
+
+# ── Main Loop ─────────────────────────────────────────────────
+while ($true) {
+    Show-Header
+    Show-Menu
+    $choice = (Read-UiChoice "Choice:").Trim().ToUpper()
+
+    if ($choice -eq "Q") {
+        Write-UiBlankLine
+        Write-Host "  $($global:UI_CYN)  Bye.$($global:UI_R)"
+        Write-UiBlankLine
+        return
+    }
+
+    if ($script:ToolMap.ContainsKey($choice)) {
+        Start-ToolScript -ScriptPath $script:ToolMap[$choice]
+        continue
+    }
+
+    Write-CoreError "Invalid option."
+    Start-Sleep -Seconds 1
+}
