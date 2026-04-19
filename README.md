@@ -49,6 +49,7 @@ If you want to use them:
 ```text
 Windows/   → PowerShell scripts
 Linux/     → Bash scripts
+Bots/      → automation scripts (Telegram, API-based, etc.)
 ```
 
 Each side is independent. No attempt is made to keep them in sync.
