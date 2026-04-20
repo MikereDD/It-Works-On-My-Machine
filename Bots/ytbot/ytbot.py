@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file:     ytbot.py
 # author:   Mike Redd
-# version:  3.4
+# version:  3.6
 # created:  2026-04-18
 # updated:  2026-04-19
 # desc:     Telegram yt-dlp bot for Windows
@@ -136,6 +136,11 @@ def format_duration(seconds: float) -> str:
     if m:
         return f"{m}m {s}s"
     return f"{s}s"
+
+def shorten_url(url: str, max_len: int = 72) -> str:
+    if len(url) <= max_len:
+        return url
+    return url[: max_len - 3] + "..."
 
 def get_download_count() -> int:
     return sum(1 for p in DOWNLOAD_DIR.iterdir() if p.is_file())
@@ -277,6 +282,75 @@ def get_best_valid_file() -> Path | None:
         if is_valid_video_file(f):
             return f
     return None
+
+def read_last_log_lines(max_lines: int = 300) -> list[str]:
+    if not LOG_FILE.exists():
+        return []
+    try:
+        with LOG_FILE.open("r", encoding="utf-8", errors="replace") as f:
+            lines = f.readlines()
+        return lines[-max_lines:]
+    except Exception as e:
+        log.warning("Failed to read log file: %s", e)
+        return []
+
+def parse_recent_users_from_logs(max_lines: int = 500, limit: int = 10) -> list[dict]:
+    lines = read_last_log_lines(max_lines=max_lines)
+    results: list[dict] = []
+    seen: set[str] = set()
+
+    pattern = re.compile(
+        r"^(?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3}).*?"
+        r"Download requested by user (?P<user_id>[-]?\d+) in chat (?P<chat_id>[-]?\d+): (?P<url>\S+)"
+    )
+
+    for line in reversed(lines):
+        match = pattern.search(line)
+        if not match:
+            continue
+
+        user_id = match.group("user_id")
+        chat_id = match.group("chat_id")
+        url = match.group("url")
+        timestamp = match.group("timestamp")
+
+        if user_id in seen:
+            continue
+
+        seen.add(user_id)
+        results.append({
+            "timestamp": timestamp,
+            "user_id": user_id,
+            "chat_id": chat_id,
+            "url": url,
+        })
+
+        if len(results) >= limit:
+            break
+
+    return results
+
+def count_download_requests_in_logs(max_lines: int = 5000) -> int:
+    lines = read_last_log_lines(max_lines=max_lines)
+    return sum(1 for line in lines if "Download requested by user " in line)
+
+def get_most_recent_download_timestamp(max_lines: int = 5000) -> str | None:
+    recent = parse_recent_users_from_logs(max_lines=max_lines, limit=1)
+    if not recent:
+        return None
+    return recent[0]["timestamp"]
+
+def count_unique_users_in_logs(max_lines: int = 5000) -> int:
+    lines = read_last_log_lines(max_lines=max_lines)
+    pattern = re.compile(r"Download requested by user (?P<user_id>[-]?\d+) in chat ")
+    users: set[str] = set()
+
+    for line in lines:
+        match = pattern.search(line)
+        if match:
+            users.add(match.group("user_id"))
+
+    return len(users)
 
 
 # ── Weather helpers ─────────────────────────────────────────────────────────────
@@ -757,6 +831,9 @@ COMMAND_LIST = (
     "/audio <url> — download audio only (MP3)\n"
     "/weather <place> — current weather\n"
     "/forecast <place> — 5-day forecast\n"
+    "/whoami      — show your Telegram/chat IDs\n"
+    "/lastusers   — recent users seen in logs *(owner)*\n"
+    "/stats       — usage summary *(owner)*\n"
     "/status      — bot & system status *(owner)*\n"
     "/groups      — list remembered groups *(owner)*\n"
     "/cleanup     — delete leftover files *(owner)*\n"
@@ -844,6 +921,95 @@ async def forecast_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     except Exception as e:
         log.warning("Forecast fetch failed for '%s': %s", location, e)
         await update.message.reply_text(f"Forecast error: {e}")
+
+async def whoami_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    remember_chat(update.effective_chat)
+
+    user = update.effective_user
+    chat = update.effective_chat
+
+    user_id = user.id if user else "unknown"
+    username = f"@{user.username}" if user and user.username else "none"
+    full_name = user.full_name if user else "unknown"
+
+    chat_id = chat.id if chat else "unknown"
+    chat_type = chat.type if chat else "unknown"
+    chat_title = getattr(chat, "title", None) or getattr(chat, "full_name", None) or "private"
+
+    owner_status = "yes" if is_allowed(update) else "no"
+    download_access = "yes" if can_download(update) else "no"
+
+    await update.message.reply_text(
+        f"🪪 *Who am I?*\n\n"
+        f"*User:* {full_name}\n"
+        f"*Username:* {username}\n"
+        f"*User ID:* `{user_id}`\n"
+        f"*Chat:* {chat_title}\n"
+        f"*Chat Type:* {chat_type}\n"
+        f"*Chat ID:* `{chat_id}`\n"
+        f"*Bot Owner:* {owner_status}\n"
+        f"*Can Download:* {download_access}",
+        parse_mode=ParseMode.MARKDOWN,
+    )
+
+async def lastusers_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    remember_chat(update.effective_chat)
+    if not is_allowed(update):
+        return
+
+    recent = parse_recent_users_from_logs(limit=10)
+    if not recent:
+        await update.message.reply_text("No recent users found in the log yet.")
+        return
+
+    lines = ["👥 *Recent users seen in logs*", ""]
+    for idx, item in enumerate(recent, start=1):
+        short_url = shorten_url(item["url"])
+        lines.append(
+            f"{idx}. *User ID:* `{item['user_id']}`\n"
+            f"   *Chat ID:* `{item['chat_id']}`\n"
+            f"   *Time:* `{item['timestamp']}`\n"
+            f"   *URL:* `{short_url}`"
+        )
+
+    await update.message.reply_text("\n\n".join(lines), parse_mode=ParseMode.MARKDOWN)
+
+async def stats_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    remember_chat(update.effective_chat)
+    if not is_allowed(update):
+        return
+
+    total_download_files = get_download_count()
+    total_download_size = get_total_download_size()
+    known_chat_count = len(KNOWN_CHATS)
+    recent_users = parse_recent_users_from_logs(limit=5)
+    logged_requests = count_download_requests_in_logs()
+    last_seen = get_most_recent_download_timestamp()
+    unique_users = count_unique_users_in_logs()
+
+    lines = [
+        "📊 *Bot Stats*",
+        "",
+        f"*Privacy Mode:* {'Public' if ALLOW_ALL_USERS else 'Owner only'}",
+        f"*Known Groups/Channels:* {known_chat_count}",
+        f"*Files in Downloads Folder:* {total_download_files}",
+        f"*Downloads Folder Size:* {format_size(total_download_size)}",
+        f"*Recent Logged Download Requests:* {logged_requests}",
+        f"*Total Unique Users:* {unique_users}",
+        f"*Last Activity:* `{last_seen}`" if last_seen else "*Last Activity:* none",
+        "",
+        "*Recent Users:*",
+    ]
+
+    if recent_users:
+        for item in recent_users:
+            lines.append(
+                f"• `{item['user_id']}` in chat `{item['chat_id']}` at `{item['timestamp']}`"
+            )
+    else:
+        lines.append("• none yet")
+
+    await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.MARKDOWN)
 
 async def status_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
     remember_chat(update.effective_chat)
@@ -998,6 +1164,9 @@ def main() -> None:
     app.add_handler(CommandHandler("audio",     audio_cmd))
     app.add_handler(CommandHandler("weather",   weather_cmd))
     app.add_handler(CommandHandler("forecast",  forecast_cmd))
+    app.add_handler(CommandHandler("whoami",    whoami_cmd))
+    app.add_handler(CommandHandler("lastusers", lastusers_cmd))
+    app.add_handler(CommandHandler("stats",     stats_cmd))
     app.add_handler(CommandHandler("status",    status_cmd))
     app.add_handler(CommandHandler("groups",    groups_cmd))
     app.add_handler(CommandHandler("cleanup",   cleanup_cmd))
