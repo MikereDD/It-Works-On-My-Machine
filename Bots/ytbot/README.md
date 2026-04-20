@@ -30,7 +30,7 @@ python .\ytbot.py
 
 Create:
 
-G:`\bots`{=tex}`\config`{=tex}`\ytbotrc`{=tex}.py
+G:\bots\config\ytbotrc.py
 
 ``` python
 BOT_TOKEN = "YOUR_TOKEN"
@@ -53,7 +53,7 @@ ALLOWED_USER_ID = 123456789
 
 ## 📊 Logs
 
-G:`\bots`{=tex}`\logs`{=tex}`\ytbot`{=tex}.log
+G:\bots\logs\ytbot.log
 
 ------------------------------------------------------------------------
 
