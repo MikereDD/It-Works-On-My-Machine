@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file:     ytbot.py
 # author:   Mike Redd
-# version:  4.8
+# version:  4.9
 # created:  2026-04-18
 # updated:  2026-04-21
 # desc:     Queue-based Telegram media bot
@@ -69,7 +69,6 @@ ALLOW_ALL_USERS = getattr(ytbotrc, "ALLOW_ALL_USERS", False)
 DOWNLOAD_TIMEOUT = getattr(ytbotrc, "DOWNLOAD_TIMEOUT", 900)
 ARCHIVE_CHAT_ID = getattr(ytbotrc, "ARCHIVE_CHAT_ID", None)
 WATCH_FOLDER_ENABLED = getattr(ytbotrc, "WATCH_FOLDER_ENABLED", True)
-# Chat to send watch-folder results to. Defaults to OWNER_ID (private chat). (#3)
 WATCH_FOLDER_CHAT_ID = getattr(ytbotrc, "WATCH_FOLDER_CHAT_ID", None) or OWNER_ID
 
 if not BOT_TOKEN:
@@ -110,8 +109,8 @@ for d in [
 DELETE_AFTER_SEND      = False
 MAX_UPLOAD_BYTES       = 49 * 1024 * 1024
 MIN_VALID_VIDEO_BYTES  = 100 * 1024
-MIN_VALID_AUDIO_BYTES  = 100 * 1024   # same threshold, explicit constant (#8)
-MAX_HISTORY_ENTRIES    = 500          # cap history/failures lists (#12)
+MIN_VALID_AUDIO_BYTES  = 100 * 1024
+MAX_HISTORY_ENTRIES    = 500
 
 # ── Globals ─────────────────────────────────────────────────────────────────────
 URL_RE = re.compile(r"https?://\S+", re.IGNORECASE)
@@ -120,12 +119,8 @@ HISTORY: list[dict] = []
 FAILURES: list[dict] = []
 KNOWN_CHATS: dict = {}
 CURRENT_JOB: dict | None = None
-# CANCEL_CURRENT removed — was defined but never used (#5)
 
-# Protects all mutations to QUEUE, HISTORY, FAILURES, CURRENT_JOB (#10)
 STATE_LOCK = asyncio.Lock()
-
-# Pending UI jobs: short_id → {url, user_id, chat_id} — avoids 64-byte callback_data limit (#6)
 PENDING_UI: dict[str, dict] = {}
 
 # ── Logging ─────────────────────────────────────────────────────────────────────
@@ -171,11 +166,9 @@ def can_use(user_id: int) -> bool:
 def can_use_context(user_id: int, chat_id: int, chat_type: str) -> bool:
     allowed_chat_ids = set(getattr(ytbotrc, "ALLOWED_CHAT_IDS", []))
 
-    # Anyone in approved groups/supergroups can use the bot
     if chat_type in ("group", "supergroup"):
         return chat_id in allowed_chat_ids
 
-    # DM is owner only
     if chat_type == "private":
         return user_id == OWNER_ID
 
@@ -316,7 +309,14 @@ def clear_download_dir() -> None:
             except Exception as e:
                 log.warning("Failed to delete %s: %s", p, e)
 
-def create_job(user_id: int, chat_id: int, url: str, mode: str = "video", source: str = "telegram") -> dict:
+def create_job(
+    user_id: int,
+    chat_id: int,
+    url: str,
+    mode: str = "video",
+    source: str = "telegram",
+    reply_to_message_id: int | None = None,
+) -> dict:
     return {
         "id": str(uuid.uuid4()),
         "user": user_id,
@@ -325,19 +325,18 @@ def create_job(user_id: int, chat_id: int, url: str, mode: str = "video", source
         "mode": mode,
         "time": time.time(),
         "source": source,
+        "reply_to_message_id": reply_to_message_id,
     }
 
 def save_queue_state() -> None:
     save_json(QUEUE_FILE, QUEUE)
 
 def save_history_state() -> None:
-    # Trim to avoid unbounded growth (#12)
     if len(HISTORY) > MAX_HISTORY_ENTRIES:
         del HISTORY[:-MAX_HISTORY_ENTRIES]
     save_json(HISTORY_FILE, HISTORY)
 
 def save_failures_state() -> None:
-    # Trim to avoid unbounded growth (#12)
     if len(FAILURES) > MAX_HISTORY_ENTRIES:
         del FAILURES[:-MAX_HISTORY_ENTRIES]
     save_json(FAILURES_FILE, FAILURES)
@@ -501,7 +500,6 @@ def get_5day_forecast_for_location(name: str) -> str:
         icon = weather_code_to_icon(code)
         _, text = WEATHER_CODE_MAP.get(code, ("❓", "Unknown")) if code is not None else ("❓", "Unknown")
 
-        # Use the actual weekday from the date, not the loop index (#16)
         try:
             weekday_idx = datetime.fromisoformat(day_str).weekday()
         except Exception:
@@ -656,7 +654,7 @@ def compress_to_telegram(input_file: Path) -> Path:
     """
     Re-encode the video to fit within MAX_UPLOAD_BYTES.
     Uses duration-aware bitrate targeting across up to three resolution steps
-    (480p → 360p → 240p) to guarantee the output fits. (#2)
+    (480p → 360p → 240p) to guarantee the output fits.
     """
     if not ffmpeg_exists():
         raise RuntimeError("ffmpeg is not installed or not in PATH — cannot compress.")
@@ -672,22 +670,22 @@ def compress_to_telegram(input_file: Path) -> Path:
     attempts = [
         ("480:-2", target_video_bps),
         ("360:-2", max(int(target_video_bps * 0.75), 100_000)),
-        ("240:-2", max(int(target_video_bps * 0.55),  80_000)),
+        ("240:-2", max(int(target_video_bps * 0.55), 80_000)),
     ]
 
     for idx, (scale, video_bps) in enumerate(attempts, start=1):
         output = input_file.with_name(f"compressed_{input_file.stem}_p{idx}.mp4")
         cmd = [
             "ffmpeg", "-y", "-i", str(input_file),
-            "-vf",     f"scale={scale}",
-            "-c:v",    "libx264",
-            "-b:v",    str(video_bps),
+            "-vf", f"scale={scale}",
+            "-c:v", "libx264",
+            "-b:v", str(video_bps),
             "-maxrate", str(int(video_bps * 1.3)),
             "-bufsize", str(int(video_bps * 2)),
             "-preset", "medium",
             "-movflags", "+faststart",
-            "-c:a",    "aac",
-            "-b:a",    str(target_audio_bps),
+            "-c:a", "aac",
+            "-b:a", str(target_audio_bps),
             str(output),
         ]
         log.info("Compress attempt %s: scale=%s video_bps=%s", idx, scale, video_bps)
@@ -703,7 +701,6 @@ def compress_to_telegram(input_file: Path) -> Path:
         if out_size <= MAX_UPLOAD_BYTES:
             return output
 
-        # Too large — clean up and try next step
         output.unlink(missing_ok=True)
         log.warning("Attempt %s still too large (%s), trying smaller resolution.", idx, format_size(out_size))
 
@@ -737,13 +734,19 @@ async def process_job(app, job: dict) -> None:
     chat_id = job["chat"]
     url = job["url"]
     mode = job.get("mode", "video")
+    reply_to_message_id = job.get("reply_to_message_id")
 
     log.info(
         "Download requested by user %s in chat %s: %s",
         job["user"], job["chat"], url
     )
 
-    status_msg = await app.bot.send_message(chat_id, "🔍 Fetching metadata…")
+    status_msg = await app.bot.send_message(
+        chat_id,
+        "🔍 Fetching metadata…",
+        reply_to_message_id=reply_to_message_id,
+    )
+
     downloaded_file: Path | None = None
     sent_file: Path | None = None
     routed_file: Path | None = None
@@ -758,6 +761,7 @@ async def process_job(app, job: dict) -> None:
                 f"👤 {meta['uploader']}\n"
                 f"🔗 {meta['webpage_url']}"
             )[:1000]
+
         await status_msg.edit_text(
             f"🎞️ {meta['title']}\n"
             f"👤 {meta['uploader']}\n"
@@ -789,7 +793,8 @@ async def process_job(app, job: dict) -> None:
                     chat_id,
                     f,
                     filename=sent_file.name,
-                    caption=caption
+                    caption=caption,
+                    reply_to_message_id=reply_to_message_id
                 )
             else:
                 try:
@@ -798,7 +803,8 @@ async def process_job(app, job: dict) -> None:
                         f,
                         filename=sent_file.name,
                         supports_streaming=True,
-                        caption=caption
+                        caption=caption,
+                        reply_to_message_id=reply_to_message_id
                     )
                 except Exception:
                     f.seek(0)
@@ -806,7 +812,8 @@ async def process_job(app, job: dict) -> None:
                         chat_id,
                         f,
                         filename=sent_file.name,
-                        caption=caption
+                        caption=caption,
+                        reply_to_message_id=reply_to_message_id
                     )
 
         if ARCHIVE_CHAT_ID:
@@ -865,8 +872,7 @@ async def process_job(app, job: dict) -> None:
         save_failures_state()
         save_failed_copy(sent_file or downloaded_file, job["id"])
 
-        # Friendly categorized error messages (#11)
-        err       = str(e)
+        err = str(e)
         err_lower = err.lower()
         if "sign in to confirm you're not a bot" in err_lower:
             friendly = (
@@ -967,7 +973,6 @@ async def ui_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     try:
         info = await asyncio.to_thread(get_media_info, url)
 
-        # Store the URL server-side so callback_data stays well under 64 bytes (#6)
         short_id = str(uuid.uuid4())[:8]
         PENDING_UI[short_id] = {
             "url": url,
@@ -1024,7 +1029,6 @@ async def ui_button_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     short_id = parts[2] if len(parts) == 3 else None
 
     if action == "cancel":
-        # Clean up pending entry if present
         if short_id:
             PENDING_UI.pop(short_id, None)
         await query.edit_message_text("❌ Cancelled.")
@@ -1034,7 +1038,6 @@ async def ui_button_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         await query.edit_message_text("Invalid media request.")
         return
 
-    # Resolve URL from server-side store — avoids 64-byte callback_data limit (#6)
     pending = PENDING_UI.pop(short_id, None)
     if not pending:
         await query.edit_message_text("⚠️ This request has already been used or expired.")
@@ -1090,7 +1093,7 @@ async def start_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
     chat = update.effective_chat
 
     lines = [
-        "👋 *YT Bot v4.8*",
+        "👋 *YT Bot v4.9*",
         "",
         "Send me a link or use a command:",
         "",
@@ -1540,7 +1543,8 @@ async def handle_url(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
         update.effective_chat.id,
         url,
         mode="video",
-        source="raw_url"
+        source="raw_url",
+        reply_to_message_id=message.message_id
     ))
     save_queue_state()
 
@@ -1625,4 +1629,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-    

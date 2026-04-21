@@ -24,6 +24,7 @@ Each file describes:
 - [v4.6](v4.6.md) — Access control overhaul and configuration improvements
 - [v4.7](v4.7.md) — Metadata captions and source-aware upload behavior
 - [v4.8](v4.8.md) — Role-aware help system and command visibility
+- [v4.9](v4.9.md) — Threaded reply flow for shared and forwarded links
 
 ---
 
@@ -35,7 +36,7 @@ Each file describes:
   - `4.4`, `4.5` → refinement and usability improvements
   - `4.6` → behavioral and architectural improvements
   - `4.7` → usability and presentation improvements
-  - `4.8` → interaction and UX clarity improvements
+  - `4.8`, `4.9` → interaction and UX clarity improvements
 
 - These notes are intended for:
   - tracking project evolution

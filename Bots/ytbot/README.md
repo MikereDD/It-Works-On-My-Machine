@@ -247,7 +247,16 @@ cookies/
 
 ## 🧠 Version History
 
-### v4.8 (Current)
+### v4.9 (Current)
+
+* Threaded reply flow for shared and forwarded links  
+* Raw pasted/forwarded links now preserve original message context  
+* Metadata status messages reply to the original shared message  
+* Final uploaded media replies to the original shared message  
+* Improved readability and flow in active group chats  
+* Restored natural conversation threading for passive link sharing  
+
+### v4.8
 
 * Role-aware `/help` and `/start` output  
 * Split command visibility (user vs admin)  
