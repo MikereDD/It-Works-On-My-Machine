@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file:     ytbot.py
 # author:   Mike Redd
-# version:  4.3.1
+# version:  4.4
 # created:  2026-04-18
 # updated:  2026-04-20
 # desc:     Queue-based Telegram media bot
@@ -157,6 +157,9 @@ def is_admin(user_id: int) -> bool:
 def can_use(user_id: int) -> bool:
     return ALLOW_ALL_USERS or user_id in ALLOWED_USERS or is_admin(user_id)
 
+def is_private_chat(update: Update) -> bool:
+    return bool(update.effective_chat and update.effective_chat.type == "private")
+
 def format_size(num_bytes: int) -> str:
     size = float(num_bytes)
     for unit in ("B", "KB", "MB", "GB", "TB"):
@@ -176,6 +179,12 @@ def format_duration(seconds: int | float | None) -> str:
     if m:
         return f"{m}m {s}s"
     return f"{s}s"
+
+def shorten_url(url: str, max_len: int = 50) -> str:
+    return url if len(url) <= max_len else url[:max_len - 3] + "..."
+
+def get_queue_position() -> int:
+    return len(QUEUE) + (1 if CURRENT_JOB else 0)
 
 def remember_chat(chat) -> None:
     if not chat or chat.type not in ("group", "supergroup", "channel"):
@@ -659,7 +668,7 @@ async def process_job(app, job: dict) -> None:
         job["user"], job["chat"], url
     )
 
-    status_msg = await app.bot.send_message(chat_id, "⏳ Fetching metadata…")
+    status_msg = await app.bot.send_message(chat_id, "🔍 Fetching metadata…")
     downloaded_file: Path | None = None
     sent_file: Path | None = None
     routed_file: Path | None = None
@@ -682,7 +691,7 @@ async def process_job(app, job: dict) -> None:
         if mode == "video":
             size_mb = sent_file.stat().st_size / (1024 * 1024)
             if size_mb > 49:
-                await status_msg.edit_text(f"📦 Large file ({size_mb:.1f} MB)\nCompressing…")
+                await status_msg.edit_text(f"📦 Large file ({size_mb:.1f} MB)\nProcessing…")
                 compressed = await asyncio.to_thread(compress_to_telegram, sent_file)
                 if sent_file.exists():
                     sent_file.unlink()
@@ -729,7 +738,7 @@ async def process_job(app, job: dict) -> None:
         FAILURES.append(job)
         save_failures_state()
         save_failed_copy(sent_file or downloaded_file, job["id"])
-        await status_msg.edit_text(f"⏱️ Download timed out after {DOWNLOAD_TIMEOUT}s.")
+        await status_msg.edit_text("❌ *Download Failed*\n\n`Timed out waiting for the download to finish.`", parse_mode=ParseMode.MARKDOWN)
     except Exception as e:
         job["status"] = "failed"
         job["error"] = str(e)
@@ -737,7 +746,10 @@ async def process_job(app, job: dict) -> None:
         FAILURES.append(job)
         save_failures_state()
         save_failed_copy(sent_file or downloaded_file, job["id"])
-        await status_msg.edit_text(f"❌ Failed:\n{e}")
+        await status_msg.edit_text(
+            f"❌ *Download Failed*\n\n`{str(e)[:200]}`",
+            parse_mode=ParseMode.MARKDOWN,
+        )
 
 async def queue_worker(app) -> None:
     global CURRENT_JOB
@@ -784,7 +796,11 @@ async def ui_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     if not ctx.args:
-        await update.message.reply_text("Usage: /ui <url>")
+        await update.message.reply_text(
+            "❌ Invalid usage\n\n"
+            "Example:\n"
+            "/ui https://example.com/video"
+        )
         return
 
     url = extract_url(" ".join(ctx.args))
@@ -857,10 +873,11 @@ async def ui_button_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     QUEUE.append(job)
     save_queue_state()
 
+    pos = get_queue_position()
     await query.edit_message_text(
         f"✅ Added to queue\n"
-        f"*Mode:* {mode}\n"
-        f"*Position:* {len(QUEUE)}",
+        f"🔢 Position: {pos}\n"
+        f"🎬 Mode: {mode}",
         parse_mode=ParseMode.MARKDOWN,
     )
 
@@ -892,7 +909,7 @@ COMMAND_LIST = (
 async def start_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
     remember_chat(update.effective_chat)
     await update.message.reply_text(
-        "👋 *YT Bot v4.3.1*\n\n"
+        "👋 *YT Bot v4.4*\n\n"
         "Send me a link or use a command:\n\n"
         + COMMAND_LIST,
         parse_mode=ParseMode.MARKDOWN,
@@ -914,11 +931,20 @@ async def dl_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         return
     url = extract_url(" ".join(ctx.args)) if ctx.args else None
     if not url:
-        await update.message.reply_text("Usage: /dl <url>")
+        await update.message.reply_text(
+            "❌ Invalid usage\n\n"
+            "Example:\n"
+            "/dl https://example.com/video"
+        )
         return
     QUEUE.append(create_job(update.effective_user.id, update.effective_chat.id, url, mode="video"))
     save_queue_state()
-    await update.message.reply_text(f"📥 Added to queue (position {len(QUEUE)})")
+    pos = get_queue_position()
+    await update.message.reply_text(
+        f"📥 Added to queue\n"
+        f"🔢 Position: {pos}\n"
+        f"🎬 Mode: video"
+    )
 
 async def audio_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     remember_chat(update.effective_chat)
@@ -926,14 +952,23 @@ async def audio_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         return
     url = extract_url(" ".join(ctx.args)) if ctx.args else None
     if not url:
-        await update.message.reply_text("Usage: /audio <url>")
+        await update.message.reply_text(
+            "❌ Invalid usage\n\n"
+            "Example:\n"
+            "/audio https://example.com/video"
+        )
         return
     if not ffmpeg_exists():
         await update.message.reply_text("ffmpeg is required for audio extraction.")
         return
     QUEUE.append(create_job(update.effective_user.id, update.effective_chat.id, url, mode="audio"))
     save_queue_state()
-    await update.message.reply_text(f"🎵 Added audio job to queue (position {len(QUEUE)})")
+    pos = get_queue_position()
+    await update.message.reply_text(
+        f"📥 Added to queue\n"
+        f"🔢 Position: {pos}\n"
+        f"🎬 Mode: audio"
+    )
 
 async def queue_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not QUEUE and not CURRENT_JOB:
@@ -958,7 +993,11 @@ async def queue_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def weather_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not ctx.args:
-        await update.message.reply_text("Usage: /weather <city or place>")
+        await update.message.reply_text(
+            "❌ Invalid usage\n\n"
+            "Example:\n"
+            "/weather Kingsville"
+        )
         return
     try:
         result = await asyncio.to_thread(get_current_weather_for_location, " ".join(ctx.args).strip())
@@ -968,7 +1007,11 @@ async def weather_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def forecast_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not ctx.args:
-        await update.message.reply_text("Usage: /forecast <city or place>")
+        await update.message.reply_text(
+            "❌ Invalid usage\n\n"
+            "Example:\n"
+            "/forecast Kingsville"
+        )
         return
     try:
         result = await asyncio.to_thread(get_5day_forecast_for_location, " ".join(ctx.args).strip())
@@ -1003,14 +1046,12 @@ async def lastusers_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None
 
     lines = ["👥 *Recent users seen in logs*", ""]
     for idx, item in enumerate(recent, start=1):
-        short_url = item["url"]
-        if len(short_url) > 60:
-            short_url = short_url[:57] + "..."
+        short_url = shorten_url(item["url"])
         lines.append(
-            f"{idx}. *User ID:* `{item['user_id']}`\n"
-            f"   *Chat ID:* `{item['chat_id']}`\n"
-            f"   *Time:* `{item['timestamp']}`\n"
-            f"   *URL:* `{short_url}`"
+            f"{idx}. 👤 `{item['user_id']}`\n"
+            f"   💬 `{item['chat_id']}`\n"
+            f"   🕒 `{item['timestamp']}`\n"
+            f"   🔗 `{short_url}`"
         )
 
     await update.message.reply_text("\n\n".join(lines), parse_mode=ParseMode.MARKDOWN)
@@ -1026,18 +1067,23 @@ async def stats_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
     lines = [
         "📊 *Bot Stats*",
         "",
-        f"*Privacy Mode:* {'Public' if ALLOW_ALL_USERS else 'Owner only'}",
-        f"*Known Groups/Channels:* {len(KNOWN_CHATS)}",
-        f"*Queue Length:* {len(QUEUE)}",
-        f"*History:* {len(HISTORY)}",
-        f"*Failures:* {len(FAILURES)}",
-        f"*Unique Users:* {unique_users}",
-        f"*Downloads Folder Files:* {get_download_folder_count()}",
-        f"*Downloads Folder Size:* {format_size(get_download_folder_size())}",
-        f"*Recent Logged Requests:* {count_download_requests_in_logs()}",
-        f"*Last Activity:* `{last_seen}`" if last_seen else "*Last Activity:* none",
+        "🧠 *System*",
+        f"• Mode: {'Public' if ALLOW_ALL_USERS else 'Restricted'}",
+        f"• Active Job: {'Yes' if CURRENT_JOB else 'No'}",
+        f"• Queue: {len(QUEUE)}",
         "",
-        "*Top Domains:*",
+        "📦 *Activity*",
+        f"• Completed: {len(HISTORY)}",
+        f"• Failed: {len(FAILURES)}",
+        f"• Unique Users: {unique_users}",
+        f"• Requests (recent): {count_download_requests_in_logs()}",
+        f"• Last Activity: `{last_seen}`" if last_seen else "• Last Activity: none",
+        "",
+        "💾 *Storage*",
+        f"• Files: {get_download_folder_count()}",
+        f"• Size: {format_size(get_download_folder_size())}",
+        "",
+        "🌐 *Top Domains*",
     ]
 
     if top_domains:
@@ -1068,8 +1114,8 @@ async def status_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
 async def groups_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not is_admin(update.effective_user.id):
         return
-    if update.effective_chat and update.effective_chat.type != "private":
-        await update.message.reply_text("Use /groups from private chat with me.")
+    if not is_private_chat(update):
+        await update.message.reply_text("ℹ️ Use this command in a private chat with me.")
         return
     if not KNOWN_CHATS:
         await update.message.reply_text("No remembered groups or channels yet.")
@@ -1128,7 +1174,12 @@ async def retrylast_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None
 
     QUEUE.append(last)
     save_queue_state()
-    await update.message.reply_text(f"🔁 Retrying last failure.\nQueue position: {len(QUEUE)}")
+
+    pos = get_queue_position()
+    await update.message.reply_text(
+        f"🔁 Retrying last failure.\n"
+        f"🔢 Position: {pos}"
+    )
 
 async def clearqueue_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not is_admin(update.effective_user.id):
@@ -1143,8 +1194,8 @@ async def leave_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     chat = update.effective_chat
     if not chat:
         return
-    if chat.type == "private":
-        await update.message.reply_text("Use /leavechat from private chat with a target ID.")
+    if is_private_chat(update):
+        await update.message.reply_text("ℹ️ Use /leavechat from private chat instead.")
         return
     await update.message.reply_text("Leaving current group…")
     await ctx.bot.leave_chat(chat.id)
@@ -1153,11 +1204,15 @@ async def leave_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 async def leavechat_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not is_admin(update.effective_user.id):
         return
-    if update.effective_chat and update.effective_chat.type != "private":
-        await update.message.reply_text("Use /leavechat only from private chat with me.")
+    if not is_private_chat(update):
+        await update.message.reply_text("ℹ️ Use this command in a private chat with me.")
         return
     if not ctx.args:
-        await update.message.reply_text("Usage: /leavechat <chat_id>")
+        await update.message.reply_text(
+            "❌ Invalid usage\n\n"
+            "Example:\n"
+            "/leavechat -1001234567890"
+        )
         return
     try:
         target_id = int(ctx.args[0])
@@ -1204,7 +1259,13 @@ async def handle_url(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
     QUEUE.append(create_job(update.effective_user.id, update.effective_chat.id, url, mode="video"))
     save_queue_state()
-    await message.reply_text(f"📥 Added to queue (position {len(QUEUE)})")
+
+    pos = get_queue_position()
+    await message.reply_text(
+        f"📥 Added to queue\n"
+        f"🔢 Position: {pos}\n"
+        f"🎬 Mode: video"
+    )
 
 
 # ── CLI mode ────────────────────────────────────────────────────────────────────
