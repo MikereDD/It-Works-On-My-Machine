@@ -1,4 +1,4 @@
-# 🎬 YTBot v4.5
+# 🎬 YTBot v4.6
 
 > A typezerø Project  
 > Built for real-world use, not perfection.
@@ -11,7 +11,7 @@
 
 ## 🚀 Overview
 
-**YTBot v4.5** is a full-featured Telegram media bot that transforms simple links into a structured media pipeline.
+**YTBot v4.6** is a full-featured Telegram media bot that transforms simple links into a structured media pipeline.
 
 It accepts input from:
 
@@ -230,7 +230,17 @@ cookies/
 
 ## 🧠 Version History
 
-### v4.5 (Current)
+### v4.6 (Current)
+
+* Chat-aware access control (`can_use_context`)  
+* Group-based usage via `ALLOWED_CHAT_IDS`  
+* DM access restricted to owner by default  
+* Updated command handlers and UI callbacks to enforce context-aware permissions  
+* Improved `/whoami` to reflect real access context  
+* Safer, clearer configuration template (`ytbotrc.py`)  
+* Group access disabled by default in template  
+
+### v4.5
 
 * Runtime hardening and stability improvements  
 * Improved compression with duration-aware bitrate targeting  

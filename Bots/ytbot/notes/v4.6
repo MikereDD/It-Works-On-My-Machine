@@ -1,0 +1,56 @@
+# YTBot v4.6
+
+## Overview
+Access control overhaul and configuration improvements.
+
+This version introduces chat-aware permissions, allowing fine-grained control
+over where and how the bot can be used.
+
+## Changes
+
+### 🔐 Access Control
+
+- added `can_use_context()` for chat-aware permission handling
+- introduced `ALLOWED_CHAT_IDS` for group-based access control
+- restricted direct message (DM) usage to owner by default
+- replaced legacy `can_use()` checks in:
+  - `/ui`
+  - `/dl`
+  - `/audio`
+  - raw URL handler
+  - interactive UI callbacks
+
+### 👥 Group Behavior
+
+- enabled controlled group access without exposing bot publicly
+- ensured only approved groups can use bot commands
+- improved handling of unauthorized users with clear messaging
+
+### 🧠 UI & Command Improvements
+
+- updated `/whoami` to reflect real permission context
+- ensured UI button callbacks respect access control
+- improved consistency across all user-triggered entry points
+
+### ⚙️ Configuration
+
+- expanded `ytbotrc.py` template:
+  - added `ALLOWED_CHAT_IDS`
+  - clarified access modes (DM, group, public)
+  - made group access disabled by default
+  - improved documentation and safety notes
+
+## Notes
+
+This release focuses on **control and safety**:
+
+- prevents unintended public access
+- enables controlled group usage
+- aligns runtime behavior with configuration expectations
+
+## Impact
+
+- more secure default behavior
+- better multi-user/group support
+- clearer configuration for new users
+- improved maintainability and predictability
