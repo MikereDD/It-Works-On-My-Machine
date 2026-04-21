@@ -1,0 +1,28 @@
+# YTBot v4.5
+
+## Overview
+Hardening and quality-of-life update focused on reliability, safer queue handling, and better media processing.
+
+## Changes
+- added `WATCH_FOLDER_CHAT_ID` support for watch-folder jobs
+- introduced `MIN_VALID_AUDIO_BYTES` for explicit audio validation
+- capped `HISTORY` and `FAILURES` list growth with `MAX_HISTORY_ENTRIES`
+- removed unused cancel flag
+- added `STATE_LOCK` for safer queue-worker state handling
+- replaced oversized callback URL payloads with short pending UI IDs
+- improved weather forecast weekday icon selection
+- upgraded compression logic to use duration-aware bitrate targeting across multiple resolution attempts
+- improved failure handling with friendlier categorized download error messages
+- improved `leavechat` validation against remembered chats
+
+## Notes
+This version focuses on tightening edge cases that show up during real use rather than adding major new user-facing features.
+
+The biggest practical improvements are:
+- safer Telegram callback handling for long URLs
+- better compression behavior for large uploads
+- clearer failure messages
+- reduced long-term growth of history and failure state files
+
+## Impact
+Better reliability, clearer errors, safer long-term operation, and stronger handling of large files and long URLs.

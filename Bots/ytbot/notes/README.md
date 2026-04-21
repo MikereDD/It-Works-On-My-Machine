@@ -20,6 +20,7 @@ Each file describes:
 - [v4.3](v4.3.md) — Interactive UI and major polish
 - [v4.3.1](v4.3.1.md) — Config alignment and stability
 - [v4.4](v4.4.md) — Usability and observability improvements
+- [v4.5](v4.5.md) — Stability, compression improvements, and runtime hardening
 
 ---
 
@@ -28,7 +29,7 @@ Each file describes:
 - Versioning follows a simple incremental model:
   - `4.0`, `4.1`, `4.2` → feature milestones
   - `4.3.1` → stability/patch release
-  - `4.4` → refinement and UX improvements
+  - `4.4`, `4.5` → refinement and usability improvements
 
 - These notes are intended for:
   - tracking project evolution
