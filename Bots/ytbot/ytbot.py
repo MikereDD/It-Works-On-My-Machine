@@ -1,9 +1,9 @@
 #--------------------------------------------
 # file:     ytbot.py
 # author:   Mike Redd
-# version:  4.4
+# version:  4.5
 # created:  2026-04-18
-# updated:  2026-04-20
+# updated:  2026-04-21
 # desc:     Queue-based Telegram media bot
 #           with interactive UI, weather,
 #           forecast, routing, archive send,
@@ -12,6 +12,7 @@
 
 import argparse
 import asyncio
+from datetime import datetime
 import json
 import logging
 import re
@@ -68,6 +69,8 @@ ALLOW_ALL_USERS = getattr(ytbotrc, "ALLOW_ALL_USERS", False)
 DOWNLOAD_TIMEOUT = getattr(ytbotrc, "DOWNLOAD_TIMEOUT", 900)
 ARCHIVE_CHAT_ID = getattr(ytbotrc, "ARCHIVE_CHAT_ID", None)
 WATCH_FOLDER_ENABLED = getattr(ytbotrc, "WATCH_FOLDER_ENABLED", True)
+# Chat to send watch-folder results to. Defaults to OWNER_ID (private chat). (#3)
+WATCH_FOLDER_CHAT_ID = getattr(ytbotrc, "WATCH_FOLDER_CHAT_ID", None) or OWNER_ID
 
 if not BOT_TOKEN:
     raise RuntimeError(
@@ -104,9 +107,11 @@ for d in [
     d.mkdir(parents=True, exist_ok=True)
 
 # ── Limits ──────────────────────────────────────────────────────────────────────
-DELETE_AFTER_SEND = False
-MAX_UPLOAD_BYTES = 49 * 1024 * 1024
-MIN_VALID_VIDEO_BYTES = 100 * 1024
+DELETE_AFTER_SEND      = False
+MAX_UPLOAD_BYTES       = 49 * 1024 * 1024
+MIN_VALID_VIDEO_BYTES  = 100 * 1024
+MIN_VALID_AUDIO_BYTES  = 100 * 1024   # same threshold, explicit constant (#8)
+MAX_HISTORY_ENTRIES    = 500          # cap history/failures lists (#12)
 
 # ── Globals ─────────────────────────────────────────────────────────────────────
 URL_RE = re.compile(r"https?://\S+", re.IGNORECASE)
@@ -115,7 +120,13 @@ HISTORY: list[dict] = []
 FAILURES: list[dict] = []
 KNOWN_CHATS: dict = {}
 CURRENT_JOB: dict | None = None
-CANCEL_CURRENT = False
+# CANCEL_CURRENT removed — was defined but never used (#5)
+
+# Protects all mutations to QUEUE, HISTORY, FAILURES, CURRENT_JOB (#10)
+STATE_LOCK = asyncio.Lock()
+
+# Pending UI jobs: short_id → {url, user_id, chat_id} — avoids 64-byte callback_data limit (#6)
+PENDING_UI: dict[str, dict] = {}
 
 # ── Logging ─────────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -169,7 +180,7 @@ def format_size(num_bytes: int) -> str:
     return f"{num_bytes} B"
 
 def format_duration(seconds: int | float | None) -> str:
-    if not seconds:
+    if seconds is None:
         return "Unknown"
     seconds = int(seconds)
     h, rem = divmod(seconds, 3600)
@@ -307,9 +318,15 @@ def save_queue_state() -> None:
     save_json(QUEUE_FILE, QUEUE)
 
 def save_history_state() -> None:
+    # Trim to avoid unbounded growth (#12)
+    if len(HISTORY) > MAX_HISTORY_ENTRIES:
+        del HISTORY[:-MAX_HISTORY_ENTRIES]
     save_json(HISTORY_FILE, HISTORY)
 
 def save_failures_state() -> None:
+    # Trim to avoid unbounded growth (#12)
+    if len(FAILURES) > MAX_HISTORY_ENTRIES:
+        del FAILURES[:-MAX_HISTORY_ENTRIES]
     save_json(FAILURES_FILE, FAILURES)
 
 
@@ -431,8 +448,6 @@ def get_current_weather_for_location(name: str) -> str:
     return "\n".join(line for line in lines if line is not None)
 
 def get_5day_forecast_for_location(name: str) -> str:
-    from datetime import datetime
-
     loc = geocode_location(name)
     label = build_place_label(loc, name)
 
@@ -473,7 +488,12 @@ def get_5day_forecast_for_location(name: str) -> str:
         icon = weather_code_to_icon(code)
         _, text = WEATHER_CODE_MAP.get(code, ("❓", "Unknown")) if code is not None else ("❓", "Unknown")
 
-        lines.append(f"{WEEKDAY_EMOJI.get(i % 7, '📅')} *{day_name}* — {icon} {text}")
+        # Use the actual weekday from the date, not the loop index (#16)
+        try:
+            weekday_idx = datetime.fromisoformat(day_str).weekday()
+        except Exception:
+            weekday_idx = i % 7
+        lines.append(f"{WEEKDAY_EMOJI.get(weekday_idx, '📅')} *{day_name}* — {icon} {text}")
         if i < len(highs):
             lines.append(f"   🔺 {highs[i]}{units.get('temperature_2m_max', '°F')}")
         if i < len(lows):
@@ -610,7 +630,7 @@ def download_media(url: str, mode: str) -> Path:
     file = max(files, key=lambda f: f.stat().st_size)
 
     if mode == "audio":
-        if file.stat().st_size < 10_000:
+        if file.stat().st_size < MIN_VALID_AUDIO_BYTES:
             raise RuntimeError("Downloaded audio file is invalid/empty")
         return file
 
@@ -620,22 +640,64 @@ def download_media(url: str, mode: str) -> Path:
     return file
 
 def compress_to_telegram(input_file: Path) -> Path:
-    output = input_file.with_name("compressed_" + input_file.stem + ".mp4")
-    cmd = [
-        "ffmpeg",
-        "-y",
-        "-i", str(input_file),
-        "-vcodec", "libx264",
-        "-crf", "28",
-        "-preset", "veryfast",
-        "-acodec", "aac",
-        "-b:a", "128k",
-        str(output),
+    """
+    Re-encode the video to fit within MAX_UPLOAD_BYTES.
+    Uses duration-aware bitrate targeting across up to three resolution steps
+    (480p → 360p → 240p) to guarantee the output fits. (#2)
+    """
+    if not ffmpeg_exists():
+        raise RuntimeError("ffmpeg is not installed or not in PATH — cannot compress.")
+
+    duration = get_duration_seconds(input_file)
+    if duration <= 0:
+        raise RuntimeError("Could not determine video duration for compression.")
+
+    target_audio_bps = 64_000
+    target_total_bps = int((MAX_UPLOAD_BYTES * 8) / duration * 0.92)
+    target_video_bps = max(target_total_bps - target_audio_bps, 120_000)
+
+    attempts = [
+        ("480:-2", target_video_bps),
+        ("360:-2", max(int(target_video_bps * 0.75), 100_000)),
+        ("240:-2", max(int(target_video_bps * 0.55),  80_000)),
     ]
-    subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    if not output.exists() or output.stat().st_size == 0:
-        raise RuntimeError("Compression failed")
-    return output
+
+    for idx, (scale, video_bps) in enumerate(attempts, start=1):
+        output = input_file.with_name(f"compressed_{input_file.stem}_p{idx}.mp4")
+        cmd = [
+            "ffmpeg", "-y", "-i", str(input_file),
+            "-vf",     f"scale={scale}",
+            "-c:v",    "libx264",
+            "-b:v",    str(video_bps),
+            "-maxrate", str(int(video_bps * 1.3)),
+            "-bufsize", str(int(video_bps * 2)),
+            "-preset", "medium",
+            "-movflags", "+faststart",
+            "-c:a",    "aac",
+            "-b:a",    str(target_audio_bps),
+            str(output),
+        ]
+        log.info("Compress attempt %s: scale=%s video_bps=%s", idx, scale, video_bps)
+        result = subprocess.run(cmd, capture_output=True, text=True)
+
+        if result.returncode != 0 or not output.exists() or output.stat().st_size == 0:
+            log.warning("Compression attempt %s failed: %s", idx, result.stderr[:300])
+            continue
+
+        out_size = output.stat().st_size
+        log.info("Compressed output size: %s", format_size(out_size))
+
+        if out_size <= MAX_UPLOAD_BYTES:
+            return output
+
+        # Too large — clean up and try next step
+        output.unlink(missing_ok=True)
+        log.warning("Attempt %s still too large (%s), trying smaller resolution.", idx, format_size(out_size))
+
+    raise RuntimeError(
+        f"Could not compress video to fit within {format_size(MAX_UPLOAD_BYTES)} "
+        f"after {len(attempts)} attempts."
+    )
 
 def route_file(path: Path, mode: str) -> Path:
     dest_dir = DONE_AUDIO_DIR if mode == "audio" else DONE_VIDEO_DIR
@@ -738,7 +800,10 @@ async def process_job(app, job: dict) -> None:
         FAILURES.append(job)
         save_failures_state()
         save_failed_copy(sent_file or downloaded_file, job["id"])
-        await status_msg.edit_text("❌ *Download Failed*\n\n`Timed out waiting for the download to finish.`", parse_mode=ParseMode.MARKDOWN)
+        await status_msg.edit_text(
+            "❌ *Download Failed*\n\n`Timed out waiting for the download to finish.`",
+            parse_mode=ParseMode.MARKDOWN,
+        )
     except Exception as e:
         job["status"] = "failed"
         job["error"] = str(e)
@@ -746,8 +811,35 @@ async def process_job(app, job: dict) -> None:
         FAILURES.append(job)
         save_failures_state()
         save_failed_copy(sent_file or downloaded_file, job["id"])
+
+        # Friendly categorized error messages (#11)
+        err       = str(e)
+        err_lower = err.lower()
+        if "sign in to confirm you're not a bot" in err_lower:
+            friendly = (
+                "🔒 YouTube blocked anonymous access.\n"
+                f"Add a cookie file at:\n`{YOUTUBE_COOKIES_FILE}`"
+            )
+        elif "rate-limit" in err_lower or "requested content is not available" in err_lower:
+            friendly = "🚫 Instagram blocked this request — rate-limited or login required."
+        elif "no file downloaded" in err_lower or "not a valid playable video" in err_lower:
+            friendly = "⚠️ The site responded but no playable video was produced."
+        elif "invalid data found when processing input" in err_lower or "postprocessing" in err_lower:
+            friendly = "⚠️ The downloaded data wasn't a valid video file."
+        elif "certificate_verify_failed" in err_lower or "unable to get local issuer certificate" in err_lower:
+            friendly = "🔐 SSL certificate verification failed for that site."
+        elif "ffmpeg" in err_lower or "ffprobe" in err_lower:
+            friendly = f"⚙️ {err}"
+        elif "could not compress" in err_lower:
+            friendly = f"📏 {err}"
+        elif "request entity too large" in err_lower:
+            friendly = f"📏 Telegram rejected the upload — file exceeded {format_size(MAX_UPLOAD_BYTES)}."
+        else:
+            friendly = f"❌ {err[:300]}"
+            log.exception("Unhandled error in process_job for %s", url)
+
         await status_msg.edit_text(
-            f"❌ *Download Failed*\n\n`{str(e)[:200]}`",
+            f"❌ *Download Failed*\n\n{friendly}",
             parse_mode=ParseMode.MARKDOWN,
         )
 
@@ -758,13 +850,19 @@ async def queue_worker(app) -> None:
         if CURRENT_JOB or not QUEUE:
             continue
 
-        CURRENT_JOB = QUEUE.pop(0)
-        save_queue_state()
+        async with STATE_LOCK:
+            if not QUEUE:
+                continue
+            CURRENT_JOB = QUEUE.pop(0)
+            save_queue_state()
 
         try:
             await process_job(app, CURRENT_JOB)
+        except Exception:
+            log.exception("Unexpected error in queue_worker for job %s", CURRENT_JOB.get("id"))
         finally:
-            CURRENT_JOB = None
+            async with STATE_LOCK:
+                CURRENT_JOB = None
 
 async def watch_folder_worker() -> None:
     while True:
@@ -781,7 +879,7 @@ async def watch_folder_worker() -> None:
                     if extract_url(line.strip())
                 ]
                 for url in urls:
-                    QUEUE.append(create_job(OWNER_ID, OWNER_ID, url, mode="video", source="watch"))
+                    QUEUE.append(create_job(OWNER_ID, WATCH_FOLDER_CHAT_ID, url, mode="video", source="watch"))
                 save_queue_state()
                 txt_file.unlink()
             except Exception as e:
@@ -811,13 +909,21 @@ async def ui_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     try:
         info = await asyncio.to_thread(get_media_info, url)
 
+        # Store the URL server-side so callback_data stays well under 64 bytes (#6)
+        short_id = str(uuid.uuid4())[:8]
+        PENDING_UI[short_id] = {
+            "url": url,
+            "user_id": update.effective_user.id,
+            "chat_id": update.effective_chat.id,
+        }
+
         keyboard = InlineKeyboardMarkup([
             [
-                InlineKeyboardButton("🎬 Video", callback_data=f"dl|video|{url}"),
-                InlineKeyboardButton("🎵 Audio", callback_data=f"dl|audio|{url}"),
+                InlineKeyboardButton("🎬 Video", callback_data=f"dl|video|{short_id}"),
+                InlineKeyboardButton("🎵 Audio", callback_data=f"dl|audio|{short_id}"),
             ],
             [
-                InlineKeyboardButton("❌ Cancel", callback_data="dl|cancel")
+                InlineKeyboardButton("❌ Cancel", callback_data=f"dl|cancel|{short_id}")
             ]
         ])
 
@@ -857,17 +963,27 @@ async def ui_button_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     action = parts[1]
+    short_id = parts[2] if len(parts) == 3 else None
 
     if action == "cancel":
+        # Clean up pending entry if present
+        if short_id:
+            PENDING_UI.pop(short_id, None)
         await query.edit_message_text("❌ Cancelled.")
         return
 
-    if len(parts) != 3:
+    if not short_id:
         await query.edit_message_text("Invalid media request.")
         return
 
+    # Resolve URL from server-side store — avoids 64-byte callback_data limit (#6)
+    pending = PENDING_UI.pop(short_id, None)
+    if not pending:
+        await query.edit_message_text("⚠️ This request has already been used or expired.")
+        return
+
     mode = action
-    url = parts[2]
+    url = pending["url"]
 
     job = create_job(user.id, chat.id, url, mode=mode, source="ui")
     QUEUE.append(job)
@@ -877,7 +993,7 @@ async def ui_button_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     await query.edit_message_text(
         f"✅ Added to queue\n"
         f"🔢 Position: {pos}\n"
-        f"🎬 Mode: {mode}",
+        f"{'🎬' if mode == 'video' else '🎵'} Mode: {mode}",
         parse_mode=ParseMode.MARKDOWN,
     )
 
@@ -909,7 +1025,7 @@ COMMAND_LIST = (
 async def start_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
     remember_chat(update.effective_chat)
     await update.message.reply_text(
-        "👋 *YT Bot v4.4*\n\n"
+        "👋 *YT Bot v4.5*\n\n"
         "Send me a link or use a command:\n\n"
         + COMMAND_LIST,
         parse_mode=ParseMode.MARKDOWN,
@@ -967,7 +1083,7 @@ async def audio_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
         f"📥 Added to queue\n"
         f"🔢 Position: {pos}\n"
-        f"🎬 Mode: audio"
+        f"🎵 Mode: audio"
     )
 
 async def queue_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1219,7 +1335,19 @@ async def leavechat_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     except ValueError:
         await update.message.reply_text("Chat ID must be numeric.")
         return
-    await update.message.reply_text(f"Leaving `{target_id}`", parse_mode=ParseMode.MARKDOWN)
+
+    if str(target_id) not in KNOWN_CHATS:
+        await update.message.reply_text(
+            "⚠️ That chat ID isn't in my remembered list.\n"
+            "Use /groups to see known chats first."
+        )
+        return
+
+    chat_info = KNOWN_CHATS[str(target_id)]
+    await update.message.reply_text(
+        f"Leaving `{chat_info['title']}` (`{target_id}`)",
+        parse_mode=ParseMode.MARKDOWN,
+    )
     await ctx.bot.leave_chat(target_id)
     forget_chat(target_id)
 
@@ -1341,3 +1469,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+    
