@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file:     ytbot.py
 # author:   Mike Redd
-# version:  4.5
+# version:  4.6
 # created:  2026-04-18
 # updated:  2026-04-21
 # desc:     Queue-based Telegram media bot
@@ -167,6 +167,19 @@ def is_admin(user_id: int) -> bool:
 
 def can_use(user_id: int) -> bool:
     return ALLOW_ALL_USERS or user_id in ALLOWED_USERS or is_admin(user_id)
+
+def can_use_context(user_id: int, chat_id: int, chat_type: str) -> bool:
+    allowed_chat_ids = set(getattr(ytbotrc, "ALLOWED_CHAT_IDS", []))
+
+    # Anyone in approved groups/supergroups can use the bot
+    if chat_type in ("group", "supergroup"):
+        return chat_id in allowed_chat_ids
+
+    # DM is owner only
+    if chat_type == "private":
+        return user_id == OWNER_ID
+
+    return False
 
 def is_private_chat(update: Update) -> bool:
     return bool(update.effective_chat and update.effective_chat.type == "private")
@@ -890,7 +903,12 @@ async def watch_folder_worker() -> None:
 async def ui_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     remember_chat(update.effective_chat)
 
-    if not can_use(update.effective_user.id):
+    if not can_use_context(
+        update.effective_user.id,
+        update.effective_chat.id,
+        update.effective_chat.type,
+    ):
+        await update.message.reply_text("🚫 Not allowed here.")
         return
 
     if not ctx.args:
@@ -951,8 +969,8 @@ async def ui_button_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not user or not chat:
         return
 
-    if not can_use(user.id):
-        await query.edit_message_text("You are not allowed to use download actions.")
+    if not can_use_context(user.id, chat.id, chat.type):
+        await query.edit_message_text("🚫 Not allowed here.")
         return
 
     data = query.data or ""
@@ -1025,7 +1043,7 @@ COMMAND_LIST = (
 async def start_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
     remember_chat(update.effective_chat)
     await update.message.reply_text(
-        "👋 *YT Bot v4.5*\n\n"
+        "👋 *YT Bot v4.6*\n\n"
         "Send me a link or use a command:\n\n"
         + COMMAND_LIST,
         parse_mode=ParseMode.MARKDOWN,
@@ -1043,8 +1061,15 @@ async def help_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def dl_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     remember_chat(update.effective_chat)
-    if not can_use(update.effective_user.id):
+
+    if not can_use_context(
+        update.effective_user.id,
+        update.effective_chat.id,
+        update.effective_chat.type,
+    ):
+        await update.message.reply_text("🚫 Not allowed here.")
         return
+
     url = extract_url(" ".join(ctx.args)) if ctx.args else None
     if not url:
         await update.message.reply_text(
@@ -1064,8 +1089,15 @@ async def dl_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def audio_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     remember_chat(update.effective_chat)
-    if not can_use(update.effective_user.id):
+
+    if not can_use_context(
+        update.effective_user.id,
+        update.effective_chat.id,
+        update.effective_chat.type,
+    ):
+        await update.message.reply_text("🚫 Not allowed here.")
         return
+
     url = extract_url(" ".join(ctx.args)) if ctx.args else None
     if not url:
         await update.message.reply_text(
@@ -1074,9 +1106,11 @@ async def audio_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
             "/audio https://example.com/video"
         )
         return
+
     if not ffmpeg_exists():
         await update.message.reply_text("ffmpeg is required for audio extraction.")
         return
+        
     QUEUE.append(create_job(update.effective_user.id, update.effective_chat.id, url, mode="audio"))
     save_queue_state()
     pos = get_queue_position()
@@ -1147,7 +1181,7 @@ async def whoami_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
         f"*Chat Type:* {chat.type if chat else 'unknown'}\n"
         f"*Chat ID:* `{chat.id if chat else 'unknown'}`\n"
         f"*Bot Owner:* {'yes' if is_admin(user.id) else 'no'}\n"
-        f"*Can Download:* {'yes' if can_use(user.id) else 'no'}",
+        f"*Can Download Here:* {'yes' if can_use_context(user.id, chat.id, chat.type) else 'no'}\n",
         parse_mode=ParseMode.MARKDOWN,
     )
 
@@ -1378,7 +1412,11 @@ async def handle_url(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
     remember_chat(update.effective_chat)
 
-    if not can_use(update.effective_user.id):
+    if not can_use_context(
+        update.effective_user.id,
+        update.effective_chat.id,
+        update.effective_chat.type,
+    ):
         return
 
     url = extract_url(message.text)

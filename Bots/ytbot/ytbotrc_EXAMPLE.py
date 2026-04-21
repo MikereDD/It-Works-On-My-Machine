@@ -1,9 +1,9 @@
 #--------------------------------------------
 # file:     ytbotrc.py
 # author:   Mike Redd
-# version:  1.1
+# version:  1.2
 # created:  2026-04-18
-# updated:  2026-04-20
+# updated:  2026-04-21
 # desc:     Safe config template for ytbot
 #--------------------------------------------
 
@@ -12,14 +12,25 @@ BOT_TOKEN = "PASTE_YOUR_REAL_BOT_TOKEN_HERE"
 ALLOWED_USER_ID = 123456789
 
 # ── Access Control ───────────────────────────
-# Who can use the bot
+# Access behavior:
+# - DM: owner only (default)
+# - Groups: controlled by ALLOWED_CHAT_IDS
+# - Public mode: set ALLOW_ALL_USERS = True
+
+# Allow everyone (public bot mode)
 ALLOW_ALL_USERS = False
 
 # Admin users (can use admin commands)
 ADMIN_USERS = [ALLOWED_USER_ID]
 
 # Additional allowed users (optional)
-ALLOWED_USERS = [ALLOWED_USER_ID]
+# Only used if you want specific users besides the owner to have access
+ALLOWED_USERS = []
+
+# Additional allowed groups (optional)
+# If set, anyone in these groups can use the bot
+# Leave empty to disable group access entirely
+ALLOWED_CHAT_IDS = []
 
 # ── Behavior ─────────────────────────────────
 # Max time (seconds) before download is cancelled
@@ -39,5 +50,5 @@ ARCHIVE_CHAT_ID = None
 
 # ── Notes ───────────────────────────────────
 # - Do NOT commit your real BOT_TOKEN
-# - This file is meant to be copied and edited locally
+# - Copy this file to your local config directory and edit it
 # - Keep your real version outside version control
