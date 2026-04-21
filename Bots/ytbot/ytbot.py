@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file:     ytbot.py
 # author:   Mike Redd
-# version:  4.6
+# version:  4.7
 # created:  2026-04-18
 # updated:  2026-04-21
 # desc:     Queue-based Telegram media bot
@@ -750,6 +750,14 @@ async def process_job(app, job: dict) -> None:
 
     try:
         meta = await asyncio.to_thread(get_media_info, url)
+
+        caption = None
+        if job.get("source") in ("ui", "dl", "audio"):
+            caption = (
+                f"🎞️ {meta['title']}\n"
+                f"👤 {meta['uploader']}\n"
+                f"🔗 {meta['webpage_url']}"
+            )[:1000]
         await status_msg.edit_text(
             f"🎞️ {meta['title']}\n"
             f"👤 {meta['uploader']}\n"
@@ -777,24 +785,56 @@ async def process_job(app, job: dict) -> None:
 
         with sent_file.open("rb") as f:
             if mode == "audio":
-                await app.bot.send_audio(chat_id, f, filename=sent_file.name)
+                await app.bot.send_audio(
+                    chat_id,
+                    f,
+                    filename=sent_file.name,
+                    caption=caption
+                )
             else:
                 try:
-                    await app.bot.send_video(chat_id, f, filename=sent_file.name, supports_streaming=True)
+                    await app.bot.send_video(
+                        chat_id,
+                        f,
+                        filename=sent_file.name,
+                        supports_streaming=True,
+                        caption=caption
+                    )
                 except Exception:
                     f.seek(0)
-                    await app.bot.send_document(chat_id, f, filename=sent_file.name)
+                    await app.bot.send_document(
+                        chat_id,
+                        f,
+                        filename=sent_file.name,
+                        caption=caption
+                    )
 
         if ARCHIVE_CHAT_ID:
             with sent_file.open("rb") as f:
                 if mode == "audio":
-                    await app.bot.send_audio(ARCHIVE_CHAT_ID, f, filename=sent_file.name)
+                    await app.bot.send_audio(
+                        ARCHIVE_CHAT_ID,
+                        f,
+                        filename=sent_file.name,
+                        caption=caption
+                    )
                 else:
                     try:
-                        await app.bot.send_video(ARCHIVE_CHAT_ID, f, filename=sent_file.name, supports_streaming=True)
+                        await app.bot.send_video(
+                            ARCHIVE_CHAT_ID,
+                            f,
+                            filename=sent_file.name,
+                            supports_streaming=True,
+                            caption=caption
+                        )
                     except Exception:
                         f.seek(0)
-                        await app.bot.send_document(ARCHIVE_CHAT_ID, f, filename=sent_file.name)
+                        await app.bot.send_document(
+                            ARCHIVE_CHAT_ID,
+                            f,
+                            filename=sent_file.name,
+                            caption=caption
+                        )
 
         routed_file = await asyncio.to_thread(route_file, sent_file, mode)
 
@@ -1043,7 +1083,7 @@ COMMAND_LIST = (
 async def start_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
     remember_chat(update.effective_chat)
     await update.message.reply_text(
-        "👋 *YT Bot v4.6*\n\n"
+        "👋 *YT Bot v4.7*\n\n"
         "Send me a link or use a command:\n\n"
         + COMMAND_LIST,
         parse_mode=ParseMode.MARKDOWN,
@@ -1078,7 +1118,14 @@ async def dl_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
             "/dl https://example.com/video"
         )
         return
-    QUEUE.append(create_job(update.effective_user.id, update.effective_chat.id, url, mode="video"))
+
+    QUEUE.append(create_job(
+        update.effective_user.id,
+        update.effective_chat.id,
+        url,
+        mode="video",
+        source="dl"
+    ))
     save_queue_state()
     pos = get_queue_position()
     await update.message.reply_text(
@@ -1110,8 +1157,14 @@ async def audio_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not ffmpeg_exists():
         await update.message.reply_text("ffmpeg is required for audio extraction.")
         return
-        
-    QUEUE.append(create_job(update.effective_user.id, update.effective_chat.id, url, mode="audio"))
+
+    QUEUE.append(create_job(
+        update.effective_user.id,
+        update.effective_chat.id,
+        url,
+        mode="audio",
+        source="audio"
+    ))
     save_queue_state()
     pos = get_queue_position()
     await update.message.reply_text(
@@ -1423,7 +1476,13 @@ async def handle_url(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not url:
         return
 
-    QUEUE.append(create_job(update.effective_user.id, update.effective_chat.id, url, mode="video"))
+    QUEUE.append(create_job(
+        update.effective_user.id,
+        update.effective_chat.id,
+        url,
+        mode="video",
+        source="raw_url"
+    ))
     save_queue_state()
 
     pos = get_queue_position()
