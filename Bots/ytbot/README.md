@@ -11,7 +11,7 @@
 
 ## 🚀 Overview
 
-**YTBot v4.6** is a full-featured Telegram media bot that transforms simple links into a structured media pipeline.
+**YTBot v4.7** is a full-featured Telegram media bot that transforms simple links into a structured media pipeline.
 
 It accepts input from:
 
