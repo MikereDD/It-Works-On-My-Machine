@@ -261,7 +261,7 @@ This project follows a simple idea:
 
 ## 🧑‍💻 Author
 
-**Mike Redd**
+**Mike Redd**  
 typezerø Projects
 
 ---
@@ -272,8 +272,18 @@ This project is licensed under the **WTFPL** —
 Do What The F*ck You Want To Public License.
 
 Basically:
+
 > Do whatever you want with it.
 
-Requires:
+---
+
+## ✅ Requirements
+
 - Python 3.10+
-- ffmpeg + ffprobe installed and in PATH
+- `ffmpeg` installed and in `PATH`
+- `ffprobe` installed and in `PATH`
+
+Python packages:
+
+```bash
+pip install -r requirements.txt
