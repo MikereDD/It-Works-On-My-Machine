@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file:     ytbot.py
 # author:   Mike Redd
-# version:  4.7
+# version:  4.8
 # created:  2026-04-18
 # updated:  2026-04-21
 # desc:     Queue-based Telegram media bot
@@ -1057,7 +1057,7 @@ async def ui_button_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 # ── Commands ────────────────────────────────────────────────────────────────────
-COMMAND_LIST = (
+USER_COMMAND_LIST = (
     "/start         — welcome & command list\n"
     "/help          — usage instructions\n"
     "/dl <url>      — queue video download\n"
@@ -1066,36 +1066,95 @@ COMMAND_LIST = (
     "/queue         — show queue\n"
     "/weather <p>   — current weather\n"
     "/forecast <p>  — 5-day forecast\n"
-    "/whoami        — show your Telegram/chat IDs\n"
-    "/lastusers     — recent users seen in logs *(owner)*\n"
-    "/stats         — usage summary *(owner)*\n"
-    "/status        — bot status *(owner)*\n"
-    "/groups        — list remembered groups *(owner)*\n"
-    "/cleanup       — clear downloads folder *(owner)*\n"
-    "/failures      — recent failures *(owner)*\n"
-    "/retrylast     — retry last failure *(owner)*\n"
-    "/clearqueue    — clear queue *(owner)*\n"
-    "/leave         — leave current group *(owner)*\n"
-    "/leavechat     — leave a group by ID *(owner)*\n"
-    "/shutdown      — stop the bot *(owner)*"
+    "/whoami        — show your Telegram/chat IDs"
+)
+
+ADMIN_COMMAND_LIST = (
+    "/lastusers     — recent users seen in logs\n"
+    "/stats         — usage summary\n"
+    "/status        — bot status\n"
+    "/groups        — list remembered groups\n"
+    "/cleanup       — clear downloads folder\n"
+    "/failures      — recent failures\n"
+    "/retrylast     — retry last failure\n"
+    "/clearqueue    — clear queue\n"
+    "/leave         — leave current group\n"
+    "/leavechat     — leave a group by ID\n"
+    "/shutdown      — stop the bot"
 )
 
 async def start_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
     remember_chat(update.effective_chat)
+
+    user = update.effective_user
+    chat = update.effective_chat
+
+    lines = [
+        "👋 *YT Bot v4.8*",
+        "",
+        "Send me a link or use a command:",
+        "",
+        USER_COMMAND_LIST,
+    ]
+
+    if user and chat and is_admin(user.id):
+        lines.extend([
+            "",
+            "*Admin Commands:*",
+            ADMIN_COMMAND_LIST,
+        ])
+
     await update.message.reply_text(
-        "👋 *YT Bot v4.7*\n\n"
-        "Send me a link or use a command:\n\n"
-        + COMMAND_LIST,
+        "\n".join(lines),
         parse_mode=ParseMode.MARKDOWN,
     )
 
 async def help_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
     remember_chat(update.effective_chat)
+
+    user = update.effective_user
+    chat = update.effective_chat
+
+    user_id = user.id if user else 0
+    chat_id = chat.id if chat else 0
+    chat_type = chat.type if chat else "private"
+
+    allowed_here = can_use_context(user_id, chat_id, chat_type)
+    admin_here = is_admin(user_id)
+
+    lines = [
+        "📖 *Help*",
+        "",
+        "Paste a supported media URL, or use `/ui <url>` for buttons.",
+        "",
+    ]
+
+    if admin_here:
+        lines.extend([
+            "*User Commands:*",
+            USER_COMMAND_LIST,
+            "",
+            "*Admin Commands:*",
+            ADMIN_COMMAND_LIST,
+        ])
+    elif allowed_here:
+        lines.extend([
+            "*Available Commands:*",
+            USER_COMMAND_LIST,
+        ])
+    else:
+        lines.extend([
+            "🚫 You are not allowed to use download features here.",
+            "",
+            "*Available Commands:*",
+            "/help          — usage instructions\n"
+            "/whoami        — show your Telegram/chat IDs\n"
+            "/weather <p>   — current weather\n"
+            "/forecast <p>  — 5-day forecast",
+        ])
+
     await update.message.reply_text(
-        "📖 *Help*\n\n"
-        "Paste a supported media URL, or use `/ui <url>` for buttons.\n\n"
-        + COMMAND_LIST + "\n\n"
-        + ("ℹ️ Anyone can use this bot." if ALLOW_ALL_USERS else "🔒 Downloads are owner/allowed-user only."),
+        "\n".join(lines),
         parse_mode=ParseMode.MARKDOWN,
     )
 

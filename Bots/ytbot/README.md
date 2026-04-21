@@ -1,9 +1,9 @@
-# 🎬 YTBot v4.7
+# 🎬 YTBot v4.8
 
 > A typezerø Project  
 > Built for real-world use, not perfection.
 
-![Version](https://img.shields.io/badge/version-v4.3-blue)
+![Version](https://img.shields.io/badge/version-v4.8-blue)
 ![Python](https://img.shields.io/badge/python-3.10+-blue)
 ![License](https://img.shields.io/badge/license-WTFPL-lightgrey)
 
@@ -11,7 +11,7 @@
 
 ## 🚀 Overview
 
-**YTBot v4.7** is a full-featured Telegram media bot that transforms simple links into a structured media pipeline.
+**YTBot v4.8** is a full-featured Telegram media bot that transforms simple links into a structured media pipeline.
 
 It accepts input from:
 
@@ -34,7 +34,7 @@ This is no longer just a downloader—it’s a **media ingestion system**.
 * Persistent queue-based architecture  
 * Job tracking (queue, history, failures)  
 * Single worker (safe, no overlapping downloads)  
-* Access control (owner / allowed users / public mode)  
+* Access control (owner / allowed users / group-based control / public mode)  
 
 ---
 
@@ -65,6 +65,7 @@ No need to remember commands—just click.
 * Auto-compresses using ffmpeg  
 * Falls back to document upload if needed  
 * Prevents Telegram upload failures  
+* Metadata captions (title, uploader, link) for `/ui`, `/dl`, `/audio`  
 
 ---
 
@@ -98,6 +99,21 @@ Includes:
 * unique users  
 * domain tracking (top sites)  
 * timestamps  
+
+---
+
+### 📖 Role-Aware Help System
+
+* `/help` dynamically adapts based on user context  
+* `/start` mirrors command visibility  
+
+Behavior:
+
+- **Admins (DM or group)** → full command list  
+- **Allowed group users** → user commands only  
+- **Unauthorized users** → minimal safe commands  
+
+No more command clutter or exposing admin tools to regular users.
 
 ---
 
@@ -174,7 +190,7 @@ ALLOWED_USER_ID = 123456789
 ADMIN_USERS = [123456789]  
 ALLOWED_USERS = [123456789]  
 ALLOW_ALL_USERS = False  
-ALLOWED_CHAT_IDS = []	
+ALLOWED_CHAT_IDS = []  
 
 ARCHIVE_CHAT_ID = None  
 WATCH_FOLDER_ENABLED = True  
@@ -231,7 +247,15 @@ cookies/
 
 ## 🧠 Version History
 
-### v4.7 (Current)
+### v4.8 (Current)
+
+* Role-aware `/help` and `/start` output  
+* Split command visibility (user vs admin)  
+* Context-aware command display (DM vs group vs unauthorized)  
+* Cleaner UX with reduced command clutter  
+* Improved maintainability via structured command lists  
+
+### v4.7
 
 * Metadata captions added to uploaded media (title, uploader, source link)  
 * Captions applied to `/ui`, `/dl`, and `/audio` workflows  
