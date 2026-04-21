@@ -1,4 +1,4 @@
-# 🎬 YTBot v4.6
+# 🎬 YTBot v4.7
 
 > A typezerø Project  
 > Built for real-world use, not perfection.
