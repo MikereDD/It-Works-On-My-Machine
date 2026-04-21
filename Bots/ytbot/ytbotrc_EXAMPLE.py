@@ -4,7 +4,7 @@
 # version:  1.1
 # created:  2026-04-18
 # updated:  2026-04-20
-# desc:     Private config template for ytbot
+# desc:     Safe config template for ytbot
 #--------------------------------------------
 
 # ── Required ─────────────────────────────────

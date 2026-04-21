@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file:     ytbot.py
 # author:   Mike Redd
-# version:  4.3
+# version:  4.3.1
 # created:  2026-04-18
 # updated:  2026-04-20
 # desc:     Queue-based Telegram media bot
@@ -59,8 +59,10 @@ except Exception as e:
 BOT_TOKEN = getattr(ytbotrc, "BOT_TOKEN", "")
 OWNER_ID = getattr(ytbotrc, "ALLOWED_USER_ID", 0)
 
-ADMIN_USERS = set(getattr(ytbotrc, "ADMIN_USERS", [OWNER_ID]))
-ALLOWED_USERS = set(getattr(ytbotrc, "ALLOWED_USERS", [OWNER_ID]))
+BASE_DIR = Path(getattr(ytbotrc, "BASE_DIR", "G:/bots"))
+
+ADMIN_USERS = set(getattr(ytbotrc, "ADMIN_USERS", [OWNER_ID]) or [OWNER_ID])
+ALLOWED_USERS = set(getattr(ytbotrc, "ALLOWED_USERS", [OWNER_ID]) or [OWNER_ID])
 ALLOW_ALL_USERS = getattr(ytbotrc, "ALLOW_ALL_USERS", False)
 
 DOWNLOAD_TIMEOUT = getattr(ytbotrc, "DOWNLOAD_TIMEOUT", 900)
@@ -68,12 +70,18 @@ ARCHIVE_CHAT_ID = getattr(ytbotrc, "ARCHIVE_CHAT_ID", None)
 WATCH_FOLDER_ENABLED = getattr(ytbotrc, "WATCH_FOLDER_ENABLED", True)
 
 if not BOT_TOKEN:
-    raise RuntimeError("BOT_TOKEN is missing in ytbotrc.py")
+    raise RuntimeError(
+        f"BOT_TOKEN is missing in {CONFIG_FILE}. "
+        "Copy your template/example config to the live config path and set a real token."
+    )
+
 if not OWNER_ID:
-    raise RuntimeError("ALLOWED_USER_ID is missing in ytbotrc.py")
+    raise RuntimeError(
+        f"ALLOWED_USER_ID is missing in {CONFIG_FILE}. "
+        "Set the Telegram user ID that owns/administers the bot."
+    )
 
 # ── Paths ───────────────────────────────────────────────────────────────────────
-BASE_DIR = Path("G:/bots")
 STATE_DIR = BASE_DIR / "state"
 DOWNLOAD_DIR = BASE_DIR / "downloads"
 LOG_DIR = BASE_DIR / "logs"
@@ -194,6 +202,13 @@ def ffmpeg_exists() -> bool:
 
 def ffprobe_exists() -> bool:
     return shutil.which("ffprobe") is not None
+
+def log_startup_checks() -> None:
+    log.info("Config file: %s", CONFIG_FILE)
+    log.info("Base dir: %s", BASE_DIR)
+    log.info("ffmpeg found: %s", ffmpeg_exists())
+    log.info("ffprobe found: %s", ffprobe_exists())
+    log.info("YouTube cookie file present: %s", YOUTUBE_COOKIES_FILE.exists())
 
 def get_domain(url: str) -> str:
     try:
@@ -877,7 +892,7 @@ COMMAND_LIST = (
 async def start_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
     remember_chat(update.effective_chat)
     await update.message.reply_text(
-        "👋 *YT Bot v4.3*\n\n"
+        "👋 *YT Bot v4.3.1*\n\n"
         "Send me a link or use a command:\n\n"
         + COMMAND_LIST,
         parse_mode=ParseMode.MARKDOWN,
@@ -1251,7 +1266,16 @@ def main() -> None:
         return
 
     app = build_app()
-    log.info("Bot starting… owner=%s allow_all=%s", OWNER_ID, ALLOW_ALL_USERS)
+    log.info(
+        "Bot starting… owner=%s allow_all=%s base_dir=%s archive_chat=%s watch_folder=%s timeout=%s",
+        OWNER_ID,
+        ALLOW_ALL_USERS,
+        BASE_DIR,
+        ARCHIVE_CHAT_ID if ARCHIVE_CHAT_ID else "none",
+        WATCH_FOLDER_ENABLED,
+        DOWNLOAD_TIMEOUT,
+    )
+    log_startup_checks()
     app.run_polling()
 
 if __name__ == "__main__":
