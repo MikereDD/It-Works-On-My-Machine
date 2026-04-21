@@ -22,6 +22,7 @@ Each file describes:
 - [v4.4](v4.4.md) — Usability and observability improvements
 - [v4.5](v4.5.md) — Stability, compression improvements, and runtime hardening
 - [v4.6](v4.6.md) — Access control overhaul and configuration improvements
+- [v4.7](v4.7.md) — Metadata captions and source-aware upload behavior
 
 ---
 
@@ -32,6 +33,7 @@ Each file describes:
   - `4.3.1` → stability/patch release
   - `4.4`, `4.5` → refinement and usability improvements
   - `4.6` → behavioral and architectural improvements
+  - `4.7` → usability and presentation improvements
 
 - These notes are intended for:
   - tracking project evolution

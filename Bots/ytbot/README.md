@@ -230,7 +230,16 @@ cookies/
 
 ## 🧠 Version History
 
-### v4.6 (Current)
+### v4.7 (Current)
+
+* Metadata captions added to uploaded media (title, uploader, source link)  
+* Captions applied to `/ui`, `/dl`, and `/audio` workflows  
+* Introduced source-aware job behavior (`ui`, `dl`, `audio`, `raw_url`, `watch`)  
+* Captions excluded from raw URL and automated workflows  
+* Applied consistent caption handling to archive uploads  
+* Improved media traceability and sharing experience  
+
+### v4.6
 
 * Chat-aware access control (`can_use_context`)  
 * Group-based usage via `ALLOWED_CHAT_IDS`  
