@@ -1,13 +1,16 @@
 #--------------------------------------------
 # file:     ytbot.py
 # author:   Mike Redd
-# version:  3.6
+# version:  4.3
 # created:  2026-04-18
-# updated:  2026-04-19
-# desc:     Telegram yt-dlp bot for Windows
-#           link-only downloader with validation
+# updated:  2026-04-20
+# desc:     Queue-based Telegram media bot
+#           with interactive UI, weather,
+#           forecast, routing, archive send,
+#           watch folder, and CLI mode
 #--------------------------------------------
 
+import argparse
 import asyncio
 import json
 import logging
@@ -16,15 +19,22 @@ import shutil
 import subprocess
 import sys
 import time
+import uuid
+from collections import Counter
 from pathlib import Path
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 from urllib.request import urlopen
 
 import yt_dlp
-from telegram import Update
+from telegram import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Update,
+)
 from telegram.constants import ParseMode
 from telegram.ext import (
     ApplicationBuilder,
+    CallbackQueryHandler,
     ChatMemberHandler,
     CommandHandler,
     ContextTypes,
@@ -46,39 +56,60 @@ try:
 except Exception as e:
     raise RuntimeError(f"Failed to load config file {CONFIG_FILE}: {e}")
 
-BOT_TOKEN       = getattr(ytbotrc, "BOT_TOKEN",       "")
-ALLOWED_USER_ID = getattr(ytbotrc, "ALLOWED_USER_ID", 0)
+BOT_TOKEN = getattr(ytbotrc, "BOT_TOKEN", "")
+OWNER_ID = getattr(ytbotrc, "ALLOWED_USER_ID", 0)
 
-# ── Optional config overrides in ytbotrc.py ─────────────────────────────────────
-# ALLOW_ALL_USERS = True   → anyone can use the bot (default: False, owner-only)
-# DOWNLOAD_TIMEOUT = 300   → seconds before a download is cancelled (default: 300)
-ALLOW_ALL_USERS  = getattr(ytbotrc, "ALLOW_ALL_USERS",  False)
-DOWNLOAD_TIMEOUT = getattr(ytbotrc, "DOWNLOAD_TIMEOUT", 300)
+ADMIN_USERS = set(getattr(ytbotrc, "ADMIN_USERS", [OWNER_ID]))
+ALLOWED_USERS = set(getattr(ytbotrc, "ALLOWED_USERS", [OWNER_ID]))
+ALLOW_ALL_USERS = getattr(ytbotrc, "ALLOW_ALL_USERS", False)
+
+DOWNLOAD_TIMEOUT = getattr(ytbotrc, "DOWNLOAD_TIMEOUT", 900)
+ARCHIVE_CHAT_ID = getattr(ytbotrc, "ARCHIVE_CHAT_ID", None)
+WATCH_FOLDER_ENABLED = getattr(ytbotrc, "WATCH_FOLDER_ENABLED", True)
 
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN is missing in ytbotrc.py")
-
-if not ALLOWED_USER_ID:
+if not OWNER_ID:
     raise RuntimeError("ALLOWED_USER_ID is missing in ytbotrc.py")
 
 # ── Paths ───────────────────────────────────────────────────────────────────────
-BASE_DIR               = Path("G:/bots")
-DOWNLOAD_DIR           = BASE_DIR / "downloads"
-LOG_DIR                = BASE_DIR / "logs"
-LOG_FILE               = LOG_DIR  / "ytbot.log"
-KNOWN_CHATS_FILE       = BASE_DIR / "known_chats.json"
-COOKIES_DIR            = BASE_DIR / "cookies"
-YOUTUBE_COOKIES_FILE   = COOKIES_DIR / "youtube_cookies.txt"
+BASE_DIR = Path("G:/bots")
+STATE_DIR = BASE_DIR / "state"
+DOWNLOAD_DIR = BASE_DIR / "downloads"
+LOG_DIR = BASE_DIR / "logs"
+DONE_VIDEO_DIR = BASE_DIR / "done" / "video"
+DONE_AUDIO_DIR = BASE_DIR / "done" / "audio"
+FAILED_DIR = BASE_DIR / "done" / "failed"
+WATCH_DIR = BASE_DIR / "watch"
+COOKIES_DIR = BASE_DIR / "cookies"
+YOUTUBE_COOKIES_FILE = COOKIES_DIR / "youtube_cookies.txt"
+KNOWN_CHATS_FILE = BASE_DIR / "known_chats.json"
+QUEUE_FILE = STATE_DIR / "queue.json"
+HISTORY_FILE = STATE_DIR / "history.json"
+FAILURES_FILE = STATE_DIR / "failures.json"
+LOG_FILE = LOG_DIR / "ytbot.log"
 
-DELETE_AFTER_SEND      = True
-MAX_UPLOAD_BYTES       = 49 * 1024 * 1024   # 49 MB — Telegram bot cap
-MIN_VALID_VIDEO_BYTES  = 100 * 1024         # reject suspiciously tiny files
-
-URL_RE = re.compile(r"https?://\S+", re.IGNORECASE)
-
-for d in (DOWNLOAD_DIR, LOG_DIR, COOKIES_DIR):
+for d in [
+    STATE_DIR, DOWNLOAD_DIR, LOG_DIR, DONE_VIDEO_DIR,
+    DONE_AUDIO_DIR, FAILED_DIR, WATCH_DIR, COOKIES_DIR
+]:
     d.mkdir(parents=True, exist_ok=True)
 
+# ── Limits ──────────────────────────────────────────────────────────────────────
+DELETE_AFTER_SEND = False
+MAX_UPLOAD_BYTES = 49 * 1024 * 1024
+MIN_VALID_VIDEO_BYTES = 100 * 1024
+
+# ── Globals ─────────────────────────────────────────────────────────────────────
+URL_RE = re.compile(r"https?://\S+", re.IGNORECASE)
+QUEUE: list[dict] = []
+HISTORY: list[dict] = []
+FAILURES: list[dict] = []
+KNOWN_CHATS: dict = {}
+CURRENT_JOB: dict | None = None
+CANCEL_CURRENT = False
+
+# ── Logging ─────────────────────────────────────────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
@@ -90,34 +121,33 @@ logging.basicConfig(
 log = logging.getLogger("ytbot")
 
 
-# ── Known-chats store ───────────────────────────────────────────────────────────
-def load_known_chats() -> dict:
-    if not KNOWN_CHATS_FILE.exists():
-        return {}
+# ── JSON persistence ────────────────────────────────────────────────────────────
+def load_json(path: Path, default):
+    if not path.exists():
+        return default
     try:
-        return json.loads(KNOWN_CHATS_FILE.read_text(encoding="utf-8"))
+        return json.loads(path.read_text(encoding="utf-8"))
     except Exception as e:
-        log.warning("Failed to load known chats: %s", e)
-        return {}
+        log.warning("Failed to load %s: %s", path, e)
+        return default
 
-def save_known_chats(chats: dict) -> None:
-    KNOWN_CHATS_FILE.write_text(
-        json.dumps(chats, indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
+def save_json(path: Path, data) -> None:
+    path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
-KNOWN_CHATS = load_known_chats()
+
+# ── State init ──────────────────────────────────────────────────────────────────
+QUEUE = load_json(QUEUE_FILE, [])
+HISTORY = load_json(HISTORY_FILE, [])
+FAILURES = load_json(FAILURES_FILE, [])
+KNOWN_CHATS = load_json(KNOWN_CHATS_FILE, {})
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────────────
-def is_allowed(update: Update) -> bool:
-    user = update.effective_user
-    return bool(user and user.id == ALLOWED_USER_ID)
+def is_admin(user_id: int) -> bool:
+    return user_id in ADMIN_USERS or user_id == OWNER_ID
 
-def can_download(update: Update) -> bool:
-    if ALLOW_ALL_USERS:
-        return True
-    return is_allowed(update)
+def can_use(user_id: int) -> bool:
+    return ALLOW_ALL_USERS or user_id in ALLOWED_USERS or is_admin(user_id)
 
 def format_size(num_bytes: int) -> str:
     size = float(num_bytes)
@@ -127,177 +157,74 @@ def format_size(num_bytes: int) -> str:
         size /= 1024
     return f"{num_bytes} B"
 
-def format_duration(seconds: float) -> str:
+def format_duration(seconds: int | float | None) -> str:
+    if not seconds:
+        return "Unknown"
     seconds = int(seconds)
     h, rem = divmod(seconds, 3600)
-    m, s   = divmod(rem, 60)
+    m, s = divmod(rem, 60)
     if h:
         return f"{h}h {m}m {s}s"
     if m:
         return f"{m}m {s}s"
     return f"{s}s"
 
-def shorten_url(url: str, max_len: int = 72) -> str:
-    if len(url) <= max_len:
-        return url
-    return url[: max_len - 3] + "..."
-
-def get_download_count() -> int:
-    return sum(1 for p in DOWNLOAD_DIR.iterdir() if p.is_file())
-
-def get_total_download_size() -> int:
-    return sum(p.stat().st_size for p in DOWNLOAD_DIR.iterdir() if p.is_file())
-
-def cleanup_downloads() -> tuple[int, int]:
-    deleted = freed = 0
-    for p in DOWNLOAD_DIR.iterdir():
-        if p.is_file():
-            try:
-                freed += p.stat().st_size
-                p.unlink()
-                deleted += 1
-            except Exception as e:
-                log.warning("Failed to delete %s: %s", p, e)
-    return deleted, freed
-
 def remember_chat(chat) -> None:
     if not chat or chat.type not in ("group", "supergroup", "channel"):
         return
-    chat_id    = str(chat.id)
-    chat_title = getattr(chat, "title", None) or getattr(chat, "full_name", None) or "Unknown"
-    KNOWN_CHATS[chat_id] = {"id": chat.id, "title": chat_title, "type": chat.type}
-    save_known_chats(KNOWN_CHATS)
-    log.info("Remembered chat %s (%s)", chat_title, chat.id)
+    KNOWN_CHATS[str(chat.id)] = {
+        "id": chat.id,
+        "title": getattr(chat, "title", None) or getattr(chat, "full_name", None) or "Unknown",
+        "type": chat.type,
+    }
+    save_json(KNOWN_CHATS_FILE, KNOWN_CHATS)
 
 def forget_chat(chat_id: int) -> None:
-    removed = KNOWN_CHATS.pop(str(chat_id), None)
-    if removed is not None:
-        save_known_chats(KNOWN_CHATS)
-        log.info("Forgot chat %s", chat_id)
+    KNOWN_CHATS.pop(str(chat_id), None)
+    save_json(KNOWN_CHATS_FILE, KNOWN_CHATS)
 
-def extract_url(text: str) -> str | None:
+def extract_url(text: str | None) -> str | None:
     if not text:
         return None
-    m = URL_RE.search(text.strip())
-    return m.group(0) if m else None
+    match = URL_RE.search(text.strip())
+    return match.group(0) if match else None
 
-def ffmpeg_exists()  -> bool: return shutil.which("ffmpeg")  is not None
-def ffprobe_exists() -> bool: return shutil.which("ffprobe") is not None
+def ffmpeg_exists() -> bool:
+    return shutil.which("ffmpeg") is not None
 
-def is_youtube_url(url: str) -> bool:
-    l = url.lower()
-    return "youtube.com/" in l or "youtu.be/" in l or "m.youtube.com/" in l
+def ffprobe_exists() -> bool:
+    return shutil.which("ffprobe") is not None
 
-def is_instagram_url(url: str) -> bool:
-    return "instagram.com/" in url.lower()
-
-def get_cookiefile_for_url(url: str) -> str | None:
-    if is_youtube_url(url) and YOUTUBE_COOKIES_FILE.exists():
-        return str(YOUTUBE_COOKIES_FILE)
-    return None
-
-def get_duration_seconds(path: Path) -> float:
-    if not ffprobe_exists():
-        raise RuntimeError("ffprobe is not installed or not in PATH.")
-    cmd = [
-        "ffprobe", "-v", "error",
-        "-show_entries", "format=duration",
-        "-of", "default=noprint_wrappers=1:nokey=1",
-        str(path),
-    ]
-    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-    return float(result.stdout.strip())
-
-def has_video_stream(path: Path) -> bool:
-    if not ffprobe_exists():
-        return False
-    cmd = [
-        "ffprobe", "-v", "error",
-        "-select_streams", "v:0",
-        "-show_entries", "stream=codec_type",
-        "-of", "default=noprint_wrappers=1:nokey=1",
-        str(path),
-    ]
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    return result.returncode == 0 and "video" in result.stdout.lower()
-
-def is_valid_video_file(path: Path) -> bool:
+def get_domain(url: str) -> str:
     try:
-        if not path.exists() or not path.is_file():
-            return False
-        if path.stat().st_size < MIN_VALID_VIDEO_BYTES:
-            return False
-        if not has_video_stream(path):
-            return False
-        if get_duration_seconds(path) <= 0.5:
-            return False
-        return True
-    except Exception as e:
-        log.warning("Video validation failed for %s: %s", path, e)
-        return False
+        return urlparse(url).netloc.lower()
+    except Exception:
+        return "unknown"
 
-def build_ydl_opts(url: str, outtmpl: str, format_selector: str, audio_only: bool = False) -> dict:
-    opts: dict = {
-        "outtmpl":           outtmpl,
-        "format":            format_selector,
-        "noplaylist":        True,
-        "quiet":             True,
-        "no_warnings":       True,
-        "restrictfilenames": False,
-        "compat_opts":       ["no-certifi"],
-    }
+def get_top_domains(limit: int = 5) -> list[tuple[str, int]]:
+    counts = Counter(get_domain(h["url"]) for h in HISTORY if h.get("url"))
+    return counts.most_common(limit)
 
-    if audio_only:
-        opts["postprocessors"] = [{
-            "key": "FFmpegExtractAudio",
-            "preferredcodec": "mp3",
-            "preferredquality": "192",
-        }]
+def get_download_folder_count() -> int:
+    return sum(1 for p in DOWNLOAD_DIR.iterdir() if p.is_file())
 
-    cookiefile = get_cookiefile_for_url(url)
-    if cookiefile:
-        opts["cookiefile"] = cookiefile
+def get_download_folder_size() -> int:
+    return sum(p.stat().st_size for p in DOWNLOAD_DIR.iterdir() if p.is_file())
 
-    if is_instagram_url(url):
-        opts["nocheckcertificate"] = True
-    else:
-        opts["merge_output_format"] = "mp4"
-
-    return opts
-
-def clear_download_dir() -> None:
-    for old in DOWNLOAD_DIR.iterdir():
-        if old.is_file():
-            try:
-                old.unlink()
-            except Exception as e:
-                log.warning("Failed to delete old file %s: %s", old, e)
-
-def get_candidate_files() -> list[Path]:
-    return [p for p in DOWNLOAD_DIR.iterdir() if p.is_file()]
-
-def get_best_valid_file() -> Path | None:
-    files = sorted(get_candidate_files(), key=lambda p: p.stat().st_size, reverse=True)
-    for f in files:
-        if is_valid_video_file(f):
-            return f
-    return None
-
-def read_last_log_lines(max_lines: int = 300) -> list[str]:
+def read_last_log_lines(max_lines: int = 500) -> list[str]:
     if not LOG_FILE.exists():
         return []
     try:
         with LOG_FILE.open("r", encoding="utf-8", errors="replace") as f:
-            lines = f.readlines()
-        return lines[-max_lines:]
+            return f.readlines()[-max_lines:]
     except Exception as e:
         log.warning("Failed to read log file: %s", e)
         return []
 
 def parse_recent_users_from_logs(max_lines: int = 500, limit: int = 10) -> list[dict]:
     lines = read_last_log_lines(max_lines=max_lines)
-    results: list[dict] = []
-    seen: set[str] = set()
+    results = []
+    seen = set()
 
     pattern = re.compile(
         r"^(?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3}).*?"
@@ -310,19 +237,15 @@ def parse_recent_users_from_logs(max_lines: int = 500, limit: int = 10) -> list[
             continue
 
         user_id = match.group("user_id")
-        chat_id = match.group("chat_id")
-        url = match.group("url")
-        timestamp = match.group("timestamp")
-
         if user_id in seen:
             continue
-
         seen.add(user_id)
+
         results.append({
-            "timestamp": timestamp,
+            "timestamp": match.group("timestamp"),
             "user_id": user_id,
-            "chat_id": chat_id,
-            "url": url,
+            "chat_id": match.group("chat_id"),
+            "url": match.group("url"),
         })
 
         if len(results) >= limit:
@@ -331,26 +254,39 @@ def parse_recent_users_from_logs(max_lines: int = 500, limit: int = 10) -> list[
     return results
 
 def count_download_requests_in_logs(max_lines: int = 5000) -> int:
-    lines = read_last_log_lines(max_lines=max_lines)
-    return sum(1 for line in lines if "Download requested by user " in line)
+    return sum(1 for line in read_last_log_lines(max_lines) if "Download requested by user " in line)
 
 def get_most_recent_download_timestamp(max_lines: int = 5000) -> str | None:
     recent = parse_recent_users_from_logs(max_lines=max_lines, limit=1)
-    if not recent:
-        return None
-    return recent[0]["timestamp"]
+    return recent[0]["timestamp"] if recent else None
 
-def count_unique_users_in_logs(max_lines: int = 5000) -> int:
-    lines = read_last_log_lines(max_lines=max_lines)
-    pattern = re.compile(r"Download requested by user (?P<user_id>[-]?\d+) in chat ")
-    users: set[str] = set()
+def clear_download_dir() -> None:
+    for p in DOWNLOAD_DIR.iterdir():
+        if p.is_file():
+            try:
+                p.unlink()
+            except Exception as e:
+                log.warning("Failed to delete %s: %s", p, e)
 
-    for line in lines:
-        match = pattern.search(line)
-        if match:
-            users.add(match.group("user_id"))
+def create_job(user_id: int, chat_id: int, url: str, mode: str = "video", source: str = "telegram") -> dict:
+    return {
+        "id": str(uuid.uuid4()),
+        "user": user_id,
+        "chat": chat_id,
+        "url": url,
+        "mode": mode,
+        "time": time.time(),
+        "source": source,
+    }
 
-    return len(users)
+def save_queue_state() -> None:
+    save_json(QUEUE_FILE, QUEUE)
+
+def save_history_state() -> None:
+    save_json(HISTORY_FILE, HISTORY)
+
+def save_failures_state() -> None:
+    save_json(FAILURES_FILE, FAILURES)
 
 
 # ── Weather helpers ─────────────────────────────────────────────────────────────
@@ -400,8 +336,7 @@ WEEKDAY_EMOJI = {
 
 def http_get_json(url: str, params: dict) -> dict:
     query = urlencode(params)
-    full_url = f"{url}?{query}"
-    with urlopen(full_url, timeout=15) as resp:
+    with urlopen(f"{url}?{query}", timeout=15) as resp:
         return json.loads(resp.read().decode("utf-8"))
 
 def weather_code_to_display(code: int | None) -> str:
@@ -413,18 +348,13 @@ def weather_code_to_display(code: int | None) -> str:
 def weather_code_to_icon(code: int | None) -> str:
     if code is None:
         return "❓"
-    icon, _ = WEATHER_CODE_MAP.get(code, ("❓", f"Code {code}"))
+    icon, _ = WEATHER_CODE_MAP.get(code, ("❓", "Unknown"))
     return icon
 
 def geocode_location(name: str) -> dict:
     data = http_get_json(
         OPEN_METEO_GEOCODE_URL,
-        {
-            "name": name,
-            "count": 1,
-            "language": "en",
-            "format": "json",
-        },
+        {"name": name, "count": 1, "language": "en", "format": "json"},
     )
     results = data.get("results") or []
     if not results:
@@ -432,29 +362,22 @@ def geocode_location(name: str) -> dict:
     return results[0]
 
 def build_place_label(loc: dict, fallback_name: str) -> str:
-    place_name = loc.get("name", fallback_name)
-    admin1 = loc.get("admin1")
-    country = loc.get("country")
-
-    label_parts = [place_name]
-    if admin1:
-        label_parts.append(admin1)
-    if country:
-        label_parts.append(country)
-    return ", ".join(label_parts)
+    parts = [loc.get("name", fallback_name)]
+    if loc.get("admin1"):
+        parts.append(loc["admin1"])
+    if loc.get("country"):
+        parts.append(loc["country"])
+    return ", ".join(parts)
 
 def get_current_weather_for_location(name: str) -> str:
     loc = geocode_location(name)
-
-    latitude = loc["latitude"]
-    longitude = loc["longitude"]
-    place_label = build_place_label(loc, name)
+    label = build_place_label(loc, name)
 
     data = http_get_json(
         OPEN_METEO_FORECAST_URL,
         {
-            "latitude": latitude,
-            "longitude": longitude,
+            "latitude": loc["latitude"],
+            "longitude": loc["longitude"],
             "current": "temperature_2m,weather_code,relative_humidity_2m,wind_speed_10m",
             "temperature_unit": "fahrenheit",
             "wind_speed_unit": "mph",
@@ -468,39 +391,32 @@ def get_current_weather_for_location(name: str) -> str:
     temp = current.get("temperature_2m")
     humidity = current.get("relative_humidity_2m")
     wind = current.get("wind_speed_10m")
-    code = current.get("weather_code")
-
-    temp_unit = units.get("temperature_2m", "°F")
-    humidity_unit = units.get("relative_humidity_2m", "%")
-    wind_unit = units.get("wind_speed_10m", "mph")
-    condition = weather_code_to_display(code)
+    condition = weather_code_to_display(current.get("weather_code"))
 
     if temp is None:
         raise RuntimeError("Weather response did not include temperature.")
 
     lines = [
-        f"🌤️ *Weather for {place_label}*",
+        f"🌤️ *Weather for {label}*",
         "",
-        f"🌡️ *Temp:* {temp}{temp_unit}",
-        f"🫧 *Humidity:* {humidity}{humidity_unit}" if humidity is not None else None,
-        f"💨 *Wind:* {wind} {wind_unit}" if wind is not None else None,
+        f"🌡️ *Temp:* {temp}{units.get('temperature_2m', '°F')}",
+        f"🫧 *Humidity:* {humidity}{units.get('relative_humidity_2m', '%')}" if humidity is not None else None,
+        f"💨 *Wind:* {wind} {units.get('wind_speed_10m', 'mph')}" if wind is not None else None,
         f"🛰️ *Condition:* {condition}",
     ]
-
     return "\n".join(line for line in lines if line is not None)
 
 def get_5day_forecast_for_location(name: str) -> str:
-    loc = geocode_location(name)
+    from datetime import datetime
 
-    latitude = loc["latitude"]
-    longitude = loc["longitude"]
-    place_label = build_place_label(loc, name)
+    loc = geocode_location(name)
+    label = build_place_label(loc, name)
 
     data = http_get_json(
         OPEN_METEO_FORECAST_URL,
         {
-            "latitude": latitude,
-            "longitude": longitude,
+            "latitude": loc["latitude"],
+            "longitude": loc["longitude"],
             "daily": "weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum",
             "temperature_unit": "fahrenheit",
             "precipitation_unit": "inch",
@@ -516,337 +432,453 @@ def get_5day_forecast_for_location(name: str) -> str:
     codes = daily.get("weather_code") or []
     highs = daily.get("temperature_2m_max") or []
     lows = daily.get("temperature_2m_min") or []
-    precip = daily.get("precipitation_sum") or []
-
-    temp_unit_max = units.get("temperature_2m_max", "°F")
-    temp_unit_min = units.get("temperature_2m_min", "°F")
-    precip_unit = units.get("precipitation_sum", "in")
+    rains = daily.get("precipitation_sum") or []
 
     if not times:
-        raise RuntimeError("Forecast response did not include daily forecast data.")
+        raise RuntimeError("Forecast response did not include daily data.")
 
-    lines = [
-        f"🗓️ *5-Day Forecast for {place_label}*",
-        ""
-    ]
-
-    from datetime import datetime
+    lines = [f"🗓️ *5-Day Forecast for {label}*", ""]
 
     for i, day_str in enumerate(times):
         try:
-            dt = datetime.fromisoformat(day_str)
-            day_name = dt.strftime("%a")
+            day_name = datetime.fromisoformat(day_str).strftime("%a")
         except Exception:
             day_name = day_str
 
         code = codes[i] if i < len(codes) else None
-        high = highs[i] if i < len(highs) else None
-        low = lows[i] if i < len(lows) else None
-        rain = precip[i] if i < len(precip) else None
-
         icon = weather_code_to_icon(code)
-        _, text = WEATHER_CODE_MAP.get(code, ("❓", f"Code {code}")) if code is not None else ("❓", "Unknown")
-        day_banner = WEEKDAY_EMOJI.get(i % 7, "📅")
+        _, text = WEATHER_CODE_MAP.get(code, ("❓", "Unknown")) if code is not None else ("❓", "Unknown")
 
-        line_parts = [
-            f"{day_banner} *{day_name}* — {icon} {text}",
-            f"   🔺 {high}{temp_unit_max}" if high is not None else None,
-            f"   🔻 {low}{temp_unit_min}" if low is not None else None,
-            f"   🌧️ {rain} {precip_unit}" if rain is not None else None,
-        ]
-
-        lines.extend(part for part in line_parts if part is not None)
+        lines.append(f"{WEEKDAY_EMOJI.get(i % 7, '📅')} *{day_name}* — {icon} {text}")
+        if i < len(highs):
+            lines.append(f"   🔺 {highs[i]}{units.get('temperature_2m_max', '°F')}")
+        if i < len(lows):
+            lines.append(f"   🔻 {lows[i]}{units.get('temperature_2m_min', '°F')}")
+        if i < len(rains):
+            lines.append(f"   🌧️ {rains[i]} {units.get('precipitation_sum', 'in')}")
         if i != len(times) - 1:
             lines.append("")
 
     return "\n".join(lines)
 
 
-# ── Progress-aware download ──────────────────────────────────────────────────────
-class ProgressTracker:
-    """Collects yt-dlp progress hook data for live status updates."""
+# ── Media metadata / download ───────────────────────────────────────────────────
+def is_youtube_url(url: str) -> bool:
+    lower = url.lower()
+    return "youtube.com/" in lower or "youtu.be/" in lower or "m.youtube.com/" in lower
 
-    def __init__(self) -> None:
-        self.filename: str | None = None
-        self.percent:  float      = 0.0
-        self.speed:    str        = ""
-        self.eta:      str        = ""
-        self._last_update: float  = 0.0
+def is_instagram_url(url: str) -> bool:
+    return "instagram.com/" in url.lower()
 
-    def __call__(self, data: dict) -> None:
-        status = data.get("status")
-        if status == "finished":
-            self.filename = data.get("filename")
-            self.percent  = 100.0
-        elif status == "downloading":
-            total      = data.get("total_bytes") or data.get("total_bytes_estimate") or 0
-            downloaded = data.get("downloaded_bytes", 0)
-            if total:
-                self.percent = downloaded / total * 100
-            speed_raw = data.get("speed")
-            if speed_raw:
-                self.speed = format_size(int(speed_raw)) + "/s"
-            eta_raw = data.get("eta")
-            if eta_raw:
-                self.eta = f"{int(eta_raw)}s"
-            self._last_update = time.monotonic()
+def get_cookiefile_for_url(url: str) -> str | None:
+    if is_youtube_url(url) and YOUTUBE_COOKIES_FILE.exists():
+        return str(YOUTUBE_COOKIES_FILE)
+    return None
 
+def get_media_info(url: str) -> dict:
+    opts = {
+        "quiet": True,
+        "noplaylist": True,
+        "skip_download": True,
+    }
+    cookiefile = get_cookiefile_for_url(url)
+    if cookiefile:
+        opts["cookiefile"] = cookiefile
+    if is_instagram_url(url):
+        opts["nocheckcertificate"] = True
 
-def download_video(url: str, tracker: ProgressTracker, audio_only: bool = False) -> Path:
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        info = ydl.extract_info(url, download=False)
+
+    return {
+        "title": info.get("title", "Unknown title"),
+        "duration": info.get("duration"),
+        "uploader": info.get("uploader", "Unknown uploader"),
+        "webpage_url": info.get("webpage_url", url),
+    }
+
+def has_video_stream(path: Path) -> bool:
+    if not ffprobe_exists():
+        return False
+    cmd = [
+        "ffprobe", "-v", "error",
+        "-select_streams", "v:0",
+        "-show_entries", "stream=codec_type",
+        "-of", "default=noprint_wrappers=1:nokey=1",
+        str(path),
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    return result.returncode == 0 and "video" in result.stdout.lower()
+
+def get_duration_seconds(path: Path) -> float:
+    if not ffprobe_exists():
+        raise RuntimeError("ffprobe is not installed or not in PATH.")
+    cmd = [
+        "ffprobe", "-v", "error",
+        "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1",
+        str(path),
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    return float(result.stdout.strip())
+
+def is_valid_video_file(path: Path) -> bool:
+    try:
+        if not path.exists() or not path.is_file():
+            return False
+        if path.stat().st_size < MIN_VALID_VIDEO_BYTES:
+            return False
+        if not has_video_stream(path):
+            return False
+        if get_duration_seconds(path) <= 0.5:
+            return False
+        return True
+    except Exception as e:
+        log.warning("Video validation failed for %s: %s", path, e)
+        return False
+
+def build_ydl_opts(url: str, outtmpl: str, mode: str) -> dict:
+    opts: dict = {
+        "outtmpl": outtmpl,
+        "noplaylist": True,
+        "quiet": True,
+        "no_warnings": True,
+        "restrictfilenames": False,
+        "compat_opts": ["no-certifi"],
+    }
+
+    if mode == "audio":
+        opts["format"] = "bestaudio/best"
+        opts["postprocessors"] = [{
+            "key": "FFmpegExtractAudio",
+            "preferredcodec": "mp3",
+            "preferredquality": "192",
+        }]
+    else:
+        if is_instagram_url(url):
+            opts["format"] = "best/b/worst/bv*+ba"
+            opts["nocheckcertificate"] = True
+        else:
+            opts["format"] = "bv*+ba/b"
+            opts["merge_output_format"] = "mp4"
+
+    cookiefile = get_cookiefile_for_url(url)
+    if cookiefile:
+        opts["cookiefile"] = cookiefile
+
+    return opts
+
+def download_media(url: str, mode: str) -> Path:
     clear_download_dir()
 
-    ext_hint = "%(ext)s" if not audio_only else "mp3"
-    outtmpl = str(DOWNLOAD_DIR / f"%(title).200s [%(id)s].{ext_hint}")
+    ext_hint = "%(ext)s" if mode != "audio" else "mp3"
+    outtmpl = str(DOWNLOAD_DIR / f"%(title).100s [%(id)s].{ext_hint}")
 
-    if audio_only:
-        format_attempts = ["bestaudio/best"]
-    elif is_instagram_url(url):
-        format_attempts = ["best", "b", "worst", "bv*+ba/best"]
-    else:
-        format_attempts = ["bv*+ba/best", "best", "b", "worst"]
+    opts = build_ydl_opts(url, outtmpl, mode)
 
-    last_error = None
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        ydl.download([url])
 
-    for fmt in format_attempts:
-        try:
-            clear_download_dir()
-            ydl_opts = build_ydl_opts(url, outtmpl, fmt, audio_only=audio_only)
-            ydl_opts["progress_hooks"] = [tracker]
+    files = [p for p in DOWNLOAD_DIR.iterdir() if p.is_file()]
+    if not files:
+        raise RuntimeError("No file downloaded")
 
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                ydl.download([url])
+    file = max(files, key=lambda f: f.stat().st_size)
 
-            if tracker.filename:
-                hooked = Path(tracker.filename)
-                if audio_only and hooked.exists():
-                    return hooked
-                if is_valid_video_file(hooked):
-                    return hooked
+    if mode == "audio":
+        if file.stat().st_size < 10_000:
+            raise RuntimeError("Downloaded audio file is invalid/empty")
+        return file
 
-            detected = get_best_valid_file()
-            if detected:
-                return detected
+    if not is_valid_video_file(file):
+        raise RuntimeError("Downloaded file is not a valid playable video")
 
-            bad = get_candidate_files()
-            if bad:
-                log.warning(
-                    "Download produced files but none were valid: %s",
-                    [f.name for f in bad],
-                )
-        except Exception as e:
-            last_error = e
-            log.warning("Download attempt failed with format '%s': %s", fmt, e)
-            if is_instagram_url(url) and (
-                "postprocessing" in str(e).lower()
-                or "invalid data found when processing input" in str(e).lower()
-            ):
-                continue
+    return file
 
-    if last_error:
-        raise last_error
-    raise RuntimeError("Download finished but no valid video file was detected.")
-
-
-def compress_to_fit(input_path: Path, max_bytes: int) -> Path:
-    if input_path.stat().st_size <= max_bytes:
-        return input_path
-
-    if not ffmpeg_exists():
-        raise RuntimeError(
-            "File is too large for Telegram and ffmpeg is not installed or not in PATH."
-        )
-
-    duration = get_duration_seconds(input_path)
-    if duration <= 0:
-        raise RuntimeError("Could not determine video duration for compression.")
-
-    target_total_bps = int((max_bytes * 8) / duration * 0.92)
-    target_audio_bps = 64_000
-    target_video_bps = max(target_total_bps - target_audio_bps, 120_000)
-
-    attempts = [
-        ("480:-2", target_video_bps),
-        ("360:-2", max(int(target_video_bps * 0.75), 100_000)),
-        ("240:-2", max(int(target_video_bps * 0.55),  80_000)),
+def compress_to_telegram(input_file: Path) -> Path:
+    output = input_file.with_name("compressed_" + input_file.stem + ".mp4")
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-i", str(input_file),
+        "-vcodec", "libx264",
+        "-crf", "28",
+        "-preset", "veryfast",
+        "-acodec", "aac",
+        "-b:a", "128k",
+        str(output),
     ]
+    subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if not output.exists() or output.stat().st_size == 0:
+        raise RuntimeError("Compression failed")
+    return output
 
-    stem = input_path.stem
+def route_file(path: Path, mode: str) -> Path:
+    dest_dir = DONE_AUDIO_DIR if mode == "audio" else DONE_VIDEO_DIR
+    dest = dest_dir / path.name
+    counter = 1
+    while dest.exists():
+        dest = dest_dir / f"{path.stem}_{counter}{path.suffix}"
+        counter += 1
+    shutil.move(str(path), str(dest))
+    return dest
 
-    for idx, (scale, video_bps) in enumerate(attempts, start=1):
-        output_path = input_path.with_name(f"{stem}.tgfit{idx}.mp4")
-        cmd = [
-            "ffmpeg", "-y", "-i", str(input_path),
-            "-vf",      f"scale={scale}",
-            "-c:v",     "libx264",
-            "-b:v",     str(video_bps),
-            "-maxrate", str(int(video_bps * 1.3)),
-            "-bufsize", str(int(video_bps * 2)),
-            "-preset",  "medium",
-            "-movflags", "+faststart",
-            "-c:a",     "aac",
-            "-b:a",     str(target_audio_bps),
-            str(output_path),
-        ]
-        log.info("Compress attempt %s: scale=%s video_bps=%s", idx, scale, video_bps)
-        subprocess.run(cmd, capture_output=True, text=True, check=True)
+def save_failed_copy(path: Path | None, job_id: str) -> None:
+    if not path or not path.exists():
+        return
+    try:
+        dest = FAILED_DIR / f"{job_id}_{path.name}"
+        shutil.move(str(path), str(dest))
+    except Exception as e:
+        log.warning("Failed to route failed file %s: %s", path, e)
 
-        if output_path.exists() and is_valid_video_file(output_path):
-            out_size = output_path.stat().st_size
-            log.info("Compressed output size: %s", format_size(out_size))
-            if out_size <= max_bytes:
-                return output_path
 
-    raise RuntimeError(
-        f"Could not produce a file small enough for Telegram. Limit: {format_size(max_bytes)}"
+# ── Queue worker ────────────────────────────────────────────────────────────────
+async def process_job(app, job: dict) -> None:
+    chat_id = job["chat"]
+    url = job["url"]
+    mode = job.get("mode", "video")
+
+    log.info(
+        "Download requested by user %s in chat %s: %s",
+        job["user"], job["chat"], url
     )
 
+    status_msg = await app.bot.send_message(chat_id, "⏳ Fetching metadata…")
+    downloaded_file: Path | None = None
+    sent_file: Path | None = None
+    routed_file: Path | None = None
 
-# ── Shared download logic ────────────────────────────────────────────────────────
-async def run_download(
-    update: Update,
-    url: str,
-    audio_only: bool = False,
-) -> None:
-    """Full download → (compress) → send flow, shared by /dl, /audio, and URL messages."""
-    message    = update.message
-    tracker    = ProgressTracker()
-    mode_label = "🎵 audio" if audio_only else "🎬 video"
+    try:
+        meta = await asyncio.to_thread(get_media_info, url)
+        await status_msg.edit_text(
+            f"🎞️ {meta['title']}\n"
+            f"👤 {meta['uploader']}\n"
+            f"⏱️ {format_duration(meta['duration'])}\n\n"
+            f"⬇️ Downloading {mode}…"
+        )
 
-    status_msg = await message.reply_text(
-        f"⏳ Fetching {mode_label}…",
+        downloaded_file = await asyncio.wait_for(
+            asyncio.to_thread(download_media, url, mode),
+            timeout=DOWNLOAD_TIMEOUT,
+        )
+        sent_file = downloaded_file
+
+        if mode == "video":
+            size_mb = sent_file.stat().st_size / (1024 * 1024)
+            if size_mb > 49:
+                await status_msg.edit_text(f"📦 Large file ({size_mb:.1f} MB)\nCompressing…")
+                compressed = await asyncio.to_thread(compress_to_telegram, sent_file)
+                if sent_file.exists():
+                    sent_file.unlink()
+                sent_file = compressed
+
+        size_str = format_size(sent_file.stat().st_size)
+        await status_msg.edit_text(f"📤 Uploading… ({size_str})")
+
+        with sent_file.open("rb") as f:
+            if mode == "audio":
+                await app.bot.send_audio(chat_id, f, filename=sent_file.name)
+            else:
+                try:
+                    await app.bot.send_video(chat_id, f, filename=sent_file.name, supports_streaming=True)
+                except Exception:
+                    f.seek(0)
+                    await app.bot.send_document(chat_id, f, filename=sent_file.name)
+
+        if ARCHIVE_CHAT_ID:
+            with sent_file.open("rb") as f:
+                if mode == "audio":
+                    await app.bot.send_audio(ARCHIVE_CHAT_ID, f, filename=sent_file.name)
+                else:
+                    try:
+                        await app.bot.send_video(ARCHIVE_CHAT_ID, f, filename=sent_file.name, supports_streaming=True)
+                    except Exception:
+                        f.seek(0)
+                        await app.bot.send_document(ARCHIVE_CHAT_ID, f, filename=sent_file.name)
+
+        routed_file = await asyncio.to_thread(route_file, sent_file, mode)
+
+        job["status"] = "success"
+        job["completed_time"] = time.time()
+        job["saved_to"] = str(routed_file)
+        HISTORY.append(job)
+        save_history_state()
+
+        await status_msg.delete()
+
+    except asyncio.TimeoutError:
+        job["status"] = "failed"
+        job["error"] = f"Download timed out after {DOWNLOAD_TIMEOUT}s"
+        job["failed_time"] = time.time()
+        FAILURES.append(job)
+        save_failures_state()
+        save_failed_copy(sent_file or downloaded_file, job["id"])
+        await status_msg.edit_text(f"⏱️ Download timed out after {DOWNLOAD_TIMEOUT}s.")
+    except Exception as e:
+        job["status"] = "failed"
+        job["error"] = str(e)
+        job["failed_time"] = time.time()
+        FAILURES.append(job)
+        save_failures_state()
+        save_failed_copy(sent_file or downloaded_file, job["id"])
+        await status_msg.edit_text(f"❌ Failed:\n{e}")
+
+async def queue_worker(app) -> None:
+    global CURRENT_JOB
+    while True:
+        await asyncio.sleep(1)
+        if CURRENT_JOB or not QUEUE:
+            continue
+
+        CURRENT_JOB = QUEUE.pop(0)
+        save_queue_state()
+
+        try:
+            await process_job(app, CURRENT_JOB)
+        finally:
+            CURRENT_JOB = None
+
+async def watch_folder_worker() -> None:
+    while True:
+        await asyncio.sleep(5)
+
+        if not WATCH_FOLDER_ENABLED:
+            continue
+
+        for txt_file in WATCH_DIR.glob("*.txt"):
+            try:
+                urls = [
+                    line.strip()
+                    for line in txt_file.read_text(encoding="utf-8").splitlines()
+                    if extract_url(line.strip())
+                ]
+                for url in urls:
+                    QUEUE.append(create_job(OWNER_ID, OWNER_ID, url, mode="video", source="watch"))
+                save_queue_state()
+                txt_file.unlink()
+            except Exception as e:
+                log.warning("Watch-folder processing failed for %s: %s", txt_file, e)
+
+
+# ── Telegram interactive UI ─────────────────────────────────────────────────────
+async def ui_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    remember_chat(update.effective_chat)
+
+    if not can_use(update.effective_user.id):
+        return
+
+    if not ctx.args:
+        await update.message.reply_text("Usage: /ui <url>")
+        return
+
+    url = extract_url(" ".join(ctx.args))
+    if not url:
+        await update.message.reply_text("That does not look like a valid URL.")
+        return
+
+    try:
+        info = await asyncio.to_thread(get_media_info, url)
+
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("🎬 Video", callback_data=f"dl|video|{url}"),
+                InlineKeyboardButton("🎵 Audio", callback_data=f"dl|audio|{url}"),
+            ],
+            [
+                InlineKeyboardButton("❌ Cancel", callback_data="dl|cancel")
+            ]
+        ])
+
+        await update.message.reply_text(
+            f"🎞️ *Preview*\n\n"
+            f"*Title:* {info['title']}\n"
+            f"*Uploader:* {info['uploader']}\n"
+            f"*Duration:* {format_duration(info['duration'])}",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=keyboard,
+        )
+    except Exception as e:
+        await update.message.reply_text(f"Preview error: {e}")
+
+async def ui_button_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    if not query:
+        return
+
+    await query.answer()
+
+    user = query.from_user
+    chat = query.message.chat if query.message else None
+
+    if not user or not chat:
+        return
+
+    if not can_use(user.id):
+        await query.edit_message_text("You are not allowed to use download actions.")
+        return
+
+    data = query.data or ""
+    parts = data.split("|", 2)
+
+    if len(parts) < 2:
+        await query.edit_message_text("Invalid action.")
+        return
+
+    action = parts[1]
+
+    if action == "cancel":
+        await query.edit_message_text("❌ Cancelled.")
+        return
+
+    if len(parts) != 3:
+        await query.edit_message_text("Invalid media request.")
+        return
+
+    mode = action
+    url = parts[2]
+
+    job = create_job(user.id, chat.id, url, mode=mode, source="ui")
+    QUEUE.append(job)
+    save_queue_state()
+
+    await query.edit_message_text(
+        f"✅ Added to queue\n"
+        f"*Mode:* {mode}\n"
+        f"*Position:* {len(QUEUE)}",
         parse_mode=ParseMode.MARKDOWN,
     )
 
-    async def update_progress() -> None:
-        last_text = ""
-        while True:
-            await asyncio.sleep(3)
-            pct   = tracker.percent
-            speed = tracker.speed
-            eta   = tracker.eta
-            text  = (
-                f"📥 Downloading {mode_label}… {pct:.0f}%"
-                + (f"  •  {speed}" if speed else "")
-                + (f"  •  ETA {eta}" if eta else "")
-            )
-            if text != last_text:
-                try:
-                    await status_msg.edit_text(text)
-                    last_text = text
-                except Exception:
-                    pass
 
-    progress_task = asyncio.create_task(update_progress())
-    download_path = None
-    send_path     = None
-
-    try:
-        download_path = await asyncio.wait_for(
-            asyncio.to_thread(download_video, url, tracker, audio_only),
-            timeout=DOWNLOAD_TIMEOUT,
-        )
-
-        progress_task.cancel()
-
-        if not audio_only and download_path.stat().st_size > MAX_UPLOAD_BYTES:
-            await status_msg.edit_text(
-                f"📦 Compressing to fit Telegram…\n"
-                f"Original: {format_size(download_path.stat().st_size)}"
-            )
-            send_path = await asyncio.to_thread(compress_to_fit, download_path, MAX_UPLOAD_BYTES)
-        else:
-            send_path = download_path
-
-        size_str = format_size(send_path.stat().st_size)
-        await status_msg.edit_text(f"📤 Uploading… ({size_str})")
-
-        with send_path.open("rb") as f:
-            if audio_only:
-                await message.reply_audio(
-                    audio=f,
-                    filename=send_path.name,
-                )
-            else:
-                await message.reply_video(
-                    video=f,
-                    filename=send_path.name,
-                    supports_streaming=True,
-                )
-
-        await status_msg.delete()
-        log.info("Sent file: %s (%s)", send_path.name, size_str)
-
-    except asyncio.TimeoutError:
-        progress_task.cancel()
-        await status_msg.edit_text(
-            f"⏱️ Download timed out after {DOWNLOAD_TIMEOUT}s.\n"
-            "The video may be too long or the server too slow."
-        )
-
-    except Exception as e:
-        progress_task.cancel()
-        err       = str(e)
-        err_lower = err.lower()
-
-        if "sign in to confirm you're not a bot" in err_lower:
-            msg = (
-                "🔒 This site blocked anonymous access.\n"
-                f"Add a YouTube cookie file here to bypass it:\n`{YOUTUBE_COOKIES_FILE}`"
-            )
-        elif "requested content is not available" in err_lower or "rate-limit" in err_lower:
-            msg = "🚫 Instagram blocked this request. It may require login or you've been rate-limited."
-        elif "no valid video file was detected" in err_lower:
-            msg = "⚠️ The site responded but no playable video was produced."
-        elif "invalid data found when processing input" in err_lower or "postprocessing" in err_lower:
-            msg = "⚠️ The downloaded data wasn't a valid video file."
-        elif "certificate_verify_failed" in err_lower or "unable to get local issuer certificate" in err_lower:
-            msg = "🔐 SSL certificate verification failed for that site."
-        elif "ffmpeg is not installed" in err_lower or "ffprobe is not installed" in err_lower:
-            msg = f"⚠️ {err}"
-        elif "could not produce a file small enough" in err_lower:
-            msg = f"📏 {err}"
-        elif "request entity too large" in err_lower:
-            msg = f"📏 Telegram rejected the upload — file exceeded {format_size(MAX_UPLOAD_BYTES)}."
-        else:
-            msg = f"❌ Error: {err}"
-            log.exception("Unhandled error while handling URL")
-
-        await status_msg.edit_text(msg, parse_mode=ParseMode.MARKDOWN)
-
-    finally:
-        if DELETE_AFTER_SEND:
-            for path in {download_path, send_path} - {None}:  # type: ignore[operator]
-                if path and path.exists():
-                    try:
-                        path.unlink()
-                    except Exception as e:
-                        log.warning("Failed to delete %s: %s", path, e)
-
-
-# ── Command handlers ─────────────────────────────────────────────────────────────
+# ── Commands ────────────────────────────────────────────────────────────────────
 COMMAND_LIST = (
-    "/start       — welcome & command list\n"
-    "/help        — usage instructions\n"
-    "/dl <url>    — download video explicitly\n"
-    "/audio <url> — download audio only (MP3)\n"
-    "/weather <place> — current weather\n"
-    "/forecast <place> — 5-day forecast\n"
-    "/whoami      — show your Telegram/chat IDs\n"
-    "/lastusers   — recent users seen in logs *(owner)*\n"
-    "/stats       — usage summary *(owner)*\n"
-    "/status      — bot & system status *(owner)*\n"
-    "/groups      — list remembered groups *(owner)*\n"
-    "/cleanup     — delete leftover files *(owner)*\n"
-    "/leave       — leave current group *(owner)*\n"
-    "/leavechat   — leave a group by ID *(owner)*\n"
-    "/shutdown    — stop the bot *(owner)*"
+    "/start         — welcome & command list\n"
+    "/help          — usage instructions\n"
+    "/dl <url>      — queue video download\n"
+    "/audio <url>   — queue audio download\n"
+    "/ui <url>      — preview with buttons\n"
+    "/queue         — show queue\n"
+    "/weather <p>   — current weather\n"
+    "/forecast <p>  — 5-day forecast\n"
+    "/whoami        — show your Telegram/chat IDs\n"
+    "/lastusers     — recent users seen in logs *(owner)*\n"
+    "/stats         — usage summary *(owner)*\n"
+    "/status        — bot status *(owner)*\n"
+    "/groups        — list remembered groups *(owner)*\n"
+    "/cleanup       — clear downloads folder *(owner)*\n"
+    "/failures      — recent failures *(owner)*\n"
+    "/retrylast     — retry last failure *(owner)*\n"
+    "/clearqueue    — clear queue *(owner)*\n"
+    "/leave         — leave current group *(owner)*\n"
+    "/leavechat     — leave a group by ID *(owner)*\n"
+    "/shutdown      — stop the bot *(owner)*"
 )
 
 async def start_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
     remember_chat(update.effective_chat)
     await update.message.reply_text(
-        "👋 *YT-DLP Bot*\n\n"
-        "Send me a video link, or use a command:\n\n"
+        "👋 *YT Bot v4.3*\n\n"
+        "Send me a link or use a command:\n\n"
         + COMMAND_LIST,
         parse_mode=ParseMode.MARKDOWN,
     )
@@ -855,106 +887,98 @@ async def help_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
     remember_chat(update.effective_chat)
     await update.message.reply_text(
         "📖 *Help*\n\n"
-        "Just paste a video URL and I'll download and send it.\n"
-        "Supports YouTube, Twitter/X, TikTok, Instagram, Reddit, and 1000+ more sites.\n\n"
-        "*Commands:*\n"
+        "Paste a supported media URL, or use `/ui <url>` for buttons.\n\n"
         + COMMAND_LIST + "\n\n"
-        + (
-            "ℹ️ Anyone can use this bot."
-            if ALLOW_ALL_USERS else
-            "🔒 Download commands are restricted to the bot owner."
-        ),
+        + ("ℹ️ Anyone can use this bot." if ALLOW_ALL_USERS else "🔒 Downloads are owner/allowed-user only."),
         parse_mode=ParseMode.MARKDOWN,
     )
 
 async def dl_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     remember_chat(update.effective_chat)
-    if not can_download(update):
+    if not can_use(update.effective_user.id):
         return
     url = extract_url(" ".join(ctx.args)) if ctx.args else None
     if not url:
-        await update.message.reply_text("Usage: `/dl <url>`", parse_mode=ParseMode.MARKDOWN)
+        await update.message.reply_text("Usage: /dl <url>")
         return
-    await run_download(update, url, audio_only=False)
+    QUEUE.append(create_job(update.effective_user.id, update.effective_chat.id, url, mode="video"))
+    save_queue_state()
+    await update.message.reply_text(f"📥 Added to queue (position {len(QUEUE)})")
 
 async def audio_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     remember_chat(update.effective_chat)
-    if not can_download(update):
+    if not can_use(update.effective_user.id):
         return
     url = extract_url(" ".join(ctx.args)) if ctx.args else None
     if not url:
-        await update.message.reply_text("Usage: `/audio <url>`", parse_mode=ParseMode.MARKDOWN)
+        await update.message.reply_text("Usage: /audio <url>")
         return
     if not ffmpeg_exists():
-        await update.message.reply_text("⚠️ ffmpeg is required for audio extraction but was not found.")
+        await update.message.reply_text("ffmpeg is required for audio extraction.")
         return
-    await run_download(update, url, audio_only=True)
+    QUEUE.append(create_job(update.effective_user.id, update.effective_chat.id, url, mode="audio"))
+    save_queue_state()
+    await update.message.reply_text(f"🎵 Added audio job to queue (position {len(QUEUE)})")
+
+async def queue_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    if not QUEUE and not CURRENT_JOB:
+        await update.message.reply_text("Queue is empty.")
+        return
+
+    lines = ["📋 *Queue*"]
+    if CURRENT_JOB:
+        lines.extend([
+            "",
+            "*Now Processing:*",
+            f"• `{CURRENT_JOB['url']}`",
+            f"• mode: `{CURRENT_JOB.get('mode', 'video')}`",
+        ])
+
+    if QUEUE:
+        lines.extend(["", "*Pending:*"])
+        for idx, job in enumerate(QUEUE[:10], start=1):
+            lines.append(f"{idx}. `{job['url']}` [{job.get('mode', 'video')}]")
+
+    await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.MARKDOWN)
 
 async def weather_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    remember_chat(update.effective_chat)
-
     if not ctx.args:
-        await update.message.reply_text("Usage: `/weather <city or place>`", parse_mode=ParseMode.MARKDOWN)
+        await update.message.reply_text("Usage: /weather <city or place>")
         return
-
-    location = " ".join(ctx.args).strip()
-
     try:
-        result = await asyncio.to_thread(get_current_weather_for_location, location)
+        result = await asyncio.to_thread(get_current_weather_for_location, " ".join(ctx.args).strip())
         await update.message.reply_text(result, parse_mode=ParseMode.MARKDOWN)
     except Exception as e:
-        log.warning("Weather fetch failed for '%s': %s", location, e)
         await update.message.reply_text(f"Weather error: {e}")
 
 async def forecast_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    remember_chat(update.effective_chat)
-
     if not ctx.args:
-        await update.message.reply_text("Usage: `/forecast <city or place>`", parse_mode=ParseMode.MARKDOWN)
+        await update.message.reply_text("Usage: /forecast <city or place>")
         return
-
-    location = " ".join(ctx.args).strip()
-
     try:
-        result = await asyncio.to_thread(get_5day_forecast_for_location, location)
+        result = await asyncio.to_thread(get_5day_forecast_for_location, " ".join(ctx.args).strip())
         await update.message.reply_text(result, parse_mode=ParseMode.MARKDOWN)
     except Exception as e:
-        log.warning("Forecast fetch failed for '%s': %s", location, e)
         await update.message.reply_text(f"Forecast error: {e}")
 
 async def whoami_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    remember_chat(update.effective_chat)
-
     user = update.effective_user
     chat = update.effective_chat
-
-    user_id = user.id if user else "unknown"
-    username = f"@{user.username}" if user and user.username else "none"
-    full_name = user.full_name if user else "unknown"
-
-    chat_id = chat.id if chat else "unknown"
-    chat_type = chat.type if chat else "unknown"
-    chat_title = getattr(chat, "title", None) or getattr(chat, "full_name", None) or "private"
-
-    owner_status = "yes" if is_allowed(update) else "no"
-    download_access = "yes" if can_download(update) else "no"
-
     await update.message.reply_text(
         f"🪪 *Who am I?*\n\n"
-        f"*User:* {full_name}\n"
-        f"*Username:* {username}\n"
-        f"*User ID:* `{user_id}`\n"
-        f"*Chat:* {chat_title}\n"
-        f"*Chat Type:* {chat_type}\n"
-        f"*Chat ID:* `{chat_id}`\n"
-        f"*Bot Owner:* {owner_status}\n"
-        f"*Can Download:* {download_access}",
+        f"*User:* {user.full_name if user else 'unknown'}\n"
+        f"*Username:* {'@' + user.username if user and user.username else 'none'}\n"
+        f"*User ID:* `{user.id if user else 'unknown'}`\n"
+        f"*Chat:* {getattr(chat, 'title', None) or getattr(chat, 'full_name', None) or 'private'}\n"
+        f"*Chat Type:* {chat.type if chat else 'unknown'}\n"
+        f"*Chat ID:* `{chat.id if chat else 'unknown'}`\n"
+        f"*Bot Owner:* {'yes' if is_admin(user.id) else 'no'}\n"
+        f"*Can Download:* {'yes' if can_use(user.id) else 'no'}",
         parse_mode=ParseMode.MARKDOWN,
     )
 
 async def lastusers_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    remember_chat(update.effective_chat)
-    if not is_allowed(update):
+    if not is_admin(update.effective_user.id):
         return
 
     recent = parse_recent_users_from_logs(limit=10)
@@ -964,7 +988,9 @@ async def lastusers_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None
 
     lines = ["👥 *Recent users seen in logs*", ""]
     for idx, item in enumerate(recent, start=1):
-        short_url = shorten_url(item["url"])
+        short_url = item["url"]
+        if len(short_url) > 60:
+            short_url = short_url[:57] + "..."
         lines.append(
             f"{idx}. *User ID:* `{item['user_id']}`\n"
             f"   *Chat ID:* `{item['chat_id']}`\n"
@@ -975,72 +1001,57 @@ async def lastusers_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None
     await update.message.reply_text("\n\n".join(lines), parse_mode=ParseMode.MARKDOWN)
 
 async def stats_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    remember_chat(update.effective_chat)
-    if not is_allowed(update):
+    if not is_admin(update.effective_user.id):
         return
 
-    total_download_files = get_download_count()
-    total_download_size = get_total_download_size()
-    known_chat_count = len(KNOWN_CHATS)
-    recent_users = parse_recent_users_from_logs(limit=5)
-    logged_requests = count_download_requests_in_logs()
+    unique_users = len({h["user"] for h in HISTORY if "user" in h})
+    top_domains = get_top_domains()
     last_seen = get_most_recent_download_timestamp()
-    unique_users = count_unique_users_in_logs()
 
     lines = [
         "📊 *Bot Stats*",
         "",
         f"*Privacy Mode:* {'Public' if ALLOW_ALL_USERS else 'Owner only'}",
-        f"*Known Groups/Channels:* {known_chat_count}",
-        f"*Files in Downloads Folder:* {total_download_files}",
-        f"*Downloads Folder Size:* {format_size(total_download_size)}",
-        f"*Recent Logged Download Requests:* {logged_requests}",
-        f"*Total Unique Users:* {unique_users}",
+        f"*Known Groups/Channels:* {len(KNOWN_CHATS)}",
+        f"*Queue Length:* {len(QUEUE)}",
+        f"*History:* {len(HISTORY)}",
+        f"*Failures:* {len(FAILURES)}",
+        f"*Unique Users:* {unique_users}",
+        f"*Downloads Folder Files:* {get_download_folder_count()}",
+        f"*Downloads Folder Size:* {format_size(get_download_folder_size())}",
+        f"*Recent Logged Requests:* {count_download_requests_in_logs()}",
         f"*Last Activity:* `{last_seen}`" if last_seen else "*Last Activity:* none",
         "",
-        "*Recent Users:*",
+        "*Top Domains:*",
     ]
 
-    if recent_users:
-        for item in recent_users:
-            lines.append(
-                f"• `{item['user_id']}` in chat `{item['chat_id']}` at `{item['timestamp']}`"
-            )
+    if top_domains:
+        for domain, count in top_domains:
+            lines.append(f"• `{domain}` — {count}")
     else:
         lines.append("• none yet")
 
     await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.MARKDOWN)
 
 async def status_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    remember_chat(update.effective_chat)
-    if not is_allowed(update):
+    if not is_admin(update.effective_user.id):
         return
-    count      = get_download_count()
-    total_size = get_total_download_size()
-    cookie_str = f"file: `{YOUTUBE_COOKIES_FILE}`" if YOUTUBE_COOKIES_FILE.exists() else "none"
-    chat       = update.effective_chat
-    chat_type  = chat.type if chat else "unknown"
-    chat_title = getattr(chat, "title", None) or getattr(chat, "full_name", None) or "private"
+
     await update.message.reply_text(
-        f"*Bot status:* online\n"
-        f"*Chat:* {chat_title} ({chat_type})\n"
-        f"*Downloads folder:* `{DOWNLOAD_DIR}`\n"
-        f"*Files in downloads:* {count}\n"
-        f"*Total size:* {format_size(total_size)}\n"
-        f"*Delete after send:* {DELETE_AFTER_SEND}\n"
-        f"*Upload cap:* {format_size(MAX_UPLOAD_BYTES)}\n"
-        f"*Download timeout:* {DOWNLOAD_TIMEOUT}s\n"
-        f"*Allow all users:* {ALLOW_ALL_USERS}\n"
-        f"*Min valid video:* {format_size(MIN_VALID_VIDEO_BYTES)}\n"
+        f"*Bot Status:* online\n"
+        f"*Current Job:* {'yes' if CURRENT_JOB else 'no'}\n"
+        f"*Queue Length:* {len(QUEUE)}\n"
+        f"*Archive Chat:* {ARCHIVE_CHAT_ID if ARCHIVE_CHAT_ID else 'none'}\n"
+        f"*Watch Folder:* {WATCH_FOLDER_ENABLED}\n"
+        f"*Download Timeout:* {DOWNLOAD_TIMEOUT}s\n"
         f"*ffmpeg:* {ffmpeg_exists()}\n"
-        f"*YouTube cookie:* {cookie_str}\n"
-        f"*Known groups/channels:* {len(KNOWN_CHATS)}",
+        f"*ffprobe:* {ffprobe_exists()}\n"
+        f"*YouTube Cookies:* {'yes' if YOUTUBE_COOKIES_FILE.exists() else 'no'}",
         parse_mode=ParseMode.MARKDOWN,
     )
 
 async def groups_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    remember_chat(update.effective_chat)
-    if not is_allowed(update):
+    if not is_admin(update.effective_user.id):
         return
     if update.effective_chat and update.effective_chat.type != "private":
         await update.message.reply_text("Use /groups from private chat with me.")
@@ -1055,70 +1066,101 @@ async def groups_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.MARKDOWN)
 
 async def cleanup_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    remember_chat(update.effective_chat)
-    if not is_allowed(update):
+    if not is_admin(update.effective_user.id):
         return
-    deleted, freed = cleanup_downloads()
+    cleared = 0
+    freed = 0
+    for p in DOWNLOAD_DIR.iterdir():
+        if p.is_file():
+            freed += p.stat().st_size
+            p.unlink()
+            cleared += 1
     await update.message.reply_text(
-        f"🧹 Cleanup complete.\n"
-        f"Deleted: {deleted} file(s)\n"
-        f"Freed: {format_size(freed)}"
+        f"🧹 Cleanup complete.\nDeleted: {cleared}\nFreed: {format_size(freed)}"
     )
 
+async def failures_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    if not is_admin(update.effective_user.id):
+        return
+    if not FAILURES:
+        await update.message.reply_text("No failures.")
+        return
+
+    lines = ["❌ *Recent Failures*", ""]
+    for item in FAILURES[-5:]:
+        lines.append(
+            f"*URL:* `{item.get('url', 'unknown')}`\n"
+            f"*Mode:* `{item.get('mode', 'video')}`\n"
+            f"*Error:* `{item.get('error', 'unknown')}`"
+        )
+        lines.append("")
+
+    await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.MARKDOWN)
+
+async def retrylast_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    if not is_admin(update.effective_user.id):
+        return
+    if not FAILURES:
+        await update.message.reply_text("No failures.")
+        return
+
+    last = FAILURES[-1].copy()
+    last["id"] = str(uuid.uuid4())
+    last["time"] = time.time()
+    last.pop("error", None)
+    last.pop("failed_time", None)
+    last["source"] = "retry"
+
+    QUEUE.append(last)
+    save_queue_state()
+    await update.message.reply_text(f"🔁 Retrying last failure.\nQueue position: {len(QUEUE)}")
+
+async def clearqueue_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    if not is_admin(update.effective_user.id):
+        return
+    QUEUE.clear()
+    save_queue_state()
+    await update.message.reply_text("🧹 Queue cleared.")
+
 async def leave_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    remember_chat(update.effective_chat)
-    if not is_allowed(update):
+    if not is_admin(update.effective_user.id):
         return
     chat = update.effective_chat
     if not chat:
         return
     if chat.type == "private":
-        await update.message.reply_text(
-            "Use /groups to list groups, then `/leavechat <chat_id>` from private chat.",
-            parse_mode=ParseMode.MARKDOWN,
-        )
+        await update.message.reply_text("Use /leavechat from private chat with a target ID.")
         return
     await update.message.reply_text("Leaving current group…")
     await ctx.bot.leave_chat(chat.id)
     forget_chat(chat.id)
 
 async def leavechat_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    remember_chat(update.effective_chat)
-    if not is_allowed(update):
+    if not is_admin(update.effective_user.id):
         return
     if update.effective_chat and update.effective_chat.type != "private":
         await update.message.reply_text("Use /leavechat only from private chat with me.")
         return
     if not ctx.args:
-        await update.message.reply_text("Usage: `/leavechat <chat_id>`", parse_mode=ParseMode.MARKDOWN)
+        await update.message.reply_text("Usage: /leavechat <chat_id>")
         return
     try:
         target_id = int(ctx.args[0])
     except ValueError:
         await update.message.reply_text("Chat ID must be numeric.")
         return
-    if str(target_id) not in KNOWN_CHATS:
-        await update.message.reply_text("That chat ID isn't in my list. Use /groups first.")
-        return
-    chat_info = KNOWN_CHATS[str(target_id)]
-    try:
-        await update.message.reply_text(f'Leaving: {chat_info["title"]} (`{target_id}`)', parse_mode=ParseMode.MARKDOWN)
-        await ctx.bot.leave_chat(target_id)
-        forget_chat(target_id)
-    except Exception as e:
-        log.exception("Failed to leave chat %s", target_id)
-        await update.message.reply_text(f"Failed to leave chat: {e}")
+    await update.message.reply_text(f"Leaving `{target_id}`", parse_mode=ParseMode.MARKDOWN)
+    await ctx.bot.leave_chat(target_id)
+    forget_chat(target_id)
 
 async def shutdown_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    remember_chat(update.effective_chat)
-    if not is_allowed(update):
+    if not is_admin(update.effective_user.id):
         return
     await update.message.reply_text("🛑 Shutting down…")
-    log.info("Shutdown requested by owner (ID %s)", ALLOWED_USER_ID)
     await ctx.application.stop()
 
 
-# ── Chat-member tracking ─────────────────────────────────────────────────────────
+# ── Track group joins/leaves ────────────────────────────────────────────────────
 async def track_chat_member(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
     cmu = update.my_chat_member
     if not cmu:
@@ -1130,7 +1172,7 @@ async def track_chat_member(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> 
         forget_chat(cmu.chat.id)
 
 
-# ── URL message handler ──────────────────────────────────────────────────────────
+# ── Message handler for raw URLs ────────────────────────────────────────────────
 async def handle_url(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.message
     if not message or not message.text:
@@ -1138,48 +1180,79 @@ async def handle_url(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
     remember_chat(update.effective_chat)
 
-    if not can_download(update):
+    if not can_use(update.effective_user.id):
         return
 
     url = extract_url(message.text)
     if not url:
         return
 
-    log.info(
-        "Download requested by user %s in chat %s: %s",
-        update.effective_user.id if update.effective_user else "unknown",
-        update.effective_chat.id if update.effective_chat else "unknown",
-        url,
-    )
-    await run_download(update, url, audio_only=False)
+    QUEUE.append(create_job(update.effective_user.id, update.effective_chat.id, url, mode="video"))
+    save_queue_state()
+    await message.reply_text(f"📥 Added to queue (position {len(QUEUE)})")
 
 
-# ── Entry point ──────────────────────────────────────────────────────────────────
-def main() -> None:
+# ── CLI mode ────────────────────────────────────────────────────────────────────
+def run_cli(url: str, mode: str = "video") -> None:
+    print(f"Downloading {mode}: {url}")
+    path = download_media(url, mode)
+    print(f"Downloaded: {path}")
+    routed = route_file(path, mode)
+    print(f"Saved to: {routed}")
+
+
+# ── Main ────────────────────────────────────────────────────────────────────────
+def build_app():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    app.add_handler(CommandHandler("start",     start_cmd))
-    app.add_handler(CommandHandler("help",      help_cmd))
-    app.add_handler(CommandHandler("dl",        dl_cmd))
-    app.add_handler(CommandHandler("audio",     audio_cmd))
-    app.add_handler(CommandHandler("weather",   weather_cmd))
-    app.add_handler(CommandHandler("forecast",  forecast_cmd))
-    app.add_handler(CommandHandler("whoami",    whoami_cmd))
+    app.add_handler(CommandHandler("start", start_cmd))
+    app.add_handler(CommandHandler("help", help_cmd))
+    app.add_handler(CommandHandler("dl", dl_cmd))
+    app.add_handler(CommandHandler("audio", audio_cmd))
+    app.add_handler(CommandHandler("ui", ui_cmd))
+    app.add_handler(CommandHandler("queue", queue_cmd))
+    app.add_handler(CommandHandler("weather", weather_cmd))
+    app.add_handler(CommandHandler("forecast", forecast_cmd))
+    app.add_handler(CommandHandler("whoami", whoami_cmd))
     app.add_handler(CommandHandler("lastusers", lastusers_cmd))
-    app.add_handler(CommandHandler("stats",     stats_cmd))
-    app.add_handler(CommandHandler("status",    status_cmd))
-    app.add_handler(CommandHandler("groups",    groups_cmd))
-    app.add_handler(CommandHandler("cleanup",   cleanup_cmd))
-    app.add_handler(CommandHandler("leave",     leave_cmd))
+    app.add_handler(CommandHandler("stats", stats_cmd))
+    app.add_handler(CommandHandler("status", status_cmd))
+    app.add_handler(CommandHandler("groups", groups_cmd))
+    app.add_handler(CommandHandler("cleanup", cleanup_cmd))
+    app.add_handler(CommandHandler("failures", failures_cmd))
+    app.add_handler(CommandHandler("retrylast", retrylast_cmd))
+    app.add_handler(CommandHandler("clearqueue", clearqueue_cmd))
+    app.add_handler(CommandHandler("leave", leave_cmd))
     app.add_handler(CommandHandler("leavechat", leavechat_cmd))
-    app.add_handler(CommandHandler("shutdown",  shutdown_cmd))
+    app.add_handler(CommandHandler("shutdown", shutdown_cmd))
 
+    app.add_handler(CallbackQueryHandler(ui_button_cb, pattern=r"^dl\|"))
     app.add_handler(ChatMemberHandler(track_chat_member, ChatMemberHandler.MY_CHAT_MEMBER))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_url))
 
-    log.info("Bot starting… (owner ID: %s | allow_all: %s)", ALLOWED_USER_ID, ALLOW_ALL_USERS)
-    app.run_polling()
+    async def on_start(app_instance):
+        asyncio.create_task(queue_worker(app_instance))
+        asyncio.create_task(watch_folder_worker())
 
+    app.post_init = on_start
+    return app
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--url", help="Download one URL from CLI")
+    parser.add_argument("--audio", help="Download one URL as audio from CLI")
+    args = parser.parse_args()
+
+    if args.url:
+        run_cli(args.url, mode="video")
+        return
+    if args.audio:
+        run_cli(args.audio, mode="audio")
+        return
+
+    app = build_app()
+    log.info("Bot starting… owner=%s allow_all=%s", OWNER_ID, ALLOW_ALL_USERS)
+    app.run_polling()
 
 if __name__ == "__main__":
     main()
