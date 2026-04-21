@@ -262,7 +262,7 @@ This project follows a simple idea:
 ## 🧑‍💻 Author
 
 **Mike Redd**
-typezeRø Projects
+typezerø Projects
 
 ---
 
