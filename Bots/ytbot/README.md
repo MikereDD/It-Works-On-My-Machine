@@ -1,4 +1,4 @@
-# 🎬 YTBot v4.8
+# 🎬 YTBot v4.9
 
 > A typezerø Project  
 > Built for real-world use, not perfection.
@@ -11,7 +11,7 @@
 
 ## 🚀 Overview
 
-**YTBot v4.8** is a full-featured Telegram media bot that transforms simple links into a structured media pipeline.
+**YTBot v4.9** is a full-featured Telegram media bot that transforms simple links into a structured media pipeline.
 
 It accepts input from:
 
