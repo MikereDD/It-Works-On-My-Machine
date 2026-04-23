@@ -1,14 +1,3 @@
-# 📜 YTBot Version Notes
-
-This directory contains detailed notes for each version of YTBot.
-
-Each file describes:
-- what changed
-- why it changed
-- how it impacted the system
-
----
-
 ## 🚀 Versions
 
 ### Core Development
@@ -26,27 +15,5 @@ Each file describes:
 - [v4.8](v4.8.md) — Role-aware help system and command visibility
 - [v4.9](v4.9.md) — Threaded reply flow for shared and forwarded links
 
----
-
-## 🧠 Notes
-
-- Versioning follows a simple incremental model:
-  - `4.0`, `4.1`, `4.2` → feature milestones
-  - `4.3.1` → stability/patch release
-  - `4.4`, `4.5` → refinement and usability improvements
-  - `4.6` → behavioral and architectural improvements
-  - `4.7` → usability and presentation improvements
-  - `4.8`, `4.9` → interaction and UX clarity improvements
-
-- These notes are intended for:
-  - tracking project evolution
-  - understanding architectural decisions
-  - helping future development
-
----
-
-## 📌 Philosophy
-
-> Build it working first.  
-> Then make it better.  
-> Then make it clean.
+### Major Milestones
+- [v5.0](v5.0.md) — Clip support and media workflow expansion

@@ -1,9 +1,9 @@
-# 🎬 YTBot v4.9
+# 🎬 YTBot v5.0
 
 > A typezerø Project  
 > Built for real-world use, not perfection.
 
-![Version](https://img.shields.io/badge/version-v4.8-blue)
+![Version](https://img.shields.io/badge/version-v5.0-blue)
 ![Python](https://img.shields.io/badge/python-3.10+-blue)
 ![License](https://img.shields.io/badge/license-WTFPL-lightgrey)
 
@@ -11,7 +11,7 @@
 
 ## 🚀 Overview
 
-**YTBot v4.9** is a full-featured Telegram media bot that transforms simple links into a structured media pipeline.
+**YTBot v5.0** is a full-featured Telegram media bot that transforms simple links into a structured media pipeline.
 
 It accepts input from:
 
@@ -23,7 +23,7 @@ It accepts input from:
 
 Input → Queue → Download → Process → Route → Archive
 
-This is no longer just a downloader—it’s a **media ingestion system**.
+This is no longer just a downloader—it’s a **media ingestion and processing system**.
 
 ---
 
@@ -50,6 +50,25 @@ No need to remember commands—just click.
 
 ---
 
+### ✂️ Clip Support (v5.0)
+
+Create clips directly from videos:
+
+/clip <url> <start> <end>
+
+Examples:
+
+/clip https://youtube.com/... 00:01:00 00:01:30  
+/clip https://youtube.com/... 01:02:10 01:03:00  
+
+* Uses ffmpeg for precise trimming  
+* Supports `MM:SS` and `HH:MM:SS`  
+* Validates clip range  
+* Retains metadata (title, uploader, link)  
+* Adds clip range to caption  
+
+---
+
 ### 📥 Media Handling
 
 * Supports YouTube, Reddit, Instagram (best-effort), and more via yt-dlp  
@@ -65,7 +84,7 @@ No need to remember commands—just click.
 * Auto-compresses using ffmpeg  
 * Falls back to document upload if needed  
 * Prevents Telegram upload failures  
-* Metadata captions (title, uploader, link) for `/ui`, `/dl`, `/audio`  
+* Metadata captions (title, uploader, link) for `/ui`, `/dl`, `/audio`, `/clip`  
 
 ---
 
@@ -136,7 +155,7 @@ Telegram / CLI / Watch Folder
             ↓  
    Download (yt-dlp)  
             ↓  
-  Validate + Compress (ffmpeg)  
+  Process (clip / validate / compress)  
             ↓  
    Send → Route → Archive  
             ↓  
@@ -166,7 +185,7 @@ pip install "python-telegram-bot>=22.0" "yt-dlp>=2026.03.17"
 
 ### 2. Install dependencies
 
-* ffmpeg (required for audio + compression)  
+* ffmpeg (required for audio, clipping, and compression)  
 * ffprobe (comes with ffmpeg)  
 
 Verify:
@@ -210,6 +229,7 @@ python ytbot.py
 
 /dl <url>       → download video  
 /audio <url>    → extract audio  
+/clip <url> s e → create clip  
 /ui <url>       → interactive preview  
 
 ### Queue
@@ -230,7 +250,10 @@ python ytbot.py
 
 * Instagram may fail without authentication (platform limitation)  
 * Large files are automatically compressed; quality may be reduced  
-* ffmpeg is required for audio extraction and compression  
+* ffmpeg is required for:
+  - audio extraction  
+  - compression  
+  - clip processing  
 * ffprobe is required for video validation  
 
 ---
@@ -247,20 +270,26 @@ cookies/
 
 ## 🧠 Version History
 
-### v4.9 (Current)
+### v5.0 (Current)
+
+* Added `/clip` command for video trimming  
+* Introduced clip-aware job handling  
+* Metadata retained for clipped uploads  
+* Expanded processing pipeline (download → process → upload)  
+* Elevated bot from downloader → media processing tool  
+
+### v4.9
 
 * Threaded reply flow for shared and forwarded links  
 * Raw pasted/forwarded links now preserve original message context  
 * Metadata status messages reply to the original shared message  
 * Final uploaded media replies to the original shared message  
-* Improved readability and flow in active group chats  
-* Restored natural conversation threading for passive link sharing  
 
 ### v4.8
 
 * Role-aware `/help` and `/start` output  
 * Split command visibility (user vs admin)  
-* Context-aware command display (DM vs group vs unauthorized)  
+* Context-aware command display  
 * Cleaner UX with reduced command clutter  
 * Improved maintainability via structured command lists  
 

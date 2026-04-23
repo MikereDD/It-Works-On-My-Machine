@@ -1,13 +1,14 @@
 #--------------------------------------------
 # file:     ytbot.py
 # author:   Mike Redd
-# version:  4.9
+# version:  5.0
 # created:  2026-04-18
-# updated:  2026-04-21
+# updated:  2026-04-22
 # desc:     Queue-based Telegram media bot
 #           with interactive UI, weather,
 #           forecast, routing, archive send,
-#           watch folder, and CLI mode
+#           watch folder, CLI mode,
+#           and clip support
 #--------------------------------------------
 
 import argparse
@@ -316,6 +317,8 @@ def create_job(
     mode: str = "video",
     source: str = "telegram",
     reply_to_message_id: int | None = None,
+    clip_start: str | None = None,
+    clip_end: str | None = None,
 ) -> dict:
     return {
         "id": str(uuid.uuid4()),
@@ -326,6 +329,8 @@ def create_job(
         "time": time.time(),
         "source": source,
         "reply_to_message_id": reply_to_message_id,
+        "clip_start": clip_start,
+        "clip_end": clip_end,
     }
 
 def save_queue_state() -> None:
@@ -650,6 +655,67 @@ def download_media(url: str, mode: str) -> Path:
 
     return file
 
+def normalize_timecode(value: str) -> str:
+    value = value.strip()
+
+    if not re.fullmatch(r"\d{1,2}:\d{2}(?::\d{2})?", value):
+        raise RuntimeError("Time must be HH:MM:SS or MM:SS")
+
+    parts = [int(p) for p in value.split(":")]
+    if len(parts) == 2:
+        minutes, seconds = parts
+        hours = 0
+    else:
+        hours, minutes, seconds = parts
+
+    if minutes < 0 or seconds < 0 or seconds > 59 or minutes > 59:
+        raise RuntimeError("Invalid time value")
+
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+def timecode_to_seconds(value: str) -> int:
+    parts = [int(p) for p in value.split(":")]
+    if len(parts) == 2:
+        minutes, seconds = parts
+        return minutes * 60 + seconds
+    hours, minutes, seconds = parts
+    return hours * 3600 + minutes * 60 + seconds
+
+def clip_video(input_file: Path, start_time: str, end_time: str) -> Path:
+    if not ffmpeg_exists():
+        raise RuntimeError("ffmpeg is not installed or not in PATH.")
+
+    start_time = normalize_timecode(start_time)
+    end_time = normalize_timecode(end_time)
+
+    start_sec = timecode_to_seconds(start_time)
+    end_sec = timecode_to_seconds(end_time)
+
+    if end_sec <= start_sec:
+        raise RuntimeError("End time must be after start time.")
+
+    output = input_file.with_name(f"{input_file.stem}_clip.mp4")
+
+    cmd = [
+        "ffmpeg", "-y",
+        "-ss", start_time,
+        "-to", end_time,
+        "-i", str(input_file),
+        "-c:v", "libx264",
+        "-c:a", "aac",
+        "-movflags", "+faststart",
+        str(output),
+    ]
+
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0 or not output.exists() or output.stat().st_size == 0:
+        raise RuntimeError(f"Clip creation failed: {result.stderr[:300]}")
+
+    if not is_valid_video_file(output):
+        raise RuntimeError("Created clip is not a valid playable video")
+
+    return output
+
 def compress_to_telegram(input_file: Path) -> Path:
     """
     Re-encode the video to fit within MAX_UPLOAD_BYTES.
@@ -735,6 +801,8 @@ async def process_job(app, job: dict) -> None:
     url = job["url"]
     mode = job.get("mode", "video")
     reply_to_message_id = job.get("reply_to_message_id")
+    clip_start = job.get("clip_start")
+    clip_end = job.get("clip_end")
 
     log.info(
         "Download requested by user %s in chat %s: %s",
@@ -755,12 +823,15 @@ async def process_job(app, job: dict) -> None:
         meta = await asyncio.to_thread(get_media_info, url)
 
         caption = None
-        if job.get("source") in ("ui", "dl", "audio"):
-            caption = (
-                f"🎞️ {meta['title']}\n"
-                f"👤 {meta['uploader']}\n"
-                f"🔗 {meta['webpage_url']}"
-            )[:1000]
+        if job.get("source") in ("ui", "dl", "audio", "clip"):
+            caption_lines = [
+                f"🎞️ {meta['title']}",
+                f"👤 {meta['uploader']}",
+                f"🔗 {meta['webpage_url']}",
+            ]
+            if mode == "clip" and clip_start and clip_end:
+                caption_lines.append(f"✂️ {clip_start} → {clip_end}")
+            caption = "\n".join(caption_lines)[:1000]
 
         await status_msg.edit_text(
             f"🎞️ {meta['title']}\n"
@@ -769,13 +840,28 @@ async def process_job(app, job: dict) -> None:
             f"⬇️ Downloading {mode}…"
         )
 
+        download_mode = "audio" if mode == "audio" else "video"
+
         downloaded_file = await asyncio.wait_for(
-            asyncio.to_thread(download_media, url, mode),
+            asyncio.to_thread(download_media, url, download_mode),
             timeout=DOWNLOAD_TIMEOUT,
         )
         sent_file = downloaded_file
 
-        if mode == "video":
+        if mode == "clip":
+            if not clip_start or not clip_end:
+                raise RuntimeError("Clip job is missing start or end time.")
+            await status_msg.edit_text(
+                f"🎞️ {meta['title']}\n"
+                f"👤 {meta['uploader']}\n"
+                f"✂️ Clipping {clip_start} → {clip_end}…"
+            )
+            clipped = await asyncio.to_thread(clip_video, sent_file, clip_start, clip_end)
+            if sent_file.exists():
+                sent_file.unlink()
+            sent_file = clipped
+
+        if mode in ("video", "clip"):
             size_mb = sent_file.stat().st_size / (1024 * 1024)
             if size_mb > 49:
                 await status_msg.edit_text(f"📦 Large file ({size_mb:.1f} MB)\nProcessing…")
@@ -843,7 +929,7 @@ async def process_job(app, job: dict) -> None:
                             caption=caption
                         )
 
-        routed_file = await asyncio.to_thread(route_file, sent_file, mode)
+        routed_file = await asyncio.to_thread(route_file, sent_file, "audio" if mode == "audio" else "video")
 
         job["status"] = "success"
         job["completed_time"] = time.time()
@@ -1065,6 +1151,7 @@ USER_COMMAND_LIST = (
     "/help          — usage instructions\n"
     "/dl <url>      — queue video download\n"
     "/audio <url>   — queue audio download\n"
+    "/clip <url> <start> <end> — queue clipped video\n"
     "/ui <url>      — preview with buttons\n"
     "/queue         — show queue\n"
     "/weather <p>   — current weather\n"
@@ -1093,7 +1180,7 @@ async def start_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
     chat = update.effective_chat
 
     lines = [
-        "👋 *YT Bot v4.9*",
+        "👋 *YT Bot v5.0*",
         "",
         "Send me a link or use a command:",
         "",
@@ -1233,6 +1320,64 @@ async def audio_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         f"📥 Added to queue\n"
         f"🔢 Position: {pos}\n"
         f"🎵 Mode: audio"
+    )
+
+async def clip_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    remember_chat(update.effective_chat)
+
+    if not can_use_context(
+        update.effective_user.id,
+        update.effective_chat.id,
+        update.effective_chat.type,
+    ):
+        await update.message.reply_text("🚫 Not allowed here.")
+        return
+
+    if len(ctx.args) < 3:
+        await update.message.reply_text(
+            "❌ Invalid usage\n\n"
+            "Example:\n"
+            "/clip https://example.com/video 00:01:00 00:01:30"
+        )
+        return
+
+    url = extract_url(ctx.args[0])
+    if not url:
+        await update.message.reply_text("That does not look like a valid URL.")
+        return
+
+    if not ffmpeg_exists():
+        await update.message.reply_text("ffmpeg is required for clip creation.")
+        return
+
+    try:
+        clip_start = normalize_timecode(ctx.args[1])
+        clip_end = normalize_timecode(ctx.args[2])
+
+        if timecode_to_seconds(clip_end) <= timecode_to_seconds(clip_start):
+            await update.message.reply_text("End time must be after start time.")
+            return
+    except Exception as e:
+        await update.message.reply_text(f"Clip time error: {e}")
+        return
+
+    QUEUE.append(create_job(
+        update.effective_user.id,
+        update.effective_chat.id,
+        url,
+        mode="clip",
+        source="clip",
+        reply_to_message_id=update.message.message_id if update.message else None,
+        clip_start=clip_start,
+        clip_end=clip_end,
+    ))
+    save_queue_state()
+
+    pos = get_queue_position()
+    await update.message.reply_text(
+        f"✂️ Clip added to queue\n"
+        f"🔢 Position: {pos}\n"
+        f"🕒 {clip_start} → {clip_end}"
     )
 
 async def queue_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1561,7 +1706,7 @@ def run_cli(url: str, mode: str = "video") -> None:
     print(f"Downloading {mode}: {url}")
     path = download_media(url, mode)
     print(f"Downloaded: {path}")
-    routed = route_file(path, mode)
+    routed = route_file(path, "audio" if mode == "audio" else "video")
     print(f"Saved to: {routed}")
 
 
@@ -1573,6 +1718,7 @@ def build_app():
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CommandHandler("dl", dl_cmd))
     app.add_handler(CommandHandler("audio", audio_cmd))
+    app.add_handler(CommandHandler("clip", clip_cmd))
     app.add_handler(CommandHandler("ui", ui_cmd))
     app.add_handler(CommandHandler("queue", queue_cmd))
     app.add_handler(CommandHandler("weather", weather_cmd))
