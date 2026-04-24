@@ -14,6 +14,7 @@
 - [v4.7](v4.7.md) — Metadata captions and source-aware upload behavior
 - [v4.8](v4.8.md) — Role-aware help system and command visibility
 - [v4.9](v4.9.md) — Threaded reply flow for shared and forwarded links
+- [v5.2](v5.2.md) — Reply threading polish and group noise reduction
 
 ### Major Milestones
 - [v5.0](v5.0.md) — Clip support and media workflow expansion

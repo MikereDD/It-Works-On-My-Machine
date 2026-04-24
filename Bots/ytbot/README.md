@@ -1,9 +1,9 @@
-# 🎬 YTBot v5.0
+# 🎬 YTBot v5.2
 
 > A typezerø Project  
 > Built for real-world use, not perfection.
 
-![Version](https://img.shields.io/badge/version-v5.0-blue)
+![Version](https://img.shields.io/badge/version-v5.2-blue)
 ![Python](https://img.shields.io/badge/python-3.10+-blue)
 ![License](https://img.shields.io/badge/license-WTFPL-lightgrey)
 
@@ -11,19 +11,17 @@
 
 ## 🚀 Overview
 
-**YTBot v5.0** is a full-featured Telegram media bot that transforms simple links into a structured media pipeline.
+**YTBot v5.2** is a full-featured Telegram media bot that transforms simple links into a structured media pipeline.
 
 It accepts input from:
 
-* 📩 Telegram (commands, messages, interactive UI)
-* 📂 Filesystem (watch folder)
-* 💻 CLI (direct execution)
+- Telegram (commands, messages, interactive UI)  
+- Filesystem (watch folder)  
+- CLI (direct execution)  
 
-…and processes everything through a **queue-based system**:
+…and processes everything through a queue system:
 
 Input → Queue → Download → Process → Route → Archive
-
-This is no longer just a downloader—it’s a **media ingestion and processing system**.
 
 ---
 
@@ -31,60 +29,73 @@ This is no longer just a downloader—it’s a **media ingestion and processing 
 
 ### 🧠 Core System
 
-* Persistent queue-based architecture  
-* Job tracking (queue, history, failures)  
-* Single worker (safe, no overlapping downloads)  
-* Access control (owner / allowed users / group-based control / public mode)  
+- Persistent queue-based architecture  
+- Job tracking (queue, history, failures)  
+- Single worker (safe, no overlapping downloads)  
+- Access control (owner / allowed users / group-based / public mode)  
 
 ---
 
 ### 🎛️ Interactive UI
 
-Use `/ui <url>` to get a preview with buttons:
+Use `/ui <url>` to preview media with buttons:
 
-- 🎬 Video  
-- 🎵 Audio  
-- ❌ Cancel  
+- Video  
+- Audio  
+- Cancel  
 
-No need to remember commands—just click.
+Now preserves the original request context after selection.
 
 ---
 
-### ✂️ Clip Support (v5.0)
+### ✂️ Clip Support
 
-Create clips directly from videos:
-
-/clip <url> <start> <end>
+Command:
+`/clip <url> <start> <end>`
 
 Examples:
+`/clip https://youtube.com/... 00:01:00 00:01:30`  
+`/clip https://youtube.com/... 01:02:10 01:03:00`
 
-/clip https://youtube.com/... 00:01:00 00:01:30  
-/clip https://youtube.com/... 01:02:10 01:03:00  
-
-* Uses ffmpeg for precise trimming  
-* Supports `MM:SS` and `HH:MM:SS`  
-* Validates clip range  
-* Retains metadata (title, uploader, link)  
-* Adds clip range to caption  
+- Uses ffmpeg  
+- Supports MM:SS and HH:MM:SS  
+- Validates clip range  
+- Keeps metadata  
+- Adds clip range to caption  
 
 ---
 
 ### 📥 Media Handling
 
-* Supports YouTube, Reddit, Instagram (best-effort), and more via yt-dlp  
-* Smart format selection (MP4-friendly)  
-* Automatic fallback handling  
-* Audio extraction via ffmpeg  
+- YouTube, Reddit, Instagram (best-effort), more via yt-dlp  
+- Smart MP4-friendly formats  
+- Audio extraction via ffmpeg  
 
 ---
 
 ### 📦 Smart Upload System
 
-* Detects large files  
-* Auto-compresses using ffmpeg  
-* Falls back to document upload if needed  
-* Prevents Telegram upload failures  
-* Metadata captions (title, uploader, link) for `/ui`, `/dl`, `/audio`, `/clip`  
+- Auto compression for large files  
+- Telegram-safe uploads  
+- Fallback to document upload  
+- Metadata captions for `/ui`, `/dl`, `/audio`, `/clip`  
+
+---
+
+### 🧵 Reply Threading (v5.2)
+
+- `/dl`, `/audio`, `/clip` reply to original command  
+- `/ui` replies to original `/ui` request  
+- Raw links reply to original message  
+- Status + final upload stay attached  
+
+---
+
+### 🔇 Clean Group Behavior (v5.2)
+
+- No queue spam in groups  
+- Private chats still show queue position  
+- `/queue` is the source of truth  
 
 ---
 
@@ -98,8 +109,8 @@ G:\bots\done\failed\
 
 ### 📡 Automation
 
-* Watch folder ingestion (`G:\bots\watch`)  
-* CLI mode:
+- Watch folder: G:\bots\watch  
+- CLI:
 
 python ytbot.py --url "<link>"  
 python ytbot.py --audio "<link>"  
@@ -108,72 +119,49 @@ python ytbot.py --audio "<link>"
 
 ### 📊 Observability
 
-* /stats → usage summary  
-* /lastusers → recent activity  
-* /failures → recent errors  
-* /retrylast → retry failed job  
-
-Includes:
-
-* unique users  
-* domain tracking (top sites)  
-* timestamps  
+- `/stats` → usage  
+- `/lastusers` → activity  
+- `/failures` → errors  
+- `/retrylast` → retry  
 
 ---
 
-### 📖 Role-Aware Help System
+### 📖 Role-Aware Help
 
-* `/help` dynamically adapts based on user context  
-* `/start` mirrors command visibility  
-
-Behavior:
-
-- **Admins (DM or group)** → full command list  
-- **Allowed group users** → user commands only  
-- **Unauthorized users** → minimal safe commands  
-
-No more command clutter or exposing admin tools to regular users.
+- `/help` adapts based on context  
+- Admins see everything  
+- Users see only allowed commands  
 
 ---
 
 ### 🌦️ Extras
 
-* /weather <location>  
-* /forecast <location>  
-
-Powered by Open-Meteo (no API key required).
+- `/weather <location>`  
+- `/forecast <location>`  
 
 ---
 
 ## 🧩 Architecture
 
 Telegram / CLI / Watch Folder  
-            ↓  
-          Queue  
-            ↓  
-         Worker  
-            ↓  
-   Download (yt-dlp)  
-            ↓  
-  Process (clip / validate / compress)  
-            ↓  
-   Send → Route → Archive  
-            ↓  
-   History / Failures / Stats  
-
----
-
-## 📜 Version Notes
-
-Detailed version history is available in:
-
-notes/
+↓  
+Queue  
+↓  
+Worker  
+↓  
+Download (yt-dlp)  
+↓  
+Process (clip / compress)  
+↓  
+Send → Route → Archive  
+↓  
+History / Failures / Stats  
 
 ---
 
 ## ⚙️ Setup
 
-### 1. Install Python packages
+### Install packages
 
 pip install -r requirements.txt  
 
@@ -183,10 +171,10 @@ pip install "python-telegram-bot>=22.0" "yt-dlp>=2026.03.17"
 
 ---
 
-### 2. Install dependencies
+### Install dependencies
 
-* ffmpeg (required for audio, clipping, and compression)  
-* ffprobe (comes with ffmpeg)  
+ffmpeg  
+ffprobe  
 
 Verify:
 
@@ -195,7 +183,7 @@ ffprobe -version
 
 ---
 
-### 3. Configure bot
+### Configure bot
 
 Create:
 
@@ -217,7 +205,7 @@ DOWNLOAD_TIMEOUT = 900
 
 ---
 
-### 4. Run the bot
+### Run
 
 python ytbot.py  
 
@@ -225,40 +213,34 @@ python ytbot.py
 
 ## 🧪 Usage
 
-### Basic
+/dl <url>  
+/audio <url>  
+/clip <url> <start> <end>  
+/ui <url>  
 
-/dl <url>       → download video  
-/audio <url>    → extract audio  
-/clip <url> s e → create clip  
-/ui <url>       → interactive preview  
+/queue  
+/clearqueue  
+/retrylast  
 
-### Queue
-
-/queue          → show queue  
-/clearqueue     → clear queue (admin)  
-/retrylast      → retry last failed job  
-
-### System
-
-/stats          → usage stats  
-/status         → system status  
-/groups         → tracked groups  
+/stats  
+/status  
+/groups  
 
 ---
 
 ## ⚠️ Notes
 
-* Instagram may fail without authentication (platform limitation)  
-* Large files are automatically compressed; quality may be reduced  
-* ffmpeg is required for:
-  - audio extraction  
-  - compression  
-  - clip processing  
-* ffprobe is required for video validation  
+- Instagram may require cookies  
+- Large files are compressed automatically  
+- ffmpeg required for:
+  - audio
+  - compression
+  - clipping  
+- ffprobe required for validation  
 
 ---
 
-## 🛡️ Recommended .gitignore
+## 🛡️ .gitignore
 
 config/ytbotrc.py  
 state/  
@@ -270,86 +252,21 @@ cookies/
 
 ## 🧠 Version History
 
-### v5.0 (Current)
+### v5.2 (Current)
 
-* Added `/clip` command for video trimming  
-* Introduced clip-aware job handling  
-* Metadata retained for clipped uploads  
-* Expanded processing pipeline (download → process → upload)  
-* Elevated bot from downloader → media processing tool  
+- Full reply threading across all commands  
+- `/ui` now preserves original message context  
+- Silent queue behavior in groups  
+- Cleaner UX and reduced noise  
 
-### v4.9
+### v5.0
 
-* Threaded reply flow for shared and forwarded links  
-* Raw pasted/forwarded links now preserve original message context  
-* Metadata status messages reply to the original shared message  
-* Final uploaded media replies to the original shared message  
+- `/clip` support  
+- Media pipeline expansion  
 
-### v4.8
+### v4.x
 
-* Role-aware `/help` and `/start` output  
-* Split command visibility (user vs admin)  
-* Context-aware command display  
-* Cleaner UX with reduced command clutter  
-* Improved maintainability via structured command lists  
-
-### v4.7
-
-* Metadata captions added to uploaded media (title, uploader, source link)  
-* Captions applied to `/ui`, `/dl`, and `/audio` workflows  
-* Introduced source-aware job behavior (`ui`, `dl`, `audio`, `raw_url`, `watch`)  
-* Captions excluded from raw URL and automated workflows  
-* Applied consistent caption handling to archive uploads  
-* Improved media traceability and sharing experience  
-
-### v4.6
-
-* Chat-aware access control (`can_use_context`)  
-* Group-based usage via `ALLOWED_CHAT_IDS`  
-* DM access restricted to owner by default  
-* Updated command handlers and UI callbacks to enforce context-aware permissions  
-* Improved `/whoami` to reflect real access context  
-* Safer, clearer configuration template (`ytbotrc.py`)  
-* Group access disabled by default in template  
-
-### v4.5
-
-* Runtime hardening and stability improvements  
-* Improved compression with duration-aware bitrate targeting  
-* Safer Telegram UI handling (short callback IDs instead of full URLs)  
-* Better error messaging and failure categorization  
-* Watch folder enhancements (`WATCH_FOLDER_CHAT_ID`)  
-* History and failure list size limits  
-
-### v4.4
-
-* Queue position feedback when adding jobs  
-* Improved `/stats` formatting and readability  
-* Enhanced `/lastusers` with timestamps and shortened URLs  
-* Clearer command responses and usage messages  
-* Improved DM vs group behavior handling  
-* Better processing status feedback and error visibility  
-
-### v4.3
-
-* Interactive UI (buttons)  
-* Compression + upload fallback  
-* Video validation  
-* Improved logging and stats  
-
-### v4.2
-
-* Metadata extraction  
-* File routing  
-* Watch folder + CLI mode  
-
-### v4.1
-
-* yt-dlp + Telegram integration  
-
-### v4.0
-
-* Queue-based core system  
+- Queue system, UI, metadata, access control improvements  
 
 ---
 
@@ -368,12 +285,12 @@ typezerø Projects
 
 ## 📜 License
 
-WTFPL — Do What The F*ck You Want To Public License  
+WTFPL  
 
 ---
 
 ## ✅ Requirements
 
 - Python 3.10+  
-- ffmpeg in PATH  
-- ffprobe in PATH  
+- ffmpeg  
+- ffprobe  
