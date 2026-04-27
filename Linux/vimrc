@@ -1,0 +1,3 @@
+" ~/.vimrc
+" Loader for XDG-style Vim config
+source ~/.config/vim/vimrc
