@@ -1,0 +1,34 @@
+! ── URxvt Dark Theme (Arakiel) ─────────────────
+
+URxvt*background: #0a0c10
+URxvt*foreground: #d8dee9
+
+! Cursor
+URxvt*cursorColor: #81a1c1
+
+! Font (optional tweak later)
+#URxvt*font: xft:monospace:size=10
+URxvt*font: xft:JetBrains Mono:size=10
+
+! ── Colors (Nord-inspired) ───────────────────
+
+URxvt*color0:  #2e3440
+URxvt*color1:  #bf616a
+URxvt*color2:  #a3be8c
+URxvt*color3:  #ebcb8b
+URxvt*color4:  #81a1c1
+URxvt*color5:  #b48ead
+URxvt*color6:  #88c0d0
+URxvt*color7:  #e5e9f0
+
+URxvt*color8:  #4c566a
+URxvt*color9:  #bf616a
+URxvt*color10: #a3be8c
+URxvt*color11: #ebcb8b
+URxvt*color12: #81a1c1
+URxvt*color13: #b48ead
+URxvt*color14: #8fbcbb
+URxvt*color15: #eceff4
+
+! ── Scrollbar (optional off) ────────────────
+URxvt*scrollBar: false
