@@ -1,0 +1,174 @@
+" ~/.config/vim/vimrc
+" Mike Redd / typezero
+" Pi 5 Arch Vim (XDG layout)
+
+set nocompatible
+filetype plugin indent on
+syntax on
+
+" Leader
+let mapleader = ","
+let maplocalleader = "\\"
+
+" -------------------------
+" Basic feel
+" -------------------------
+set hidden
+set showcmd
+set showmode
+set ruler
+set laststatus=2
+set title
+set visualbell
+set ttyfast
+set lazyredraw
+set autoread
+set autowrite
+set backspace=indent,eol,start
+set history=1000
+
+" -------------------------
+" Lines
+" -------------------------
+set nonumber
+set norelativenumber
+nnoremap <leader>n :setlocal number!<CR>
+nnoremap <leader>r :setlocal relativenumber!<CR>
+
+" -------------------------
+" Tabs/spaces
+" -------------------------
+set tabstop=8
+set shiftwidth=4
+set softtabstop=4
+set expandtab
+set smarttab
+set autoindent
+set smartindent
+set shiftround
+
+" -------------------------
+" Wrapping
+" -------------------------
+set wrap
+set linebreak
+set textwidth=120
+set colorcolumn=+1
+set showbreak=>\ \ \
+
+" -------------------------
+" Search
+" -------------------------
+set ignorecase
+set smartcase
+set incsearch
+set hlsearch
+set showmatch
+nnoremap <leader><space> :nohlsearch<CR>
+
+" -------------------------
+" Movement
+" -------------------------
+set scrolloff=3
+set sidescrolloff=10
+nnoremap j gj
+nnoremap k gk
+nnoremap H ^
+nnoremap L $
+vnoremap L g_
+
+" -------------------------
+" Splits
+" -------------------------
+set splitbelow
+set splitright
+
+" -------------------------
+" Invisible chars
+" -------------------------
+set list
+set listchars=tab:▸\ ,trail:⌴,extends:❯,precedes:❮
+nnoremap <leader>i :set list!<CR>
+
+" -------------------------
+" XDG Paths
+" -------------------------
+let g:vim_config_dir = expand('~/.config/vim')
+let g:vim_backup_dir = g:vim_config_dir . '/backup'
+let g:vim_swap_dir   = g:vim_config_dir . '/swap'
+let g:vim_undo_dir   = g:vim_config_dir . '/undo'
+let g:vim_info_file  = g:vim_config_dir . '/viminfo'
+
+" Ensure dirs exist
+for dir in [g:vim_config_dir, g:vim_backup_dir, g:vim_swap_dir, g:vim_undo_dir]
+    if !isdirectory(dir)
+        call mkdir(dir, 'p')
+    endif
+endfor
+
+" -------------------------
+" Persistence
+" -------------------------
+set undofile
+execute 'set undodir=' . g:vim_undo_dir . '//'
+set backup
+execute 'set backupdir=' . g:vim_backup_dir . '//'
+execute 'set directory=' . g:vim_swap_dir . '//'
+
+" Move viminfo into XDG
+execute 'set viminfo+=n' . g:vim_info_file
+
+" -------------------------
+" Wildmenu
+" -------------------------
+set wildmenu
+set wildmode=list:longest
+set wildignore+=.git,.svn,.hg
+set wildignore+=*.o,*.obj,*.exe,*.dll
+set wildignore+=*.pyc,*.swp,*~,*.bak
+set wildignore+=*.jpg,*.png,*.gif,*.jpeg
+
+" -------------------------
+" Autocommands
+" -------------------------
+augroup line_return
+    autocmd!
+    autocmd BufReadPost * if line("'\"") > 0 && line("'\"") <= line("$") | execute 'normal! g`"zvzz' | endif
+augroup END
+
+augroup resize_splits
+    autocmd!
+    autocmd VimResized * wincmd =
+augroup END
+
+" -------------------------
+" Highlight conflict markers
+" -------------------------
+match ErrorMsg '^\(<\|=\|>\)\{7\}\([^=].\+\)\?$'
+
+" -------------------------
+" Helpers
+" -------------------------
+nnoremap <leader>w mz:%s/\s\+$//<CR>:let @/=''<CR>`z
+cnoremap w!! w !sudo tee % >/dev/null
+
+nnoremap <leader>ev :vsplit ~/.config/vim/vimrc<CR>
+nnoremap <leader>sv :source ~/.config/vim/vimrc<CR>
+
+nnoremap <leader>D :diffoff!<CR>
+
+" -------------------------
+" Fix common typos
+" -------------------------
+command! -bang W w<bang>
+command! -bang Q q<bang>
+command! -bang Wq wq<bang>
+command! -bang WQ wq<bang>
+command! -bang Qa qa<bang>
+command! -bang QA qa<bang>
+
+" -------------------------
+" Colors
+" -------------------------
+set background=dark
+colorscheme desert
