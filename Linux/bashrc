@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+#--------------------------------------------
+# file:     ~/.bashrc
+# author:   Mike Redd
+# version:  1.0
+# desc:     Bash loader (Arakiel / Arch)
+#--------------------------------------------
+
+[[ $- != *i* ]] && return
+
+[[ -f /etc/bash.bashrc ]] && source /etc/bash.bashrc
+[[ -f /usr/share/bash-completion/bash_completion ]] && source /usr/share/bash-completion/bash_completion
+[[ -f /usr/share/doc/pkgfile/command-not-found.bash ]] && source /usr/share/doc/pkgfile/command-not-found.bash
+
+for f in "$HOME"/.bash.d/*; do
+    [[ -f "$f" ]] && source "$f"
+done
+
+# Load exports
+export PATH="$HOME/bin:$PATH"

@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+#--------------------------------------------
+# file:     ~/.bash.d/aliases
+# author:   Mike Redd
+# version:  1.0
+# desc:     Bash aliases
+#--------------------------------------------
+
+alias ll='ls -alF'
+alias la='ls -A'
+alias l='ls -CF'
+
+alias grep='grep --color=auto'
+alias cls='clear'
+alias ..='cd ..'
+alias ...='cd ../..'
+
+alias update='sudo pacman -Syu'
+alias install='sudo pacman -S'
+alias search='pacman -Ss'
+
+alias ports='ss -tulpen'
+alias myip='ip -4 addr show end0 | awk "/inet / {print \$2}" | cut -d/ -f1'
+
+alias arakiel='~/bin/arakiel'
+
+alias ff='fastfetch --logo small'

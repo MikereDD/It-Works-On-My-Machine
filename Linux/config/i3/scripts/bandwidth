@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+
+iface="${1:-end0}"
+
+rx1=$(cat /sys/class/net/$iface/statistics/rx_bytes 2>/dev/null)
+tx1=$(cat /sys/class/net/$iface/statistics/tx_bytes 2>/dev/null)
+
+# If interface missing, exit cleanly
+if [[ -z "$rx1" || -z "$tx1" ]]; then
+    echo "down"
+    exit 0
+fi
+
+sleep 1
+
+rx2=$(cat /sys/class/net/$iface/statistics/rx_bytes 2>/dev/null)
+tx2=$(cat /sys/class/net/$iface/statistics/tx_bytes 2>/dev/null)
+
+rx=$(( (rx2 - rx1) / 1024 ))
+tx=$(( (tx2 - tx1) / 1024 ))
+
+echo "↓${rx}K ↑${tx}K"
