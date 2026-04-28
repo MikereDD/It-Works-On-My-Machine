@@ -1,0 +1,145 @@
+#!/usr/bin/env bash
+#--------------------------------------------
+# file:     infocat-pi
+# author:   Mike Redd
+# version:  1.0
+# desc:     Pi 5 / Arch Linux system info cat
+#--------------------------------------------
+
+f=3 b=4
+for j in f b; do
+  for i in {0..7}; do
+    printf -v "$j$i" '%b' "\e[${!j}${i}m"
+  done
+done
+
+bld=$'\e[1m'
+rst=$'\e[0m'
+NC=$rst
+
+gtkrc="$HOME/.gtkrc-2.0"
+gtktheme="None"
+gtkicon="None"
+gtkfont="None"
+
+if [[ -f "$gtkrc" ]]; then
+  gtktheme=$(grep -E '^gtk-theme-name' "$gtkrc" 2>/dev/null | cut -f2 -d "=" | tr -d '"' | tr -d " ")
+  gtkicon=$(grep -E '^gtk-icon-theme-name' "$gtkrc" 2>/dev/null | cut -f2 -d "=" | tr -d '"')
+  gtkfont=$(grep -E '^gtk-font-name' "$gtkrc" 2>/dev/null | cut -f2 -d "=" | tr -d '"')
+fi
+
+[[ -z "$gtktheme" ]] && gtktheme="None"
+[[ -z "$gtkicon" ]] && gtkicon="None"
+[[ -z "$gtkfont" ]] && gtkfont="None"
+
+if command -v xrandr >/dev/null 2>&1 && [[ -n "${DISPLAY:-}" ]]; then
+  resolution=$(xrandr 2>/dev/null | awk '/\*/ {print $1; exit}')
+else
+  resolution="TTY/Headless"
+fi
+
+xdef="$HOME/.Xresources"
+termfont=""
+
+if [[ -f "$xdef" ]]; then
+  termfont="$(grep -E '^URxvt\*font:' "$xdef" 2>/dev/null \
+    | tail -1 \
+    | sed -E '
+        s/^URxvt\*font:[[:space:]]*xft://;
+        s/:size=([0-9]+)/ \1/;
+        s/:.*$//;
+        s/[[:space:]]+$//
+    ')"
+fi
+
+[[ -z "$termfont" ]] && termfont="${TERM:-unknown}"
+
+time_now=$(date "+%H:%M")
+date_now=$(date "+%a %d %b")
+
+if [[ -f /etc/os-release ]]; then
+  distro=$(grep '^PRETTY_NAME=' /etc/os-release | cut -d= -f2- | tr -d '"')
+else
+  distro=$(uname -s)
+fi
+
+kernel=$(uname -r)
+
+if command -v i3 >/dev/null 2>&1; then
+  WinMan=$(i3 -v | awk '{print $1,$2,$3}')
+else
+  WinMan="${XDG_CURRENT_DESKTOP:-None}"
+fi
+
+uptime_short=$(uptime -p | sed 's/^up //')
+load=$(cut -d " " -f1-3 /proc/loadavg)
+
+root_use=$(df -h / | awk 'NR==2 {print $3 " / " $2 " (" $5 ")"}')
+nvme_use="Not mounted"
+if mountpoint -q /mnt/nvme1; then
+  nvme_use=$(df -h /mnt/nvme1 | awk 'NR==2 {print $3 " / " $2 " (" $5 ")"}')
+fi
+
+pacman_count=$(pacman -Q 2>/dev/null | wc -l)
+
+cpu_model=$(tr -d '\0' < /proc/device-tree/model 2>/dev/null)
+[[ -z "$cpu_model" ]] && cpu_model=$(grep -m1 'Hardware' /proc/cpuinfo | cut -d: -f2- | sed 's/^ *//')
+[[ -z "$cpu_model" ]] && cpu_model="Raspberry Pi"
+
+cpu_cores=$(nproc 2>/dev/null || echo "?")
+
+cpu_temp="Unknown"
+if [[ -f /sys/class/thermal/thermal_zone0/temp ]]; then
+  raw_temp=$(cat /sys/class/thermal/thermal_zone0/temp)
+  cpu_temp="$(awk "BEGIN {printf \"%.1f°C\", $raw_temp/1000}")"
+fi
+
+gpu_info="VideoCore / Pi integrated"
+if command -v vcgencmd >/dev/null 2>&1; then
+  gpu_mem=$(vcgencmd get_mem gpu 2>/dev/null | cut -d= -f2)
+  [[ -n "$gpu_mem" ]] && gpu_info="VideoCore / GPU mem $gpu_mem"
+fi
+
+audio_info="Pi audio / HDMI"
+if command -v aplay >/dev/null 2>&1; then
+  audio_info=$(aplay -l 2>/dev/null | awk -F'[][]' '/card 0/ {print $2; exit}')
+  [[ -z "$audio_info" ]] && audio_info="Pi audio / HDMI"
+fi
+
+memoryuse=$(free -m | awk '/^Mem:/{print $3}')
+memorytotal=$(free -m | awk '/^Mem:/{print $2}')
+
+ip_lan=$(ip -4 addr show end0 2>/dev/null | awk '/inet / {print $2; exit}')
+[[ -z "$ip_lan" ]] && ip_lan=$(hostname -I 2>/dev/null | awk '{print $1}')
+[[ -z "$ip_lan" ]] && ip_lan="None"
+
+cat << EOF
+$bld
+$f7                    .c0N.   .'c.                  ${f7}the${f1} cat
+$f7         'Okdl:'  ;OMMMMKOKNMMW:;o0l  .'.
+$f7         ;MMMMMMWWMMMMMMMMMMMMMMMMMXKWMMK         $f4$time_now$NC - $f7$date_now
+$f7         'MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMK         $f6$USER $f1@ $f2$HOSTNAME
+$f7          NMMMMMMMMMMMMMMMMMMMMMMMMMMMMMO
+$f7          dMMMMMMMMMMMMMMMMMMMMMMMMMMMMM:          GTK Theme  $f1»$f4 $gtktheme$NC
+$f7          'MMMMMMMMMMMMMMMMMMMMMMMMMMMMM.          GTK Icons  $f1»$f4 $gtkicon$NC
+$f7          'MMMMMMMMMMMMMMMMMMMMMMMMMMMMM;          GTK Font   $f1»$f4 $gtkfont$NC
+$f7          lMMMMM  MMMMMMMMMM  MMMMMMMMMM,          Term Font  $f1»$f4 $termfont$NC
+$f7          KMMMMM  MMMMMMMMMM  MMMMMMMMMM.          Uptime     $f1»$f4 $uptime_short
+$f7         ;WMMMMMkNMMMMMMMMMMONMMMMMMMMMW:          Load       $f1»$f4 $load
+$f7       oNMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMO         Root       $f1»$f4 $root_use
+$f7      .,cxKWMMMMMMMMMMMMMMMMMMMMMMMMMMMXdxo        NVMe       $f1»$f4 $nvme_use
+$f7         ;kWMMMMMMMMMMMMMMMMMMMMMMMMMMMM:          Packages   $f1»$f4 $pacman_count
+$f7         '::'  .;ok0NMMMMWNK0kdoc;'  '::'          Resolution $f1»$f4 $resolution
+$f8                   .:cc:;;.$NC                       $f7 Distro $NC    $f1»$f4 $distro
+$f8                   .o0MMMK'$NC                       $f7 WM     $NC    $f1»$f4 $WinMan
+$f1                     xMMM: $NC                       $f7 Kernel $NC    $f1»$f4 $kernel
+$f1                     KMMMl$NC                        $f7 Board      $f1»$f4 $cpu_model
+$f1                    .MMMMo$NC                        $f7 CPU        $f1»$f4 $cpu_cores cores / $cpu_temp
+$f1                    ,MMMMx$NC                        $f7 GPU        $f1»$f4 $gpu_info
+$f1                    oMMMMx$NC                        $f7 Audio      $f1»$f4 $audio_info
+$f1                    OMMMMO                        $f7 Memory     $f1»$f4 ${memoryuse} MB $f2/ $f4${memorytotal} MB
+$f1                    .OMMMd                        $f7 LAN        $f1»$f4 $ip_lan
+$f1                      :Nl                                                      $f7 the$f1 cat
+
+$rst
+EOF
