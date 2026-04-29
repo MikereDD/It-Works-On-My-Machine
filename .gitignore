@@ -1,7 +1,4 @@
-# outputs
-*.mkv
-*.mp4
-*.iso
+# outputs (adjust if you ever commit media)
 *.log
 
 # local config / secrets
@@ -9,9 +6,10 @@
 *.key
 *.pem
 *.secret
+**/config.py
 **/config.ps1
 **/config.sh
-**/*rc.py
+**/*rc.local.py
 
 # temp / junk
 *.tmp
@@ -23,6 +21,7 @@ Desktop.ini
 # editors
 *.swp
 *.swo
+*.swn
 
 # shell / system
 .bash_history
@@ -34,3 +33,12 @@ __pycache__/
 
 # node (future)
 node_modules/
+
+# Vim runtime/state
+.config/vim/viminfo
+.config/vim/backup/
+.config/vim/swap/
+.config/vim/undo/
+
+# Private Wi-Fi config
+.config/wifi-menu/wifirc
