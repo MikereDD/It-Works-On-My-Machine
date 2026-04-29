@@ -1,4 +1,0 @@
-WIFI_SSID="YourWifiName"
-WIFI_PASSWORD="YourWifiPassword"
-# optional:
-# WIFI_IFACE="wlan0"
