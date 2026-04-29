@@ -1,7 +1,6 @@
 # 🧰 It-Works-On-My-Machine
 
-> Everything in here works.
-> On my machine.
+> Everything in here works. On my machine.
 
 ---
 
@@ -12,6 +11,7 @@ A personal archive of scripts I’ve used at some point and didn’t want to los
 * **Windows** → PowerShell
 * **Linux** → Bash
 * **Bots** → small automation tools (Telegram, API-based, etc.)
+* **Games** → terminal games and experiments
 
 If it’s here, it probably worked once. That’s the bar.
 
@@ -47,9 +47,10 @@ If you want to use them:
 ## 📁 Structure
 
 ```text
-Windows/   → PowerShell scripts
-Linux/     → Bash scripts
-Bots/      → automation scripts (Telegram, API-based, etc.)
+Windows/   → PowerShell scripts  
+Linux/     → Bash scripts  
+Bots/      → automation scripts (Telegram, API-based, etc.)  
+Games/     → terminal games and experiments  
 ```
 
 Each side is independent. No attempt is made to keep them in sync.
@@ -76,8 +77,7 @@ Then:
 * Dependencies are assumed, not documented
 * Things may change without warning
 
-If something works, keep it.
-If it doesn’t, now you know how it works.
+If something works, keep it. If it doesn’t, now you know how it works.
 
 ---
 
@@ -92,9 +92,11 @@ Create your own locally if needed:
 
 ---
 
-## 🧠 Final
+## 📜 License
 
-This exists so I don’t have to rewrite the same scripts twice.
+This project is licensed under the **WTFPL (Do What The Fuck You Want To Public License)**.
 
-If it helps you, great.
-If not, that’s expected.
+See the [LICENSE](LICENSE) file for full details.
+
+Do what the fuck you want.
+
