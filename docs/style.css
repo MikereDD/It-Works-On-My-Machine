@@ -1,0 +1,43 @@
+body {
+  background: #0a0a0a;
+  color: #eaeaea;
+  font-family: monospace;
+  margin: 0;
+}
+
+.container {
+  max-width: 1200px;
+  margin: auto;
+  padding: 20px;
+}
+
+.terminal {
+  border: 1px solid #00ffff;
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.prompt {
+  color: #00ffff;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 20px;
+}
+
+.box {
+  border: 1px solid #00ffff;
+  padding: 15px;
+}
+
+.systems {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+.small {
+  font-size: 0.9em;
+}
