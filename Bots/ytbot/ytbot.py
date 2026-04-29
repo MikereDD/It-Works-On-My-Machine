@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file:     ytbot.py
 # author:   Mike Redd
-# version:  5.2
+# version:  5.2.1
 # created:  2026-04-18
 # updated:  2026-04-22
 # desc:     Queue-based Telegram media bot
@@ -16,6 +16,7 @@ import asyncio
 from datetime import datetime
 import json
 import logging
+import os
 import re
 import shutil
 import subprocess
@@ -45,7 +46,10 @@ from telegram.ext import (
 )
 
 # ── Private Config ──────────────────────────────────────────────────────────────
-CONFIG_DIR = Path("G:/bots/config")
+APP_DIR = Path(__file__).resolve().parent
+ROOT_DIR = APP_DIR.parent
+
+CONFIG_DIR = ROOT_DIR / "config"
 CONFIG_FILE = CONFIG_DIR / "ytbotrc.py"
 
 if not CONFIG_FILE.exists():
@@ -61,7 +65,8 @@ except Exception as e:
 BOT_TOKEN = getattr(ytbotrc, "BOT_TOKEN", "")
 OWNER_ID = getattr(ytbotrc, "ALLOWED_USER_ID", 0)
 
-BASE_DIR = Path(getattr(ytbotrc, "BASE_DIR", "G:/bots"))
+_configured_base = getattr(ytbotrc, "BASE_DIR", ROOT_DIR)
+BASE_DIR = Path(os.path.expandvars(os.path.expanduser(str(_configured_base)))).resolve()
 
 ADMIN_USERS = set(getattr(ytbotrc, "ADMIN_USERS", [OWNER_ID]) or [OWNER_ID])
 ALLOWED_USERS = set(getattr(ytbotrc, "ALLOWED_USERS", [OWNER_ID]) or [OWNER_ID])
@@ -1208,7 +1213,7 @@ async def start_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
     chat = update.effective_chat
 
     lines = [
-        "👋 *YT Bot v5.2*",
+        "👋 *YT Bot v5.2.1*",
         "",
         "Send me a link or use a command:",
         "",
@@ -1808,3 +1813,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
