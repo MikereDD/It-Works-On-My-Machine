@@ -1,17 +1,22 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>It-Works-On-My-Machine</title>
-  <link rel="stylesheet" href="style.css" />
+
+  <!-- CSS (cache busted) -->
+  <link rel="stylesheet" href="style.css?v=3">
 </head>
 
 <body>
+
   <main class="page">
 
+    <!-- HERO -->
     <section class="hero terminal-box">
       <div class="hero-text">
+
         <div class="prompt">
           <div>┌─[SSH]─[<span class="green">typezero</span>@<span class="yellow">arakiel</span>]─[~]</div>
           <div>└─╼ <span class="cursor-target">It-Works-On-My-Machine</span></div>
@@ -27,91 +32,99 @@
         <p class="cyan">
           Built for me. Shared because apparently GitHub exists.
         </p>
+
       </div>
 
       <pre class="ascii" aria-hidden="true">
-        ┌──────────────────┐   ┌────────┐
-        │  &gt;_              │   │  ▬▬    │
-        │                  │   │  ▬▬    │
-        └──────┬─────┬─────┘   │  ..    │
-               └─────┘         │  []    │
-          ══════════════════   └────────┘
+┌──────────────────┐   ┌────────┐
+│  &gt;_              │   │  ▬▬    │
+│                  │   │  ▬▬    │
+└──────┬─────┬─────┘   │  ..    │
+       └─────┘         │  []    │
+  ══════════════════   └────────┘
 
-          It works on my machine.
+  It works on my machine.
       </pre>
     </section>
 
+    <!-- CARDS -->
     <section class="cards">
+
       <a class="card windows" href="../Windows/">
         <div class="icon">▦</div>
-        <div>
-          <h3>Windows</h3>
-          <p>PowerShell Scripts</p>
-        </div>
+        <h3>Windows</h3>
+        <p>PowerShell Scripts</p>
+
         <ul>
           <li>Admin Tools</li>
           <li>Personal Tools</li>
           <li>System Utilities</li>
           <li>Automation Scripts</li>
         </ul>
+
         <span class="button">Browse windows/</span>
       </a>
 
       <a class="card linux" href="../Linux/">
         <div class="icon">♟</div>
-        <div>
-          <h3>Linux</h3>
-          <p>Bash Scripts</p>
-        </div>
+        <h3>Linux</h3>
+        <p>Bash Scripts</p>
+
         <ul>
           <li>System Setup</li>
           <li>Maintenance</li>
           <li>Automation</li>
           <li>Server Tools</li>
         </ul>
+
         <span class="button">Browse linux/</span>
       </a>
 
       <a class="card bots" href="../Bots/">
         <div class="icon">☻</div>
-        <div>
-          <h3>Bots</h3>
-          <p>Telegram &amp; More</p>
-        </div>
+        <h3>Bots</h3>
+        <p>Telegram &amp; More</p>
+
         <ul>
           <li>Telegram Bots</li>
           <li>YouTube Bot</li>
           <li>Automation Bots</li>
           <li>API Integrations</li>
         </ul>
+
         <span class="button">Browse bots/</span>
       </a>
 
       <a class="card games" href="../Windows/Powershell/games/">
         <div class="icon">⌁</div>
-        <div>
-          <h3>Games</h3>
-          <p>Terminal Games</p>
-        </div>
+        <h3>Games</h3>
+        <p>Terminal Games</p>
+
         <ul>
           <li>Tetris</li>
           <li>Snake</li>
           <li>Pong</li>
           <li>More Coming...</li>
         </ul>
+
         <span class="button">Browse games/</span>
       </a>
+
     </section>
 
+    <!-- LOWER GRID -->
     <section class="lower-grid">
 
+      <!-- PI SYSTEM -->
       <section class="system-panel arakiel">
+
         <div class="prompt mini">
           <div>┌─[SSH]─[<span class="green">typezero</span>@<span class="yellow">arakiel</span>]─[~]</div>
           <div>└─╼ system-info</div>
         </div>
 
         <div class="system-content">
+
           <pre class="pi-art" aria-hidden="true">
    .~~.
   (    )
@@ -130,13 +143,17 @@
             <p><span>Role:</span> bots / automation / server</p>
             <p><span>Status:</span> online</p>
           </div>
+
         </div>
 
-        <p class="quote">"It works on my machine." <span>¯\_(ツ)_/¯</span></p>
+        <p class="quote">"It works on my machine." ¯\_(ツ)_/¯</p>
+
       </section>
 
+      <!-- QUICK LINKS -->
       <section class="quick terminal-box">
         <h3>Quick Links</h3>
+
         <a href="https://github.com/MikereDD/It-Works-On-My-Machine">View on GitHub</a>
         <a href="https://github.com/MikereDD/It-Works-On-My-Machine/issues">Report an Issue</a>
         <a href="https://github.com/MikereDD/It-Works-On-My-Machine/issues/new">Request a Feature</a>
@@ -144,13 +161,16 @@
         <a href="https://github.com/MikereDD/It-Works-On-My-Machine/stargazers">Star the Repo ★</a>
       </section>
 
+      <!-- LAPTOP SYSTEM -->
       <section class="system-panel netzach">
+
         <div class="prompt mini">
           <div>┌─[<span class="green">miker</span>@<span class="yellow">netzach</span>]─[~/GitHub/It-Works-On-My-Machine]<span class="git">(main)</span></div>
           <div>└─╼ system-info</div>
         </div>
 
         <div class="system-content">
+
           <pre class="laptop-art" aria-hidden="true">
    ┌──────────┐
    │   👽     │
@@ -166,13 +186,16 @@
             <p><span>Role:</span> development / encoding / scripts</p>
             <p><span>Status:</span> active</p>
           </div>
+
         </div>
 
-        <p class="quote">"Also works here. Mostly." <span>(ಠ_ಠ)</span></p>
+        <p class="quote">"Also works here. Mostly." (ಠ_ಠ)</p>
+
       </section>
 
     </section>
 
+    <!-- FOOTER -->
     <footer>
       <span>&gt; Last updated: <strong id="last-updated">loading...</strong></span>
       <span>Thanks for stopping by.</span>
@@ -181,6 +204,8 @@
 
   </main>
 
-  <script src="script.js"></script>
+  <!-- JS (cache busted) -->
+  <script src="script.js?v=3"></script>
+
 </body>
 </html>
