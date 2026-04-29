@@ -30,10 +30,17 @@ set history=1000
 " -------------------------
 " Lines
 " -------------------------
-set nonumber
-set norelativenumber
+set number
+set relativenumber
+
+" Toggle absolute line numbers
 nnoremap <leader>n :setlocal number!<CR>
+
+" Toggle relative line numbers
 nnoremap <leader>r :setlocal relativenumber!<CR>
+
+" Toggle both line number modes
+nnoremap <leader>N :setlocal number! relativenumber!<CR>
 
 " -------------------------
 " Tabs/spaces
@@ -54,7 +61,7 @@ set wrap
 set linebreak
 set textwidth=120
 set colorcolumn=+1
-set showbreak=>\ \ \
+set showbreak=>\ \ \ 
 
 " -------------------------
 " Search
@@ -111,6 +118,7 @@ endfor
 " -------------------------
 set undofile
 execute 'set undodir=' . g:vim_undo_dir . '//'
+
 set backup
 execute 'set backupdir=' . g:vim_backup_dir . '//'
 execute 'set directory=' . g:vim_swap_dir . '//'
@@ -149,12 +157,18 @@ match ErrorMsg '^\(<\|=\|>\)\{7\}\([^=].\+\)\?$'
 " -------------------------
 " Helpers
 " -------------------------
+
+" Trim trailing whitespace
 nnoremap <leader>w mz:%s/\s\+$//<CR>:let @/=''<CR>`z
+
+" Save file with sudo
 cnoremap w!! w !sudo tee % >/dev/null
 
+" Edit/source vimrc
 nnoremap <leader>ev :vsplit ~/.config/vim/vimrc<CR>
 nnoremap <leader>sv :source ~/.config/vim/vimrc<CR>
 
+" Turn off diff mode
 nnoremap <leader>D :diffoff!<CR>
 
 " -------------------------
