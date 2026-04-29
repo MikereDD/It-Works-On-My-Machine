@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # file:    tool-menu.sh
-# version: 1.0
+# version: 1.1
 # desc:    Main launcher (Admin + Personal)
 
 source "$HOME/scripts/lib/core.sh"
@@ -36,6 +36,7 @@ admin_menu() {
         ui_option "4" "Disk"
         ui_option "5" "Services"
         ui_option "6" "Processes"
+        ui_option "7" "Wi-Fi Menu"
         echo
         ui_option "q" "Back"
 
@@ -49,6 +50,7 @@ admin_menu() {
             4) run_script "admintools/disk.sh" ;;
             5) run_script "admintools/services.sh" ;;
             6) run_script "admintools/processes.sh" ;;
+            7) run_script "admintools/wifi-menu.sh" ;;
             q|Q) return ;;
             *) ui_error "Invalid option"; sleep 1 ;;
         esac
