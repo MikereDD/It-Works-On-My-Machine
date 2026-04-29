@@ -1,73 +1,186 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>It-Works-On-My-Machine</title>
-<link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>It-Works-On-My-Machine</title>
+  <link rel="stylesheet" href="style.css" />
 </head>
 
 <body>
+  <main class="page">
 
-<div class="container">
+    <section class="hero terminal-box">
+      <div class="hero-text">
+        <div class="prompt">
+          <div>┌─[SSH]─[<span class="green">typezero</span>@<span class="yellow">arakiel</span>]─[~]</div>
+          <div>└─╼ <span class="cursor-target">It-Works-On-My-Machine</span></div>
+        </div>
 
-  <!-- HEADER -->
-  <div class="terminal">
-    <div class="prompt">
-      ┌─[SSH]─[typezero@arakiel]─[~]
-    </div>
-    <div class="prompt">
-      └─╼ It-Works-On-My-Machine
-    </div>
+        <h1>It-Works-On-My-Machine</h1>
+        <h2>Scripts. Tools. Bots. Experiments.</h2>
 
-    <h1>Scripts. Tools. Bots. Experiments.</h1>
-    <p>A personal backup repo of useful (and sometimes questionable) automation.</p>
-  </div>
+        <p>
+          A personal backup repo of useful and sometimes questionable automation.
+        </p>
 
-  <!-- SECTIONS -->
-  <div class="grid">
+        <p class="cyan">
+          Built for me. Shared because apparently GitHub exists.
+        </p>
+      </div>
 
-    <div class="box">
-      <h2>Windows</h2>
-      <p>PowerShell Scripts</p>
-    </div>
+      <pre class="ascii" aria-hidden="true">
+        ┌──────────────────┐   ┌────────┐
+        │  &gt;_              │   │  ▬▬    │
+        │                  │   │  ▬▬    │
+        └──────┬─────┬─────┘   │  ..    │
+               └─────┘         │  []    │
+          ══════════════════   └────────┘
 
-    <div class="box">
-      <h2>Linux</h2>
-      <p>Bash Scripts</p>
-    </div>
+          It works on my machine.
+      </pre>
+    </section>
 
-    <div class="box">
-      <h2>Bots</h2>
-      <p>Telegram &amp; Automation</p>
-    </div>
+    <section class="cards">
+      <a class="card windows" href="../Windows/">
+        <div class="icon">▦</div>
+        <div>
+          <h3>Windows</h3>
+          <p>PowerShell Scripts</p>
+        </div>
+        <ul>
+          <li>Admin Tools</li>
+          <li>Personal Tools</li>
+          <li>System Utilities</li>
+          <li>Automation Scripts</li>
+        </ul>
+        <span class="button">Browse windows/</span>
+      </a>
 
-    <div class="box">
-      <h2>Games</h2>
-      <p>Terminal Games</p>
-    </div>
+      <a class="card linux" href="../Linux/">
+        <div class="icon">♟</div>
+        <div>
+          <h3>Linux</h3>
+          <p>Bash Scripts</p>
+        </div>
+        <ul>
+          <li>System Setup</li>
+          <li>Maintenance</li>
+          <li>Automation</li>
+          <li>Server Tools</li>
+        </ul>
+        <span class="button">Browse linux/</span>
+      </a>
 
-  </div>
+      <a class="card bots" href="../Bots/">
+        <div class="icon">☻</div>
+        <div>
+          <h3>Bots</h3>
+          <p>Telegram &amp; More</p>
+        </div>
+        <ul>
+          <li>Telegram Bots</li>
+          <li>YouTube Bot</li>
+          <li>Automation Bots</li>
+          <li>API Integrations</li>
+        </ul>
+        <span class="button">Browse bots/</span>
+      </a>
 
-  <!-- SYSTEMS -->
-  <div class="systems">
+      <a class="card games" href="../Windows/Powershell/games/">
+        <div class="icon">⌁</div>
+        <div>
+          <h3>Games</h3>
+          <p>Terminal Games</p>
+        </div>
+        <ul>
+          <li>Tetris</li>
+          <li>Snake</li>
+          <li>Pong</li>
+          <li>More Coming...</li>
+        </ul>
+        <span class="button">Browse games/</span>
+      </a>
+    </section>
 
-    <div class="terminal small">
-      <div>┌─[SSH]─[typezero@arakiel]─[~]</div>
-      <div>└─╼ system-info</div>
-      <p>Arch Linux · Pi 5 · bots/server</p>
-    </div>
+    <section class="lower-grid">
 
-    <div class="terminal small">
-      <div>┌─[miker@netzach]─[~/GitHub/It-Works-On-My-Machine](main)</div>
-      <div>└─╼ system-info</div>
-      <p>Windows 11 · m16 · development</p>
-    </div>
+      <section class="system-panel arakiel">
+        <div class="prompt mini">
+          <div>┌─[SSH]─[<span class="green">typezero</span>@<span class="yellow">arakiel</span>]─[~]</div>
+          <div>└─╼ system-info</div>
+        </div>
 
-  </div>
+        <div class="system-content">
+          <pre class="pi-art" aria-hidden="true">
+   .~~.
+  (    )
+   '--'
+  /====\
+ /  ()  \
+ \  ()  /
+  \____/
+          </pre>
 
-</div>
+          <div class="info-lines">
+            <p><span>OS:</span> Arch Linux (aarch64)</p>
+            <p><span>Host:</span> Raspberry Pi 5 (py5)</p>
+            <p><span>Shell:</span> bash 5.2.26</p>
+            <p><span>Uptime:</span> 12 days, 7 hours</p>
+            <p><span>Role:</span> bots / automation / server</p>
+            <p><span>Status:</span> online</p>
+          </div>
+        </div>
 
-<script src="script.js"></script>
+        <p class="quote">"It works on my machine." <span>¯\_(ツ)_/¯</span></p>
+      </section>
 
+      <section class="quick terminal-box">
+        <h3>Quick Links</h3>
+        <a href="https://github.com/MikereDD/It-Works-On-My-Machine">View on GitHub</a>
+        <a href="https://github.com/MikereDD/It-Works-On-My-Machine/issues">Report an Issue</a>
+        <a href="https://github.com/MikereDD/It-Works-On-My-Machine/issues/new">Request a Feature</a>
+        <a href="https://github.com/MikereDD/It-Works-On-My-Machine/wiki">Check the Wiki</a>
+        <a href="https://github.com/MikereDD/It-Works-On-My-Machine/stargazers">Star the Repo ★</a>
+      </section>
+
+      <section class="system-panel netzach">
+        <div class="prompt mini">
+          <div>┌─[<span class="green">miker</span>@<span class="yellow">netzach</span>]─[~/GitHub/It-Works-On-My-Machine]<span class="git">(main)</span></div>
+          <div>└─╼ system-info</div>
+        </div>
+
+        <div class="system-content">
+          <pre class="laptop-art" aria-hidden="true">
+   ┌──────────┐
+   │   👽     │
+   └────┬─────┘
+  ════════════
+          </pre>
+
+          <div class="info-lines">
+            <p><span>OS:</span> Windows 11 Pro</p>
+            <p><span>Host:</span> Alienware m16 R1</p>
+            <p><span>Shell:</span> PowerShell 7.6</p>
+            <p><span>Uptime:</span> 5 hours, 32 mins</p>
+            <p><span>Role:</span> development / encoding / scripts</p>
+            <p><span>Status:</span> active</p>
+          </div>
+        </div>
+
+        <p class="quote">"Also works here. Mostly." <span>(ಠ_ಠ)</span></p>
+      </section>
+
+    </section>
+
+    <footer>
+      <span>&gt; Last updated: <strong id="last-updated">loading...</strong></span>
+      <span>Thanks for stopping by.</span>
+      <span>Licensed under <strong>MIT</strong> | Use it. Break it. Fix it.</span>
+    </footer>
+
+  </main>
+
+  <script src="script.js"></script>
 </body>
 </html>
