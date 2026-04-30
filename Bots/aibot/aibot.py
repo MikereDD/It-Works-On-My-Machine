@@ -1,22 +1,25 @@
 # ------------------------------------------------------------
 # file:     aibot.py
 # author:   Mike Redd
-# version:  3.1
+# version:  3.2
 # created:  2026-04-19
 # updated:  2026-04-29
-# desc:     Telegram AI bot with text + image generation
+# desc:     Telegram AI bot with text + high-quality image generation
 #           Config via /mnt/nvme1/work/bots/config/aibotrc.py
 # ------------------------------------------------------------
 
 import base64
 import logging
 import os
+import re
 import sys
+from datetime import datetime
 from io import BytesIO
 from pathlib import Path
 
 from openai import AsyncOpenAI
 from telegram import Update
+from telegram.error import TimedOut
 from telegram.ext import Application, CommandHandler, ContextTypes
 
 # ── Load config ───────────────────────────────────────────────
@@ -59,7 +62,7 @@ logger = logging.getLogger(__name__)
 # ── OpenAI client ─────────────────────────────────────────────
 client = AsyncOpenAI(api_key=cfg.OPENAI_API_KEY)
 
-# ── Auth check: private DM + your Telegram ID only ────────────
+# ── Helpers ──────────────────────────────────────────────────
 def is_allowed(update: Update) -> bool:
     user = update.effective_user
     chat = update.effective_chat
@@ -70,6 +73,48 @@ def is_allowed(update: Update) -> bool:
         and user.id == cfg.ALLOWED_USER_ID
         and chat.type == "private"
     )
+
+def slugify(text: str, max_len: int = 64) -> str:
+    text = text.lower().strip()
+    text = re.sub(r"[^a-z0-9\s_-]", "", text)
+    text = re.sub(r"[\s_-]+", "-", text)
+    text = text.strip("-")
+    return (text or "image")[:max_len].rstrip("-")
+
+def make_image_filename(prompt: str) -> str:
+    stamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    return f"{slugify(prompt)}_{stamp}.png"
+
+def build_hyperreal_prompt(prompt: str) -> str:
+    style = getattr(cfg, "IMAGE_STYLE_PROMPT", "").strip()
+
+    if not style:
+        style = (
+            "Hyper-realistic, ultra-detailed, cinematic 4K realism, "
+            "professional photography, realistic textures, realistic lighting, "
+            "physically accurate shadows, high dynamic range, sharp focus, "
+            "real-world lens depth of field, natural proportions, no anime, "
+            "no cartoon, no illustration, no painterly style, no plastic skin."
+        )
+
+    return f"{prompt.strip()}. {style}"
+
+def format_api_error(exc: Exception) -> str:
+    msg = str(exc).lower()
+
+    if "insufficient_quota" in msg or "quota" in msg:
+        return "OpenAI API quota exceeded. Check billing and usage limits."
+
+    if "rate limit" in msg or "429" in msg:
+        return "Rate limit hit. Wait a moment and try again."
+
+    if "invalid_api_key" in msg or "incorrect api key" in msg:
+        return "Invalid OpenAI API key. Check aibotrc.py."
+
+    if "model" in msg and "not found" in msg:
+        return "Configured model is not available for this API key."
+
+    return f"Request failed: {exc}"
 
 # ── Commands ─────────────────────────────────────────────────
 async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -111,7 +156,7 @@ async def ai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     except Exception as exc:
         logger.exception("AI request failed")
-        await update.message.reply_text(f"AI request failed: {exc}")
+        await update.message.reply_text(format_api_error(exc))
 
 async def img_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not is_allowed(update) or not update.message:
@@ -124,12 +169,20 @@ async def img_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     try:
-        logger.info("IMG request from user_id=%s | prompt=%r", update.effective_user.id, prompt)
+        logger.info(
+            "IMG request from user_id=%s | prompt=%r",
+            update.effective_user.id,
+            prompt,
+        )
+
+        final_prompt = build_hyperreal_prompt(prompt)
 
         result = await client.images.generate(
             model=cfg.IMAGE_MODEL,
-            prompt=prompt,
+            prompt=final_prompt,
             size=cfg.IMAGE_SIZE,
+            quality=cfg.IMAGE_QUALITY,
+            output_format=cfg.IMAGE_OUTPUT_FORMAT,
         )
 
         if not result.data:
@@ -140,30 +193,39 @@ async def img_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if not image_b64:
             raise RuntimeError("Image API returned no base64 image payload.")
 
-        # Correct Python 3 base64 decode
         image_data = base64.b64decode(image_b64)
 
-        image_filename = "latest.png"
+        image_filename = make_image_filename(prompt)
         image_path = IMAGE_DIR / image_filename
-
-        # Save locally
         image_path.write_bytes(image_data)
 
-        # Send to Telegram
         image_stream = BytesIO(image_data)
         image_stream.name = image_filename
         image_stream.seek(0)
 
         await update.message.reply_photo(
             photo=image_stream,
-            caption=f"Prompt: {prompt[:900]}",
+            caption=(
+                f"Prompt: {prompt[:700]}\n"
+                f"Size: {cfg.IMAGE_SIZE} | Quality: {cfg.IMAGE_QUALITY}"
+            ),
+            read_timeout=getattr(cfg, "TELEGRAM_READ_TIMEOUT", 120),
+            write_timeout=getattr(cfg, "TELEGRAM_WRITE_TIMEOUT", 120),
+            connect_timeout=getattr(cfg, "TELEGRAM_CONNECT_TIMEOUT", 30),
+            pool_timeout=getattr(cfg, "TELEGRAM_POOL_TIMEOUT", 30),
         )
 
         logger.info("IMG success | saved=%s", image_path)
 
+    except TimedOut:
+        logger.warning("Telegram timed out while sending generated image.")
+        await update.message.reply_text(
+            "Image was generated and saved locally, but Telegram timed out while sending it."
+        )
+
     except Exception as exc:
         logger.exception("Image generation failed")
-        await update.message.reply_text(f"Image generation failed: {exc}")
+        await update.message.reply_text(format_api_error(exc))
 
 async def status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not is_allowed(update) or not update.message:
@@ -171,12 +233,14 @@ async def status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
     await update.message.reply_text(
         f"AI bot online\n"
-        f"Text model:  {cfg.MODEL}\n"
-        f"Image model: {cfg.IMAGE_MODEL}\n"
-        f"Image size:  {cfg.IMAGE_SIZE}\n"
-        f"Config:      {CONFIG_PATH}\n"
-        f"Logs:        {LOG_FILE}\n"
-        f"Images:      {IMAGE_DIR}"
+        f"Text model:    {cfg.MODEL}\n"
+        f"Image model:   {cfg.IMAGE_MODEL}\n"
+        f"Image size:    {cfg.IMAGE_SIZE}\n"
+        f"Image quality: {cfg.IMAGE_QUALITY}\n"
+        f"Image format:  {cfg.IMAGE_OUTPUT_FORMAT}\n"
+        f"Config:        {CONFIG_PATH}\n"
+        f"Logs:          {LOG_FILE}\n"
+        f"Images:        {IMAGE_DIR}"
     )
 
 async def reset_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -187,7 +251,15 @@ async def reset_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 # ── Main ─────────────────────────────────────────────────────
 def main() -> None:
-    app = Application.builder().token(cfg.BOT_TOKEN).build()
+    app = (
+        Application.builder()
+        .token(cfg.BOT_TOKEN)
+        .read_timeout(getattr(cfg, "TELEGRAM_READ_TIMEOUT", 120))
+        .write_timeout(getattr(cfg, "TELEGRAM_WRITE_TIMEOUT", 120))
+        .connect_timeout(getattr(cfg, "TELEGRAM_CONNECT_TIMEOUT", 30))
+        .pool_timeout(getattr(cfg, "TELEGRAM_POOL_TIMEOUT", 30))
+        .build()
+    )
 
     app.add_handler(CommandHandler("start", start_cmd))
     app.add_handler(CommandHandler("ai", ai_cmd))
