@@ -2,7 +2,7 @@
 #--------------------------------------------
 # file:     infocat-pi
 # author:   Mike Redd
-# version:  1.0
+# version:  1.1
 # desc:     Pi 5 / Arch Linux system info cat
 #--------------------------------------------
 
@@ -12,6 +12,10 @@ for j in f b; do
     printf -v "$j$i" '%b' "\e[${!j}${i}m"
   done
 done
+
+# ── Added lighter colors ─────────────────────
+f14=$'\e[37m'   # light gray (used for values)
+f15=$'\e[97m'   # bright white (optional)
 
 bld=$'\e[1m'
 rst=$'\e[0m'
@@ -120,25 +124,25 @@ $f7         'Okdl:'  ;OMMMMKOKNMMW:;o0l  .'.
 $f7         ;MMMMMMWWMMMMMMMMMMMMMMMMMXKWMMK         $f4$time_now$NC - $f7$date_now
 $f7         'MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMK         $f6$USER $f1@ $f2$HOSTNAME
 $f7          NMMMMMMMMMMMMMMMMMMMMMMMMMMMMMO
-$f7          dMMMMMMMMMMMMMMMMMMMMMMMMMMMMM:          GTK Theme  $f1»$f4 $gtktheme$NC
-$f7          'MMMMMMMMMMMMMMMMMMMMMMMMMMMMM.          GTK Icons  $f1»$f4 $gtkicon$NC
-$f7          'MMMMMMMMMMMMMMMMMMMMMMMMMMMMM;          GTK Font   $f1»$f4 $gtkfont$NC
-$f7          lMMMMM  MMMMMMMMMM  MMMMMMMMMM,          Term Font  $f1»$f4 $termfont$NC
-$f7          KMMMMM  MMMMMMMMMM  MMMMMMMMMM.          Uptime     $f1»$f4 $uptime_short
-$f7         ;WMMMMMkNMMMMMMMMMMONMMMMMMMMMW:          Load       $f1»$f4 $load
-$f7       oNMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMO         Root       $f1»$f4 $root_use
-$f7      .,cxKWMMMMMMMMMMMMMMMMMMMMMMMMMMMXdxo        NVMe       $f1»$f4 $nvme_use
-$f7         ;kWMMMMMMMMMMMMMMMMMMMMMMMMMMMM:          Packages   $f1»$f4 $pacman_count
-$f7         '::'  .;ok0NMMMMWNK0kdoc;'  '::'          Resolution $f1»$f4 $resolution
-$f8                   .:cc:;;.$NC                       $f7 Distro $NC    $f1»$f4 $distro
-$f8                   .o0MMMK'$NC                       $f7 WM     $NC    $f1»$f4 $WinMan
-$f1                     xMMM: $NC                       $f7 Kernel $NC    $f1»$f4 $kernel
-$f1                     KMMMl$NC                        $f7 Board      $f1»$f4 $cpu_model
-$f1                    .MMMMo$NC                        $f7 CPU        $f1»$f4 $cpu_cores cores / $cpu_temp
-$f1                    ,MMMMx$NC                        $f7 GPU        $f1»$f4 $gpu_info
-$f1                    oMMMMx$NC                        $f7 Audio      $f1»$f4 $audio_info
-$f1                    OMMMMO                        $f7 Memory     $f1»$f4 ${memoryuse} MB $f2/ $f4${memorytotal} MB
-$f1                    .OMMMd                        $f7 LAN        $f1»$f4 $ip_lan
+$f7          dMMMMMMMMMMMMMMMMMMMMMMMMMMMMM:          GTK Theme  $f1»$f14 $gtktheme$NC
+$f7          'MMMMMMMMMMMMMMMMMMMMMMMMMMMMM.          GTK Icons  $f1»$f14 $gtkicon$NC
+$f7          'MMMMMMMMMMMMMMMMMMMMMMMMMMMMM;          GTK Font   $f1»$f14 $gtkfont$NC
+$f7          lMMMMM  MMMMMMMMMM  MMMMMMMMMM,          Term Font  $f1»$f14 $termfont$NC
+$f7          KMMMMM  MMMMMMMMMM  MMMMMMMMMM.          Uptime     $f1»$f14 $uptime_short
+$f7         ;WMMMMMkNMMMMMMMMMMONMMMMMMMMMW:          Load       $f1»$f14 $load
+$f7       oNMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMO         Root       $f1»$f14 $root_use
+$f7      .,cxKWMMMMMMMMMMMMMMMMMMMMMMMMMMMXdxo        NVMe       $f1»$f14 $nvme_use
+$f7         ;kWMMMMMMMMMMMMMMMMMMMMMMMMMMMM:          Packages   $f1»$f14 $pacman_count
+$f7         '::'  .;ok0NMMMMWNK0kdoc;'  '::'          Resolution $f1»$f14 $resolution
+$f8                   .:cc:;;.$NC                       $f7 Distro $NC    $f1»$f14 $distro
+$f8                   .o0MMMK'$NC                       $f7 WM     $NC    $f1»$f14 $WinMan
+$f1                     xMMM: $NC                       $f7 Kernel $NC    $f1»$f14 $kernel
+$f1                     KMMMl$NC                        $f7 Board      $f1»$f14 $cpu_model
+$f1                    .MMMMo$NC                        $f7 CPU        $f1»$f14 $cpu_cores cores / $cpu_temp
+$f1                    ,MMMMx$NC                        $f7 GPU        $f1»$f14 $gpu_info
+$f1                    oMMMMx$NC                        $f7 Audio      $f1»$f14 $audio_info
+$f1                    OMMMMO                        $f7 Memory     $f1»$f14 ${memoryuse} MB $f2/ $f14${memorytotal} MB
+$f1                    .OMMMd                        $f7 LAN        $f1»$f14 $ip_lan
 $f1                      :Nl                                                      $f7 the$f1 cat
 
 $rst
