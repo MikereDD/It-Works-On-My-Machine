@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file:     ytbot.py
 # author:   Mike Redd
-# version:  5.2.1
+# version:  5.1
 # created:  2026-04-18
 # updated:  2026-04-22
 # desc:     Queue-based Telegram media bot
@@ -258,7 +258,7 @@ def get_download_folder_count() -> int:
 def get_download_folder_size() -> int:
     return sum(p.stat().st_size for p in DOWNLOAD_DIR.iterdir() if p.is_file())
 
-def read_last_log_lines(max_lines: int = 500) -> list[str]:
+def read_last_log_lines(max_lines: int =1500) -> list[str]:
     if not LOG_FILE.exists():
         return []
     try:
@@ -351,19 +351,6 @@ def save_failures_state() -> None:
         del FAILURES[:-MAX_HISTORY_ENTRIES]
     save_json(FAILURES_FILE, FAILURES)
 
-async def send_queue_feedback(update: Update, pos: int, mode: str) -> None:
-    chat_type = update.effective_chat.type if update.effective_chat else "private"
-
-    if chat_type == "private":
-        icon = "🎬" if mode == "video" else "🎵" if mode == "audio" else "✂️"
-        await update.message.reply_text(
-            f"📥 Added to queue\n"
-            f"🔢 Position: {pos}\n"
-            f"{icon} Mode: {mode}"
-        )
-
-    # Groups/supergroups/channels stay quiet.
-    # Status and final upload still reply to the original request.
 
 # ── Weather helpers ─────────────────────────────────────────────────────────────
 OPEN_METEO_GEOCODE_URL = "https://geocoding-api.open-meteo.com/v1/search"
@@ -947,11 +934,7 @@ async def process_job(app, job: dict) -> None:
                             caption=caption
                         )
 
-        routed_file = await asyncio.to_thread(
-            route_file,
-            sent_file,
-            "audio" if mode == "audio" else "video"
-        )
+        routed_file = await asyncio.to_thread(route_file, sent_file, "audio" if mode == "audio" else "video")
 
         job["status"] = "success"
         job["completed_time"] = time.time()
@@ -1086,7 +1069,6 @@ async def ui_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
             "url": url,
             "user_id": update.effective_user.id,
             "chat_id": update.effective_chat.id,
-            "reply_to_message_id": update.message.message_id if update.message else None,
         }
 
         keyboard = InlineKeyboardMarkup([
@@ -1155,27 +1137,17 @@ async def ui_button_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     mode = action
     url = pending["url"]
 
-    job = create_job(
-        user.id,
-        chat.id,
-        url,
-        mode=mode,
-        source="ui",
-        reply_to_message_id=pending.get("reply_to_message_id")
-    )
+    job = create_job(user.id, chat.id, url, mode=mode, source="ui")
     QUEUE.append(job)
     save_queue_state()
 
     pos = get_queue_position()
-    if chat.type == "private":
-        await query.edit_message_text(
-            f"✅ Added to queue\n"
-            f"🔢 Position: {pos}\n"
-            f"{'🎬' if mode == 'video' else '🎵'} Mode: {mode}",
-            parse_mode=ParseMode.MARKDOWN,
-        )
-    else:
-        await query.edit_message_text("✅ Queued.", parse_mode=ParseMode.MARKDOWN)
+    await query.edit_message_text(
+        f"✅ Added to queue\n"
+        f"🔢 Position: {pos}\n"
+        f"{'🎬' if mode == 'video' else '🎵'} Mode: {mode}",
+        parse_mode=ParseMode.MARKDOWN,
+    )
 
 
 # ── Commands ────────────────────────────────────────────────────────────────────
@@ -1213,7 +1185,7 @@ async def start_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
     chat = update.effective_chat
 
     lines = [
-        "👋 *YT Bot v5.2.1*",
+        "👋 *YT Bot v5.1*",
         "",
         "Send me a link or use a command:",
         "",
@@ -1306,12 +1278,15 @@ async def dl_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         update.effective_chat.id,
         url,
         mode="video",
-        source="dl",
-        reply_to_message_id=update.message.message_id if update.message else None
+        source="dl"
     ))
     save_queue_state()
     pos = get_queue_position()
-    await send_queue_feedback(update, pos, "video")
+    await update.message.reply_text(
+        f"📥 Added to queue\n"
+        f"🔢 Position: {pos}\n"
+        f"🎬 Mode: video"
+    )
 
 async def audio_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     remember_chat(update.effective_chat)
@@ -1342,12 +1317,15 @@ async def audio_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         update.effective_chat.id,
         url,
         mode="audio",
-        source="audio",
-        reply_to_message_id=update.message.message_id if update.message else None
+        source="audio"
     ))
     save_queue_state()
     pos = get_queue_position()
-    await send_queue_feedback(update, pos, "audio")
+    await update.message.reply_text(
+        f"📥 Added to queue\n"
+        f"🔢 Position: {pos}\n"
+        f"🎵 Mode: audio"
+    )
 
 async def clip_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     remember_chat(update.effective_chat)
@@ -1401,7 +1379,11 @@ async def clip_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     save_queue_state()
 
     pos = get_queue_position()
-    await send_queue_feedback(update, pos, "clip")
+    await update.message.reply_text(
+        f"✂️ Clip added to queue\n"
+        f"🔢 Position: {pos}\n"
+        f"🕒 {clip_start} → {clip_end}"
+    )
 
 async def queue_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not QUEUE and not CURRENT_JOB:
@@ -1416,19 +1398,11 @@ async def queue_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
             f"• `{CURRENT_JOB['url']}`",
             f"• mode: `{CURRENT_JOB.get('mode', 'video')}`",
         ])
-        if CURRENT_JOB.get("mode") == "clip":
-            start = CURRENT_JOB.get("clip_start")
-            end = CURRENT_JOB.get("clip_end")
-            if start and end:
-                lines.append(f"• clip: `{start} → {end}`")
 
     if QUEUE:
         lines.extend(["", "*Pending:*"])
         for idx, job in enumerate(QUEUE[:10], start=1):
-            line = f"{idx}. `{job['url']}` [{job.get('mode', 'video')}]"
-            if job.get("mode") == "clip" and job.get("clip_start") and job.get("clip_end"):
-                line += f" `{job['clip_start']} → {job['clip_end']}`"
-            lines.append(line)
+            lines.append(f"{idx}. `{job['url']}` [{job.get('mode', 'video')}]")
 
     await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.MARKDOWN)
 
@@ -1617,11 +1591,10 @@ async def retrylast_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None
     save_queue_state()
 
     pos = get_queue_position()
-    if update.effective_chat and update.effective_chat.type == "private":
-        await update.message.reply_text(
-            f"🔁 Retrying last failure.\n"
-            f"🔢 Position: {pos}"
-        )
+    await update.message.reply_text(
+        f"🔁 Retrying last failure.\n"
+        f"🔢 Position: {pos}"
+    )
 
 async def clearqueue_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not is_admin(update.effective_user.id):
@@ -1725,23 +1698,17 @@ async def handle_url(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
     ))
     save_queue_state()
 
-    if message.chat and message.chat.type == "private":
-        pos = get_queue_position()
-        await message.reply_text(
-            f"📥 Added to queue\n"
-            f"🔢 Position: {pos}\n"
-            f"🎬 Mode: video"
-        )
-
-    # Groups/supergroups/channels stay quiet.
-    # Status and final upload still reply to the original request.
+    pos = get_queue_position()
+    await message.reply_text(
+        f"📥 Added to queue\n"
+        f"🔢 Position: {pos}\n"
+        f"🎬 Mode: video"
+    )
 
 
 # ── CLI mode ────────────────────────────────────────────────────────────────────
 def run_cli(url: str, mode: str = "video") -> None:
     print(f"Downloading {mode}: {url}")
-    if mode == "clip":
-        raise RuntimeError("CLI clip mode is not implemented yet.")
     path = download_media(url, mode)
     print(f"Downloaded: {path}")
     routed = route_file(path, "audio" if mode == "audio" else "video")
