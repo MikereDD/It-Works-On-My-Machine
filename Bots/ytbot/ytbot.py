@@ -1,9 +1,9 @@
 #--------------------------------------------
 # file:     ytbot.py
 # author:   Mike Redd
-# version:  5.1
+# version:  5.2
 # created:  2026-04-18
-# updated:  2026-04-22
+# updated:  2026-05-01
 # desc:     Queue-based Telegram media bot
 #           with interactive UI, weather,
 #           forecast, routing, archive send,
@@ -241,6 +241,15 @@ def log_startup_checks() -> None:
     log.info("ffmpeg found: %s", ffmpeg_exists())
     log.info("ffprobe found: %s", ffprobe_exists())
     log.info("YouTube cookie file present: %s", YOUTUBE_COOKIES_FILE.exists())
+
+    allowed_chat_ids = set(getattr(ytbotrc, "ALLOWED_CHAT_IDS", []))
+    if allowed_chat_ids:
+        log.info("Watching group chats: %s", allowed_chat_ids)
+    else:
+        log.warning(
+            "ALLOWED_CHAT_IDS is empty — group URL watching is disabled. "
+            "Add group chat IDs to ytbotrc.py to enable it."
+        )
 
 def get_domain(url: str) -> str:
     try:
@@ -828,7 +837,7 @@ async def process_job(app, job: dict) -> None:
         meta = await asyncio.to_thread(get_media_info, url)
 
         caption = None
-        if job.get("source") in ("ui", "dl", "audio", "clip"):
+        if job.get("source") in ("ui", "dl", "audio", "clip", "raw_url"):
             caption_lines = [
                 f"🎞️ {meta['title']}",
                 f"👤 {meta['uploader']}",
@@ -1185,7 +1194,7 @@ async def start_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
     chat = update.effective_chat
 
     lines = [
-        "👋 *YT Bot v5.1*",
+        "👋 *YT Bot v5.2*",
         "",
         "Send me a link or use a command:",
         "",
@@ -1513,10 +1522,13 @@ async def status_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not is_admin(update.effective_user.id):
         return
 
+    allowed_chat_ids = set(getattr(ytbotrc, "ALLOWED_CHAT_IDS", []))
+
     await update.message.reply_text(
         f"*Bot Status:* online\n"
         f"*Current Job:* {'yes' if CURRENT_JOB else 'no'}\n"
         f"*Queue Length:* {len(QUEUE)}\n"
+        f"*Watched Groups:* {', '.join(str(i) for i in allowed_chat_ids) if allowed_chat_ids else 'none'}\n"
         f"*Archive Chat:* {ARCHIVE_CHAT_ID if ARCHIVE_CHAT_ID else 'none'}\n"
         f"*Watch Folder:* {WATCH_FOLDER_ENABLED}\n"
         f"*Download Timeout:* {DOWNLOAD_TIMEOUT}s\n"
@@ -1677,24 +1689,33 @@ async def handle_url(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
     remember_chat(update.effective_chat)
 
-    if not can_use_context(
-        update.effective_user.id,
-        update.effective_chat.id,
-        update.effective_chat.type,
-    ):
-        return
+    user = update.effective_user
+    chat = update.effective_chat
 
     url = extract_url(message.text)
     if not url:
         return
 
+    if not can_use_context(user.id, chat.id, chat.type):
+        log.debug(
+            "URL ignored — chat %s (%s) not in ALLOWED_CHAT_IDS. "
+            "Add it to ytbotrc.py to enable group watching. URL: %s",
+            chat.id, chat.type, url,
+        )
+        return
+
+    log.info(
+        "URL detected in group %s from user %s: %s",
+        chat.id, user.id, url,
+    )
+
     QUEUE.append(create_job(
-        update.effective_user.id,
-        update.effective_chat.id,
+        user.id,
+        chat.id,
         url,
         mode="video",
         source="raw_url",
-        reply_to_message_id=message.message_id
+        reply_to_message_id=message.message_id,
     ))
     save_queue_state()
 
