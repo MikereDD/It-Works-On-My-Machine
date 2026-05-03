@@ -2,8 +2,10 @@
 # ------------------------------------------------------------
 # file:     musicbot.py
 # author:   Mike Redd
-# version:  1.4
-# desc:     Sandalphon - Queue system + audio caching
+# version:  1.4.1
+# created:  2026-05-03
+# updated:  2026-05-03
+# desc:     Sandalphon - Queue system + audio caching + cleanup fixes
 # ------------------------------------------------------------
 
 import asyncio
@@ -24,7 +26,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 
 # ── Branding ─────────────────────────────────────────────────
 BOT_NAME = "Sandalphon"
-BOT_VERSION = "1.4"
+BOT_VERSION = "1.4.1"
 
 # ── Config ───────────────────────────────────────────────────
 sys.path.insert(0, str(Path.home() / "bots/config"))
@@ -174,6 +176,24 @@ def get_cached_audio(query):
     return path
 
 
+def get_cached_title_by_path(audio_path):
+    if not CACHE_ENABLED or not audio_path:
+        return None
+
+    audio_path = Path(audio_path)
+
+    try:
+        index = load_cache_index()
+        for item in index.values():
+            cached_path = Path(item.get("path", ""))
+            if cached_path == audio_path:
+                return item.get("title")
+    except Exception:
+        logging.exception("Failed to look up cached title")
+
+    return None
+
+
 def add_to_cache(query, audio_file):
     if not CACHE_ENABLED or not audio_file or not audio_file.exists():
         return audio_file
@@ -275,7 +295,7 @@ async def process_queue(app):
     PROCESSING = True
 
     while QUEUE:
-        update, query = QUEUE.popleft()
+        update, query, queue_message_id = QUEUE.popleft()
         chat_id = update.effective_chat.id
 
         try:
@@ -288,7 +308,7 @@ async def process_queue(app):
                 continue
 
             size = file_size_mb(audio)
-            title = clean_title(audio.stem)
+            title = get_cached_title_by_path(audio) or clean_title(audio.stem)
 
             if size > MAX_FILE_MB:
                 await msg.edit_text(f"📦 Too large ({size:.1f} MB)")
@@ -306,6 +326,15 @@ async def process_queue(app):
                     filename=f"{title}{audio.suffix.lower()}",
                     title=title[:64],
                 )
+
+            if queue_message_id:
+                try:
+                    await app.bot.delete_message(
+                        chat_id=chat_id,
+                        message_id=queue_message_id,
+                    )
+                except Exception:
+                    pass
 
             await msg.delete()
 
@@ -341,12 +370,12 @@ async def music(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Usage: /music <url or search>")
         return
 
-    QUEUE.append((update, query))
-
     if PROCESSING:
-        await update.message.reply_text(f"➕ Added to queue ({len(QUEUE)} waiting)")
+        queue_msg = await update.message.reply_text(f"➕ Added to queue ({len(QUEUE) + 1} waiting)")
     else:
-        await update.message.reply_text("➕ Added to queue")
+        queue_msg = await update.message.reply_text("➕ Added to queue")
+
+    QUEUE.append((update, query, queue_msg.message_id))
 
     asyncio.create_task(process_queue(context.application))
 
@@ -356,7 +385,7 @@ async def queue_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Queue empty")
         return
 
-    text = "\n".join([f"{i + 1}. {q}" for i, (_, q) in enumerate(QUEUE)])
+    text = "\n".join([f"{i + 1}. {q}" for i, (_, q, _) in enumerate(QUEUE)])
     await update.message.reply_text(text)
 
 
