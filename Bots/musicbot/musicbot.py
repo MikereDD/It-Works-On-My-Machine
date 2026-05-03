@@ -469,7 +469,6 @@ def download_audio(input_text: str, playlist: bool = False, playlist_index: int 
             "--audio-quality", AUDIO_QUALITY,
             "--embed-thumbnail",
             "--add-metadata",
-            "--restrict-filenames",
             "-o", output_template,
         ]
 
