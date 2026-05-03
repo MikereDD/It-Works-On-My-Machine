@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file:     ytbot.py
 # author:   Mike Redd
-# version:  5.3.1
+# version:  5.3.2
 # created:  2026-04-18
 # updated:  2026-05-01
 # desc:     Queue-based Telegram media bot
@@ -172,10 +172,14 @@ def can_use(user_id: int) -> bool:
     return ALLOW_ALL_USERS or user_id in ALLOWED_USERS or is_admin(user_id)
 
 def can_use_context(user_id: int, chat_id: int, chat_type: str) -> bool:
-    allowed_chat_ids = set(getattr(ytbotrc, "ALLOWED_CHAT_IDS", []))
-
+    """
+    Long-term group-watch behavior:
+    - Any group/supergroup the bot is in can trigger auto-watch downloads.
+    - Private chat remains owner-only.
+    - Other chat types are ignored.
+    """
     if chat_type in ("group", "supergroup"):
-        return chat_id in allowed_chat_ids
+        return True
 
     if chat_type == "private":
         return user_id == OWNER_ID
@@ -231,6 +235,61 @@ def extract_url(text: str | None) -> str | None:
     match = URL_RE.search(text.strip())
     return match.group(0) if match else None
 
+def extract_url_from_message(message) -> str | None:
+    """
+    Telegram shared/forwarded messages can place URLs in:
+    - message.text
+    - message.caption
+    - URL entities
+    - text_link entity .url
+    - raw message payload/link preview fields
+    """
+    if not message:
+        return None
+
+    for value in (getattr(message, "text", None), getattr(message, "caption", None)):
+        url = extract_url(value)
+        if url:
+            return url
+
+    entity_sources = [
+        (getattr(message, "text", None) or "", getattr(message, "entities", None) or []),
+        (getattr(message, "caption", None) or "", getattr(message, "caption_entities", None) or []),
+    ]
+
+    for source_text, entities in entity_sources:
+        for ent in entities:
+            ent_url = getattr(ent, "url", None)
+            if ent_url:
+                return ent_url
+
+            if getattr(ent, "type", None) == "url" and source_text:
+                try:
+                    candidate = source_text[ent.offset: ent.offset + ent.length]
+                    url = extract_url(candidate)
+                    if url:
+                        return url
+                except Exception:
+                    pass
+
+    try:
+        raw = message.to_dict()
+        stack = [raw]
+        while stack:
+            item = stack.pop()
+            if isinstance(item, dict):
+                stack.extend(item.values())
+            elif isinstance(item, list):
+                stack.extend(item)
+            elif isinstance(item, str):
+                url = extract_url(item)
+                if url:
+                    return url
+    except Exception:
+        pass
+
+    return None
+
 def ffmpeg_exists() -> bool:
     return shutil.which("ffmpeg") is not None
 
@@ -246,12 +305,13 @@ def log_startup_checks() -> None:
 
     allowed_chat_ids = set(getattr(ytbotrc, "ALLOWED_CHAT_IDS", []))
     if allowed_chat_ids:
-        log.info("Watching group chats: %s", allowed_chat_ids)
-    else:
-        log.warning(
-            "ALLOWED_CHAT_IDS is empty — group URL watching is disabled. "
-            "Add group chat IDs to ytbotrc.py to enable it."
+        log.info(
+            "Group auto-watch is enabled for groups/supergroups. "
+            "Configured ALLOWED_CHAT_IDS retained for reference: %s",
+            allowed_chat_ids,
         )
+    else:
+        log.info("Group auto-watch is enabled for any group/supergroup the bot is in.")
 
 def get_domain(url: str) -> str:
     try:
@@ -1196,7 +1256,7 @@ async def start_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
     chat = update.effective_chat
 
     lines = [
-        "👋 *YT Bot v5.3.1*",
+        "👋 *YT Bot v5.3.2*",
         "",
         "Send me a link or use a command:",
         "",
@@ -1530,7 +1590,8 @@ async def status_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
         f"*Bot Status:* online\n"
         f"*Current Job:* {'yes' if CURRENT_JOB else 'no'}\n"
         f"*Queue Length:* {len(QUEUE)}\n"
-        f"*Watched Groups:* {', '.join(str(i) for i in allowed_chat_ids) if allowed_chat_ids else 'none'}\n"
+        f"*Group Auto-Watch:* all groups/supergroups bot is in\n"
+        f"*Configured Group IDs:* {', '.join(str(i) for i in allowed_chat_ids) if allowed_chat_ids else 'none'}\n"
         f"*Archive Chat:* {ARCHIVE_CHAT_ID if ARCHIVE_CHAT_ID else 'none'}\n"
         f"*Watch Folder:* {WATCH_FOLDER_ENABLED}\n"
         f"*Download Timeout:* {DOWNLOAD_TIMEOUT}s\n"
@@ -1684,10 +1745,10 @@ async def track_chat_member(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> 
         forget_chat(cmu.chat.id)
 
 
-# ── Message handler for raw URLs ────────────────────────────────────────────────
+# ── Message handler for raw/shared/forwarded URLs ───────────────────────────────
 async def handle_url(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.message
-    if not message or not message.text:
+    if not message:
         return
 
     remember_chat(update.effective_chat)
@@ -1695,22 +1756,67 @@ async def handle_url(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
     chat = update.effective_chat
 
-    url = extract_url(message.text)
-    if not url:
+    if not user or not chat:
         return
 
     if not can_use_context(user.id, chat.id, chat.type):
-        log.debug(
-            "URL ignored — chat %s (%s) not in ALLOWED_CHAT_IDS. "
-            "Add it to ytbotrc.py to enable group watching. URL: %s",
-            chat.id, chat.type, url,
-        )
         return
 
+    # 🔥 DEBUG LOG — proves Telegram delivery
     log.info(
-        "URL detected in group %s from user %s: %s",
-        chat.id, user.id, url,
+        "WATCH HIT chat=%s type=%s text=%r caption=%r entities=%r caption_entities=%r",
+        chat.id,
+        chat.type,
+        getattr(message, "text", None),
+        getattr(message, "caption", None),
+        getattr(message, "entities", None),
+        getattr(message, "caption_entities", None),
     )
+
+    url = None
+
+    # ── 1. Plain text
+    if message.text:
+        url = extract_url(message.text)
+
+    # ── 2. Caption (shared previews use this)
+    if not url and message.caption:
+        url = extract_url(message.caption)
+
+    # ── 3. Entities (text_link + url)
+    if not url:
+        for ent in (message.entities or []) + (message.caption_entities or []):
+            if getattr(ent, "url", None):
+                url = ent.url
+                break
+
+            if getattr(ent, "type", None) == "url":
+                try:
+                    source = message.text or message.caption or ""
+                    candidate = source[ent.offset: ent.offset + ent.length]
+                    u = extract_url(candidate)
+                    if u:
+                        url = u
+                        break
+                except:
+                    pass
+
+    # ── 4. Raw fallback (forwarded weird cases)
+    if not url:
+        try:
+            raw = message.to_dict()
+            for v in str(raw).split():
+                u = extract_url(v)
+                if u:
+                    url = u
+                    break
+        except:
+            pass
+
+    if not url:
+        return
+
+    log.info("URL DETECTED: %s", url)
 
     QUEUE.append(create_job(
         user.id,
@@ -1723,6 +1829,7 @@ async def handle_url(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
     save_queue_state()
 
     pos = get_queue_position()
+
     await message.reply_text(
         f"📥 Added to queue\n"
         f"🔢 Position: {pos}\n"
@@ -1781,7 +1888,7 @@ def build_app():
 
     app.add_handler(CallbackQueryHandler(ui_button_cb, pattern=r"^dl\|"))
     app.add_handler(ChatMemberHandler(track_chat_member, ChatMemberHandler.MY_CHAT_MEMBER))
-    app.add_handler(MessageHandler((filters.TEXT | filters.Caption()) & ~filters.COMMAND, handle_url))
+    app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, handle_url))
 
     async def on_start(app_instance):
         asyncio.create_task(queue_worker(app_instance))
@@ -1818,5 +1925,6 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
 
 

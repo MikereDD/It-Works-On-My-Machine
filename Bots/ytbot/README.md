@@ -1,9 +1,9 @@
-# 🎬 YTBot v5.3.1
+# 🎬 YTBot v5.3.2
 
 > A typezerø Project
 > Built for real-world use, not perfection.
 
-![Version](https://img.shields.io/badge/version-v5.3.1-blue)
+![Version](https://img.shields.io/badge/version-v5.3.2-blue)
 ![Python](https://img.shields.io/badge/python-3.10+-blue)
 ![License](https://img.shields.io/badge/license-WTFPL-lightgrey)
 
@@ -11,11 +11,11 @@
 
 ## 🚀 Overview
 
-**YTBot v5.3.1** is a full media pipeline bot with **large file support via local Telegram Bot API** and a **systemd-managed backend service**.
+**YTBot v5.3.2** is a full media pipeline bot with **automatic group link ingestion** and **large file support via local Telegram Bot API**.
 
 It accepts input from:
 
-* Telegram (commands, messages, interactive UI)
+* Telegram (commands, messages, shared links, forwarded links)
 * Filesystem (watch folder)
 * CLI (direct execution)
 
@@ -33,6 +33,20 @@ Input → Queue → Download → Process → Upload → Route → Archive
 * Single worker (safe processing)
 * Job tracking (queue, history, failures)
 * Access control (owner / users / groups)
+
+---
+
+### 🤖 Automatic Group Link Detection (v5.3.2)
+
+* Watches **all groups the bot is in**
+* Detects:
+
+  * pasted links
+  * shared previews
+  * forwarded messages
+* Automatically queues downloads
+
+👉 No commands required
 
 ---
 
@@ -69,7 +83,7 @@ Input → Queue → Download → Process → Upload → Route → Archive
 
 ---
 
-### 📦 Smart Upload System (v5.3.1)
+### 📦 Smart Upload System
 
 * Uploads up to **~2GB**
 * No forced compression
@@ -83,6 +97,7 @@ Input → Queue → Download → Process → Upload → Route → Archive
 
 * Replies stay attached to original message
 * `/dl`, `/audio`, `/clip`, `/ui` all threaded
+* Auto-detected links reply to source message
 
 ---
 
@@ -106,7 +121,8 @@ G:\bots\done\failed\
 ### 📡 Automation
 
 * Watch folder: `G:\bots\watch`
-* CLI:
+
+CLI:
 
 ```
 python ytbot.py --url "<link>"
@@ -195,13 +211,11 @@ TELEGRAM_UPLOAD_TIMEOUT = 3600
 
 ## ⚠️ REQUIRED: Local Telegram Bot API
 
-YTBot v5.3.1 requires the **local Bot API server**.
+YTBot v5.3.2 requires the **local Bot API server** for large uploads.
 
 ---
 
 ### 🥇 systemd service (recommended)
-
-Create:
 
 ```
 /etc/systemd/system/telegram-bot-api.service
@@ -239,40 +253,18 @@ sudo systemctl start telegram-bot-api
 
 ---
 
-### 🥈 Manual start script
+### 🥈 Optional: Start script
 
 ```
 ~/start-bot-api.sh
 ```
 
-```bash
-#!/usr/bin/env bash
-
-~/src/telegram-bot-api/build/telegram-bot-api \
-  --api-id YOUR_API_ID \
-  --api-hash YOUR_API_HASH \
-  --local \
-  --http-port 8081 \
-  --dir /mnt/nvme1/work/telegram-bot-api
-```
-
-```
-chmod +x ~/start-bot-api.sh
-```
-
 ---
 
-### 🥉 Shell aliases
+### 🥉 Optional: Aliases
 
 ```
-~/.bash.d/aliases
-```
-
-```bash
 alias botapi="systemctl status telegram-bot-api"
-alias botapi-start="sudo systemctl start telegram-bot-api"
-alias botapi-stop="sudo systemctl stop telegram-bot-api"
-alias botapi-restart="sudo systemctl restart telegram-bot-api"
 alias botapi-log="journalctl -u telegram-bot-api -f"
 ```
 
@@ -306,25 +298,33 @@ python ytbot.py
 * Instagram may require cookies
 * ffmpeg required for media processing
 * Local Bot API required for large uploads
-* Upload timeout extended to prevent failures
+* Commands work even if privacy is enabled
+* Auto group watching requires bot can read messages
 
 ---
 
 ## 🧠 Version History
 
-### v5.3.1 (Current)
+### v5.3.2 (Current)
 
-* Fixed Telegram upload timeout
-* Removed false failure states
-* Eliminated duplicate uploads
-* Stabilized large file pipeline
+* Automatic group link detection
+* Fixed shared/forwarded link handling
+* Expanded message handler (filters.ALL)
+* Improved URL extraction logic
+* Removed silent permission blocking
+
+---
+
+### v5.3.1
+
+* Upload timeout fixes
+* Stability improvements
 
 ---
 
 ### v5.3
 
-* Local Bot API support (~2GB uploads)
-* Removed 49MB limitation
+* Local Bot API (~2GB uploads)
 
 ---
 
@@ -332,7 +332,6 @@ python ytbot.py
 
 * Reply threading
 * UI improvements
-* Group behavior cleanup
 
 ---
 
