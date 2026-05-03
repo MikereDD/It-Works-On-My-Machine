@@ -22,6 +22,11 @@ from telegram import Update
 from telegram.error import TimedOut
 from telegram.ext import Application, CommandHandler, ContextTypes
 
+# ── Branding ─────────────────────────────────────────────────
+
+BOT_NAME = "Zaphkiel"
+BOT_VERSION = "3.4"
+
 # ── Load config ───────────────────────────────────────────────
 CONFIG_PATH = Path(
     os.getenv("AIBOT_CONFIG", "/mnt/nvme1/work/bots/config/aibotrc.py")
@@ -191,7 +196,8 @@ async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     await update.message.reply_text(
-        "AI Bot Ready.\n\n"
+        f"🤖 {BOT_NAME} v{BOT_VERSION}\n"
+        "The voice of thought.\n\n"
         "Commands:\n"
         "/ai <message>\n"
         "/img <prompt> [--low|--med|--high|--ultra]\n"
@@ -206,7 +212,9 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     await update.message.reply_text(
-        "📖 Commands:\n\n"
+        f"🤖 {BOT_NAME} v{BOT_VERSION}\n"
+        "The voice of thought.\n\n"
+        "Commands:\n"
         "/ai <message>\n"
         "  Chat with AI\n\n"
         "/img <prompt>\n"
@@ -224,8 +232,10 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "/img angel warrior --low\n"
         "/img zaphkiel white gold armor --ultra --portrait\n"
         "/img dark fantasy throne room --high --landscape\n\n"
+        "Info:\n"
         "/status\n"
-        "/reset"
+        "/reset\n\n"
+        "⚙️ Built for clarity, not chaos."
     )
 
 async def ai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -340,7 +350,7 @@ async def status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         return
 
     await update.message.reply_text(
-        f"AI bot online\n"
+        f"{BOT_NAME} v{BOT_VERSION} online\n"
         f"Text model:    {cfg.MODEL}\n"
         f"Image model:   {cfg.IMAGE_MODEL}\n"
         f"Default tier:  {getattr(cfg, 'DEFAULT_IMAGE_TIER', 'high')}\n"
@@ -377,7 +387,7 @@ def main() -> None:
     app.add_handler(CommandHandler("status", status_cmd))
     app.add_handler(CommandHandler("reset", reset_cmd))
 
-    logger.info("AI bot starting...")
+    logger.info("%s v%s starting...", BOT_NAME, BOT_VERSION)
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":

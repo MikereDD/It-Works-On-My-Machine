@@ -28,6 +28,11 @@ from pathlib import Path
 from urllib.parse import urlencode, urlparse
 from urllib.request import urlopen
 
+# ── Branding ─────────────────────────────────────────────────
+
+BOT_NAME = "Raziel"
+BOT_VERSION = "5.4.3"
+
 import yt_dlp
 from telegram import (
     InlineKeyboardButton,
@@ -1540,9 +1545,9 @@ async def start_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
     chat = update.effective_chat
 
     lines = [
-        "👋 *YT Bot v5.4.3*",
+        f"👋 *{BOT_NAME} v{BOT_VERSION}*",
         "",
-        "Send me a link or use a command:",
+        "The watcher of links.",
         "",
         USER_COMMAND_LIST,
     ]
@@ -1573,7 +1578,8 @@ async def help_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
     admin_here = is_admin(user_id)
 
     lines = [
-        "📖 *Help*",
+        f"🎬 *{BOT_NAME} v{BOT_VERSION}*",
+        "The watcher of links.",
         "",
         "Paste a supported media URL, or use `/ui <url>` for buttons.",
         "",
