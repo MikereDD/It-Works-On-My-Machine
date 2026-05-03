@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file:     ytbot.py
 # author:   Mike Redd
-# version:  5.4.1
+# version:  5.4.2
 # created:  2026-04-18
 # updated:  2026-05-01
 # desc:     Queue-based Telegram media bot
@@ -80,16 +80,67 @@ DEDUP_ENABLED = getattr(ytbotrc, "DEDUP_ENABLED", True)
 DEDUP_TTL_HOURS = getattr(ytbotrc, "DEDUP_TTL_HOURS", 24)
 MAX_VIDEO_HEIGHT = getattr(ytbotrc, "MAX_VIDEO_HEIGHT", 1080)
 PREFER_MP4 = getattr(ytbotrc, "PREFER_MP4", True)
-SUPPORTED_VIDEO_DOMAINS = tuple(getattr(
-    ytbotrc,
-    "SUPPORTED_VIDEO_DOMAINS",
-    (
+VIDEO_PLATFORM_PRESETS = {
+    "youtube": (
         "youtube.com",
         "youtu.be",
         "m.youtube.com",
+        "music.youtube.com",
+    ),
+    "instagram": (
         "instagram.com",
     ),
+    "reddit": (
+        "reddit.com",
+        "redd.it",
+        "v.redd.it",
+    ),
+    "tiktok": (
+        "tiktok.com",
+        "vm.tiktok.com",
+        "vt.tiktok.com",
+    ),
+    "twitter": (
+        "x.com",
+        "twitter.com",
+    ),
+}
+
+ENABLED_VIDEO_PLATFORMS = tuple(getattr(
+    ytbotrc,
+    "ENABLED_VIDEO_PLATFORMS",
+    (
+        "youtube",
+        "instagram",
+    ),
 ))
+
+EXTRA_VIDEO_DOMAINS = tuple(getattr(ytbotrc, "EXTRA_VIDEO_DOMAINS", ()))
+
+def build_supported_video_domains() -> tuple[str, ...]:
+    domains: list[str] = []
+
+    for platform in ENABLED_VIDEO_PLATFORMS:
+        domains.extend(VIDEO_PLATFORM_PRESETS.get(str(platform).lower(), ()))
+
+    domains.extend(EXTRA_VIDEO_DOMAINS)
+
+    cleaned: list[str] = []
+    seen = set()
+
+    for domain in domains:
+        d = str(domain).strip().lower()
+        if not d:
+            continue
+        if d.startswith("www."):
+            d = d[4:]
+        if d not in seen:
+            seen.add(d)
+            cleaned.append(d)
+
+    return tuple(cleaned)
+
+SUPPORTED_VIDEO_DOMAINS = build_supported_video_domains()
 ARCHIVE_CHAT_ID = getattr(ytbotrc, "ARCHIVE_CHAT_ID", None)
 WATCH_FOLDER_ENABLED = getattr(ytbotrc, "WATCH_FOLDER_ENABLED", True)
 WATCH_FOLDER_CHAT_ID = getattr(ytbotrc, "WATCH_FOLDER_CHAT_ID", None) or OWNER_ID
@@ -406,6 +457,8 @@ def log_startup_checks() -> None:
     log.info("ffmpeg found: %s", ffmpeg_exists())
     log.info("ffprobe found: %s", ffprobe_exists())
     log.info("YouTube cookie file present: %s", YOUTUBE_COOKIES_FILE.exists())
+    log.info("Enabled video platforms: %s", ENABLED_VIDEO_PLATFORMS)
+    log.info("Supported video domains: %s", SUPPORTED_VIDEO_DOMAINS)
 
     allowed_chat_ids = set(getattr(ytbotrc, "ALLOWED_CHAT_IDS", []))
     if allowed_chat_ids:
@@ -712,7 +765,7 @@ def is_instagram_url(url: str) -> bool:
 
 def is_supported_video_url(url: str) -> bool:
     """
-    Only allow known video-source URLs into the media pipeline.
+    Only allow configured video-source URLs into the media pipeline.
     This prevents random articles, tracking links, and non-video pages
     from being handed to yt-dlp.
     """
@@ -1423,7 +1476,7 @@ async def start_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
     chat = update.effective_chat
 
     lines = [
-        "👋 *YT Bot v5.4.1*",
+        "👋 *YT Bot v5.4.2*",
         "",
         "Send me a link or use a command:",
         "",
@@ -1778,7 +1831,9 @@ async def status_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
         f"*Dedupe:* {DEDUP_ENABLED} ({DEDUP_TTL_HOURS}h TTL)\n"
         f"*Max Video Height:* {MAX_VIDEO_HEIGHT}p\n"
         f"*Prefer MP4:* {PREFER_MP4}\n"
+        f"*Enabled Platforms:* {', '.join(ENABLED_VIDEO_PLATFORMS)}\n"
         f"*Supported Video Domains:* {', '.join(SUPPORTED_VIDEO_DOMAINS)}\n"
+        f"*Extra Video Domains:* {', '.join(EXTRA_VIDEO_DOMAINS) if EXTRA_VIDEO_DOMAINS else 'none'}\n"
         f"*ffmpeg:* {ffmpeg_exists()}\n"
         f"*ffprobe:* {ffprobe_exists()}\n"
         f"*YouTube Cookies:* {'yes' if YOUTUBE_COOKIES_FILE.exists() else 'no'}",
@@ -2117,9 +2172,15 @@ def main() -> None:
         WATCH_FOLDER_ENABLED,
         DOWNLOAD_TIMEOUT,
     )
+    if not SUPPORTED_VIDEO_DOMAINS:
+        log.warning(
+            "No supported video domains are enabled. "
+            "Set ENABLED_VIDEO_PLATFORMS or EXTRA_VIDEO_DOMAINS in ytbotrc.py."
+        )
     log_startup_checks()
     app.run_polling()
 
 if __name__ == "__main__":
     main()
+
 
