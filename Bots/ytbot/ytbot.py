@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file:     ytbot.py
 # author:   Mike Redd
-# version:  5.2
+# version:  5.3
 # created:  2026-04-18
 # updated:  2026-05-01
 # desc:     Queue-based Telegram media bot
@@ -113,7 +113,7 @@ for d in [
 
 # ── Limits ──────────────────────────────────────────────────────────────────────
 DELETE_AFTER_SEND      = False
-MAX_UPLOAD_BYTES       = 49 * 1024 * 1024
+MAX_UPLOAD_BYTES       = 1900 * 1024 * 1024  # local Bot API safe ceiling (~1.9GB)
 MIN_VALID_VIDEO_BYTES  = 100 * 1024
 MIN_VALID_AUDIO_BYTES  = 100 * 1024
 MAX_HISTORY_ENTRIES    = 500
@@ -877,7 +877,7 @@ async def process_job(app, job: dict) -> None:
 
         if mode in ("video", "clip"):
             size_mb = sent_file.stat().st_size / (1024 * 1024)
-            if size_mb > 49:
+            if sent_file.stat().st_size > MAX_UPLOAD_BYTES:
                 await status_msg.edit_text(f"📦 Large file ({size_mb:.1f} MB)\nProcessing…")
                 compressed = await asyncio.to_thread(compress_to_telegram, sent_file)
                 if sent_file.exists():
@@ -1194,7 +1194,7 @@ async def start_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
     chat = update.effective_chat
 
     lines = [
-        "👋 *YT Bot v5.2*",
+        "👋 *YT Bot v5.3*",
         "",
         "Send me a link or use a command:",
         "",
@@ -1738,7 +1738,13 @@ def run_cli(url: str, mode: str = "video") -> None:
 
 # ── Main ────────────────────────────────────────────────────────────────────────
 def build_app():
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
+    app = (
+        ApplicationBuilder()
+        .token(BOT_TOKEN)
+        .base_url("http://127.0.0.1:8081/bot")
+        .base_file_url("http://127.0.0.1:8081/file/bot")
+        .build()
+    )
 
     app.add_handler(CommandHandler("start", start_cmd))
     app.add_handler(CommandHandler("help", help_cmd))
@@ -1764,7 +1770,7 @@ def build_app():
 
     app.add_handler(CallbackQueryHandler(ui_button_cb, pattern=r"^dl\|"))
     app.add_handler(ChatMemberHandler(track_chat_member, ChatMemberHandler.MY_CHAT_MEMBER))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_url))
+    app.add_handler(MessageHandler((filters.TEXT | filters.Caption()) & ~filters.COMMAND, handle_url))
 
     async def on_start(app_instance):
         asyncio.create_task(queue_worker(app_instance))
