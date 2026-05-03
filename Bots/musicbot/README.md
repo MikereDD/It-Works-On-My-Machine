@@ -16,6 +16,7 @@ Sandalphon is a Telegram music bot that:
 * supports playlists
 * processes requests through a queue (stable under load)
 * caches audio for instant reuse
+* cleans up chat noise after processing
 * runs on local Bot API for performance
 
 ---
@@ -66,6 +67,15 @@ Sandalphon is a Telegram music bot that:
 * cache index (`index.json`)
 * `/cache` command (stats)
 * `/clearcache` command
+
+---
+
+### v1.4.1
+
+* fixed cached track titles (no more hash filenames)
+* removed "Added to queue" messages after completion
+* improved chat cleanliness and UX
+* minor stability improvements
 
 ---
 
