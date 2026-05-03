@@ -1,9 +1,9 @@
-# 🎬 YTBot v5.4
+# 🎬 YTBot v5.4.1
 
 > A typezerø Project
 > Built for real-world use, not perfection.
 
-![Version](https://img.shields.io/badge/version-v5.4-blue)
+![Version](https://img.shields.io/badge/version-v5.4.1-blue)
 ![Python](https://img.shields.io/badge/python-3.10+-blue)
 ![License](https://img.shields.io/badge/license-WTFPL-lightgrey)
 
@@ -11,13 +11,14 @@
 
 ## 🚀 Overview
 
-**YTBot v5.4** is a full media pipeline bot with:
+**YTBot v5.4.1** is a full media pipeline bot with:
 
 * **automatic group link ingestion**
 * **clean chat behavior**
 * **production-ready logging**
 * **large file support via local Telegram Bot API**
 * **intelligent dedupe + smarter downloads**
+* **strict video-source validation**
 
 It accepts input from:
 
@@ -27,7 +28,7 @@ It accepts input from:
 
 Pipeline:
 
-Input → Queue → Download → Process → Upload → Route → Archive
+Input → Validate → Queue → Download → Process → Upload → Route → Archive
 
 ---
 
@@ -78,9 +79,9 @@ DEBUG_MODE = False
 
 ---
 
-## 🧠 Intelligence Layer (v5.4)
+## 🧠 Intelligence Layer
 
-### 🔁 Dedupe System
+### 🔁 Dedupe System (v5.4)
 
 * Prevents duplicate downloads
 
@@ -98,21 +99,35 @@ DEBUG_MODE = False
 
 ---
 
-### 🎯 Smarter Downloads
+### 🎯 Smarter Downloads (v5.4)
 
 * Prefer MP4/M4A formats
 * Limit resolution automatically
 * Reduce oversized downloads
 
+---
+
+### 🚫 Supported Video Sources Only (v5.4.1)
+
+* Only valid video domains are processed
+* Prevents:
+
+  * article links
+  * unsupported sites
+  * random URLs hitting yt-dlp
+
 Config:
 
 ```python
-DEDUP_ENABLED = True
-DEDUP_TTL_HOURS = 24
-
-MAX_VIDEO_HEIGHT = 1080
-PREFER_MP4 = True
+SUPPORTED_VIDEO_DOMAINS = (
+    "youtube.com",
+    "youtu.be",
+    "m.youtube.com",
+    "instagram.com",
+)
 ```
+
+👉 Validation happens **before queueing**
 
 ---
 
@@ -142,7 +157,7 @@ PREFER_MP4 = True
 
 ### 📥 Media Handling
 
-* YouTube, Reddit, Instagram (best-effort)
+* YouTube, Instagram (primary supported sources)
 * yt-dlp backend
 * MP4-friendly formats
 * Audio extraction
@@ -206,177 +221,21 @@ python ytbot.py --audio "<link>"
 
 ---
 
-## 🧩 Architecture
-
-Telegram / CLI / Watch Folder
-↓
-Queue
-↓
-Worker
-↓
-yt-dlp
-↓
-ffmpeg (clip/audio)
-↓
-Upload (Telegram API)
-↓
-Archive + History
-
----
-
-## ⚙️ Setup
-
-### Install Python deps
-
-```
-pip install -r requirements.txt
-```
-
-OR
-
-```
-pip install "python-telegram-bot>=22.0" "yt-dlp>=2026.03.17"
-```
-
----
-
-### Install system deps
-
-```
-sudo pacman -S ffmpeg ffprobe
-```
-
-Verify:
-
-```
-ffmpeg -version
-ffprobe -version
-```
-
----
-
-### Configure bot
-
-```
-G:\bots\config\ytbotrc.py
-```
-
-Example:
-
-```python
-BOT_TOKEN = "YOUR_TOKEN"
-
-ADMIN_USERS = [123456789]
-ALLOWED_USERS = [123456789]
-
-DOWNLOAD_TIMEOUT = 3600
-TELEGRAM_UPLOAD_TIMEOUT = 3600
-
-DEBUG_MODE = False
-
-DEDUP_ENABLED = True
-DEDUP_TTL_HOURS = 24
-
-MAX_VIDEO_HEIGHT = 1080
-PREFER_MP4 = True
-```
-
----
-
-## ⚠️ REQUIRED: Local Telegram Bot API
-
-YTBot v5.4 requires the **local Bot API server** for large uploads.
-
----
-
-### 🥇 systemd service (recommended)
-
-```
-/etc/systemd/system/telegram-bot-api.service
-```
-
-```ini
-[Unit]
-Description=Telegram Bot API (Local)
-After=network.target
-
-[Service]
-User=typezero
-WorkingDirectory=/mnt/nvme1/work/telegram-bot-api
-ExecStart=/home/typezero/src/telegram-bot-api/build/telegram-bot-api \
-  --api-id YOUR_API_ID \
-  --api-hash YOUR_API_HASH \
-  --local \
-  --http-port 8081 \
-  --dir /mnt/nvme1/work/telegram-bot-api
-
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-```
-
----
-
-### 🥈 Optional: Start script
-
-```
-~/start-bot-api.sh
-```
-
----
-
-### 🥉 Optional: Aliases
-
-```
-alias botapi="systemctl status telegram-bot-api"
-alias botapi-log="journalctl -u telegram-bot-api -f"
-```
-
----
-
-## ▶️ Run bot
-
-```
-python ytbot.py
-```
-
----
-
-## 🧪 Usage
-
-```
-/dl <url>
-/audio <url>
-/clip <url> <start> <end>
-/ui <url>
-
-/queue
-/clearqueue
-/retrylast
-```
-
----
-
-## ⚠️ Notes
-
-* Instagram may require cookies
-* ffmpeg required for media processing
-* Local Bot API required for large uploads
-* Commands work even if privacy is enabled
-* Auto group watching requires bot permissions
-
----
-
 ## 🧠 Version History
 
-### v5.4 (Current)
+### v5.4.1 (Current)
+
+* Restrict pipeline to supported video sources
+* Early validation layer (fail-fast)
+* Reduced yt-dlp failures and noise
+
+---
+
+### v5.4
 
 * Dedupe system (persistent + TTL)
 * URL normalization
 * Smarter yt-dlp format selection
-* Reduced redundant downloads
 
 ---
 
@@ -398,27 +257,9 @@ python ytbot.py
 
 ---
 
-### v5.3.1
-
-* Upload timeout fixes
-
----
-
-### v5.3
-
-* Local Bot API (~2GB uploads)
-
----
-
-### v5.2
-
-* Reply threading
-
----
-
 ## 📌 Philosophy
 
-Make it work → Make it better → Make it clean → Make it smart
+Make it work → Make it better → Make it clean → Make it smart → **Make it disciplined**
 
 ---
 
@@ -434,10 +275,4 @@ typezerø Projects
 WTFPL
 
 ---
-
-## ✅ Requirements
-
-* Python 3.10+
-* ffmpeg
-* ffprobe
 

@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file:     ytbot.py
 # author:   Mike Redd
-# version:  5.4
+# version:  5.4.1
 # created:  2026-04-18
 # updated:  2026-05-01
 # desc:     Queue-based Telegram media bot
@@ -80,6 +80,16 @@ DEDUP_ENABLED = getattr(ytbotrc, "DEDUP_ENABLED", True)
 DEDUP_TTL_HOURS = getattr(ytbotrc, "DEDUP_TTL_HOURS", 24)
 MAX_VIDEO_HEIGHT = getattr(ytbotrc, "MAX_VIDEO_HEIGHT", 1080)
 PREFER_MP4 = getattr(ytbotrc, "PREFER_MP4", True)
+SUPPORTED_VIDEO_DOMAINS = tuple(getattr(
+    ytbotrc,
+    "SUPPORTED_VIDEO_DOMAINS",
+    (
+        "youtube.com",
+        "youtu.be",
+        "m.youtube.com",
+        "instagram.com",
+    ),
+))
 ARCHIVE_CHAT_ID = getattr(ytbotrc, "ARCHIVE_CHAT_ID", None)
 WATCH_FOLDER_ENABLED = getattr(ytbotrc, "WATCH_FOLDER_ENABLED", True)
 WATCH_FOLDER_CHAT_ID = getattr(ytbotrc, "WATCH_FOLDER_CHAT_ID", None) or OWNER_ID
@@ -700,12 +710,38 @@ def is_youtube_url(url: str) -> bool:
 def is_instagram_url(url: str) -> bool:
     return "instagram.com/" in url.lower()
 
+def is_supported_video_url(url: str) -> bool:
+    """
+    Only allow known video-source URLs into the media pipeline.
+    This prevents random articles, tracking links, and non-video pages
+    from being handed to yt-dlp.
+    """
+    try:
+        parsed = urlparse(url.strip())
+        host = parsed.netloc.lower()
+
+        if host.startswith("www."):
+            host = host[4:]
+
+        if host == "m.youtube.com":
+            host = "youtube.com"
+
+        return any(
+            host == domain or host.endswith(f".{domain}")
+            for domain in SUPPORTED_VIDEO_DOMAINS
+        )
+    except Exception:
+        return False
+
 def get_cookiefile_for_url(url: str) -> str | None:
     if is_youtube_url(url) and YOUTUBE_COOKIES_FILE.exists():
         return str(YOUTUBE_COOKIES_FILE)
     return None
 
 def get_media_info(url: str) -> dict:
+    if not is_supported_video_url(url):
+        raise RuntimeError("Unsupported video source.")
+
     opts = {
         "quiet": True,
         "noplaylist": True,
@@ -818,6 +854,9 @@ def build_ydl_opts(url: str, outtmpl: str, mode: str) -> dict:
     return opts
 
 def download_media(url: str, mode: str) -> Path:
+    if not is_supported_video_url(url):
+        raise RuntimeError("Unsupported video source.")
+
     clear_download_dir()
 
     ext_hint = "%(ext)s" if mode != "audio" else "mp3"
@@ -1218,11 +1257,11 @@ async def watch_folder_worker() -> None:
 
         for txt_file in WATCH_DIR.glob("*.txt"):
             try:
-                urls = [
-                    line.strip()
-                    for line in txt_file.read_text(encoding="utf-8").splitlines()
-                    if extract_url(line.strip())
-                ]
+                urls = []
+                for line in txt_file.read_text(encoding="utf-8").splitlines():
+                    url = extract_url(line.strip())
+                    if url and is_supported_video_url(url):
+                        urls.append(url)
                 for url in urls:
                     QUEUE.append(create_job(OWNER_ID, WATCH_FOLDER_CHAT_ID, url, mode="video", source="watch"))
                 save_queue_state()
@@ -1254,6 +1293,10 @@ async def ui_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     url = extract_url(" ".join(ctx.args))
     if not url:
         await update.message.reply_text("That does not look like a valid URL.")
+        return
+
+    if not is_supported_video_url(url):
+        await update.message.reply_text("❌ Unsupported video source.")
         return
 
     try:
@@ -1380,7 +1423,7 @@ async def start_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
     chat = update.effective_chat
 
     lines = [
-        "👋 *YT Bot v5.4*",
+        "👋 *YT Bot v5.4.1*",
         "",
         "Send me a link or use a command:",
         "",
@@ -1468,6 +1511,10 @@ async def dl_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         )
         return
 
+    if not is_supported_video_url(url):
+        await update.message.reply_text("❌ Unsupported video source.")
+        return
+
     QUEUE.append(create_job(
         update.effective_user.id,
         update.effective_chat.id,
@@ -1501,6 +1548,10 @@ async def audio_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
             "Example:\n"
             "/audio https://example.com/video"
         )
+        return
+
+    if not is_supported_video_url(url):
+        await update.message.reply_text("❌ Unsupported video source.")
         return
 
     if not ffmpeg_exists():
@@ -1544,6 +1595,10 @@ async def clip_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     url = extract_url(ctx.args[0])
     if not url:
         await update.message.reply_text("That does not look like a valid URL.")
+        return
+
+    if not is_supported_video_url(url):
+        await update.message.reply_text("❌ Unsupported video source.")
         return
 
     if not ffmpeg_exists():
@@ -1723,6 +1778,7 @@ async def status_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
         f"*Dedupe:* {DEDUP_ENABLED} ({DEDUP_TTL_HOURS}h TTL)\n"
         f"*Max Video Height:* {MAX_VIDEO_HEIGHT}p\n"
         f"*Prefer MP4:* {PREFER_MP4}\n"
+        f"*Supported Video Domains:* {', '.join(SUPPORTED_VIDEO_DOMAINS)}\n"
         f"*ffmpeg:* {ffmpeg_exists()}\n"
         f"*ffprobe:* {ffprobe_exists()}\n"
         f"*YouTube Cookies:* {'yes' if YOUTUBE_COOKIES_FILE.exists() else 'no'}",
@@ -1941,6 +1997,11 @@ async def handle_url(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
             pass
 
     if not url:
+        return
+
+    if not is_supported_video_url(url):
+        if DEBUG_MODE:
+            log.info("Ignored unsupported/non-video URL: %s", url)
         return
 
     if DEBUG_MODE:

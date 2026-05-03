@@ -42,4 +42,5 @@
 ### Intelligence Layer
 
 * [v5.4](v5.4.md) — Dedupe system (TTL + persistence) and smarter yt-dlp format selection
+* [v5.4.1](v5.4.1.md) — Restrict pipeline to supported video sources (validation layer)
 
