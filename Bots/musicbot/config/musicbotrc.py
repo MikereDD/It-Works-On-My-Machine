@@ -1,7 +1,7 @@
 # ------------------------------------------------------------
 # file:     musicbotrc.py
 # author:   Mike Redd
-# version:  1.2
+# version:  1.4
 # created:  2026-05-03
 # updated:  2026-05-03
 # desc:     Configuration for Sandalphon (MusicBot)
@@ -46,3 +46,7 @@ COOKIES_FILE = ""
 SPOTIFY_METADATA_ENABLED = False
 SPOTIFY_CLIENT_ID = ""
 SPOTIFY_CLIENT_SECRET = ""
+
+# ── Cache Settings (v1.4) ────────────────────────────────────
+CACHE_ENABLED = True
+CACHE_DIR = "/mnt/nvme1/work/bots/cache/musicbot"
