@@ -14,6 +14,8 @@ Sandalphon is a Telegram music bot that:
 * cleans filenames and metadata
 * delivers Telegram-ready audio
 * supports playlists
+* processes requests through a queue (stable under load)
+* caches audio for instant reuse
 * runs on local Bot API for performance
 
 ---
@@ -48,9 +50,30 @@ Sandalphon is a Telegram music bot that:
 
 ---
 
+### v1.3
+
+* request queue system (FIFO)
+* prevents concurrent downloads
+* stabilizes multi-request handling
+* `/queue` command
+
+---
+
+### v1.4
+
+* audio caching system
+* instant reuse of previously downloaded tracks
+* cache index (`index.json`)
+* `/cache` command (stats)
+* `/clearcache` command
+
+---
+
 ## 🧠 Core Flow
 
-Input → Resolve → Download → Clean → Tag → Deliver
+```
+Input → Queue → Resolve → Download → Cache → Clean → Tag → Deliver
+```
 
 ---
 
@@ -61,6 +84,9 @@ Input → Resolve → Download → Clean → Tag → Deliver
 /audio <url or search>
 /song <url or search>
 /playlist <playlist url>
+/queue
+/cache
+/clearcache
 /id
 /help
 ```
@@ -80,6 +106,8 @@ ADMIN_USERS
 BASE_DIR
 DOWNLOAD_DIR
 LOG_FILE
+CACHE_ENABLED
+CACHE_DIR
 ```
 
 ---
@@ -100,7 +128,8 @@ empty ALLOWED_USER_IDS → public bot
 * Amazon Music → fallback search
 * YouTube/SoundCloud → primary sources
 * Telegram file limit enforced (~49MB)
-* Large files are skipped (for now)
+* Large files are skipped (local API removes most limitations)
+* cache is query-based (exact match required)
 
 ---
 
@@ -110,15 +139,16 @@ empty ALLOWED_USER_IDS → public bot
 * yt-dlp must be in PATH
 * permissions required for NVMe paths
 * some sources may require cookies
+* yt-dlp titles can be messy (handled by cleanup logic)
 
 ---
 
 ## 🧭 Next Up (Planned)
 
-* caching system (avoid re-downloads)
-* local media library
-* queue system
-* auto split large files
+* smarter cache matching (same song, different queries)
+* local media library mode
+* queue prioritization (admin priority)
+* background prefetching
 * better album art handling
 
 ---
@@ -137,4 +167,3 @@ empty ALLOWED_USER_IDS → public bot
 WTFPL — do what you want
 
 ---
-
