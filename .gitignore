@@ -42,3 +42,6 @@ node_modules/
 
 # Private Wi-Fi config
 .config/wifi-menu/wifirc
+
+start-bot-api.sh
+etc/systemd/system/
