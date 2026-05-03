@@ -1,24 +1,48 @@
 # ------------------------------------------------------------
 # file:     musicbotrc.py
 # author:   Mike Redd
-# version:  1.0
+# version:  1.2
 # created:  2026-05-03
 # updated:  2026-05-03
-# desc:     Configuration for Telegram MusicBot
+# desc:     Configuration for Sandalphon (MusicBot)
 # ------------------------------------------------------------
 
+# ── Required ─────────────────────────────────────────────────
 BOT_TOKEN = "PUT_YOUR_BOT_TOKEN_HERE"
-ALLOWED_USER_ID = 123456789
 
-BASE_DIR = "/mnt/nvme1/work/bots/musicbot"
-DOWNLOAD_DIR = "/mnt/nvme1/work/bots/downloads/music"
-LOG_FILE = "/mnt/nvme1/work/bots/logs/musicbot.log"
+# ── Access Control ───────────────────────────────────────────
 
-# Optional access control
+# Leave empty to allow all users
 ALLOWED_USER_IDS = [
     # 123456789
 ]
 
+# Admin users (bypass restrictions / future admin commands)
+ADMIN_USERS = [
+    # 123456789
+]
+
+# ── Paths ────────────────────────────────────────────────────
+BASE_DIR = "/mnt/nvme1/work/bots/Sandalphon"
+DOWNLOAD_DIR = "/mnt/nvme1/work/bots/downloads/music"
+LOG_FILE = "/mnt/nvme1/work/bots/logs/musicbot.log"
+
+# ── Audio Settings ───────────────────────────────────────────
 MAX_FILE_MB = 49
 AUDIO_FORMAT = "mp3"
 AUDIO_QUALITY = "0"
+
+# ── Playlist Settings ────────────────────────────────────────
+PLAYLIST_LIMIT = 10
+
+# ── Local Telegram Bot API (recommended) ─────────────────────
+LOCAL_BOT_API_URL = "http://127.0.0.1:8081/bot"
+LOCAL_BOT_API_FILE_URL = "http://127.0.0.1:8081/file/bot"
+
+# ── yt-dlp Cookies (optional) ────────────────────────────────
+COOKIES_FILE = ""
+
+# ── Spotify Metadata (optional) ──────────────────────────────
+SPOTIFY_METADATA_ENABLED = False
+SPOTIFY_CLIENT_ID = ""
+SPOTIFY_CLIENT_SECRET = ""
