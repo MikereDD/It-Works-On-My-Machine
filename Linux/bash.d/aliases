@@ -35,7 +35,7 @@ alias myip='ip -4 addr show end0 | awk "/inet / {print $2}" | cut -d/ -f1'  # lo
 
 # ── Custom Tools ────────────────────────────
 
-alias arakiel='~/bin/arakiel'   # custom launcher
+alias arakiel='~/bin/arakiel-tmux.sh'   # custom launcher
 alias tools="$HOME/scripts/tool-menu.sh"  # unified tool menu
 
 # ── System Info ─────────────────────────────
