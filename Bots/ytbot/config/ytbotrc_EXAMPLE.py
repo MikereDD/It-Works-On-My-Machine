@@ -70,6 +70,10 @@ EXTRA_VIDEO_DOMAINS = (
 # Override if you want a fixed bot data root.
 BASE_DIR = "$HOME/bots"
 
+# ── Local Telegram Bot API (optional but recommended) ────────
+LOCAL_BOT_API_URL = "http://127.0.0.1:8081/bot"
+LOCAL_BOT_API_FILE_URL = "http://127.0.0.1:8081/file/bot"
+
 # ── Notes ───────────────────────────────────
 # - Do NOT commit your real BOT_TOKEN.
 # - Keep your real config outside version control.

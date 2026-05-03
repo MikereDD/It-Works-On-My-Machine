@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file:     ytbot.py
 # author:   Mike Redd
-# version:  5.4.3
+# version:  5.4.4
 # created:  2026-04-18
 # updated:  2026-05-01
 # desc:     Queue-based Telegram media bot
@@ -31,7 +31,7 @@ from urllib.request import urlopen
 # ── Branding ─────────────────────────────────────────────────
 
 BOT_NAME = "Raziel"
-BOT_VERSION = "5.4.3"
+BOT_VERSION = "5.4.4"
 
 import yt_dlp
 from telegram import (
@@ -85,6 +85,10 @@ DEDUP_ENABLED = getattr(ytbotrc, "DEDUP_ENABLED", True)
 DEDUP_TTL_HOURS = getattr(ytbotrc, "DEDUP_TTL_HOURS", 24)
 MAX_VIDEO_HEIGHT = getattr(ytbotrc, "MAX_VIDEO_HEIGHT", 1080)
 PREFER_MP4 = getattr(ytbotrc, "PREFER_MP4", True)
+
+# Local Telegram Bot API support (optional)
+LOCAL_BOT_API_URL = getattr(ytbotrc, "LOCAL_BOT_API_URL", "")
+LOCAL_BOT_API_FILE_URL = getattr(ytbotrc, "LOCAL_BOT_API_FILE_URL", "")
 
 DEFAULT_VIDEO_HEIGHT = getattr(ytbotrc, "DEFAULT_VIDEO_HEIGHT", 720)
 HD_VIDEO_HEIGHT = getattr(ytbotrc, "HD_VIDEO_HEIGHT", 1080)
@@ -2203,14 +2207,19 @@ def build_app():
         pool_timeout=30,
     )
 
-    app = (
+    builder = (
         ApplicationBuilder()
         .token(BOT_TOKEN)
-        .base_url("http://127.0.0.1:8081/bot")
-        .base_file_url("http://127.0.0.1:8081/file/bot")
         .request(request)
-        .build()
     )
+
+    if LOCAL_BOT_API_URL:
+        builder = builder.base_url(LOCAL_BOT_API_URL)
+
+    if LOCAL_BOT_API_FILE_URL:
+        builder = builder.base_file_url(LOCAL_BOT_API_FILE_URL)
+
+    app = builder.build()
 
     app.add_handler(CommandHandler("start", start_cmd))
     app.add_handler(CommandHandler("help", help_cmd))
