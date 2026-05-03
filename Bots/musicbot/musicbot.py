@@ -2,13 +2,14 @@
 # ------------------------------------------------------------
 # file:     musicbot.py
 # author:   Mike Redd
-# version:  1.1
+# version:  1.2
 # created:  2026-05-03
 # updated:  2026-05-03
-# desc:     Sandalphon - Telegram music bot with polished UX
+# desc:     Sandalphon - Telegram music bot with metadata + playlist support
 # ------------------------------------------------------------
 
 import asyncio
+import json
 import logging
 import re
 import shutil
@@ -16,6 +17,7 @@ import subprocess
 import sys
 import uuid
 from pathlib import Path
+from urllib.parse import urlparse
 
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
@@ -23,7 +25,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 # ── Branding ─────────────────────────────────────────────────
 
 BOT_NAME = "Sandalphon"
-BOT_VERSION = "1.1"
+BOT_VERSION = "1.2"
 
 
 # ── Config Loader ────────────────────────────────────────────
@@ -44,7 +46,7 @@ sys.path.insert(0, str(config_file.parent))
 import musicbotrc as cfg  # noqa: E402
 
 
-# ── Paths / Logging ──────────────────────────────────────────
+# ── Paths / Settings ─────────────────────────────────────────
 
 BASE_DIR = Path(getattr(cfg, "BASE_DIR", Path(__file__).parent))
 DOWNLOAD_DIR = Path(getattr(cfg, "DOWNLOAD_DIR", BASE_DIR / "downloads"))
@@ -52,6 +54,26 @@ LOG_FILE = Path(getattr(cfg, "LOG_FILE", BASE_DIR / "musicbot.log"))
 
 DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
 LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+
+BOT_TOKEN = getattr(cfg, "BOT_TOKEN", "")
+ALLOWED_USER_IDS = set(getattr(cfg, "ALLOWED_USER_IDS", []))
+ADMIN_USERS = set(getattr(cfg, "ADMIN_USERS", []))
+
+MAX_FILE_MB = int(getattr(cfg, "MAX_FILE_MB", 49))
+AUDIO_FORMAT = getattr(cfg, "AUDIO_FORMAT", "mp3")
+AUDIO_QUALITY = getattr(cfg, "AUDIO_QUALITY", "0")
+PLAYLIST_LIMIT = int(getattr(cfg, "PLAYLIST_LIMIT", 10))
+
+LOCAL_BOT_API_URL = getattr(cfg, "LOCAL_BOT_API_URL", "")
+LOCAL_BOT_API_FILE_URL = getattr(cfg, "LOCAL_BOT_API_FILE_URL", "")
+COOKIES_FILE = getattr(cfg, "COOKIES_FILE", "")
+
+SPOTIFY_METADATA_ENABLED = bool(getattr(cfg, "SPOTIFY_METADATA_ENABLED", False))
+SPOTIFY_CLIENT_ID = getattr(cfg, "SPOTIFY_CLIENT_ID", "")
+SPOTIFY_CLIENT_SECRET = getattr(cfg, "SPOTIFY_CLIENT_SECRET", "")
+
+
+# ── Logging ──────────────────────────────────────────────────
 
 logging.basicConfig(
     filename=str(LOG_FILE),
@@ -63,25 +85,26 @@ console = logging.StreamHandler()
 console.setLevel(logging.INFO)
 logging.getLogger("").addHandler(console)
 
-BOT_TOKEN = getattr(cfg, "BOT_TOKEN", "")
-ALLOWED_USER_IDS = set(getattr(cfg, "ALLOWED_USER_IDS", []))
-MAX_FILE_MB = int(getattr(cfg, "MAX_FILE_MB", 49))
-AUDIO_FORMAT = getattr(cfg, "AUDIO_FORMAT", "mp3")
-AUDIO_QUALITY = getattr(cfg, "AUDIO_QUALITY", "0")
 
-LOCAL_BOT_API_URL = getattr(cfg, "LOCAL_BOT_API_URL", "")
-LOCAL_BOT_API_FILE_URL = getattr(cfg, "LOCAL_BOT_API_FILE_URL", "")
-COOKIES_FILE = getattr(cfg, "COOKIES_FILE", "")
-
-
-# ── Helpers ──────────────────────────────────────────────────
+# ── Access / Input Helpers ───────────────────────────────────
 
 def allowed(update: Update) -> bool:
+    user = update.effective_user
+
+    if not user:
+        return False
+
+    user_id = user.id
+
+    # Admins always allowed
+    if user_id in ADMIN_USERS:
+        return True
+
+    # Empty whitelist means public bot
     if not ALLOWED_USER_IDS:
         return True
 
-    user = update.effective_user
-    return bool(user and user.id in ALLOWED_USER_IDS)
+    return user_id in ALLOWED_USER_IDS
 
 
 def is_url(text: str) -> bool:
@@ -91,6 +114,25 @@ def is_url(text: str) -> bool:
 def is_spotify_url(text: str) -> bool:
     lowered = text.lower()
     return "open.spotify.com" in lowered or "spotify.link" in lowered
+
+
+def is_amazon_music_url(text: str) -> bool:
+    lowered = text.lower()
+    return "music.amazon." in lowered or "amazon.com/music" in lowered
+
+
+def is_probably_playlist(text: str) -> bool:
+    lowered = text.lower()
+
+    playlist_markers = [
+        "list=",
+        "/playlist",
+        "/sets/",
+        "playlist?",
+        "album/",
+    ]
+
+    return any(marker in lowered for marker in playlist_markers)
 
 
 def file_size_mb(path: Path) -> float:
@@ -108,19 +150,6 @@ def run_cmd(cmd: list[str], cwd: Path | None = None) -> subprocess.CompletedProc
         stderr=subprocess.STDOUT,
         check=False,
     )
-
-
-def find_audio_file(workdir: Path) -> Path | None:
-    audio_exts = [".mp3", ".m4a", ".opus", ".ogg", ".flac", ".wav"]
-    files = [
-        p for p in workdir.iterdir()
-        if p.is_file() and p.suffix.lower() in audio_exts
-    ]
-
-    if not files:
-        return None
-
-    return max(files, key=lambda p: p.stat().st_size)
 
 
 def clean_name(name: str) -> str:
@@ -142,11 +171,14 @@ def clean_title(title: str) -> str:
         r"\[\s*official\s+audio\s*\]",
         r"\(\s*lyrics?\s*\)",
         r"\[\s*lyrics?\s*\]",
+        r"\(\s*visualizer\s*\)",
+        r"\[\s*visualizer\s*\]",
         r"\bofficial\s+music\s+video\b",
         r"\bofficial\s+video\b",
         r"\bofficial\s+audio\b",
         r"\blyric\s+video\b",
         r"\blyrics\b",
+        r"\bvisualizer\b",
         r"\bHD\b",
         r"\b4K\b",
     ]
@@ -194,8 +226,167 @@ def unique_path(path: Path) -> Path:
         counter += 1
 
 
-def build_target(input_text: str) -> str:
+# ── Metadata Helpers ─────────────────────────────────────────
+
+def extract_track_id_from_spotify_url(url: str) -> str | None:
+    match = re.search(r"open\.spotify\.com/track/([A-Za-z0-9]+)", url)
+    if match:
+        return match.group(1)
+
+    return None
+
+
+def get_spotify_token() -> str | None:
+    if not (SPOTIFY_METADATA_ENABLED and SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET):
+        return None
+
+    try:
+        import base64
+        import requests
+
+        auth = f"{SPOTIFY_CLIENT_ID}:{SPOTIFY_CLIENT_SECRET}"
+        auth_b64 = base64.b64encode(auth.encode()).decode()
+
+        resp = requests.post(
+            "https://accounts.spotify.com/api/token",
+            headers={"Authorization": f"Basic {auth_b64}"},
+            data={"grant_type": "client_credentials"},
+            timeout=10,
+        )
+
+        if resp.status_code != 200:
+            logging.warning("Spotify token failed: %s", resp.text)
+            return None
+
+        return resp.json().get("access_token")
+
+    except Exception:
+        logging.exception("Spotify token lookup failed")
+        return None
+
+
+def get_spotify_metadata(url: str) -> dict | None:
+    track_id = extract_track_id_from_spotify_url(url)
+    token = get_spotify_token()
+
+    if not (track_id and token):
+        return None
+
+    try:
+        import requests
+
+        resp = requests.get(
+            f"https://api.spotify.com/v1/tracks/{track_id}",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=10,
+        )
+
+        if resp.status_code != 200:
+            logging.warning("Spotify track lookup failed: %s", resp.text)
+            return None
+
+        data = resp.json()
+
+        artist = ", ".join(a["name"] for a in data.get("artists", []))
+        title = data.get("name", "")
+        album = data.get("album", {}).get("name", "")
+        release_date = data.get("album", {}).get("release_date", "")
+        year = release_date[:4] if release_date else ""
+        cover = ""
+
+        images = data.get("album", {}).get("images", [])
+        if images:
+            cover = images[0].get("url", "")
+
+        if not title:
+            return None
+
+        return {
+            "artist": artist or BOT_NAME,
+            "title": title,
+            "album": album,
+            "year": year,
+            "cover": cover,
+            "search": f"{artist} - {title}",
+        }
+
+    except Exception:
+        logging.exception("Spotify metadata lookup failed")
+        return None
+
+
+def get_ytdlp_metadata(target: str, playlist: bool = False) -> dict | None:
+    cmd = [
+        "yt-dlp",
+        "--dump-single-json",
+        "--no-warnings",
+    ]
+
+    if not playlist:
+        cmd.append("--no-playlist")
+
+    if COOKIES_FILE and Path(COOKIES_FILE).exists():
+        cmd.extend(["--cookies", COOKIES_FILE])
+
+    cmd.append(target)
+
+    result = run_cmd(cmd)
+
+    if result.returncode != 0:
+        logging.warning("yt-dlp metadata failed: %s", result.stdout[-1000:])
+        return None
+
+    try:
+        return json.loads(result.stdout)
+    except json.JSONDecodeError:
+        logging.warning("Could not decode yt-dlp metadata JSON")
+        return None
+
+
+def metadata_from_ytdlp_info(info: dict) -> dict:
+    title = info.get("track") or info.get("title") or "audio"
+    artist = (
+        info.get("artist")
+        or info.get("creator")
+        or info.get("uploader")
+        or BOT_NAME
+    )
+    album = info.get("album") or ""
+    year = str(info.get("release_year") or info.get("upload_date", "")[:4] or "")
+    cover = info.get("thumbnail") or ""
+
+    display_title = clean_title(f"{artist} - {title}") if artist else clean_title(title)
+    parsed_artist, parsed_title = split_artist_title(display_title)
+
+    return {
+        "artist": parsed_artist,
+        "title": parsed_title,
+        "album": album,
+        "year": year,
+        "cover": cover,
+        "search": f"{parsed_artist} - {parsed_title}",
+        "display": display_title,
+    }
+
+
+def build_metadata(input_text: str) -> dict | None:
+    if is_spotify_url(input_text):
+        spotify_meta = get_spotify_metadata(input_text)
+        if spotify_meta:
+            spotify_meta["display"] = clean_title(f"{spotify_meta['artist']} - {spotify_meta['title']}")
+            return spotify_meta
+
+    # Amazon Music has no clean simple API here; we let yt-dlp/title lookup or search handle it.
+    return None
+
+
+# ── Download / Tagging ───────────────────────────────────────
+
+def build_target(input_text: str, metadata: dict | None = None) -> str:
     input_text = input_text.strip()
+
+    if metadata and metadata.get("search"):
+        return f"ytsearch1:{metadata['search']}"
 
     if is_url(input_text) and not is_spotify_url(input_text):
         return input_text
@@ -203,12 +394,30 @@ def build_target(input_text: str) -> str:
     return f"ytsearch1:{input_text}"
 
 
-def retag_audio_file(audio_file: Path, display_title: str) -> Path:
+def find_audio_file(workdir: Path) -> Path | None:
+    audio_exts = [".mp3", ".m4a", ".opus", ".ogg", ".flac", ".wav"]
+
+    files = [
+        p for p in workdir.iterdir()
+        if p.is_file() and p.suffix.lower() in audio_exts
+    ]
+
+    if not files:
+        return None
+
+    return max(files, key=lambda p: p.stat().st_size)
+
+
+def retag_audio_file(audio_file: Path, meta: dict) -> Path:
     """
-    Rewrites metadata so Telegram displays the cleaned title instead of the
-    noisy embedded title from yt-dlp/YouTube.
+    Rewrites metadata so Telegram displays clean tags instead of noisy embedded
+    YouTube/yt-dlp metadata.
     """
-    artist, title = split_artist_title(display_title)
+    artist = meta.get("artist") or BOT_NAME
+    title = meta.get("title") or audio_file.stem
+    album = meta.get("album") or ""
+    year = meta.get("year") or ""
+
     temp_file = audio_file.with_name(f"{audio_file.stem}.tagged{audio_file.suffix}")
 
     cmd = [
@@ -220,8 +429,15 @@ def retag_audio_file(audio_file: Path, display_title: str) -> Path:
         "-metadata", f"title={title}",
         "-metadata", f"artist={artist}",
         "-metadata", f"album_artist={artist}",
-        str(temp_file),
     ]
+
+    if album:
+        cmd.extend(["-metadata", f"album={album}"])
+
+    if year:
+        cmd.extend(["-metadata", f"date={year}"])
+
+    cmd.append(str(temp_file))
 
     result = run_cmd(cmd)
 
@@ -235,19 +451,19 @@ def retag_audio_file(audio_file: Path, display_title: str) -> Path:
     return audio_file
 
 
-def download_audio(input_text: str) -> tuple[Path | None, str]:
+def download_audio(input_text: str, playlist: bool = False, playlist_index: int | None = None) -> tuple[Path | None, str, dict | None]:
     job_id = uuid.uuid4().hex[:8]
     workdir = DOWNLOAD_DIR / f"job-{job_id}"
     workdir.mkdir(parents=True, exist_ok=True)
 
     try:
-        target = build_target(input_text)
+        external_meta = build_metadata(input_text)
+        target = build_target(input_text, external_meta)
 
         output_template = str(workdir / "%(title)s.%(ext)s")
 
         cmd = [
             "yt-dlp",
-            "--no-playlist",
             "-x",
             "--audio-format", AUDIO_FORMAT,
             "--audio-quality", AUDIO_QUALITY,
@@ -255,36 +471,90 @@ def download_audio(input_text: str) -> tuple[Path | None, str]:
             "--add-metadata",
             "--restrict-filenames",
             "-o", output_template,
-            target,
         ]
+
+        if not playlist:
+            cmd.append("--no-playlist")
+
+        if playlist and playlist_index is not None:
+            cmd.extend(["--playlist-items", str(playlist_index)])
 
         if COOKIES_FILE and Path(COOKIES_FILE).exists():
             cmd.extend(["--cookies", COOKIES_FILE])
+
+        cmd.append(target)
 
         result = run_cmd(cmd)
 
         if result.returncode != 0:
             logging.error(result.stdout)
-            return None, result.stdout[-3500:]
+            return None, result.stdout[-3500:], None
 
         audio_file = find_audio_file(workdir)
 
         if not audio_file:
-            return None, "Download finished but no audio file was found."
+            return None, "Download finished but no audio file was found.", None
 
-        display_title = clean_title(audio_file.stem)
+        if external_meta:
+            meta = external_meta
+            display_title = meta.get("display") or clean_title(f"{meta.get('artist', BOT_NAME)} - {meta.get('title', audio_file.stem)}")
+        else:
+            display_title = clean_title(audio_file.stem)
+            artist, title = split_artist_title(display_title)
+            meta = {
+                "artist": artist,
+                "title": title,
+                "album": "",
+                "year": "",
+                "cover": "",
+                "display": display_title,
+            }
+
         final_file = unique_path(
             DOWNLOAD_DIR / f"{clean_name(display_title)}{audio_file.suffix.lower()}"
         )
 
         shutil.move(str(audio_file), str(final_file))
+        final_file = retag_audio_file(final_file, meta)
 
-        final_file = retag_audio_file(final_file, display_title)
-
-        return final_file, "OK"
+        return final_file, "OK", meta
 
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
+
+
+def get_playlist_items(url: str) -> list[str]:
+    """
+    Return webpage URLs for playlist entries, capped by PLAYLIST_LIMIT.
+    """
+    info = get_ytdlp_metadata(url, playlist=True)
+
+    if not info:
+        return []
+
+    entries = info.get("entries") or []
+    urls = []
+
+    for entry in entries:
+        if not entry:
+            continue
+
+        webpage_url = entry.get("webpage_url") or entry.get("url")
+
+        if not webpage_url:
+            continue
+
+        if not str(webpage_url).startswith("http"):
+            # YouTube extractor sometimes gives only an ID.
+            if entry.get("ie_key", "").lower() == "youtube" or info.get("extractor_key") == "YoutubeTab":
+                webpage_url = f"https://www.youtube.com/watch?v={webpage_url}"
+
+        urls.append(str(webpage_url))
+
+        if len(urls) >= PLAYLIST_LIMIT:
+            break
+
+    return urls
 
 
 # ── Telegram Commands ────────────────────────────────────────
@@ -301,12 +571,14 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/music <url or search>\n"
         "/audio <url or search>\n"
         "/song <url or search>\n"
+        "/playlist <playlist url>\n"
         "/id\n"
         "/help\n\n"
         "Examples:\n"
         "/music https://youtube.com/watch?v=...\n"
         "/music https://soundcloud.com/artist/song\n"
-        "/music the smiths how soon is now\n\n"
+        "/music the smiths how soon is now\n"
+        "/playlist https://youtube.com/playlist?list=...\n\n"
         "Use only with music you own, created, have permission to download, "
         "or public/royalty-free sources."
     )
@@ -340,7 +612,7 @@ async def music_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         await notice.edit_text("🎶 Finding the track...")
 
-        audio_file, status = await asyncio.to_thread(download_audio, query)
+        audio_file, status, meta = await asyncio.to_thread(download_audio, query)
 
         if not audio_file:
             logging.error("Download failed: %s", status)
@@ -350,8 +622,14 @@ async def music_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         size = file_size_mb(audio_file)
-        display_title = clean_title(audio_file.stem)
-        artist, title = split_artist_title(display_title)
+
+        if meta:
+            display_title = meta.get("display") or clean_title(audio_file.stem)
+            artist = meta.get("artist") or BOT_NAME
+            title = meta.get("title") or display_title
+        else:
+            display_title = clean_title(audio_file.stem)
+            artist, title = split_artist_title(display_title)
 
         if size > MAX_FILE_MB:
             await notice.edit_text(
@@ -369,14 +647,94 @@ async def music_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_audio(
                 audio=f,
                 filename=f"{display_title}{audio_file.suffix.lower()}",
-                performer=artist,
-                title=title,
+                performer=artist[:64],
+                title=title[:64],
             )
 
         await notice.delete()
 
     except Exception as e:
         logging.exception("Unhandled error")
+        await notice.edit_text(f"Error: {e}")
+
+
+async def playlist_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not allowed(update):
+        await update.message.reply_text("Access denied.")
+        return
+
+    if not context.args:
+        await update.message.reply_text("Usage: /playlist <playlist url>")
+        return
+
+    url = " ".join(context.args).strip()
+
+    if not is_url(url):
+        await update.message.reply_text("Playlist needs a URL.")
+        return
+
+    notice = await update.message.reply_text(
+        f"📜 {BOT_NAME} is reading the playlist..."
+    )
+
+    try:
+        items = await asyncio.to_thread(get_playlist_items, url)
+
+        if not items:
+            await notice.edit_text("⚠️ Couldn't read playlist entries.")
+            return
+
+        await notice.edit_text(
+            f"📜 Found {len(items)} tracks. Sending up to {PLAYLIST_LIMIT}..."
+        )
+
+        sent = 0
+        skipped = 0
+
+        for idx, item_url in enumerate(items, start=1):
+            await notice.edit_text(f"🎶 Track {idx}/{len(items)}: downloading...")
+
+            audio_file, status, meta = await asyncio.to_thread(download_audio, item_url)
+
+            if not audio_file:
+                logging.error("Playlist item failed: %s", status)
+                skipped += 1
+                continue
+
+            size = file_size_mb(audio_file)
+
+            if meta:
+                display_title = meta.get("display") or clean_title(audio_file.stem)
+                artist = meta.get("artist") or BOT_NAME
+                title = meta.get("title") or display_title
+            else:
+                display_title = clean_title(audio_file.stem)
+                artist, title = split_artist_title(display_title)
+
+            if size > MAX_FILE_MB:
+                skipped += 1
+                logging.warning("Skipping large playlist file: %s %.1f MB", audio_file.name, size)
+                continue
+
+            await notice.edit_text(f"⬆️ Track {idx}/{len(items)}: sending...")
+
+            with audio_file.open("rb") as f:
+                await update.message.reply_audio(
+                    audio=f,
+                    filename=f"{display_title}{audio_file.suffix.lower()}",
+                    performer=artist[:64],
+                    title=title[:64],
+                )
+
+            sent += 1
+            await asyncio.sleep(0.75)
+
+        await notice.edit_text(
+            f"✅ Playlist done.\nSent: {sent}\nSkipped: {skipped}"
+        )
+
+    except Exception as e:
+        logging.exception("Unhandled playlist error")
         await notice.edit_text(f"Error: {e}")
 
 
@@ -403,6 +761,7 @@ def main():
     app.add_handler(CommandHandler("music", music_cmd))
     app.add_handler(CommandHandler("audio", music_cmd))
     app.add_handler(CommandHandler("song", music_cmd))
+    app.add_handler(CommandHandler("playlist", playlist_cmd))
 
     logging.info("%s v%s started.", BOT_NAME, BOT_VERSION)
     app.run_polling()
