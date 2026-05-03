@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file:     ytbot.py
 # author:   Mike Redd
-# version:  5.3.3
+# version:  5.3.4
 # created:  2026-04-18
 # updated:  2026-05-01
 # desc:     Queue-based Telegram media bot
@@ -75,6 +75,7 @@ ALLOW_ALL_USERS = getattr(ytbotrc, "ALLOW_ALL_USERS", False)
 
 DOWNLOAD_TIMEOUT = getattr(ytbotrc, "DOWNLOAD_TIMEOUT", 3600)
 TELEGRAM_UPLOAD_TIMEOUT = getattr(ytbotrc, "TELEGRAM_UPLOAD_TIMEOUT", 3600)
+DEBUG_MODE = getattr(ytbotrc, "DEBUG_MODE", False)
 ARCHIVE_CHAT_ID = getattr(ytbotrc, "ARCHIVE_CHAT_ID", None)
 WATCH_FOLDER_ENABLED = getattr(ytbotrc, "WATCH_FOLDER_ENABLED", True)
 WATCH_FOLDER_CHAT_ID = getattr(ytbotrc, "WATCH_FOLDER_CHAT_ID", None) or OWNER_ID
@@ -141,6 +142,7 @@ logging.basicConfig(
     ],
 )
 log = logging.getLogger("ytbot")
+log.setLevel(logging.INFO if DEBUG_MODE else logging.WARNING)
 
 
 # ── JSON persistence ────────────────────────────────────────────────────────────
@@ -1262,7 +1264,7 @@ async def start_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
     chat = update.effective_chat
 
     lines = [
-        "👋 *YT Bot v5.3.3*",
+        "👋 *YT Bot v5.3.4*",
         "",
         "Send me a link or use a command:",
         "",
@@ -1601,6 +1603,7 @@ async def status_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
         f"*Watch Folder:* {WATCH_FOLDER_ENABLED}\n"
         f"*Download Timeout:* {DOWNLOAD_TIMEOUT}s\n"
         f"*Telegram Upload Timeout:* {TELEGRAM_UPLOAD_TIMEOUT}s\n"
+        f"*Debug Mode:* {DEBUG_MODE}\n"
         f"*ffmpeg:* {ffmpeg_exists()}\n"
         f"*ffprobe:* {ffprobe_exists()}\n"
         f"*YouTube Cookies:* {'yes' if YOUTUBE_COOKIES_FILE.exists() else 'no'}",
@@ -1767,16 +1770,16 @@ async def handle_url(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not can_use_context(user.id, chat.id, chat.type):
         return
 
-    # DEBUG LOG — proves Telegram delivery
-    log.info(
-        "WATCH HIT chat=%s type=%s text=%r caption=%r entities=%r caption_entities=%r",
-        chat.id,
-        chat.type,
-        getattr(message, "text", None),
-        getattr(message, "caption", None),
-        getattr(message, "entities", None),
-        getattr(message, "caption_entities", None),
-    )
+    if DEBUG_MODE:
+        log.info(
+            "WATCH HIT chat=%s type=%s text=%r caption=%r entities=%r caption_entities=%r",
+            chat.id,
+            chat.type,
+            getattr(message, "text", None),
+            getattr(message, "caption", None),
+            getattr(message, "entities", None),
+            getattr(message, "caption_entities", None),
+        )
 
     url = None
 
@@ -1821,7 +1824,8 @@ async def handle_url(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not url:
         return
 
-    log.info("URL DETECTED: %s", url)
+    if DEBUG_MODE:
+        log.info("URL DETECTED: %s", url)
 
     pos = get_queue_position()
 
@@ -1933,6 +1937,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
-
 

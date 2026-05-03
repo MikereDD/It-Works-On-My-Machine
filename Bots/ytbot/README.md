@@ -1,9 +1,9 @@
-# 🎬 YTBot v5.3.3
+# 🎬 YTBot v5.3.4
 
 > A typezerø Project
 > Built for real-world use, not perfection.
 
-![Version](https://img.shields.io/badge/version-v5.3.3-blue)
+![Version](https://img.shields.io/badge/version-v5.3.4-blue)
 ![Python](https://img.shields.io/badge/python-3.10+-blue)
 ![License](https://img.shields.io/badge/license-WTFPL-lightgrey)
 
@@ -11,7 +11,12 @@
 
 ## 🚀 Overview
 
-**YTBot v5.3.3** is a full media pipeline bot with **automatic group link ingestion**, **clean chat behavior**, and **large file support via local Telegram Bot API**.
+**YTBot v5.3.4** is a full media pipeline bot with:
+
+* **automatic group link ingestion**
+* **clean chat behavior**
+* **production-ready logging**
+* **large file support via local Telegram Bot API**
 
 It accepts input from:
 
@@ -52,11 +57,24 @@ Input → Queue → Download → Process → Upload → Route → Archive
 
 ---
 
-### 🧹 Clean Chat Behavior (v5.3.3)
+### 🧹 Clean Chat Behavior
 
-* Queue messages are now **temporary**
-* “Added to queue” is automatically removed when processing starts
-* Reduces noise in active group chats
+* Queue messages are **temporary**
+* “Added to queue” is auto-deleted when processing starts
+* Keeps group chats clean and readable
+
+---
+
+### 🔧 Production Log Mode (v5.3.4)
+
+* Introduces `DEBUG_MODE` toggle
+* Development → full logs
+* Production → minimal logs
+
+```python id="debugmode"
+/config
+DEBUG_MODE = False
+```
 
 ---
 
@@ -215,13 +233,14 @@ ALLOWED_USERS = [123456789]
 
 DOWNLOAD_TIMEOUT = 3600
 TELEGRAM_UPLOAD_TIMEOUT = 3600
+DEBUG_MODE = False
 ```
 
 ---
 
 ## ⚠️ REQUIRED: Local Telegram Bot API
 
-YTBot v5.3.3 requires the **local Bot API server** for large uploads.
+YTBot v5.3.4 requires the **local Bot API server** for large uploads.
 
 ---
 
@@ -315,7 +334,15 @@ python ytbot.py
 
 ## 🧠 Version History
 
-### v5.3.3 (Current)
+### v5.3.4 (Current)
+
+* Production log mode (`DEBUG_MODE`)
+* Reduced log noise in production
+* Maintains full debug visibility when needed
+
+---
+
+### v5.3.3
 
 * Queue message cleanup (auto-delete “Added to queue”)
 * Cleaner group chat behavior
