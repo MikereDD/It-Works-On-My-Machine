@@ -2,26 +2,51 @@
 #--------------------------------------------
 # file:     ~/.bash.d/aliases
 # author:   Mike Redd
-# version:  1.0
-# desc:     Bash aliases
+# version:  1.2
+# desc:     Bash aliases (organized + documented)
 #--------------------------------------------
 
-alias ll='ls -alF'
-alias la='ls -A'
-alias l='ls -CF'
+# ── Filesystem Shortcuts ────────────────────
 
-alias grep='grep --color=auto'
-alias cls='clear'
-alias ..='cd ..'
-alias ...='cd ../..'
+alias ll='ls -alF'        # long listing (all, detailed)
+alias la='ls -A'          # all except . and ..
+alias l='ls -CF'          # compact listing
 
-alias update='sudo pacman -Syu'
-alias install='sudo pacman -S'
-alias search='pacman -Ss'
+# ── Navigation ──────────────────────────────
 
-alias ports='ss -tulpen'
-alias myip='ip -4 addr show end0 | awk "/inet / {print \$2}" | cut -d/ -f1'
+alias ..='cd ..'          # up one directory
+alias ...='cd ../..'      # up two directories
 
-alias arakiel='~/bin/arakiel'
+# ── Core Utilities ──────────────────────────
 
-alias ff='fastfetch --logo small'
+alias grep='grep --color=auto'  # highlight matches
+alias cls='clear'               # clear screen
+
+# ── Package Management (Arch) ───────────────
+
+alias update='sudo pacman -Syu' # full system upgrade
+alias install='sudo pacman -S'  # install package
+alias search='pacman -Ss'       # search repo
+
+# ── Network ─────────────────────────────────
+
+alias ports='ss -tulpen'        # open/listening ports
+alias myip='ip -4 addr show end0 | awk "/inet / {print $2}" | cut -d/ -f1'  # local IPv4
+
+# ── Custom Tools ────────────────────────────
+
+alias arakiel='~/bin/arakiel'   # custom launcher
+alias tools="$HOME/scripts/tool-menu.sh"  # unified tool menu
+
+# ── System Info ─────────────────────────────
+
+alias ff='fastfetch --logo small'  # quick system info
+
+# ── Telegram Bot API (systemd) ──────────────
+
+alias botapi="systemctl status telegram-bot-api"        # check status
+alias botapi-start="sudo systemctl start telegram-bot-api"   # start service
+alias botapi-stop="sudo systemctl stop telegram-bot-api"     # stop service
+alias botapi-restart="sudo systemctl restart telegram-bot-api" # restart service
+alias botapi-log="journalctl -u telegram-bot-api -f"    # live logs
+

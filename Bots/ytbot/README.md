@@ -1,9 +1,9 @@
-# 🎬 YTBot v5.3
+# 🎬 YTBot v5.3.1
 
 > A typezerø Project
 > Built for real-world use, not perfection.
 
-![Version](https://img.shields.io/badge/version-v5.3-blue)
+![Version](https://img.shields.io/badge/version-v5.3.1-blue)
 ![Python](https://img.shields.io/badge/python-3.10+-blue)
 ![License](https://img.shields.io/badge/license-WTFPL-lightgrey)
 
@@ -11,7 +11,7 @@
 
 ## 🚀 Overview
 
-**YTBot v5.3** upgrades the pipeline with **large file support via local Telegram Bot API**, eliminating aggressive compression and enabling high-quality uploads.
+**YTBot v5.3.1** is a full media pipeline bot with **large file support via local Telegram Bot API** and a **systemd-managed backend service**.
 
 It accepts input from:
 
@@ -19,9 +19,9 @@ It accepts input from:
 * Filesystem (watch folder)
 * CLI (direct execution)
 
-…and processes everything through a queue system:
+Pipeline:
 
-Input → Queue → Download → Process → Route → Archive
+Input → Queue → Download → Process → Upload → Route → Archive
 
 ---
 
@@ -30,119 +30,97 @@ Input → Queue → Download → Process → Route → Archive
 ### 🧠 Core System
 
 * Persistent queue-based architecture
+* Single worker (safe processing)
 * Job tracking (queue, history, failures)
-* Single worker (safe, no overlapping downloads)
-* Access control (owner / allowed users / group-based / public mode)
+* Access control (owner / users / groups)
 
 ---
 
 ### 🎛️ Interactive UI
 
-Use `/ui <url>` to preview media with buttons:
+`/ui <url>`
 
 * Video
 * Audio
 * Cancel
-
-Preserves original request context after selection.
+* Preserves message context
 
 ---
 
 ### ✂️ Clip Support
 
-Command:
-`/clip <url> <start> <end>`
+```
+/clip <url> <start> <end>
+```
 
-Examples:
-`/clip https://youtube.com/... 00:01:00 00:01:30`
-`/clip https://youtube.com/... 01:02:10 01:03:00`
-
-* Uses ffmpeg
-* Supports MM:SS and HH:MM:SS
-* Validates clip range
-* Keeps metadata
-* Adds clip range to caption
+* ffmpeg-powered
+* Supports MM:SS / HH:MM:SS
+* Validates ranges
+* Adds clip info to caption
 
 ---
 
 ### 📥 Media Handling
 
-* YouTube, Reddit, Instagram (best-effort), more via yt-dlp
-* Smart MP4-friendly formats
-* Audio extraction via ffmpeg
+* YouTube, Reddit, Instagram (best-effort)
+* yt-dlp backend
+* MP4-friendly formats
+* Audio extraction
 
 ---
 
-### 📦 Smart Upload System (v5.3)
+### 📦 Smart Upload System (v5.3.1)
 
-* Uploads up to **~2GB using local Bot API**
-* No forced 49MB compression
-* High-quality video preserved
-* Fallback to document upload if needed
-* Metadata captions for `/ui`, `/dl`, `/audio`, `/clip`
-
----
-
-### 🧵 Reply Threading
-
-* `/dl`, `/audio`, `/clip` reply to original command
-* `/ui` replies to original `/ui` request
-* Raw links reply to original message
-* Status + final upload stay attached
+* Uploads up to **~2GB**
+* No forced compression
+* No multi-part spam
+* Extended Telegram upload timeout
+* Clean single upload output
 
 ---
 
-### 🔇 Clean Group Behavior
+### 🧵 Reply Behavior
 
-* No queue spam in groups
-* Private chats still show queue position
-* `/queue` is the source of truth
+* Replies stay attached to original message
+* `/dl`, `/audio`, `/clip`, `/ui` all threaded
+
+---
+
+### 🔇 Clean Group Mode
+
+* No queue spam
+* `/queue` for visibility
 
 ---
 
 ### 📁 File Routing
 
 ```
-G:\\bots\\done\\video\\  
-G:\\bots\\done\\audio\\  
-G:\\bots\\done\\failed\\  
+G:\bots\done\video\
+G:\bots\done\audio\
+G:\bots\done\failed\
 ```
 
 ---
 
 ### 📡 Automation
 
-* Watch folder: `G:\\bots\\watch`
+* Watch folder: `G:\bots\watch`
 * CLI:
 
 ```
-python ytbot.py --url "<link>"  
-python ytbot.py --audio "<link>"  
+python ytbot.py --url "<link>"
+python ytbot.py --audio "<link>"
 ```
 
 ---
 
 ### 📊 Observability
 
-* `/stats` → usage
-* `/lastusers` → activity
-* `/failures` → errors
-* `/retrylast` → retry
-
----
-
-### 📖 Role-Aware Help
-
-* `/help` adapts based on context
-* Admins see everything
-* Users see only allowed commands
-
----
-
-### 🌦️ Extras
-
-* `/weather <location>`
-* `/forecast <location>`
+* `/stats`
+* `/status`
+* `/failures`
+* `/retrylast`
 
 ---
 
@@ -154,19 +132,19 @@ Queue
 ↓
 Worker
 ↓
-Download (yt-dlp)
+yt-dlp
 ↓
-Process (clip / compress if needed)
+ffmpeg (clip/audio)
 ↓
-Send → Route → Archive
+Upload (Telegram API)
 ↓
-History / Failures / Stats
+Archive + History
 
 ---
 
 ## ⚙️ Setup
 
-### Install packages
+### Install Python deps
 
 ```
 pip install -r requirements.txt
@@ -180,62 +158,127 @@ pip install "python-telegram-bot>=22.0" "yt-dlp>=2026.03.17"
 
 ---
 
-### Install dependencies
+### Install system deps
 
-* ffmpeg
-* ffprobe
+```
+sudo pacman -S ffmpeg ffprobe
+```
 
 Verify:
 
 ```
-ffmpeg -version  
-ffprobe -version  
+ffmpeg -version
+ffprobe -version
 ```
 
 ---
 
 ### Configure bot
 
-Create:
-
 ```
-G:\\bots\\config\\ytbotrc.py
+G:\bots\config\ytbotrc.py
 ```
 
 Example:
 
 ```python
-BOT_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
-ALLOWED_USER_ID = 123456789
+BOT_TOKEN = "YOUR_TOKEN"
 
 ADMIN_USERS = [123456789]
 ALLOWED_USERS = [123456789]
-ALLOW_ALL_USERS = False
-ALLOWED_CHAT_IDS = []
 
-ARCHIVE_CHAT_ID = None
-WATCH_FOLDER_ENABLED = True
-DOWNLOAD_TIMEOUT = 900
+DOWNLOAD_TIMEOUT = 3600
+TELEGRAM_UPLOAD_TIMEOUT = 3600
 ```
 
 ---
 
-### ⚠️ v5.3 Requirement (IMPORTANT)
+## ⚠️ REQUIRED: Local Telegram Bot API
 
-You **must run a local Telegram Bot API server**:
+YTBot v5.3.1 requires the **local Bot API server**.
+
+---
+
+### 🥇 systemd service (recommended)
+
+Create:
 
 ```
-telegram-bot-api \
-  --api-id YOUR_ID \
-  --api-hash YOUR_HASH \
+/etc/systemd/system/telegram-bot-api.service
+```
+
+```ini
+[Unit]
+Description=Telegram Bot API (Local)
+After=network.target
+
+[Service]
+User=typezero
+WorkingDirectory=/mnt/nvme1/work/telegram-bot-api
+ExecStart=/home/typezero/src/telegram-bot-api/build/telegram-bot-api \
+  --api-id YOUR_API_ID \
+  --api-hash YOUR_API_HASH \
+  --local \
+  --http-port 8081 \
+  --dir /mnt/nvme1/work/telegram-bot-api
+
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Enable + start:
+
+```
+sudo systemctl daemon-reload
+sudo systemctl enable telegram-bot-api
+sudo systemctl start telegram-bot-api
+```
+
+---
+
+### 🥈 Manual start script
+
+```
+~/start-bot-api.sh
+```
+
+```bash
+#!/usr/bin/env bash
+
+~/src/telegram-bot-api/build/telegram-bot-api \
+  --api-id YOUR_API_ID \
+  --api-hash YOUR_API_HASH \
   --local \
   --http-port 8081 \
   --dir /mnt/nvme1/work/telegram-bot-api
 ```
 
+```
+chmod +x ~/start-bot-api.sh
+```
+
 ---
 
-### Run bot
+### 🥉 Shell aliases
+
+```
+~/.bash.d/aliases
+```
+
+```bash
+alias botapi="systemctl status telegram-bot-api"
+alias botapi-start="sudo systemctl start telegram-bot-api"
+alias botapi-stop="sudo systemctl stop telegram-bot-api"
+alias botapi-restart="sudo systemctl restart telegram-bot-api"
+alias botapi-log="journalctl -u telegram-bot-api -f"
+```
+
+---
+
+## ▶️ Run bot
 
 ```
 python ytbot.py
@@ -246,18 +289,14 @@ python ytbot.py
 ## 🧪 Usage
 
 ```
-/dl <url>  
-/audio <url>  
-/clip <url> <start> <end>  
-/ui <url>  
+/dl <url>
+/audio <url>
+/clip <url> <start> <end>
+/ui <url>
 
-/queue  
-/clearqueue  
-/retrylast  
-
-/stats  
-/status  
-/groups  
+/queue
+/clearqueue
+/retrylast
 ```
 
 ---
@@ -265,57 +304,35 @@ python ytbot.py
 ## ⚠️ Notes
 
 * Instagram may require cookies
-* ffmpeg required for:
-
-  * audio
-  * clipping
-* ffprobe required for validation
+* ffmpeg required for media processing
 * Local Bot API required for large uploads
-
----
-
-## 🛡️ .gitignore
-
-```
-config/ytbotrc.py  
-state/  
-logs/  
-downloads/  
-cookies/  
-```
+* Upload timeout extended to prevent failures
 
 ---
 
 ## 🧠 Version History
 
-### v5.3 (Current)
+### v5.3.1 (Current)
 
-* Local Bot API support (2GB uploads)
-* Removed forced 49MB compression
-* Fixed build_app bug
-* Improved upload pipeline
-* Preserved group shared-link detection
+* Fixed Telegram upload timeout
+* Removed false failure states
+* Eliminated duplicate uploads
+* Stabilized large file pipeline
+
+---
+
+### v5.3
+
+* Local Bot API support (~2GB uploads)
+* Removed 49MB limitation
 
 ---
 
 ### v5.2
 
-* Full reply threading
-* UI context preservation
-* Silent group queue behavior
-
----
-
-### v5.0
-
-* `/clip` support
-* Media pipeline expansion
-
----
-
-### v4.x
-
-* Queue system, UI, metadata, access control improvements
+* Reply threading
+* UI improvements
+* Group behavior cleanup
 
 ---
 
