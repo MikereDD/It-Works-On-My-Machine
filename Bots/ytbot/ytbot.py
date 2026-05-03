@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file:     ytbot.py
 # author:   Mike Redd
-# version:  5.4.2
+# version:  5.4.3
 # created:  2026-04-18
 # updated:  2026-05-01
 # desc:     Queue-based Telegram media bot
@@ -80,6 +80,9 @@ DEDUP_ENABLED = getattr(ytbotrc, "DEDUP_ENABLED", True)
 DEDUP_TTL_HOURS = getattr(ytbotrc, "DEDUP_TTL_HOURS", 24)
 MAX_VIDEO_HEIGHT = getattr(ytbotrc, "MAX_VIDEO_HEIGHT", 1080)
 PREFER_MP4 = getattr(ytbotrc, "PREFER_MP4", True)
+
+DEFAULT_VIDEO_HEIGHT = getattr(ytbotrc, "DEFAULT_VIDEO_HEIGHT", 720)
+HD_VIDEO_HEIGHT = getattr(ytbotrc, "HD_VIDEO_HEIGHT", 1080)
 VIDEO_PLATFORM_PRESETS = {
     "youtube": (
         "youtube.com",
@@ -552,6 +555,7 @@ def create_job(
     reply_to_message_id: int | None = None,
     clip_start: str | None = None,
     clip_end: str | None = None,
+    quality: str = "default",
 ) -> dict:
     return {
         "id": str(uuid.uuid4()),
@@ -564,6 +568,7 @@ def create_job(
         "reply_to_message_id": reply_to_message_id,
         "clip_start": clip_start,
         "clip_end": clip_end,
+        "quality": quality,
     }
 
 def save_queue_state() -> None:
@@ -856,7 +861,30 @@ def is_valid_video_file(path: Path) -> bool:
         log.warning("Video validation failed for %s: %s", path, e)
         return False
 
-def build_ydl_opts(url: str, outtmpl: str, mode: str) -> dict:
+
+def get_quality_height(quality: str | None) -> int | None:
+    q = (quality or "default").lower()
+
+    if q == "full":
+        return None
+    if q == "hd":
+        return int(HD_VIDEO_HEIGHT)
+
+    return int(DEFAULT_VIDEO_HEIGHT)
+
+
+def get_quality_label(quality: str | None) -> str:
+    q = (quality or "default").lower()
+
+    if q == "full":
+        return "full/best"
+    if q == "hd":
+        return f"hd/{HD_VIDEO_HEIGHT}p"
+
+    return f"default/{DEFAULT_VIDEO_HEIGHT}p"
+
+
+def build_ydl_opts(url: str, outtmpl: str, mode: str, quality: str = "default") -> dict:
     opts: dict = {
         "outtmpl": outtmpl,
         "noplaylist": True,
@@ -874,29 +902,48 @@ def build_ydl_opts(url: str, outtmpl: str, mode: str) -> dict:
             "preferredquality": "192",
         }]
     else:
-        max_height = int(MAX_VIDEO_HEIGHT)
+        max_height = get_quality_height(quality)
+
+        if max_height is None:
+            height_filter = ""
+        else:
+            height_filter = f"[height<={max_height}]"
 
         if is_instagram_url(url):
-            opts["format"] = (
-                f"bestvideo[height<={max_height}]+bestaudio/"
-                f"best[height<={max_height}]/best"
-            )
+            if max_height is None:
+                opts["format"] = "bestvideo+bestaudio/best"
+            else:
+                opts["format"] = (
+                    f"bestvideo{height_filter}+bestaudio/"
+                    f"best{height_filter}/best"
+                )
             opts["nocheckcertificate"] = True
         else:
             if PREFER_MP4:
-                opts["format"] = (
-                    f"bv*[height<={max_height}][ext=mp4]+ba[ext=m4a]/"
-                    f"bv*[height<={max_height}]+ba/"
-                    f"b[height<={max_height}][ext=mp4]/"
-                    f"b[height<={max_height}]/"
-                    f"best"
-                )
+                if max_height is None:
+                    opts["format"] = (
+                        "bv*[ext=mp4]+ba[ext=m4a]/"
+                        "bv*+ba/"
+                        "b[ext=mp4]/"
+                        "best"
+                    )
+                else:
+                    opts["format"] = (
+                        f"bv*{height_filter}[ext=mp4]+ba[ext=m4a]/"
+                        f"bv*{height_filter}+ba/"
+                        f"b{height_filter}[ext=mp4]/"
+                        f"b{height_filter}/"
+                        f"best"
+                    )
             else:
-                opts["format"] = (
-                    f"bv*[height<={max_height}]+ba/"
-                    f"b[height<={max_height}]/"
-                    f"best"
-                )
+                if max_height is None:
+                    opts["format"] = "bv*+ba/best"
+                else:
+                    opts["format"] = (
+                        f"bv*{height_filter}+ba/"
+                        f"b{height_filter}/"
+                        f"best"
+                    )
 
         opts["merge_output_format"] = "mp4"
 
@@ -906,7 +953,7 @@ def build_ydl_opts(url: str, outtmpl: str, mode: str) -> dict:
 
     return opts
 
-def download_media(url: str, mode: str) -> Path:
+def download_media(url: str, mode: str, quality: str = "default") -> Path:
     if not is_supported_video_url(url):
         raise RuntimeError("Unsupported video source.")
 
@@ -915,7 +962,7 @@ def download_media(url: str, mode: str) -> Path:
     ext_hint = "%(ext)s" if mode != "audio" else "mp3"
     outtmpl = str(DOWNLOAD_DIR / f"%(title).100s [%(id)s].{ext_hint}")
 
-    opts = build_ydl_opts(url, outtmpl, mode)
+    opts = build_ydl_opts(url, outtmpl, mode, quality)
 
     with yt_dlp.YoutubeDL(opts) as ydl:
         ydl.download([url])
@@ -1081,6 +1128,7 @@ async def process_job(app, job: dict) -> None:
     chat_id = job["chat"]
     url = job["url"]
     mode = job.get("mode", "video")
+    quality = job.get("quality", "default")
     reply_to_message_id = job.get("reply_to_message_id")
     clip_start = job.get("clip_start")
     clip_end = job.get("clip_end")
@@ -1118,13 +1166,13 @@ async def process_job(app, job: dict) -> None:
             f"🎞️ {meta['title']}\n"
             f"👤 {meta['uploader']}\n"
             f"⏱️ {format_duration(meta['duration'])}\n\n"
-            f"⬇️ Downloading {mode}…"
+            f"⬇️ Downloading {mode} ({get_quality_label(quality)})…"
         )
 
         download_mode = "audio" if mode == "audio" else "video"
 
         downloaded_file = await asyncio.wait_for(
-            asyncio.to_thread(download_media, url, download_mode),
+            asyncio.to_thread(download_media, url, download_mode, quality),
             timeout=DOWNLOAD_TIMEOUT,
         )
         sent_file = downloaded_file
@@ -1364,7 +1412,11 @@ async def ui_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
         keyboard = InlineKeyboardMarkup([
             [
-                InlineKeyboardButton("🎬 Video", callback_data=f"dl|video|{short_id}"),
+                InlineKeyboardButton("🎬 720p", callback_data=f"dl|video|{short_id}"),
+                InlineKeyboardButton("🎬 HD", callback_data=f"dl|hd|{short_id}"),
+            ],
+            [
+                InlineKeyboardButton("🎬 Full", callback_data=f"dl|full|{short_id}"),
                 InlineKeyboardButton("🎵 Audio", callback_data=f"dl|audio|{short_id}"),
             ],
             [
@@ -1425,10 +1477,19 @@ async def ui_button_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         await query.edit_message_text("⚠️ This request has already been used or expired.")
         return
 
+    quality = "default"
     mode = action
+
+    if action == "hd":
+        mode = "video"
+        quality = "hd"
+    elif action == "full":
+        mode = "video"
+        quality = "full"
+
     url = pending["url"]
 
-    job = create_job(user.id, chat.id, url, mode=mode, source="ui")
+    job = create_job(user.id, chat.id, url, mode=mode, source="ui", quality=quality)
     QUEUE.append(job)
     save_queue_state()
 
@@ -1436,7 +1497,8 @@ async def ui_button_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     await query.edit_message_text(
         f"✅ Added to queue\n"
         f"🔢 Position: {pos}\n"
-        f"{'🎬' if mode == 'video' else '🎵'} Mode: {mode}",
+        f"{'🎬' if mode == 'video' else '🎵'} Mode: {mode}\n"
+        f"📺 Quality: {get_quality_label(quality)}",
         parse_mode=ParseMode.MARKDOWN,
     )
 
@@ -1445,7 +1507,9 @@ async def ui_button_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 USER_COMMAND_LIST = (
     "/start         — welcome & command list\n"
     "/help          — usage instructions\n"
-    "/dl <url>      — queue video download\n"
+    "/dl <url>      — queue video download (720p default)\n"
+    "/hd <url>      — queue HD video download (1080p)\n"
+    "/full <url>    — queue best available video download\n"
     "/audio <url>   — queue audio download\n"
     "/clip <url> <start> <end> — queue clipped video\n"
     "/ui <url>      — preview with buttons\n"
@@ -1476,7 +1540,7 @@ async def start_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
     chat = update.effective_chat
 
     lines = [
-        "👋 *YT Bot v5.4.2*",
+        "👋 *YT Bot v5.4.3*",
         "",
         "Send me a link or use a command:",
         "",
@@ -1544,7 +1608,12 @@ async def help_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
         parse_mode=ParseMode.MARKDOWN,
     )
 
-async def dl_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+async def queue_video_command(
+    update: Update,
+    ctx: ContextTypes.DEFAULT_TYPE,
+    quality: str = "default",
+    label: str = "dl",
+) -> None:
     remember_chat(update.effective_chat)
 
     if not can_use_context(
@@ -1559,8 +1628,8 @@ async def dl_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not url:
         await update.message.reply_text(
             "❌ Invalid usage\n\n"
-            "Example:\n"
-            "/dl https://example.com/video"
+            f"Example:\n"
+            f"/{label} https://example.com/video"
         )
         return
 
@@ -1573,15 +1642,27 @@ async def dl_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         update.effective_chat.id,
         url,
         mode="video",
-        source="dl"
+        source=label,
+        reply_to_message_id=update.message.message_id if update.message else None,
+        quality=quality,
     ))
     save_queue_state()
     pos = get_queue_position()
     await update.message.reply_text(
         f"📥 Added to queue\n"
         f"🔢 Position: {pos}\n"
-        f"🎬 Mode: video"
+        f"🎬 Mode: video\n"
+        f"📺 Quality: {get_quality_label(quality)}"
     )
+
+async def dl_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    await queue_video_command(update, ctx, quality="default", label="dl")
+
+async def hd_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    await queue_video_command(update, ctx, quality="hd", label="hd")
+
+async def full_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    await queue_video_command(update, ctx, quality="full", label="full")
 
 async def audio_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     remember_chat(update.effective_chat)
@@ -1678,6 +1759,7 @@ async def clip_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         reply_to_message_id=update.message.message_id if update.message else None,
         clip_start=clip_start,
         clip_end=clip_end,
+        quality="default",
     ))
     save_queue_state()
 
@@ -1700,12 +1782,16 @@ async def queue_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
             "*Now Processing:*",
             f"• `{CURRENT_JOB['url']}`",
             f"• mode: `{CURRENT_JOB.get('mode', 'video')}`",
+            f"• quality: `{get_quality_label(CURRENT_JOB.get('quality', 'default'))}`",
         ])
 
     if QUEUE:
         lines.extend(["", "*Pending:*"])
         for idx, job in enumerate(QUEUE[:10], start=1):
-            lines.append(f"{idx}. `{job['url']}` [{job.get('mode', 'video')}]")
+            lines.append(
+                f"{idx}. `{job['url']}` "
+                f"[{job.get('mode', 'video')} / {get_quality_label(job.get('quality', 'default'))}]"
+            )
 
     await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.MARKDOWN)
 
@@ -1829,7 +1915,9 @@ async def status_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
         f"*Telegram Upload Timeout:* {TELEGRAM_UPLOAD_TIMEOUT}s\n"
         f"*Debug Mode:* {DEBUG_MODE}\n"
         f"*Dedupe:* {DEDUP_ENABLED} ({DEDUP_TTL_HOURS}h TTL)\n"
-        f"*Max Video Height:* {MAX_VIDEO_HEIGHT}p\n"
+        f"*Default Video Height:* {DEFAULT_VIDEO_HEIGHT}p\n"
+        f"*HD Video Height:* {HD_VIDEO_HEIGHT}p\n"
+        f"*Legacy Max Video Height:* {MAX_VIDEO_HEIGHT}p\n"
         f"*Prefer MP4:* {PREFER_MP4}\n"
         f"*Enabled Platforms:* {', '.join(ENABLED_VIDEO_PLATFORMS)}\n"
         f"*Supported Video Domains:* {', '.join(SUPPORTED_VIDEO_DOMAINS)}\n"
@@ -2072,7 +2160,8 @@ async def handle_url(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
     queue_msg = await message.reply_text(
         f"📥 Added to queue\n"
         f"🔢 Position: {pos}\n"
-        f"🎬 Mode: video"
+        f"🎬 Mode: video\n"
+        f"📺 Quality: {get_quality_label('default')}"
     )
 
     job = create_job(
@@ -2082,6 +2171,7 @@ async def handle_url(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
         mode="video",
         source="raw_url",
         reply_to_message_id=message.message_id,
+        quality="default",
     )
     job["queue_message_id"] = queue_msg.message_id
 
@@ -2092,7 +2182,7 @@ async def handle_url(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
 # ── CLI mode ────────────────────────────────────────────────────────────────────
 def run_cli(url: str, mode: str = "video") -> None:
     print(f"Downloading {mode}: {url}")
-    path = download_media(url, mode)
+    path = download_media(url, mode, "default")
     print(f"Downloaded: {path}")
     routed = route_file(path, "audio" if mode == "audio" else "video")
     print(f"Saved to: {routed}")
@@ -2119,6 +2209,8 @@ def build_app():
     app.add_handler(CommandHandler("start", start_cmd))
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CommandHandler("dl", dl_cmd))
+    app.add_handler(CommandHandler("hd", hd_cmd))
+    app.add_handler(CommandHandler("full", full_cmd))
     app.add_handler(CommandHandler("audio", audio_cmd))
     app.add_handler(CommandHandler("clip", clip_cmd))
     app.add_handler(CommandHandler("ui", ui_cmd))

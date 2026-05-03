@@ -43,4 +43,6 @@
 
 * [v5.4](v5.4.md) — Dedupe system (TTL + persistence) and smarter yt-dlp format selection
 * [v5.4.1](v5.4.1.md) — Restrict pipeline to supported video sources (validation layer)
+* [v5.4.2](v5.4.2.md) — Config-driven platform support (enable/disable platforms without code changes)
+* [v5.4.3](v5.4.3.md) — Quality control commands (/dl 720p, /hd 1080p, /full best)
 

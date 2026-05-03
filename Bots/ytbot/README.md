@@ -1,9 +1,9 @@
-# 🎬 YTBot v5.4.1
+i# 🎬 YTBot v5.4.3
 
 > A typezerø Project
 > Built for real-world use, not perfection.
 
-![Version](https://img.shields.io/badge/version-v5.4.1-blue)
+![Version](https://img.shields.io/badge/version-v5.4.3-blue)
 ![Python](https://img.shields.io/badge/python-3.10+-blue)
 ![License](https://img.shields.io/badge/license-WTFPL-lightgrey)
 
@@ -11,7 +11,7 @@
 
 ## 🚀 Overview
 
-**YTBot v5.4.1** is a full media pipeline bot with:
+**YTBot v5.4.3** is a full media pipeline bot with:
 
 * **automatic group link ingestion**
 * **clean chat behavior**
@@ -19,6 +19,8 @@
 * **large file support via local Telegram Bot API**
 * **intelligent dedupe + smarter downloads**
 * **strict video-source validation**
+* **config-driven platform support**
+* **user-controlled quality selection**
 
 It accepts input from:
 
@@ -84,50 +86,64 @@ DEBUG_MODE = False
 ### 🔁 Dedupe System (v5.4)
 
 * Prevents duplicate downloads
-
-* Works across:
-
-  * pasted links
-  * forwarded links
-  * tracking variants
-
-* Uses:
-
-  * normalized URLs
-  * persistent cache (`state/dedup.json`)
-  * TTL expiration
+* Uses normalized URLs + persistent cache + TTL
 
 ---
 
-### 🎯 Smarter Downloads (v5.4)
+### 🚫 Validation Layer (v5.4.1)
 
-* Prefer MP4/M4A formats
-* Limit resolution automatically
-* Reduce oversized downloads
+* Only supported video sources are processed
+* Blocks:
+
+  * non-video URLs
+  * unsupported platforms
+  * random links
 
 ---
 
-### 🚫 Supported Video Sources Only (v5.4.1)
+### ⚙️ Config-Driven Platforms (v5.4.2)
 
-* Only valid video domains are processed
-* Prevents:
+Control platforms via config (no code edits):
 
-  * article links
-  * unsupported sites
-  * random URLs hitting yt-dlp
+```python
+ENABLED_VIDEO_PLATFORMS = (
+    "youtube",
+    "instagram",
+)
+```
+
+Available presets:
+
+* youtube
+* instagram
+* reddit
+* tiktok
+* twitter
+
+Custom domains:
+
+```python
+EXTRA_VIDEO_DOMAINS = ()
+```
+
+---
+
+### 🎯 Quality Control (v5.4.3)
+
+Users can choose download quality:
+
+| Command | Behavior       |
+| ------- | -------------- |
+| `/dl`   | 720p (default) |
+| `/hd`   | 1080p          |
+| `/full` | Best available |
 
 Config:
 
 ```python
-SUPPORTED_VIDEO_DOMAINS = (
-    "youtube.com",
-    "youtu.be",
-    "m.youtube.com",
-    "instagram.com",
-)
+DEFAULT_VIDEO_HEIGHT = 720
+HD_VIDEO_HEIGHT = 1080
 ```
-
-👉 Validation happens **before queueing**
 
 ---
 
@@ -135,10 +151,12 @@ SUPPORTED_VIDEO_DOMAINS = (
 
 `/ui <url>`
 
-* Video
-* Audio
-* Cancel
-* Preserves message context
+Now supports:
+
+* 🎬 720p
+* 🎬 HD
+* 🎬 Full
+* 🎵 Audio
 
 ---
 
@@ -157,7 +175,7 @@ SUPPORTED_VIDEO_DOMAINS = (
 
 ### 📥 Media Handling
 
-* YouTube, Instagram (primary supported sources)
+* YouTube, Instagram (default enabled)
 * yt-dlp backend
 * MP4-friendly formats
 * Audio extraction
@@ -177,7 +195,7 @@ SUPPORTED_VIDEO_DOMAINS = (
 ### 🧵 Reply Behavior
 
 * Replies stay attached to original message
-* `/dl`, `/audio`, `/clip`, `/ui` all threaded
+* `/dl`, `/hd`, `/full`, `/audio`, `/clip`, `/ui` all threaded
 * Auto-detected links reply to source message
 
 ---
@@ -223,19 +241,30 @@ python ytbot.py --audio "<link>"
 
 ## 🧠 Version History
 
-### v5.4.1 (Current)
+### v5.4.3 (Current)
 
-* Restrict pipeline to supported video sources
-* Early validation layer (fail-fast)
-* Reduced yt-dlp failures and noise
+* Quality control commands (`/dl`, `/hd`, `/full`)
+* Per-job quality handling
+* UI quality selection
+
+---
+
+### v5.4.2
+
+* Config-driven platform support
+
+---
+
+### v5.4.1
+
+* Validation layer (supported video sources only)
 
 ---
 
 ### v5.4
 
 * Dedupe system (persistent + TTL)
-* URL normalization
-* Smarter yt-dlp format selection
+* Smarter format selection
 
 ---
 
@@ -259,7 +288,7 @@ python ytbot.py --audio "<link>"
 
 ## 📌 Philosophy
 
-Make it work → Make it better → Make it clean → Make it smart → **Make it disciplined**
+Make it work → Make it better → Make it clean → Make it smart → Make it disciplined → **Give control**
 
 ---
 
