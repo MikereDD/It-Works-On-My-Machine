@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file:     ytbot.py
 # author:   Mike Redd
-# version:  5.3
+# version:  5.3.1
 # created:  2026-04-18
 # updated:  2026-05-01
 # desc:     Queue-based Telegram media bot
@@ -44,6 +44,7 @@ from telegram.ext import (
     MessageHandler,
     filters,
 )
+from telegram.request import HTTPXRequest
 
 # ── Private Config ──────────────────────────────────────────────────────────────
 APP_DIR = Path(__file__).resolve().parent
@@ -72,7 +73,8 @@ ADMIN_USERS = set(getattr(ytbotrc, "ADMIN_USERS", [OWNER_ID]) or [OWNER_ID])
 ALLOWED_USERS = set(getattr(ytbotrc, "ALLOWED_USERS", [OWNER_ID]) or [OWNER_ID])
 ALLOW_ALL_USERS = getattr(ytbotrc, "ALLOW_ALL_USERS", False)
 
-DOWNLOAD_TIMEOUT = getattr(ytbotrc, "DOWNLOAD_TIMEOUT", 900)
+DOWNLOAD_TIMEOUT = getattr(ytbotrc, "DOWNLOAD_TIMEOUT", 3600)
+TELEGRAM_UPLOAD_TIMEOUT = getattr(ytbotrc, "TELEGRAM_UPLOAD_TIMEOUT", 3600)
 ARCHIVE_CHAT_ID = getattr(ytbotrc, "ARCHIVE_CHAT_ID", None)
 WATCH_FOLDER_ENABLED = getattr(ytbotrc, "WATCH_FOLDER_ENABLED", True)
 WATCH_FOLDER_CHAT_ID = getattr(ytbotrc, "WATCH_FOLDER_CHAT_ID", None) or OWNER_ID
@@ -1194,7 +1196,7 @@ async def start_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
     chat = update.effective_chat
 
     lines = [
-        "👋 *YT Bot v5.3*",
+        "👋 *YT Bot v5.3.1*",
         "",
         "Send me a link or use a command:",
         "",
@@ -1532,6 +1534,7 @@ async def status_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
         f"*Archive Chat:* {ARCHIVE_CHAT_ID if ARCHIVE_CHAT_ID else 'none'}\n"
         f"*Watch Folder:* {WATCH_FOLDER_ENABLED}\n"
         f"*Download Timeout:* {DOWNLOAD_TIMEOUT}s\n"
+        f"*Telegram Upload Timeout:* {TELEGRAM_UPLOAD_TIMEOUT}s\n"
         f"*ffmpeg:* {ffmpeg_exists()}\n"
         f"*ffprobe:* {ffprobe_exists()}\n"
         f"*YouTube Cookies:* {'yes' if YOUTUBE_COOKIES_FILE.exists() else 'no'}",
@@ -1738,11 +1741,19 @@ def run_cli(url: str, mode: str = "video") -> None:
 
 # ── Main ────────────────────────────────────────────────────────────────────────
 def build_app():
+    request = HTTPXRequest(
+        connect_timeout=30,
+        read_timeout=TELEGRAM_UPLOAD_TIMEOUT,
+        write_timeout=TELEGRAM_UPLOAD_TIMEOUT,
+        pool_timeout=30,
+    )
+
     app = (
         ApplicationBuilder()
         .token(BOT_TOKEN)
         .base_url("http://127.0.0.1:8081/bot")
         .base_file_url("http://127.0.0.1:8081/file/bot")
+        .request(request)
         .build()
     )
 
@@ -1807,4 +1818,5 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
 
