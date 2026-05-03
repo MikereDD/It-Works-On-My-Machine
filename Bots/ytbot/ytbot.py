@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file:     ytbot.py
 # author:   Mike Redd
-# version:  5.3.2
+# version:  5.3.3
 # created:  2026-04-18
 # updated:  2026-05-01
 # desc:     Queue-based Telegram media bot
@@ -172,14 +172,10 @@ def can_use(user_id: int) -> bool:
     return ALLOW_ALL_USERS or user_id in ALLOWED_USERS or is_admin(user_id)
 
 def can_use_context(user_id: int, chat_id: int, chat_type: str) -> bool:
-    """
-    Long-term group-watch behavior:
-    - Any group/supergroup the bot is in can trigger auto-watch downloads.
-    - Private chat remains owner-only.
-    - Other chat types are ignored.
-    """
+    allowed_chat_ids = set(getattr(ytbotrc, "ALLOWED_CHAT_IDS", []))
+
     if chat_type in ("group", "supergroup"):
-        return True
+        return chat_id in allowed_chat_ids
 
     if chat_type == "private":
         return user_id == OWNER_ID
@@ -305,13 +301,12 @@ def log_startup_checks() -> None:
 
     allowed_chat_ids = set(getattr(ytbotrc, "ALLOWED_CHAT_IDS", []))
     if allowed_chat_ids:
-        log.info(
-            "Group auto-watch is enabled for groups/supergroups. "
-            "Configured ALLOWED_CHAT_IDS retained for reference: %s",
-            allowed_chat_ids,
-        )
+        log.info("Watching group chats: %s", allowed_chat_ids)
     else:
-        log.info("Group auto-watch is enabled for any group/supergroup the bot is in.")
+        log.warning(
+            "ALLOWED_CHAT_IDS is empty — group URL watching is disabled. "
+            "Add group chat IDs to ytbotrc.py to enable it."
+        )
 
 def get_domain(url: str) -> str:
     try:
@@ -947,6 +942,17 @@ async def process_job(app, job: dict) -> None:
                 sent_file = compressed
 
         size_str = format_size(sent_file.stat().st_size)
+
+        queue_message_id = job.get("queue_message_id")
+        if queue_message_id:
+            try:
+                await app.bot.delete_message(
+                    chat_id=chat_id,
+                    message_id=queue_message_id,
+                )
+            except Exception as e:
+                log.debug("Could not delete queue message %s: %s", queue_message_id, e)
+
         await status_msg.edit_text(f"📤 Uploading… ({size_str})")
 
         with sent_file.open("rb") as f:
@@ -1256,7 +1262,7 @@ async def start_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
     chat = update.effective_chat
 
     lines = [
-        "👋 *YT Bot v5.3.2*",
+        "👋 *YT Bot v5.3.3*",
         "",
         "Send me a link or use a command:",
         "",
@@ -1590,8 +1596,7 @@ async def status_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
         f"*Bot Status:* online\n"
         f"*Current Job:* {'yes' if CURRENT_JOB else 'no'}\n"
         f"*Queue Length:* {len(QUEUE)}\n"
-        f"*Group Auto-Watch:* all groups/supergroups bot is in\n"
-        f"*Configured Group IDs:* {', '.join(str(i) for i in allowed_chat_ids) if allowed_chat_ids else 'none'}\n"
+        f"*Watched Groups:* {', '.join(str(i) for i in allowed_chat_ids) if allowed_chat_ids else 'none'}\n"
         f"*Archive Chat:* {ARCHIVE_CHAT_ID if ARCHIVE_CHAT_ID else 'none'}\n"
         f"*Watch Folder:* {WATCH_FOLDER_ENABLED}\n"
         f"*Download Timeout:* {DOWNLOAD_TIMEOUT}s\n"
@@ -1762,7 +1767,7 @@ async def handle_url(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not can_use_context(user.id, chat.id, chat.type):
         return
 
-    # 🔥 DEBUG LOG — proves Telegram delivery
+    # DEBUG LOG — proves Telegram delivery
     log.info(
         "WATCH HIT chat=%s type=%s text=%r caption=%r entities=%r caption_entities=%r",
         chat.id,
@@ -1798,7 +1803,7 @@ async def handle_url(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
                     if u:
                         url = u
                         break
-                except:
+                except Exception:
                     pass
 
     # ── 4. Raw fallback (forwarded weird cases)
@@ -1810,7 +1815,7 @@ async def handle_url(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
                 if u:
                     url = u
                     break
-        except:
+        except Exception:
             pass
 
     if not url:
@@ -1818,23 +1823,26 @@ async def handle_url(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
     log.info("URL DETECTED: %s", url)
 
-    QUEUE.append(create_job(
+    pos = get_queue_position()
+
+    queue_msg = await message.reply_text(
+        f"📥 Added to queue\n"
+        f"🔢 Position: {pos}\n"
+        f"🎬 Mode: video"
+    )
+
+    job = create_job(
         user.id,
         chat.id,
         url,
         mode="video",
         source="raw_url",
         reply_to_message_id=message.message_id,
-    ))
-    save_queue_state()
-
-    pos = get_queue_position()
-
-    await message.reply_text(
-        f"📥 Added to queue\n"
-        f"🔢 Position: {pos}\n"
-        f"🎬 Mode: video"
     )
+    job["queue_message_id"] = queue_msg.message_id
+
+    QUEUE.append(job)
+    save_queue_state()
 
 
 # ── CLI mode ────────────────────────────────────────────────────────────────────

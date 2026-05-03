@@ -1,9 +1,9 @@
-# 🎬 YTBot v5.3.2
+# 🎬 YTBot v5.3.3
 
 > A typezerø Project
 > Built for real-world use, not perfection.
 
-![Version](https://img.shields.io/badge/version-v5.3.2-blue)
+![Version](https://img.shields.io/badge/version-v5.3.3-blue)
 ![Python](https://img.shields.io/badge/python-3.10+-blue)
 ![License](https://img.shields.io/badge/license-WTFPL-lightgrey)
 
@@ -11,7 +11,7 @@
 
 ## 🚀 Overview
 
-**YTBot v5.3.2** is a full media pipeline bot with **automatic group link ingestion** and **large file support via local Telegram Bot API**.
+**YTBot v5.3.3** is a full media pipeline bot with **automatic group link ingestion**, **clean chat behavior**, and **large file support via local Telegram Bot API**.
 
 It accepts input from:
 
@@ -36,17 +36,27 @@ Input → Queue → Download → Process → Upload → Route → Archive
 
 ---
 
-### 🤖 Automatic Group Link Detection (v5.3.2)
+### 🤖 Automatic Group Link Detection
 
 * Watches **all groups the bot is in**
+
 * Detects:
 
   * pasted links
   * shared previews
   * forwarded messages
+
 * Automatically queues downloads
 
 👉 No commands required
+
+---
+
+### 🧹 Clean Chat Behavior (v5.3.3)
+
+* Queue messages are now **temporary**
+* “Added to queue” is automatically removed when processing starts
+* Reduces noise in active group chats
 
 ---
 
@@ -103,7 +113,7 @@ Input → Queue → Download → Process → Upload → Route → Archive
 
 ### 🔇 Clean Group Mode
 
-* No queue spam
+* Minimal noise output
 * `/queue` for visibility
 
 ---
@@ -211,7 +221,7 @@ TELEGRAM_UPLOAD_TIMEOUT = 3600
 
 ## ⚠️ REQUIRED: Local Telegram Bot API
 
-YTBot v5.3.2 requires the **local Bot API server** for large uploads.
+YTBot v5.3.3 requires the **local Bot API server** for large uploads.
 
 ---
 
@@ -299,19 +309,24 @@ python ytbot.py
 * ffmpeg required for media processing
 * Local Bot API required for large uploads
 * Commands work even if privacy is enabled
-* Auto group watching requires bot can read messages
+* Auto group watching requires bot permissions
 
 ---
 
 ## 🧠 Version History
 
-### v5.3.2 (Current)
+### v5.3.3 (Current)
+
+* Queue message cleanup (auto-delete “Added to queue”)
+* Cleaner group chat behavior
+
+---
+
+### v5.3.2
 
 * Automatic group link detection
-* Fixed shared/forwarded link handling
-* Expanded message handler (filters.ALL)
-* Improved URL extraction logic
-* Removed silent permission blocking
+* Shared + forwarded link support
+* Full message handler coverage
 
 ---
 

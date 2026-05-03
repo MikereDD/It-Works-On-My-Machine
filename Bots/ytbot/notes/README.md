@@ -34,4 +34,5 @@
 * [v5.3](v5.3.md) — Local Telegram Bot API integration and large file support (~2GB)
 * [v5.3.1](v5.3.1.md) — Upload timeout fixes and pipeline stabilization
 * [v5.3.2](v5.3.2.md) — Automatic group link ingestion (shared + forwarded link detection)
+* [v5.3.3](v5.3.3.md) — Queue message cleanup (auto-delete “Added to queue” on upload start)
 
