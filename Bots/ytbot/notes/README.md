@@ -37,3 +37,9 @@
 * [v5.3.3](v5.3.3.md) — Queue message cleanup (auto-delete “Added to queue” on upload start)
 * [v5.3.4](v5.3.4.md) — Production log mode (DEBUG_MODE toggle and reduced log noise)
 
+---
+
+### Intelligence Layer
+
+* [v5.4](v5.4.md) — Dedupe system (TTL + persistence) and smarter yt-dlp format selection
+

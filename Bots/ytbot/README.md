@@ -1,9 +1,9 @@
-# 🎬 YTBot v5.3.4
+# 🎬 YTBot v5.4
 
 > A typezerø Project
 > Built for real-world use, not perfection.
 
-![Version](https://img.shields.io/badge/version-v5.3.4-blue)
+![Version](https://img.shields.io/badge/version-v5.4-blue)
 ![Python](https://img.shields.io/badge/python-3.10+-blue)
 ![License](https://img.shields.io/badge/license-WTFPL-lightgrey)
 
@@ -11,12 +11,13 @@
 
 ## 🚀 Overview
 
-**YTBot v5.3.4** is a full media pipeline bot with:
+**YTBot v5.4** is a full media pipeline bot with:
 
 * **automatic group link ingestion**
 * **clean chat behavior**
 * **production-ready logging**
 * **large file support via local Telegram Bot API**
+* **intelligent dedupe + smarter downloads**
 
 It accepts input from:
 
@@ -65,15 +66,52 @@ Input → Queue → Download → Process → Upload → Route → Archive
 
 ---
 
-### 🔧 Production Log Mode (v5.3.4)
+### 🔧 Production Log Mode
 
-* Introduces `DEBUG_MODE` toggle
+* `DEBUG_MODE` toggle
 * Development → full logs
 * Production → minimal logs
 
-```python id="debugmode"
-/config
+```python
 DEBUG_MODE = False
+```
+
+---
+
+## 🧠 Intelligence Layer (v5.4)
+
+### 🔁 Dedupe System
+
+* Prevents duplicate downloads
+
+* Works across:
+
+  * pasted links
+  * forwarded links
+  * tracking variants
+
+* Uses:
+
+  * normalized URLs
+  * persistent cache (`state/dedup.json`)
+  * TTL expiration
+
+---
+
+### 🎯 Smarter Downloads
+
+* Prefer MP4/M4A formats
+* Limit resolution automatically
+* Reduce oversized downloads
+
+Config:
+
+```python
+DEDUP_ENABLED = True
+DEDUP_TTL_HOURS = 24
+
+MAX_VIDEO_HEIGHT = 1080
+PREFER_MP4 = True
 ```
 
 ---
@@ -233,14 +271,21 @@ ALLOWED_USERS = [123456789]
 
 DOWNLOAD_TIMEOUT = 3600
 TELEGRAM_UPLOAD_TIMEOUT = 3600
+
 DEBUG_MODE = False
+
+DEDUP_ENABLED = True
+DEDUP_TTL_HOURS = 24
+
+MAX_VIDEO_HEIGHT = 1080
+PREFER_MP4 = True
 ```
 
 ---
 
 ## ⚠️ REQUIRED: Local Telegram Bot API
 
-YTBot v5.3.4 requires the **local Bot API server** for large uploads.
+YTBot v5.4 requires the **local Bot API server** for large uploads.
 
 ---
 
@@ -270,14 +315,6 @@ RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
-```
-
-Enable + start:
-
-```
-sudo systemctl daemon-reload
-sudo systemctl enable telegram-bot-api
-sudo systemctl start telegram-bot-api
 ```
 
 ---
@@ -334,33 +371,36 @@ python ytbot.py
 
 ## 🧠 Version History
 
-### v5.3.4 (Current)
+### v5.4 (Current)
+
+* Dedupe system (persistent + TTL)
+* URL normalization
+* Smarter yt-dlp format selection
+* Reduced redundant downloads
+
+---
+
+### v5.3.4
 
 * Production log mode (`DEBUG_MODE`)
-* Reduced log noise in production
-* Maintains full debug visibility when needed
 
 ---
 
 ### v5.3.3
 
-* Queue message cleanup (auto-delete “Added to queue”)
-* Cleaner group chat behavior
+* Queue message cleanup
 
 ---
 
 ### v5.3.2
 
 * Automatic group link detection
-* Shared + forwarded link support
-* Full message handler coverage
 
 ---
 
 ### v5.3.1
 
 * Upload timeout fixes
-* Stability improvements
 
 ---
 
@@ -373,13 +413,12 @@ python ytbot.py
 ### v5.2
 
 * Reply threading
-* UI improvements
 
 ---
 
 ## 📌 Philosophy
 
-Make it work → Make it better → Make it clean
+Make it work → Make it better → Make it clean → Make it smart
 
 ---
 

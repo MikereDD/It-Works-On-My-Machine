@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file:     ytbot.py
 # author:   Mike Redd
-# version:  5.3.4
+# version:  5.4
 # created:  2026-04-18
 # updated:  2026-05-01
 # desc:     Queue-based Telegram media bot
@@ -76,6 +76,10 @@ ALLOW_ALL_USERS = getattr(ytbotrc, "ALLOW_ALL_USERS", False)
 DOWNLOAD_TIMEOUT = getattr(ytbotrc, "DOWNLOAD_TIMEOUT", 3600)
 TELEGRAM_UPLOAD_TIMEOUT = getattr(ytbotrc, "TELEGRAM_UPLOAD_TIMEOUT", 3600)
 DEBUG_MODE = getattr(ytbotrc, "DEBUG_MODE", False)
+DEDUP_ENABLED = getattr(ytbotrc, "DEDUP_ENABLED", True)
+DEDUP_TTL_HOURS = getattr(ytbotrc, "DEDUP_TTL_HOURS", 24)
+MAX_VIDEO_HEIGHT = getattr(ytbotrc, "MAX_VIDEO_HEIGHT", 1080)
+PREFER_MP4 = getattr(ytbotrc, "PREFER_MP4", True)
 ARCHIVE_CHAT_ID = getattr(ytbotrc, "ARCHIVE_CHAT_ID", None)
 WATCH_FOLDER_ENABLED = getattr(ytbotrc, "WATCH_FOLDER_ENABLED", True)
 WATCH_FOLDER_CHAT_ID = getattr(ytbotrc, "WATCH_FOLDER_CHAT_ID", None) or OWNER_ID
@@ -106,6 +110,7 @@ KNOWN_CHATS_FILE = BASE_DIR / "known_chats.json"
 QUEUE_FILE = STATE_DIR / "queue.json"
 HISTORY_FILE = STATE_DIR / "history.json"
 FAILURES_FILE = STATE_DIR / "failures.json"
+DEDUP_FILE = STATE_DIR / "dedup.json"
 LOG_FILE = LOG_DIR / "ytbot.log"
 
 for d in [
@@ -127,6 +132,7 @@ QUEUE: list[dict] = []
 HISTORY: list[dict] = []
 FAILURES: list[dict] = []
 KNOWN_CHATS: dict = {}
+DEDUP_CACHE: dict = {}
 CURRENT_JOB: dict | None = None
 
 STATE_LOCK = asyncio.Lock()
@@ -164,6 +170,7 @@ QUEUE = load_json(QUEUE_FILE, [])
 HISTORY = load_json(HISTORY_FILE, [])
 FAILURES = load_json(FAILURES_FILE, [])
 KNOWN_CHATS = load_json(KNOWN_CHATS_FILE, {})
+DEDUP_CACHE = load_json(DEDUP_FILE, {})
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────────────
@@ -174,10 +181,14 @@ def can_use(user_id: int) -> bool:
     return ALLOW_ALL_USERS or user_id in ALLOWED_USERS or is_admin(user_id)
 
 def can_use_context(user_id: int, chat_id: int, chat_type: str) -> bool:
-    allowed_chat_ids = set(getattr(ytbotrc, "ALLOWED_CHAT_IDS", []))
-
+    """
+    Group auto-watch behavior:
+    - Any group/supergroup the bot is in can trigger downloads.
+    - Private chat remains owner-only.
+    - Other chat types are ignored.
+    """
     if chat_type in ("group", "supergroup"):
-        return chat_id in allowed_chat_ids
+        return True
 
     if chat_type == "private":
         return user_id == OWNER_ID
@@ -288,6 +299,91 @@ def extract_url_from_message(message) -> str | None:
 
     return None
 
+
+def normalize_url_for_dedupe(url: str) -> str:
+    """
+    Normalize noisy shared URLs so the same video is not downloaded repeatedly.
+    """
+    try:
+        parsed = urlparse(url.strip())
+        scheme = parsed.scheme or "https"
+        host = parsed.netloc.lower()
+
+        if host.startswith("www."):
+            host = host[4:]
+        if host == "m.youtube.com":
+            host = "youtube.com"
+
+        query_pairs = {}
+        if parsed.query:
+            for part in parsed.query.split("&"):
+                if "=" in part:
+                    k, v = part.split("=", 1)
+                    query_pairs[k] = v
+
+        if host == "youtu.be":
+            video_id = parsed.path.strip("/").split("/")[0]
+            if video_id:
+                return f"https://youtube.com/watch?v={video_id}"
+
+        if host in ("youtube.com", "music.youtube.com") and parsed.path == "/watch":
+            video_id = query_pairs.get("v")
+            if video_id:
+                return f"https://youtube.com/watch?v={video_id}"
+
+        if host in ("youtube.com", "music.youtube.com") and parsed.path.startswith("/shorts/"):
+            video_id = parsed.path.split("/shorts/", 1)[1].split("/")[0]
+            if video_id:
+                return f"https://youtube.com/shorts/{video_id}"
+
+        clean = parsed._replace(scheme=scheme, netloc=host, query="", fragment="")
+        return clean.geturl()
+    except Exception:
+        return url.strip()
+
+
+def prune_dedup_cache() -> None:
+    if not DEDUP_ENABLED:
+        return
+
+    ttl_seconds = max(int(DEDUP_TTL_HOURS), 1) * 3600
+    cutoff = time.time() - ttl_seconds
+
+    expired = [
+        key for key, value in DEDUP_CACHE.items()
+        if value.get("time", 0) < cutoff
+    ]
+
+    for key in expired:
+        DEDUP_CACHE.pop(key, None)
+
+    if expired:
+        save_json(DEDUP_FILE, DEDUP_CACHE)
+
+
+def is_duplicate_url(url: str) -> bool:
+    if not DEDUP_ENABLED:
+        return False
+
+    prune_dedup_cache()
+    key = normalize_url_for_dedupe(url)
+    return key in DEDUP_CACHE
+
+
+def remember_dedup_url(url: str, job_id: str, chat_id: int) -> None:
+    if not DEDUP_ENABLED:
+        return
+
+    key = normalize_url_for_dedupe(url)
+    DEDUP_CACHE[key] = {
+        "url": url,
+        "job_id": job_id,
+        "chat": chat_id,
+        "time": time.time(),
+    }
+    save_json(DEDUP_FILE, DEDUP_CACHE)
+
+
 def ffmpeg_exists() -> bool:
     return shutil.which("ffmpeg") is not None
 
@@ -303,12 +399,13 @@ def log_startup_checks() -> None:
 
     allowed_chat_ids = set(getattr(ytbotrc, "ALLOWED_CHAT_IDS", []))
     if allowed_chat_ids:
-        log.info("Watching group chats: %s", allowed_chat_ids)
-    else:
-        log.warning(
-            "ALLOWED_CHAT_IDS is empty — group URL watching is disabled. "
-            "Add group chat IDs to ytbotrc.py to enable it."
+        log.info(
+            "Group auto-watch is enabled for all groups/supergroups. "
+            "Configured ALLOWED_CHAT_IDS retained for reference: %s",
+            allowed_chat_ids,
         )
+    else:
+        log.info("Group auto-watch is enabled for all groups/supergroups the bot is in.")
 
 def get_domain(url: str) -> str:
     try:
@@ -688,12 +785,31 @@ def build_ydl_opts(url: str, outtmpl: str, mode: str) -> dict:
             "preferredquality": "192",
         }]
     else:
+        max_height = int(MAX_VIDEO_HEIGHT)
+
         if is_instagram_url(url):
-            opts["format"] = "best/b/worst/bv*+ba"
+            opts["format"] = (
+                f"bestvideo[height<={max_height}]+bestaudio/"
+                f"best[height<={max_height}]/best"
+            )
             opts["nocheckcertificate"] = True
         else:
-            opts["format"] = "bv*+ba/b"
-            opts["merge_output_format"] = "mp4"
+            if PREFER_MP4:
+                opts["format"] = (
+                    f"bv*[height<={max_height}][ext=mp4]+ba[ext=m4a]/"
+                    f"bv*[height<={max_height}]+ba/"
+                    f"b[height<={max_height}][ext=mp4]/"
+                    f"b[height<={max_height}]/"
+                    f"best"
+                )
+            else:
+                opts["format"] = (
+                    f"bv*[height<={max_height}]+ba/"
+                    f"b[height<={max_height}]/"
+                    f"best"
+                )
+
+        opts["merge_output_format"] = "mp4"
 
     cookiefile = get_cookiefile_for_url(url)
     if cookiefile:
@@ -1264,7 +1380,7 @@ async def start_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
     chat = update.effective_chat
 
     lines = [
-        "👋 *YT Bot v5.3.4*",
+        "👋 *YT Bot v5.4*",
         "",
         "Send me a link or use a command:",
         "",
@@ -1604,6 +1720,9 @@ async def status_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
         f"*Download Timeout:* {DOWNLOAD_TIMEOUT}s\n"
         f"*Telegram Upload Timeout:* {TELEGRAM_UPLOAD_TIMEOUT}s\n"
         f"*Debug Mode:* {DEBUG_MODE}\n"
+        f"*Dedupe:* {DEDUP_ENABLED} ({DEDUP_TTL_HOURS}h TTL)\n"
+        f"*Max Video Height:* {MAX_VIDEO_HEIGHT}p\n"
+        f"*Prefer MP4:* {PREFER_MP4}\n"
         f"*ffmpeg:* {ffmpeg_exists()}\n"
         f"*ffprobe:* {ffprobe_exists()}\n"
         f"*YouTube Cookies:* {'yes' if YOUTUBE_COOKIES_FILE.exists() else 'no'}",
@@ -1826,6 +1945,11 @@ async def handle_url(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
     if DEBUG_MODE:
         log.info("URL DETECTED: %s", url)
+
+    if is_duplicate_url(url):
+        if DEBUG_MODE:
+            log.info("Duplicate URL ignored: %s", url)
+        return
 
     pos = get_queue_position()
 
