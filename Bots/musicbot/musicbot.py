@@ -532,7 +532,7 @@ def main():
     app.add_handler(CommandHandler("start", start_cmd))
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CommandHandler("music", music))
-            app.add_handler(CommandHandler("queue", queue_cmd))
+    app.add_handler(CommandHandler("queue", queue_cmd))
     app.add_handler(CommandHandler("cache", cache_cmd))
     app.add_handler(CommandHandler("clearcache", clearcache_cmd))
 
