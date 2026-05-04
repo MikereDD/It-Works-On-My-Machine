@@ -2,10 +2,10 @@
 # ------------------------------------------------------------
 # file:     musicbot.py
 # author:   Mike Redd
-# version:  1.5.1
+# version:  1.6
 # created:  2026-05-03
 # updated:  2026-05-03
-# desc:     Sandalphon - Queue system + audio caching + real metadata extraction
+# desc:     Sandalphon - Queue system + audio caching + auto text requests
 # ------------------------------------------------------------
 
 import asyncio
@@ -22,11 +22,11 @@ from collections import deque
 from pathlib import Path
 
 from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
 # ── Branding ─────────────────────────────────────────────────
 BOT_NAME = "Sandalphon"
-BOT_VERSION = "1.5.1"
+BOT_VERSION = "1.6"
 
 # ── Config ───────────────────────────────────────────────────
 sys.path.insert(0, str(Path.home() / "bots/config"))
@@ -455,7 +455,8 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/queue\n"
         "/cache\n"
         "/clearcache\n"
-        "/help"
+        "/help\n\n"
+        "You can also just type an artist/song search without a command."
     )
 
 
@@ -464,6 +465,44 @@ async def music(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not query:
         await update.message.reply_text("Usage: /music <url or search>")
+        return
+
+    if PROCESSING:
+        queue_msg = await update.message.reply_text(f"➕ Added to queue ({len(QUEUE) + 1} waiting)")
+    else:
+        queue_msg = await update.message.reply_text("➕ Added to queue")
+
+    QUEUE.append((update, query, queue_msg.message_id))
+
+    asyncio.create_task(process_queue(context.application))
+
+
+async def auto_music(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Treat plain text messages as music requests.
+    Commands are ignored by the MessageHandler filter.
+    """
+    if not update.message or not update.message.text:
+        return
+
+    query = update.message.text.strip()
+
+    if len(query) < 3:
+        return
+
+    # Avoid common non-music chatter from accidentally triggering downloads.
+    ignored = {
+        "hi",
+        "hello",
+        "hey",
+        "lol",
+        "thanks",
+        "thank you",
+        "ok",
+        "okay",
+    }
+
+    if query.lower() in ignored:
         return
 
     if PROCESSING:
@@ -533,6 +572,7 @@ def main():
     app.add_handler(CommandHandler("queue", queue_cmd))
     app.add_handler(CommandHandler("cache", cache_cmd))
     app.add_handler(CommandHandler("clearcache", clearcache_cmd))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, auto_music))
 
     logging.info("%s v%s started.", BOT_NAME, BOT_VERSION)
     app.run_polling()

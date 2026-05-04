@@ -21,6 +21,7 @@ Sandalphon is a Telegram music bot that:
 * cleans up chat noise after processing
 * runs on local Bot API for performance
 * supports large file delivery (Local API)
+* **accepts plain text (no command required)**
 
 ---
 
@@ -111,6 +112,15 @@ Sandalphon is a Telegram music bot that:
 
 ---
 
+### v1.6
+
+* auto-detects plain text messages as music requests
+* no `/music` command required for normal use
+* ignores commands and simple chatter
+* significantly improves UX and reduces friction
+
+---
+
 ## 🧠 Core Flow
 
 ```id="flow1"
@@ -129,6 +139,20 @@ Input → Queue → Resolve → Metadata → Download → Cache → Clean → Ta
 /clearcache
 /id
 /help
+```
+
+---
+
+## 💡 Usage
+
+```text
+/music The Smiths - How Soon Is Now?
+```
+
+or simply:
+
+```text
+The Smiths - How Soon Is Now?
 ```
 
 ---
@@ -172,6 +196,7 @@ empty ALLOWED_USER_IDS → public bot
 * file size limit is controlled via config (`MAX_FILE_MB`)
 * cache is query-based (exact match required)
 * metadata is source-driven when available, fallback to query when not
+* plain text auto-trigger may ignore very short or generic messages
 
 ---
 
