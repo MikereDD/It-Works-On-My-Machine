@@ -2,10 +2,10 @@
 # ------------------------------------------------------------
 # file:     musicbot.py
 # author:   Mike Redd
-# version:  1.8
+# version:  1.9
 # created:  2026-05-03
 # updated:  2026-05-03
-# desc:     Sandalphon - Queue system + audio caching + metadata caching + album art + ID3 tagging
+# desc:     Sandalphon - Queue system + audio caching + Spotify matching
 # ------------------------------------------------------------
 
 import asyncio
@@ -26,7 +26,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandl
 
 # ── Branding ─────────────────────────────────────────────────
 BOT_NAME = "Sandalphon"
-BOT_VERSION = "1.8"
+BOT_VERSION = "1.9"
 
 # ── Config ───────────────────────────────────────────────────
 sys.path.insert(0, str(Path.home() / "bots/config"))
@@ -38,6 +38,11 @@ DOWNLOAD_DIR = Path(cfg.DOWNLOAD_DIR)
 DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 MAX_FILE_MB = int(getattr(cfg, "MAX_FILE_MB", 1900))
+
+# Optional Spotify metadata matching
+SPOTIFY_METADATA_ENABLED = bool(getattr(cfg, "SPOTIFY_METADATA_ENABLED", False))
+SPOTIFY_CLIENT_ID = getattr(cfg, "SPOTIFY_CLIENT_ID", "")
+SPOTIFY_CLIENT_SECRET = getattr(cfg, "SPOTIFY_CLIENT_SECRET", "")
 
 # Optional cache config
 CACHE_ENABLED = bool(getattr(cfg, "CACHE_ENABLED", True))
@@ -139,6 +144,117 @@ def force_artist_song_title(query, title):
     return title
 
 
+def is_spotify_url(query):
+    lowered = (query or "").lower()
+    return "open.spotify.com" in lowered or "spotify.link" in lowered
+
+
+def extract_spotify_track_id(url):
+    match = re.search(r"open\.spotify\.com/track/([A-Za-z0-9]+)", url or "")
+    return match.group(1) if match else None
+
+
+def get_spotify_token():
+    if not (SPOTIFY_METADATA_ENABLED and SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET):
+        return None
+
+    try:
+        import base64
+        import urllib.parse
+        import urllib.request
+
+        auth = f"{SPOTIFY_CLIENT_ID}:{SPOTIFY_CLIENT_SECRET}"
+        auth_b64 = base64.b64encode(auth.encode("utf-8")).decode("utf-8")
+
+        data = urllib.parse.urlencode({"grant_type": "client_credentials"}).encode("utf-8")
+        req = urllib.request.Request(
+            "https://accounts.spotify.com/api/token",
+            data=data,
+            headers={
+                "Authorization": f"Basic {auth_b64}",
+                "Content-Type": "application/x-www-form-urlencoded",
+            },
+            method="POST",
+        )
+
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+
+        return payload.get("access_token")
+
+    except Exception:
+        logging.exception("Spotify token lookup failed")
+        return None
+
+
+def get_spotify_metadata(query):
+    if not is_spotify_url(query):
+        return None
+
+    track_id = extract_spotify_track_id(query)
+
+    if not track_id:
+        return None
+
+    token = get_spotify_token()
+
+    if not token:
+        return None
+
+    try:
+        import urllib.request
+
+        req = urllib.request.Request(
+            f"https://api.spotify.com/v1/tracks/{track_id}",
+            headers={"Authorization": f"Bearer {token}"},
+            method="GET",
+        )
+
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+
+        artist = ", ".join(a.get("name", "") for a in data.get("artists", []) if a.get("name"))
+        title = data.get("name", "")
+        album = (data.get("album") or {}).get("name", "")
+        release_date = (data.get("album") or {}).get("release_date", "")
+        year = release_date[:4] if release_date else ""
+
+        if not title:
+            return None
+
+        artist = clean_title(artist)
+        title = clean_title(title)
+
+        return {
+            "artist": artist,
+            "title": title,
+            "album": album,
+            "year": year,
+            "display": clean_title(f"{artist} - {title}") if artist else title,
+            "search": clean_title(f"{artist} - {title}") if artist else title,
+            "source": "spotify",
+        }
+
+    except Exception:
+        logging.exception("Spotify metadata lookup failed")
+        return None
+
+
+def resolve_download_query(query):
+    """
+    Convert metadata-only sources like Spotify into a searchable yt-dlp target.
+    Spotify audio is not downloaded directly. Spotify metadata is used to
+    search YouTube/yt-dlp for the matching track.
+    """
+    spotify_meta = get_spotify_metadata(query)
+
+    if spotify_meta and spotify_meta.get("search"):
+        return spotify_meta["search"], spotify_meta
+
+    return query, None
+
+
+
 def load_metadata_cache():
     if not CACHE_ENABLED or not METADATA_CACHE_FILE.exists():
         return {}
@@ -213,6 +329,10 @@ def get_media_metadata(query):
     cached_meta = get_cached_metadata(query)
     if cached_meta:
         return cached_meta
+
+    spotify_meta = get_spotify_metadata(query)
+    if spotify_meta:
+        return add_metadata_to_cache(query, spotify_meta)
 
     target = f"ytsearch1:{query}" if not query.startswith("http") else query
 
@@ -460,7 +580,8 @@ def download_audio(query):
     job.mkdir(parents=True, exist_ok=True)
 
     try:
-        target = f"ytsearch1:{query}" if not query.startswith("http") else query
+        download_query, source_meta = resolve_download_query(query)
+        target = f"ytsearch1:{download_query}" if not download_query.startswith("http") else download_query
 
         cmd = [
             "yt-dlp",
@@ -490,11 +611,11 @@ def download_audio(query):
         thumbs = list(job.glob("*.jpg"))
         thumbnail = thumbs[0] if thumbs else None
 
-        meta = get_media_metadata(query)
+        meta = source_meta or get_media_metadata(query)
         if meta:
             file = embed_metadata(file, meta, thumbnail)
 
-        title = build_title_from_metadata(query, clean_title(file.stem))
+        title = (meta.get("display") if meta else None) or build_title_from_metadata(query, clean_title(file.stem))
         final = DOWNLOAD_DIR / f"{safe_filename(title)}{file.suffix.lower()}"
 
         counter = 2
@@ -585,7 +706,7 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/cache\n"
         "/clearcache\n"
         "/help\n\n"
-        "You can also just type an artist/song search without a command."
+        "You can also just type an artist/song search or paste a supported link."
     )
 
 

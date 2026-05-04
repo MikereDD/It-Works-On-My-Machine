@@ -18,12 +18,12 @@ Sandalphon is a Telegram music bot that:
 * supports playlists
 * processes requests through a queue (stable under load)
 * caches audio for instant reuse
-* caches metadata for faster repeated requests
-* **embeds album art and ID3 metadata into audio files**
+* **caches metadata for faster repeated requests**
 * cleans up chat noise after processing
 * runs on local Bot API for performance
 * supports large file delivery (Local API)
 * accepts plain text (no command required)
+* supports Spotify metadata → YouTube/yt-dlp matching
 
 ---
 
@@ -133,19 +133,10 @@ Sandalphon is a Telegram music bot that:
 
 ---
 
-### v1.8
-
-* embeds album art into audio files (thumbnail support)
-* writes full ID3 metadata (artist, title, album, year)
-* improves Telegram player display and media player compatibility
-* produces cleaner, more professional audio files
-
----
-
 ## 🧠 Core Flow
 
 ```id="flow1"
-Input → Queue → Resolve → Metadata → Cache Metadata → Download → Cache Audio → Clean → Tag (ID3 + Art) → Deliver
+Input → Queue → Resolve → Metadata → Cache Metadata → Download → Cache Audio → Clean → Tag → Deliver
 ```
 
 ---
@@ -166,14 +157,20 @@ Input → Queue → Resolve → Metadata → Cache Metadata → Download → Cac
 
 ## 💡 Usage
 
-```text id="6r8y1c"
+```text
 /music The Smiths - How Soon Is Now?
 ```
 
 or simply:
 
-```text id="f3r6h2"
+```text
 The Smiths - How Soon Is Now?
+```
+
+Spotify track links can be used for metadata matching:
+
+```text
+https://open.spotify.com/track/...
 ```
 
 ---
@@ -194,6 +191,9 @@ LOG_FILE
 CACHE_ENABLED
 CACHE_DIR
 MAX_FILE_MB
+SPOTIFY_METADATA_ENABLED
+SPOTIFY_CLIENT_ID
+SPOTIFY_CLIENT_SECRET
 ```
 
 ---
@@ -210,7 +210,7 @@ empty ALLOWED_USER_IDS → public bot
 
 ## 🧪 Known Behavior
 
-* Spotify links → metadata only (no download)
+* Spotify links → metadata matching only (no direct Spotify audio download)
 * Amazon Music → fallback search
 * YouTube/SoundCloud → primary sources
 * Local Bot API removes standard Telegram size limits
@@ -218,8 +218,8 @@ empty ALLOWED_USER_IDS → public bot
 * cache is query-based (exact match required)
 * metadata is source-driven when available, fallback to query when not
 * metadata cache reduces repeated lookup overhead
+* Spotify matching requires Spotify API credentials when enabled
 * plain text auto-trigger may ignore very short or generic messages
-* album art availability depends on source (not all videos provide thumbnails)
 
 ---
 
@@ -230,7 +230,6 @@ empty ALLOWED_USER_IDS → public bot
 * permissions required for NVMe paths
 * some sources may require cookies
 * first-time requests still require metadata lookup (cached afterward)
-* album art embedding depends on thumbnail availability
 
 ---
 
@@ -240,8 +239,7 @@ empty ALLOWED_USER_IDS → public bot
 * local media library mode
 * queue prioritization (admin priority)
 * background prefetching
-* smarter source matching (Spotify → YouTube)
-* improved album art handling
+* better album art handling
 
 ---
 
