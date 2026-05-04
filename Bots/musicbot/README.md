@@ -12,7 +12,7 @@ Sandalphon is a Telegram music bot that:
 * downloads audio from supported sources (yt-dlp)
 * supports search + direct links
 * cleans filenames and metadata
-* **uses real metadata (artist/title) via yt-dlp**
+* uses real metadata (artist/title) via yt-dlp
 * enforces `Artist - Song` format for all audio
 * delivers Telegram-ready audio
 * supports playlists
@@ -20,6 +20,7 @@ Sandalphon is a Telegram music bot that:
 * caches audio for instant reuse
 * cleans up chat noise after processing
 * runs on local Bot API for performance
+* supports large file delivery (Local API)
 
 ---
 
@@ -85,7 +86,7 @@ Sandalphon is a Telegram music bot that:
 
 * enforce `Artist - Song` format for all outputs
 * uses user query as fallback when metadata is incomplete
-* ensures consistent naming across `/music`, `/audio`, `/song`
+* ensures consistent naming across commands
 * improves cache title accuracy
 
 ---
@@ -97,6 +98,16 @@ Sandalphon is a Telegram music bot that:
 * removes reliance on filename parsing
 * improves accuracy across all sources
 * fallback still uses query when metadata is unavailable
+
+---
+
+### v1.5.1
+
+* simplified command interface (single `/music` command)
+* removed `/audio` and `/song` aliases
+* aligned file size limits with Local Bot API
+* supports large file uploads (config-driven limit)
+* improved real-world usability for long tracks and mixes
 
 ---
 
@@ -112,8 +123,6 @@ Input → Queue → Resolve → Metadata → Download → Cache → Clean → Ta
 
 ```id="cmds1"
 /music <url or search>
-/audio <url or search>
-/song <url or search>
 /playlist <playlist url>
 /queue
 /cache
@@ -139,6 +148,7 @@ DOWNLOAD_DIR
 LOG_FILE
 CACHE_ENABLED
 CACHE_DIR
+MAX_FILE_MB
 ```
 
 ---
@@ -158,8 +168,8 @@ empty ALLOWED_USER_IDS → public bot
 * Spotify links → metadata only (no download)
 * Amazon Music → fallback search
 * YouTube/SoundCloud → primary sources
-* Telegram file limit enforced (~49MB)
-* Large files are skipped (local API removes most limitations)
+* Local Bot API removes standard Telegram size limits
+* file size limit is controlled via config (`MAX_FILE_MB`)
 * cache is query-based (exact match required)
 * metadata is source-driven when available, fallback to query when not
 

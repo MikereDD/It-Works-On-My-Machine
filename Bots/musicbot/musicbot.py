@@ -2,7 +2,7 @@
 # ------------------------------------------------------------
 # file:     musicbot.py
 # author:   Mike Redd
-# version:  1.5
+# version:  1.5.1
 # created:  2026-05-03
 # updated:  2026-05-03
 # desc:     Sandalphon - Queue system + audio caching + real metadata extraction
@@ -26,7 +26,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 
 # ── Branding ─────────────────────────────────────────────────
 BOT_NAME = "Sandalphon"
-BOT_VERSION = "1.5"
+BOT_VERSION = "1.5.1"
 
 # ── Config ───────────────────────────────────────────────────
 sys.path.insert(0, str(Path.home() / "bots/config"))
@@ -532,9 +532,7 @@ def main():
     app.add_handler(CommandHandler("start", start_cmd))
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CommandHandler("music", music))
-    app.add_handler(CommandHandler("audio", music))
-    app.add_handler(CommandHandler("song", music))
-    app.add_handler(CommandHandler("queue", queue_cmd))
+            app.add_handler(CommandHandler("queue", queue_cmd))
     app.add_handler(CommandHandler("cache", cache_cmd))
     app.add_handler(CommandHandler("clearcache", clearcache_cmd))
 
