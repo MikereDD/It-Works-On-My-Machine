@@ -2,10 +2,10 @@
 # ------------------------------------------------------------
 # file:     musicbot.py
 # author:   Mike Redd
-# version:  1.4.2
+# version:  1.5
 # created:  2026-05-03
 # updated:  2026-05-03
-# desc:     Sandalphon - Queue system + audio caching + title fixes
+# desc:     Sandalphon - Queue system + audio caching + real metadata extraction
 # ------------------------------------------------------------
 
 import asyncio
@@ -26,7 +26,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 
 # ── Branding ─────────────────────────────────────────────────
 BOT_NAME = "Sandalphon"
-BOT_VERSION = "1.4.2"
+BOT_VERSION = "1.5"
 
 # ── Config ───────────────────────────────────────────────────
 sys.path.insert(0, str(Path.home() / "bots/config"))
@@ -138,6 +138,78 @@ def force_artist_song_title(query, title):
     return title
 
 
+def get_media_metadata(query):
+    """
+    Read metadata from yt-dlp JSON so we can use real artist/title when available
+    instead of relying only on filenames.
+    """
+    query = (query or "").strip()
+    target = f"ytsearch1:{query}" if not query.startswith("http") else query
+
+    cmd = [
+        "yt-dlp",
+        "--dump-json",
+        "--no-playlist",
+        target,
+    ]
+
+    result = run_cmd(cmd)
+
+    if result.returncode != 0 or not result.stdout.strip():
+        return None
+
+    try:
+        first_json_line = result.stdout.strip().splitlines()[0]
+        data = json.loads(first_json_line)
+    except Exception:
+        logging.exception("Failed to parse yt-dlp metadata JSON")
+        return None
+
+    artist = (
+        data.get("artist")
+        or data.get("creator")
+        or data.get("uploader")
+        or data.get("channel")
+        or ""
+    )
+
+    title = (
+        data.get("track")
+        or data.get("title")
+        or ""
+    )
+
+    album = data.get("album") or ""
+    year = str(data.get("release_year") or data.get("upload_date", "")[:4] or "")
+
+    artist = clean_title(artist)
+    title = clean_title(title)
+
+    if not title:
+        return None
+
+    return {
+        "artist": artist,
+        "title": title,
+        "album": album,
+        "year": year,
+        "display": clean_title(f"{artist} - {title}") if artist else title,
+    }
+
+
+def build_title_from_metadata(query, fallback_title):
+    """
+    Prefer yt-dlp metadata. Fall back to query-driven Artist - Song formatting.
+    """
+    meta = get_media_metadata(query)
+
+    if meta and meta.get("display"):
+        return meta["display"]
+
+    return force_artist_song_title(query, fallback_title)
+
+
+
 def safe_filename(name):
     name = re.sub(r'[\\/:*?"<>|]', "-", name)
     name = re.sub(r"\s+", " ", name).strip()
@@ -224,7 +296,7 @@ def add_to_cache(query, audio_file):
         return audio_file
 
     key = cache_key(query)
-    title = force_artist_song_title(query, clean_title(audio_file.stem))
+    title = build_title_from_metadata(query, clean_title(audio_file.stem))
     cached_path = CACHE_AUDIO_DIR / f"{key}{audio_file.suffix.lower()}"
 
     try:
@@ -293,7 +365,7 @@ def download_audio(query):
             return None, False
 
         file = max(files, key=lambda p: p.stat().st_size)
-        title = force_artist_song_title(query, clean_title(file.stem))
+        title = build_title_from_metadata(query, clean_title(file.stem))
         final = DOWNLOAD_DIR / f"{safe_filename(title)}{file.suffix.lower()}"
 
         counter = 2
@@ -334,7 +406,7 @@ async def process_queue(app):
 
             size = file_size_mb(audio)
             title = get_cached_title_by_path(audio) or clean_title(audio.stem)
-            title = force_artist_song_title(query, title)
+            title = build_title_from_metadata(query, title)
 
             if size > MAX_FILE_MB:
                 await msg.edit_text(f"📦 Too large ({size:.1f} MB)")
