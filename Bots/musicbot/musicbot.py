@@ -2,10 +2,10 @@
 # ------------------------------------------------------------
 # file:     musicbot.py
 # author:   Mike Redd
-# version:  1.6
+# version:  1.6.1
 # created:  2026-05-03
 # updated:  2026-05-03
-# desc:     Sandalphon - Queue system + audio caching + auto text requests
+# desc:     Sandalphon - Queue system + audio caching + smart auto text filtering
 # ------------------------------------------------------------
 
 import asyncio
@@ -26,7 +26,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandl
 
 # ── Branding ─────────────────────────────────────────────────
 BOT_NAME = "Sandalphon"
-BOT_VERSION = "1.6"
+BOT_VERSION = "1.6.1"
 
 # ── Config ───────────────────────────────────────────────────
 sys.path.insert(0, str(Path.home() / "bots/config"))
@@ -478,35 +478,58 @@ async def music(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def auto_music(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Treat plain text messages as music requests.
-    Commands are ignored by the MessageHandler filter.
-    """
     if not update.message or not update.message.text:
         return
 
     query = update.message.text.strip()
 
-    if len(query) < 3:
+    # ignore commands
+    if query.startswith("/"):
         return
 
-    # Avoid common non-music chatter from accidentally triggering downloads.
-    ignored = {
-        "hi",
-        "hello",
-        "hey",
-        "lol",
-        "thanks",
-        "thank you",
-        "ok",
-        "okay",
+    # ignore very short messages
+    if len(query) < 4:
+        return
+
+    # ignore common chatter
+    ignored_exact = {
+        "hi", "hello", "hey", "yo",
+        "lol", "lmao", "rofl",
+        "thanks", "thank you",
+        "ok", "okay", "k",
+        "yes", "no"
     }
 
-    if query.lower() in ignored:
+    if query.lower() in ignored_exact:
+        return
+
+    # must look like music
+    looks_like_music = any([
+        " - " in query,
+        len(query.split()) >= 2,
+        "http" in query,
+    ])
+
+    if not looks_like_music:
+        return
+
+    # ignore obvious non-music phrases
+    ignored_phrases = [
+        "how are you",
+        "what are you",
+        "who are you",
+        "where are you",
+        "why are you",
+    ]
+
+    lower = query.lower()
+    if any(p in lower for p in ignored_phrases):
         return
 
     if PROCESSING:
-        queue_msg = await update.message.reply_text(f"➕ Added to queue ({len(QUEUE) + 1} waiting)")
+        queue_msg = await update.message.reply_text(
+            f"➕ Added to queue ({len(QUEUE) + 1} waiting)"
+        )
     else:
         queue_msg = await update.message.reply_text("➕ Added to queue")
 
