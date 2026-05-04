@@ -28,7 +28,7 @@ DOWNLOAD_DIR = "/mnt/nvme1/work/bots/downloads/music"
 LOG_FILE = "/mnt/nvme1/work/bots/logs/musicbot.log"
 
 # ── Audio Settings ───────────────────────────────────────────
-MAX_FILE_MB = 49
+MAX_FILE_MB = 500
 AUDIO_FORMAT = "mp3"
 AUDIO_QUALITY = "0"
 

@@ -37,7 +37,7 @@ BOT_TOKEN = cfg.BOT_TOKEN
 DOWNLOAD_DIR = Path(cfg.DOWNLOAD_DIR)
 DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
-MAX_FILE_MB = int(getattr(cfg, "MAX_FILE_MB", 49))
+MAX_FILE_MB = int(getattr(cfg, "MAX_FILE_MB", 1900))
 
 # Optional cache config
 CACHE_ENABLED = bool(getattr(cfg, "CACHE_ENABLED", True))
