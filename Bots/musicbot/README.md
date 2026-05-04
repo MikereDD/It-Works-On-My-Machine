@@ -18,7 +18,8 @@ Sandalphon is a Telegram music bot that:
 * supports playlists
 * processes requests through a queue (stable under load)
 * caches audio for instant reuse
-* **caches metadata for faster repeated requests**
+* caches metadata for faster repeated requests
+* **embeds album art and ID3 metadata into audio files**
 * cleans up chat noise after processing
 * runs on local Bot API for performance
 * supports large file delivery (Local API)
@@ -132,10 +133,19 @@ Sandalphon is a Telegram music bot that:
 
 ---
 
+### v1.8
+
+* embeds album art into audio files (thumbnail support)
+* writes full ID3 metadata (artist, title, album, year)
+* improves Telegram player display and media player compatibility
+* produces cleaner, more professional audio files
+
+---
+
 ## 🧠 Core Flow
 
 ```id="flow1"
-Input → Queue → Resolve → Metadata → Cache Metadata → Download → Cache Audio → Clean → Tag → Deliver
+Input → Queue → Resolve → Metadata → Cache Metadata → Download → Cache Audio → Clean → Tag (ID3 + Art) → Deliver
 ```
 
 ---
@@ -156,13 +166,13 @@ Input → Queue → Resolve → Metadata → Cache Metadata → Download → Cac
 
 ## 💡 Usage
 
-```text
+```text id="6r8y1c"
 /music The Smiths - How Soon Is Now?
 ```
 
 or simply:
 
-```text
+```text id="f3r6h2"
 The Smiths - How Soon Is Now?
 ```
 
@@ -209,6 +219,7 @@ empty ALLOWED_USER_IDS → public bot
 * metadata is source-driven when available, fallback to query when not
 * metadata cache reduces repeated lookup overhead
 * plain text auto-trigger may ignore very short or generic messages
+* album art availability depends on source (not all videos provide thumbnails)
 
 ---
 
@@ -219,6 +230,7 @@ empty ALLOWED_USER_IDS → public bot
 * permissions required for NVMe paths
 * some sources may require cookies
 * first-time requests still require metadata lookup (cached afterward)
+* album art embedding depends on thumbnail availability
 
 ---
 
@@ -228,7 +240,8 @@ empty ALLOWED_USER_IDS → public bot
 * local media library mode
 * queue prioritization (admin priority)
 * background prefetching
-* better album art handling
+* smarter source matching (Spotify → YouTube)
+* improved album art handling
 
 ---
 

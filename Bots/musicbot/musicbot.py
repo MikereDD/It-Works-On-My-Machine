@@ -2,10 +2,10 @@
 # ------------------------------------------------------------
 # file:     musicbot.py
 # author:   Mike Redd
-# version:  1.7
+# version:  1.8
 # created:  2026-05-03
 # updated:  2026-05-03
-# desc:     Sandalphon - Queue system + audio caching + metadata caching
+# desc:     Sandalphon - Queue system + audio caching + metadata caching + album art + ID3 tagging
 # ------------------------------------------------------------
 
 import asyncio
@@ -26,7 +26,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandl
 
 # ── Branding ─────────────────────────────────────────────────
 BOT_NAME = "Sandalphon"
-BOT_VERSION = "1.7"
+BOT_VERSION = "1.8"
 
 # ── Config ───────────────────────────────────────────────────
 sys.path.insert(0, str(Path.home() / "bots/config"))
@@ -407,6 +407,49 @@ def clear_cache():
         METADATA_CACHE_FILE.unlink()
 
 # ── Downloading ──────────────────────────────────────────────
+
+def embed_metadata(audio_path, metadata, thumbnail_path=None):
+    if not audio_path.exists():
+        return audio_path
+
+    output = audio_path.with_name(audio_path.stem + "_tagged.mp3")
+
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-i", str(audio_path),
+    ]
+
+    if thumbnail_path and thumbnail_path.exists():
+        cmd += ["-i", str(thumbnail_path)]
+
+    cmd += ["-map", "0:a"]
+
+    if thumbnail_path and thumbnail_path.exists():
+        cmd += [
+            "-map", "1:v",
+            "-c:v", "mjpeg",
+            "-disposition:v", "attached_pic",
+        ]
+
+    cmd += [
+        "-c:a", "copy",
+        "-metadata", f"title={metadata.get('title','')}",
+        "-metadata", f"artist={metadata.get('artist','')}",
+        "-metadata", f"album={metadata.get('album','')}",
+        "-metadata", f"date={metadata.get('year','')}",
+        str(output),
+    ]
+
+    run_cmd(cmd)
+
+    if output.exists():
+        audio_path.unlink(missing_ok=True)
+        return output
+
+    return audio_path
+
+
 def download_audio(query):
     cached = get_cached_audio(query)
 
@@ -424,6 +467,9 @@ def download_audio(query):
             "-x",
             "--audio-format", "mp3",
             "--audio-quality", "0",
+            "--embed-thumbnail",
+            "--write-thumbnail",
+            "--convert-thumbnails", "jpg",
             "-o", str(job / "%(title)s.%(ext)s"),
             target,
         ]
@@ -440,6 +486,14 @@ def download_audio(query):
             return None, False
 
         file = max(files, key=lambda p: p.stat().st_size)
+
+        thumbs = list(job.glob("*.jpg"))
+        thumbnail = thumbs[0] if thumbs else None
+
+        meta = get_media_metadata(query)
+        if meta:
+            file = embed_metadata(file, meta, thumbnail)
+
         title = build_title_from_metadata(query, clean_title(file.stem))
         final = DOWNLOAD_DIR / f"{safe_filename(title)}{file.suffix.lower()}"
 
