@@ -452,8 +452,6 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "The voice of music.\n\n"
         "Commands:\n"
         "/music <url or search>\n"
-        "/audio <url or search>\n"
-        "/song <url or search>\n"
         "/queue\n"
         "/cache\n"
         "/clearcache\n"
