@@ -18,10 +18,11 @@ Sandalphon is a Telegram music bot that:
 * supports playlists
 * processes requests through a queue (stable under load)
 * caches audio for instant reuse
+* **caches metadata for faster repeated requests**
 * cleans up chat noise after processing
 * runs on local Bot API for performance
 * supports large file delivery (Local API)
-* **accepts plain text (no command required)**
+* accepts plain text (no command required)
 
 ---
 
@@ -121,10 +122,20 @@ Sandalphon is a Telegram music bot that:
 
 ---
 
+### v1.7
+
+* metadata caching system (no repeated yt-dlp metadata calls)
+* stores artist/title data for reuse
+* significantly improves performance on repeated queries
+* reduces external calls and speeds up response time
+* cache stats now include metadata entries
+
+---
+
 ## 🧠 Core Flow
 
 ```id="flow1"
-Input → Queue → Resolve → Metadata → Download → Cache → Clean → Tag → Deliver
+Input → Queue → Resolve → Metadata → Cache Metadata → Download → Cache Audio → Clean → Tag → Deliver
 ```
 
 ---
@@ -196,6 +207,7 @@ empty ALLOWED_USER_IDS → public bot
 * file size limit is controlled via config (`MAX_FILE_MB`)
 * cache is query-based (exact match required)
 * metadata is source-driven when available, fallback to query when not
+* metadata cache reduces repeated lookup overhead
 * plain text auto-trigger may ignore very short or generic messages
 
 ---
@@ -206,14 +218,13 @@ empty ALLOWED_USER_IDS → public bot
 * yt-dlp must be in PATH
 * permissions required for NVMe paths
 * some sources may require cookies
-* metadata calls add a small overhead (extra yt-dlp call)
+* first-time requests still require metadata lookup (cached afterward)
 
 ---
 
 ## 🧭 Next Up (Planned)
 
 * smarter cache matching (same song, different queries)
-* cache metadata reuse (avoid extra metadata calls)
 * local media library mode
 * queue prioritization (admin priority)
 * background prefetching

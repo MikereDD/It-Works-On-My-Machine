@@ -2,10 +2,10 @@
 # ------------------------------------------------------------
 # file:     musicbot.py
 # author:   Mike Redd
-# version:  1.6.1
+# version:  1.7
 # created:  2026-05-03
 # updated:  2026-05-03
-# desc:     Sandalphon - Queue system + audio caching + smart auto text filtering
+# desc:     Sandalphon - Queue system + audio caching + metadata caching
 # ------------------------------------------------------------
 
 import asyncio
@@ -26,7 +26,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandl
 
 # ── Branding ─────────────────────────────────────────────────
 BOT_NAME = "Sandalphon"
-BOT_VERSION = "1.6.1"
+BOT_VERSION = "1.7"
 
 # ── Config ───────────────────────────────────────────────────
 sys.path.insert(0, str(Path.home() / "bots/config"))
@@ -44,6 +44,7 @@ CACHE_ENABLED = bool(getattr(cfg, "CACHE_ENABLED", True))
 CACHE_DIR = Path(getattr(cfg, "CACHE_DIR", "/mnt/nvme1/work/bots/cache/musicbot"))
 CACHE_AUDIO_DIR = CACHE_DIR / "audio"
 CACHE_INDEX_FILE = CACHE_DIR / "index.json"
+METADATA_CACHE_FILE = CACHE_DIR / "metadata.json"
 
 if CACHE_ENABLED:
     CACHE_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
@@ -138,12 +139,81 @@ def force_artist_song_title(query, title):
     return title
 
 
+def load_metadata_cache():
+    if not CACHE_ENABLED or not METADATA_CACHE_FILE.exists():
+        return {}
+
+    try:
+        return json.loads(METADATA_CACHE_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        logging.exception("Failed to read metadata cache")
+        return {}
+
+
+def save_metadata_cache(index):
+    if not CACHE_ENABLED:
+        return
+
+    try:
+        tmp = METADATA_CACHE_FILE.with_suffix(".tmp")
+        tmp.write_text(json.dumps(index, indent=2, sort_keys=True), encoding="utf-8")
+        tmp.replace(METADATA_CACHE_FILE)
+    except Exception:
+        logging.exception("Failed to write metadata cache")
+
+
+def get_cached_metadata(query):
+    if not CACHE_ENABLED:
+        return None
+
+    index = load_metadata_cache()
+    key = cache_key(query)
+    item = index.get(key)
+
+    if not item:
+        return None
+
+    item["hits"] = int(item.get("hits", 0)) + 1
+    item["last_used"] = int(time.time())
+    index[key] = item
+    save_metadata_cache(index)
+
+    return item.get("metadata")
+
+
+def add_metadata_to_cache(query, metadata):
+    if not CACHE_ENABLED or not metadata:
+        return metadata
+
+    index = load_metadata_cache()
+    key = cache_key(query)
+
+    index[key] = {
+        "query": query,
+        "metadata": metadata,
+        "created": int(time.time()),
+        "last_used": int(time.time()),
+        "hits": int(index.get(key, {}).get("hits", 0)),
+    }
+
+    save_metadata_cache(index)
+    return metadata
+
+
 def get_media_metadata(query):
     """
     Read metadata from yt-dlp JSON so we can use real artist/title when available
     instead of relying only on filenames.
+
+    v1.7 caches metadata so repeated requests do not need another yt-dlp
+    metadata lookup.
     """
     query = (query or "").strip()
+
+    cached_meta = get_cached_metadata(query)
+    if cached_meta:
+        return cached_meta
+
     target = f"ytsearch1:{query}" if not query.startswith("http") else query
 
     cmd = [
@@ -188,13 +258,15 @@ def get_media_metadata(query):
     if not title:
         return None
 
-    return {
+    metadata = {
         "artist": artist,
         "title": title,
         "album": album,
         "year": year,
         "display": clean_title(f"{artist} - {title}") if artist else title,
     }
+
+    return add_metadata_to_cache(query, metadata)
 
 
 def build_title_from_metadata(query, fallback_title):
@@ -330,6 +402,9 @@ def clear_cache():
 
     if CACHE_INDEX_FILE.exists():
         CACHE_INDEX_FILE.unlink()
+
+    if METADATA_CACHE_FILE.exists():
+        METADATA_CACHE_FILE.unlink()
 
 # ── Downloading ──────────────────────────────────────────────
 def download_audio(query):
@@ -557,10 +632,13 @@ async def cache_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if path.exists():
             size_mb += file_size_mb(path)
 
+    metadata_count = len(load_metadata_cache())
+
     await update.message.reply_text(
         f"🗃 Cache\n"
         f"Enabled: {CACHE_ENABLED}\n"
         f"Tracks: {count}\n"
+        f"Metadata: {metadata_count}\n"
         f"Size: {size_mb:.1f} MB"
     )
 
