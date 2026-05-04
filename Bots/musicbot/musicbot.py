@@ -2,10 +2,10 @@
 # ------------------------------------------------------------
 # file:     musicbot.py
 # author:   Mike Redd
-# version:  1.9
+# version:  2.0
 # created:  2026-05-03
 # updated:  2026-05-03
-# desc:     Sandalphon - Queue system + audio caching + Spotify matching
+# desc:     Sandalphon - Queue/cache music bot with library mode
 # ------------------------------------------------------------
 
 import asyncio
@@ -26,7 +26,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandl
 
 # ── Branding ─────────────────────────────────────────────────
 BOT_NAME = "Sandalphon"
-BOT_VERSION = "1.9"
+BOT_VERSION = "2.0"
 
 # ── Config ───────────────────────────────────────────────────
 sys.path.insert(0, str(Path.home() / "bots/config"))
@@ -50,6 +50,7 @@ CACHE_DIR = Path(getattr(cfg, "CACHE_DIR", "/mnt/nvme1/work/bots/cache/musicbot"
 CACHE_AUDIO_DIR = CACHE_DIR / "audio"
 CACHE_INDEX_FILE = CACHE_DIR / "index.json"
 METADATA_CACHE_FILE = CACHE_DIR / "metadata.json"
+LIBRARY_INDEX_FILE = CACHE_DIR / "library.json"
 
 if CACHE_ENABLED:
     CACHE_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
@@ -316,6 +317,113 @@ def add_metadata_to_cache(query, metadata):
     return metadata
 
 
+
+def load_library_index():
+    if not CACHE_ENABLED or not LIBRARY_INDEX_FILE.exists():
+        return {}
+
+    try:
+        return json.loads(LIBRARY_INDEX_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        logging.exception("Failed to read library index")
+        return {}
+
+
+def save_library_index(index):
+    if not CACHE_ENABLED:
+        return
+
+    try:
+        tmp = LIBRARY_INDEX_FILE.with_suffix(".tmp")
+        tmp.write_text(json.dumps(index, indent=2, sort_keys=True), encoding="utf-8")
+        tmp.replace(LIBRARY_INDEX_FILE)
+    except Exception:
+        logging.exception("Failed to write library index")
+
+
+def normalize_library_text(text):
+    text = clean_title(text or "").lower()
+    text = re.sub(r"[^a-z0-9\s-]", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def add_to_library(query, audio_file, metadata=None):
+    if not CACHE_ENABLED or not audio_file or not audio_file.exists():
+        return
+
+    title = ""
+    artist = ""
+    album = ""
+    year = ""
+    display = ""
+
+    if metadata:
+        artist = metadata.get("artist", "")
+        title = metadata.get("title", "")
+        album = metadata.get("album", "")
+        year = metadata.get("year", "")
+        display = metadata.get("display", "")
+
+    if not display:
+        display = get_cached_title_by_path(audio_file) or clean_title(audio_file.stem)
+
+    key = cache_key(display)
+    index = load_library_index()
+
+    index[key] = {
+        "query": query,
+        "display": display,
+        "artist": artist,
+        "title": title,
+        "album": album,
+        "year": year,
+        "path": str(audio_file),
+        "search_text": normalize_library_text(f"{display} {artist} {title} {album} {year}"),
+        "added": int(time.time()),
+    }
+
+    save_library_index(index)
+
+
+def search_library(term, limit=10):
+    term = normalize_library_text(term)
+
+    if not term:
+        return []
+
+    index = load_library_index()
+    words = [w for w in term.split() if w]
+
+    results = []
+
+    for key, item in index.items():
+        path = Path(item.get("path", ""))
+        if not path.exists():
+            continue
+
+        haystack = item.get("search_text", normalize_library_text(item.get("display", "")))
+
+        score = 0
+        if term in haystack:
+            score += 10
+
+        for word in words:
+            if word in haystack:
+                score += 2
+
+        if score:
+            results.append((score, item))
+
+    results.sort(key=lambda x: x[0], reverse=True)
+    return [item for _, item in results[:limit]]
+
+
+def clear_library():
+    if LIBRARY_INDEX_FILE.exists():
+        LIBRARY_INDEX_FILE.unlink()
+
+
 def get_media_metadata(query):
     """
     Read metadata from yt-dlp JSON so we can use real artist/title when available
@@ -483,12 +591,12 @@ def get_cached_title_by_path(audio_path):
     return None
 
 
-def add_to_cache(query, audio_file):
+def add_to_cache(query, audio_file, metadata=None):
     if not CACHE_ENABLED or not audio_file or not audio_file.exists():
         return audio_file
 
     key = cache_key(query)
-    title = build_title_from_metadata(query, clean_title(audio_file.stem))
+    title = (metadata.get("display") if metadata else None) or build_title_from_metadata(query, clean_title(audio_file.stem))
     cached_path = CACHE_AUDIO_DIR / f"{key}{audio_file.suffix.lower()}"
 
     try:
@@ -506,6 +614,7 @@ def add_to_cache(query, audio_file):
             "hits": int(index.get(key, {}).get("hits", 0)),
         }
         save_cache_index(index)
+        add_to_library(query, cached_path, metadata)
 
         return cached_path
 
@@ -525,6 +634,9 @@ def clear_cache():
 
     if METADATA_CACHE_FILE.exists():
         METADATA_CACHE_FILE.unlink()
+
+    if LIBRARY_INDEX_FILE.exists():
+        LIBRARY_INDEX_FILE.unlink()
 
 # ── Downloading ──────────────────────────────────────────────
 
@@ -625,7 +737,7 @@ def download_audio(query):
 
         shutil.move(str(file), str(final))
 
-        cached_file = add_to_cache(query, final)
+        cached_file = add_to_cache(query, final, meta)
 
         return cached_file, False
 
@@ -704,7 +816,11 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/music <url or search>\n"
         "/queue\n"
         "/cache\n"
+        "/library\n"
+        "/find <artist or song>\n"
+        "/play <artist or song>\n"
         "/clearcache\n"
+        "/clearlibrary\n"
         "/help\n\n"
         "You can also just type an artist/song search or paste a supported link."
     )
@@ -808,12 +924,14 @@ async def cache_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             size_mb += file_size_mb(path)
 
     metadata_count = len(load_metadata_cache())
+    library_count = len(load_library_index())
 
     await update.message.reply_text(
         f"🗃 Cache\n"
         f"Enabled: {CACHE_ENABLED}\n"
         f"Tracks: {count}\n"
         f"Metadata: {metadata_count}\n"
+        f"Library: {library_count}\n"
         f"Size: {size_mb:.1f} MB"
     )
 
@@ -821,6 +939,85 @@ async def cache_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def clearcache_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     clear_cache()
     await update.message.reply_text("🧹 Cache cleared")
+
+async def library_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    index = load_library_index()
+    count = len(index)
+
+    if not index:
+        await update.message.reply_text("📚 Library empty")
+        return
+
+    items = sorted(
+        index.values(),
+        key=lambda item: item.get("added", 0),
+        reverse=True,
+    )[:15]
+
+    lines = [f"📚 Library ({count} tracks)", ""]
+
+    for i, item in enumerate(items, start=1):
+        lines.append(f"{i}. {item.get('display', 'Unknown')}")
+
+    await update.message.reply_text("\n".join(lines))
+
+
+async def find_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    term = " ".join(context.args).strip()
+
+    if not term:
+        await update.message.reply_text("Usage: /find <artist or song>")
+        return
+
+    results = search_library(term)
+
+    if not results:
+        await update.message.reply_text("No library matches found.")
+        return
+
+    lines = [f"🔎 Results for: {term}", ""]
+
+    for i, item in enumerate(results, start=1):
+        lines.append(f"{i}. {item.get('display', 'Unknown')}")
+
+    await update.message.reply_text("\n".join(lines))
+
+
+async def play_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    term = " ".join(context.args).strip()
+
+    if not term:
+        await update.message.reply_text("Usage: /play <artist or song>")
+        return
+
+    results = search_library(term, limit=1)
+
+    if not results:
+        await update.message.reply_text("No library match found. Try /music to download it.")
+        return
+
+    item = results[0]
+    path = Path(item.get("path", ""))
+
+    if not path.exists():
+        await update.message.reply_text("Library entry exists, but file is missing.")
+        return
+
+    title = item.get("display", clean_title(path.stem))
+
+    with path.open("rb") as f:
+        await update.message.reply_audio(
+            audio=f,
+            filename=f"{title}{path.suffix.lower()}",
+            title=title[:64],
+        )
+
+
+async def clearlibrary_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    clear_library()
+    await update.message.reply_text("🧹 Library index cleared")
+
+
 
 # ── Main ─────────────────────────────────────────────────────
 def main():
@@ -847,7 +1044,11 @@ def main():
     app.add_handler(CommandHandler("music", music))
     app.add_handler(CommandHandler("queue", queue_cmd))
     app.add_handler(CommandHandler("cache", cache_cmd))
+    app.add_handler(CommandHandler("library", library_cmd))
+    app.add_handler(CommandHandler("find", find_cmd))
+    app.add_handler(CommandHandler("play", play_cmd))
     app.add_handler(CommandHandler("clearcache", clearcache_cmd))
+    app.add_handler(CommandHandler("clearlibrary", clearlibrary_cmd))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, auto_music))
 
     logging.info("%s v%s started.", BOT_NAME, BOT_VERSION)
