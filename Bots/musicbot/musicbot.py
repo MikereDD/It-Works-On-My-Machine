@@ -2,10 +2,10 @@
 # ------------------------------------------------------------
 # file:     musicbot.py
 # author:   Mike Redd
-# version:  1.4.1
+# version:  1.4.2
 # created:  2026-05-03
 # updated:  2026-05-03
-# desc:     Sandalphon - Queue system + audio caching + cleanup fixes
+# desc:     Sandalphon - Queue system + audio caching + title fixes
 # ------------------------------------------------------------
 
 import asyncio
@@ -26,7 +26,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 
 # ── Branding ─────────────────────────────────────────────────
 BOT_NAME = "Sandalphon"
-BOT_VERSION = "1.4.1"
+BOT_VERSION = "1.4.2"
 
 # ── Config ───────────────────────────────────────────────────
 sys.path.insert(0, str(Path.home() / "bots/config"))
@@ -111,6 +111,31 @@ def clean_title(title):
     title = re.sub(r"\s+", " ", title).strip(" -")
 
     return title[:120] or "audio"
+
+
+def force_artist_song_title(query, title):
+    """
+    Always prefer "Band/Artist - Song" for Telegram sends.
+
+    If yt-dlp/cache only gives the song title, use the user's command text
+    as the fallback artist source when it was typed as "Artist - Song".
+    """
+    query = clean_title(query or "")
+    title = clean_title(title or "")
+
+    if " - " in title:
+        return title
+
+    if " - " in query:
+        artist, query_song = [p.strip() for p in query.split(" - ", 1)]
+
+        if artist and title:
+            return clean_title(f"{artist} - {title}")
+
+        if artist and query_song:
+            return clean_title(f"{artist} - {query_song}")
+
+    return title
 
 
 def safe_filename(name):
@@ -199,7 +224,7 @@ def add_to_cache(query, audio_file):
         return audio_file
 
     key = cache_key(query)
-    title = clean_title(audio_file.stem)
+    title = force_artist_song_title(query, clean_title(audio_file.stem))
     cached_path = CACHE_AUDIO_DIR / f"{key}{audio_file.suffix.lower()}"
 
     try:
@@ -268,7 +293,7 @@ def download_audio(query):
             return None, False
 
         file = max(files, key=lambda p: p.stat().st_size)
-        title = clean_title(file.stem)
+        title = force_artist_song_title(query, clean_title(file.stem))
         final = DOWNLOAD_DIR / f"{safe_filename(title)}{file.suffix.lower()}"
 
         counter = 2
@@ -309,6 +334,7 @@ async def process_queue(app):
 
             size = file_size_mb(audio)
             title = get_cached_title_by_path(audio) or clean_title(audio.stem)
+            title = force_artist_song_title(query, title)
 
             if size > MAX_FILE_MB:
                 await msg.edit_text(f"📦 Too large ({size:.1f} MB)")

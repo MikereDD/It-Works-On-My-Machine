@@ -12,6 +12,7 @@ Sandalphon is a Telegram music bot that:
 * downloads audio from supported sources (yt-dlp)
 * supports search + direct links
 * cleans filenames and metadata
+* **enforces Artist - Song format for all audio**
 * delivers Telegram-ready audio
 * supports playlists
 * processes requests through a queue (stable under load)
@@ -79,9 +80,18 @@ Sandalphon is a Telegram music bot that:
 
 ---
 
+### v1.4.2
+
+* enforce `Artist - Song` format for all outputs
+* uses user query as fallback when metadata is incomplete
+* ensures consistent naming across `/music`, `/audio`, `/song`
+* improves cache title accuracy
+
+---
+
 ## 🧠 Core Flow
 
-```
+```id="flow1"
 Input → Queue → Resolve → Download → Cache → Clean → Tag → Deliver
 ```
 
@@ -89,7 +99,7 @@ Input → Queue → Resolve → Download → Cache → Clean → Tag → Deliver
 
 ## 🧰 Commands
 
-```
+```id="cmds1"
 /music <url or search>
 /audio <url or search>
 /song <url or search>
@@ -109,7 +119,7 @@ Config file: `musicbotrc.py`
 
 Important fields:
 
-```
+```id="cfg1"
 BOT_TOKEN
 ALLOWED_USER_IDS
 ADMIN_USERS
@@ -124,9 +134,9 @@ CACHE_DIR
 
 ## 🔐 Access Control
 
-```
-ADMIN_USERS → always allowed
-ALLOWED_USER_IDS → optional whitelist
+```id="sec1"
+ADMIN_USERS → always allowed  
+ALLOWED_USER_IDS → optional whitelist  
 empty ALLOWED_USER_IDS → public bot
 ```
 
@@ -140,6 +150,7 @@ empty ALLOWED_USER_IDS → public bot
 * Telegram file limit enforced (~49MB)
 * Large files are skipped (local API removes most limitations)
 * cache is query-based (exact match required)
+* titles rely on metadata or user query when needed
 
 ---
 
@@ -149,7 +160,7 @@ empty ALLOWED_USER_IDS → public bot
 * yt-dlp must be in PATH
 * permissions required for NVMe paths
 * some sources may require cookies
-* yt-dlp titles can be messy (handled by cleanup logic)
+* yt-dlp titles can be messy (handled by cleanup logic + fallback)
 
 ---
 
