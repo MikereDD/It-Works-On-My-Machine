@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file:     ytbot.py
 # author:   Mike Redd
-# version:  5.4.4
+# version:  5.4.6
 # created:  2026-04-18
 # updated:  2026-05-01
 # desc:     Queue-based Telegram media bot
@@ -31,7 +31,7 @@ from urllib.request import urlopen
 # ── Branding ─────────────────────────────────────────────────
 
 BOT_NAME = "Raziel"
-BOT_VERSION = "5.4.4"
+BOT_VERSION = "5.4.6"
 
 import yt_dlp
 from telegram import (
@@ -354,8 +354,14 @@ def extract_url_from_message(message) -> str | None:
                 except Exception:
                     pass
 
+    # Raw fallback for odd Telegram payloads.
+    # Important: do NOT scan reply_to_message, or replying to one of Raziel's
+    # uploaded videos can re-discover the old caption URL and queue it again.
     try:
         raw = message.to_dict()
+        if isinstance(raw, dict):
+            raw.pop("reply_to_message", None)
+
         stack = [raw]
         while stack:
             item = stack.pop()
@@ -2092,6 +2098,9 @@ async def handle_url(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
     chat = update.effective_chat
 
+    if user and getattr(user, "is_bot", False):
+        return
+
     if not user or not chat:
         return
 
@@ -2137,10 +2146,21 @@ async def handle_url(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
                 except Exception:
                     pass
 
-    # ── 4. Raw fallback (forwarded weird cases)
+    # ── 4. Reply guard + raw fallback (forwarded weird cases)
+    # If this is a reply and the NEW message itself did not contain a direct URL,
+    # ignore it. Telegram may include the replied-to media caption/link in the
+    # payload, which can otherwise requeue Raziel's own uploaded video.
+    if not url and getattr(message, "reply_to_message", None):
+        if DEBUG_MODE:
+            log.info("Reply with no new direct URL ignored.")
+        return
+
     if not url:
         try:
             raw = message.to_dict()
+            if isinstance(raw, dict):
+                raw.pop("reply_to_message", None)
+
             for v in str(raw).split():
                 u = extract_url(v)
                 if u:
@@ -2289,5 +2309,6 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
 
 
