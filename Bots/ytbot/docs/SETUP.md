@@ -1,4 +1,4 @@
-# ⚙️ YTBot Setup Guide (v5.4.3)
+# ⚙️ YTBot Setup Guide (v5.4.6)
 
 > Full setup for Arakiel / Arch Linux environment
 > Covers dependencies, Telegram Bot API, and ytbot configuration
@@ -255,6 +255,7 @@ pip install -U yt-dlp
 ---
 
 ### ❌ ffmpeg missing
+:1
 
 ```bash
 sudo pacman -S ffmpeg
