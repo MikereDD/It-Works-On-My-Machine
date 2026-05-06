@@ -1,9 +1,9 @@
-# 🎬 Raziel v5.4.3
+# 🎬 Raziel v5.4.6
 
 > A typezerø Project
 > Built for real-world use, not perfection.
 
-![Version](https://img.shields.io/badge/version-v5.4.3-blue)
+![Version](https://img.shields.io/badge/version-v5.4.6-blue)
 ![Python](https://img.shields.io/badge/python-3.10+-blue)
 ![License](https://img.shields.io/badge/license-WTFPL-lightgrey)
 
@@ -11,7 +11,7 @@
 
 ## 🚀 Overview
 
-**YTBot v5.4.3** is a full media pipeline bot with:
+**Raziel v5.4.6** is a full media pipeline bot with:
 
 * **automatic group link ingestion**
 * **clean chat behavior**
@@ -21,6 +21,7 @@
 * **strict video-source validation**
 * **config-driven platform support**
 * **user-controlled quality selection**
+* **reply-loop protection**
 
 It accepts input from:
 
@@ -162,7 +163,7 @@ Now supports:
 
 ### ✂️ Clip Support
 
-```
+```text
 /clip <url> <start> <end>
 ```
 
@@ -200,6 +201,25 @@ Now supports:
 
 ---
 
+### 🛡️ Reply Requeue Protection (v5.4.6)
+
+* Prevents reply loops from reposting uploaded videos
+* Replies without a fresh/direct URL are ignored
+* Raw Telegram reply payloads are sanitized before fallback scanning
+* Stops accidental duplicate reposts when users casually reply to uploads
+
+Ignored:
+
+* reply + text
+* reply + emoji
+* reply + sticker
+
+Allowed:
+
+* reply + new video URL
+
+---
+
 ### 🔇 Clean Group Mode
 
 * Minimal noise output
@@ -209,7 +229,7 @@ Now supports:
 
 ### 📁 File Routing
 
-```
+```text
 G:\bots\done\video\
 G:\bots\done\audio\
 G:\bots\done\failed\
@@ -223,7 +243,7 @@ G:\bots\done\failed\
 
 CLI:
 
-```
+```text
 python ytbot.py --url "<link>"
 python ytbot.py --audio "<link>"
 ```
@@ -241,7 +261,28 @@ python ytbot.py --audio "<link>"
 
 ## 🧠 Version History
 
-### v5.4.3 (Current)
+### v5.4.6 (Current)
+
+* Strict reply guard to prevent repost loops
+* Ignore replies without a fresh/direct URL
+* Sanitize `reply_to_message` payloads before fallback scanning
+
+---
+
+### v5.4.5
+
+* Initial reply requeue prevention attempt
+
+---
+
+### v5.4.4
+
+* Unified help branding and bot presentation
+* Raziel identity integration
+
+---
+
+### v5.4.3
 
 * Quality control commands (`/dl`, `/hd`, `/full`)
 * Per-job quality handling
@@ -302,6 +343,4 @@ typezerø Projects
 ## 📜 License
 
 WTFPL
-
----
 

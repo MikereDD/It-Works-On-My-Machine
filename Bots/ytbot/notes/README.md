@@ -45,4 +45,7 @@
 * [v5.4.1](v5.4.1.md) — Restrict pipeline to supported video sources (validation layer)
 * [v5.4.2](v5.4.2.md) — Config-driven platform support (enable/disable platforms without code changes)
 * [v5.4.3](v5.4.3.md) — Quality control commands (/dl 720p, /hd 1080p, /full best)
+* [v5.4.4](v5.4.4.md) — Help UI branding and unified bot presentation
+* [v5.4.5](v5.4.5.md) — Initial reply requeue prevention attempt
+* [v5.4.6](v5.4.6.md) — Strict reply guard to prevent repost loops from replied uploads
 
