@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file:     ytbot.py
 # author:   Mike Redd
-# version:  5.4.6
+# version:  5.4.7
 # created:  2026-04-18
 # updated:  2026-05-01
 # desc:     Queue-based Telegram media bot
@@ -31,7 +31,7 @@ from urllib.request import urlopen
 # ── Branding ─────────────────────────────────────────────────
 
 BOT_NAME = "Raziel"
-BOT_VERSION = "5.4.6"
+BOT_VERSION = "5.4.7"
 
 import yt_dlp
 from telegram import (
@@ -316,6 +316,73 @@ def extract_url(text: str | None) -> str | None:
         return None
     match = URL_RE.search(text.strip())
     return match.group(0) if match else None
+
+
+def is_forwarded_bot_output(message) -> bool:
+    """
+    Detect forwarded bot/media output so Raziel does not re-ingest its own
+    previously uploaded videos or captions when they are forwarded into a group.
+    """
+    if not message:
+        return False
+
+    origin = getattr(message, "forward_origin", None)
+    if origin:
+        sender_user = getattr(origin, "sender_user", None)
+        sender_chat = getattr(origin, "sender_chat", None)
+        chat = getattr(origin, "chat", None)
+        sender_name = getattr(origin, "sender_user_name", None) or getattr(origin, "sender_name", None)
+
+        if sender_user:
+            if getattr(sender_user, "is_bot", False):
+                return True
+
+            name_parts = [
+                getattr(sender_user, "first_name", ""),
+                getattr(sender_user, "last_name", ""),
+                getattr(sender_user, "username", ""),
+            ]
+            if any(str(part).lower() == BOT_NAME.lower() for part in name_parts if part):
+                return True
+
+        for source in (sender_chat, chat):
+            if not source:
+                continue
+
+            title = getattr(source, "title", "") or getattr(source, "full_name", "") or ""
+            username = getattr(source, "username", "") or ""
+
+            if str(title).lower() == BOT_NAME.lower() or str(username).lower() == BOT_NAME.lower():
+                return True
+
+        if sender_name and str(sender_name).lower() == BOT_NAME.lower():
+            return True
+
+    forward_from = getattr(message, "forward_from", None)
+    if forward_from:
+        if getattr(forward_from, "is_bot", False):
+            return True
+
+        name_parts = [
+            getattr(forward_from, "first_name", ""),
+            getattr(forward_from, "last_name", ""),
+            getattr(forward_from, "username", ""),
+        ]
+        if any(str(part).lower() == BOT_NAME.lower() for part in name_parts if part):
+            return True
+
+    forward_from_chat = getattr(message, "forward_from_chat", None)
+    if forward_from_chat:
+        title = getattr(forward_from_chat, "title", "") or ""
+        username = getattr(forward_from_chat, "username", "") or ""
+        if str(title).lower() == BOT_NAME.lower() or str(username).lower() == BOT_NAME.lower():
+            return True
+
+    forward_sender_name = getattr(message, "forward_sender_name", None)
+    if forward_sender_name and str(forward_sender_name).lower() == BOT_NAME.lower():
+        return True
+
+    return False
 
 def extract_url_from_message(message) -> str | None:
     """
@@ -2101,6 +2168,16 @@ async def handle_url(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if user and getattr(user, "is_bot", False):
         return
 
+
+    # Forward-safe ingestion:
+    # If a user forwards one of Raziel's uploaded videos/posts into a watched group,
+    # the forwarded caption may still contain the original source URL.
+    # That is inherited bot output, not fresh user intent, so ignore it.
+    if is_forwarded_bot_output(message):
+        if DEBUG_MODE:
+            log.info("Forwarded bot/Raziel output ignored.")
+        return
+
     if not user or not chat:
         return
 
@@ -2309,6 +2386,5 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
 
 

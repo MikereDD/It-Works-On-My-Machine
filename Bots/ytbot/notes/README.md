@@ -48,4 +48,4 @@
 * [v5.4.4](v5.4.4.md) — Help UI branding and unified bot presentation
 * [v5.4.5](v5.4.5.md) — Initial reply requeue prevention attempt
 * [v5.4.6](v5.4.6.md) — Strict reply guard to prevent repost loops from replied uploads
-
+* [v5.4.7](v5.4.7.md) — Finalized reply-loop protection system and stable repost prevention behavior

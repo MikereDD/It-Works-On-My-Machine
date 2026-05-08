@@ -1,9 +1,9 @@
-# 🎬 Raziel v5.4.6
+# 🎬 Raziel v5.4.7
 
 > A typezerø Project
 > Built for real-world use, not perfection.
 
-![Version](https://img.shields.io/badge/version-v5.4.6-blue)
+![Version](https://img.shields.io/badge/version-v5.4.7-blue)
 ![Python](https://img.shields.io/badge/python-3.10+-blue)
 ![License](https://img.shields.io/badge/license-WTFPL-lightgrey)
 
@@ -11,7 +11,7 @@
 
 ## 🚀 Overview
 
-**Raziel v5.4.6** is a full media pipeline bot with:
+**Raziel v5.4.7** is a full media pipeline bot with:
 
 * **automatic group link ingestion**
 * **clean chat behavior**
@@ -201,7 +201,7 @@ Now supports:
 
 ---
 
-### 🛡️ Reply Requeue Protection (v5.4.6)
+### 🛡️ Reply Requeue Protection (v5.4.7)
 
 * Prevents reply loops from reposting uploaded videos
 * Replies without a fresh/direct URL are ignored
@@ -261,7 +261,16 @@ python ytbot.py --audio "<link>"
 
 ## 🧠 Version History
 
-### v5.4.6 (Current)
+### v5.4.7 (Current)
+
+* Finalized reply-loop protection system
+* Hardened reply payload filtering
+* Stable repost prevention behavior
+* Documentation and release cleanup
+
+---
+
+### v5.4.6
 
 * Strict reply guard to prevent repost loops
 * Ignore replies without a fresh/direct URL
@@ -343,4 +352,3 @@ typezerø Projects
 ## 📜 License
 
 WTFPL
-
