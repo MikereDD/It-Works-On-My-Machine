@@ -1,9 +1,9 @@
-# 🎬 Raziel v5.4.7
+# 🎬 Raziel v5.4.8
 
 > A typezerø Project
 > Built for real-world use, not perfection.
 
-![Version](https://img.shields.io/badge/version-v5.4.7-blue)
+![Version](https://img.shields.io/badge/version-v5.4.8-blue)
 ![Python](https://img.shields.io/badge/python-3.10+-blue)
 ![License](https://img.shields.io/badge/license-WTFPL-lightgrey)
 
@@ -11,7 +11,7 @@
 
 ## 🚀 Overview
 
-**Raziel v5.4.7** is a full media pipeline bot with:
+**Raziel v5.4.8** is a full media pipeline bot with:
 
 * **automatic group link ingestion**
 * **clean chat behavior**
@@ -22,6 +22,7 @@
 * **config-driven platform support**
 * **user-controlled quality selection**
 * **reply-loop protection**
+* **enhanced clip metadata captions**
 
 It accepts input from:
 
@@ -161,7 +162,7 @@ Now supports:
 
 ---
 
-### ✂️ Clip Support
+### ✂️ Clip Support (v5.4.8)
 
 ```text
 /clip <url> <start> <end>
@@ -170,7 +171,18 @@ Now supports:
 * ffmpeg-powered
 * Supports MM:SS / HH:MM:SS
 * Validates ranges
-* Adds clip info to caption
+* Shows normalized timestamps
+* Displays calculated clip duration
+* Adds clip metadata to:
+  * queue messages
+  * clipping status
+  * upload captions
+
+Example:
+
+```text
+⏱️ Clip: 00:25:00 → 00:26:52 (1m 52s)
+```
 
 ---
 
@@ -261,7 +273,18 @@ python ytbot.py --audio "<link>"
 
 ## 🧠 Version History
 
-### v5.4.7 (Current)
+### v5.4.8 (Current)
+
+* Added normalized clip timestamp formatting
+* Added clip duration calculation
+* Added clip metadata to queue messages
+* Added clip metadata to clipping status messages
+* Added clip metadata to upload captions
+* Improved `/clip` UX consistency across the entire pipeline
+
+---
+
+### v5.4.7
 
 * Finalized reply-loop protection system
 * Hardened reply payload filtering
@@ -352,3 +375,4 @@ typezerø Projects
 ## 📜 License
 
 WTFPL
+

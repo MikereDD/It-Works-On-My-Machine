@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file:     ytbot.py
 # author:   Mike Redd
-# version:  5.4.7
+# version:  5.4.8
 # created:  2026-04-18
 # updated:  2026-05-01
 # desc:     Queue-based Telegram media bot
@@ -31,7 +31,7 @@ from urllib.request import urlopen
 # ── Branding ─────────────────────────────────────────────────
 
 BOT_NAME = "Raziel"
-BOT_VERSION = "5.4.7"
+BOT_VERSION = "5.4.8"
 
 import yt_dlp
 from telegram import (
@@ -1091,6 +1091,19 @@ def timecode_to_seconds(value: str) -> int:
     hours, minutes, seconds = parts
     return hours * 3600 + minutes * 60 + seconds
 
+def format_clip_range(start_time: str, end_time: str) -> str:
+    """
+    Format clip start/end timestamps for upload captions.
+    Includes total clip duration so the uploaded clip is self-explanatory.
+    """
+    try:
+        start_norm = normalize_timecode(start_time)
+        end_norm = normalize_timecode(end_time)
+        duration = max(timecode_to_seconds(end_norm) - timecode_to_seconds(start_norm), 0)
+        return f"⏱️ Clip: {start_norm} → {end_norm} ({format_duration(duration)})"
+    except Exception:
+        return f"⏱️ Clip: {start_time} → {end_time}"
+
 def clip_video(input_file: Path, start_time: str, end_time: str) -> Path:
     if not ffmpeg_exists():
         raise RuntimeError("ffmpeg is not installed or not in PATH.")
@@ -1241,7 +1254,7 @@ async def process_job(app, job: dict) -> None:
                 f"🔗 {meta['webpage_url']}",
             ]
             if mode == "clip" and clip_start and clip_end:
-                caption_lines.append(f"✂️ {clip_start} → {clip_end}")
+                caption_lines.append(format_clip_range(clip_start, clip_end))
             caption = "\n".join(caption_lines)[:1000]
 
         await status_msg.edit_text(
@@ -1265,7 +1278,8 @@ async def process_job(app, job: dict) -> None:
             await status_msg.edit_text(
                 f"🎞️ {meta['title']}\n"
                 f"👤 {meta['uploader']}\n"
-                f"✂️ Clipping {clip_start} → {clip_end}…"
+                f"{format_clip_range(clip_start, clip_end)}\n"
+                f"✂️ Clipping…"
             )
             clipped = await asyncio.to_thread(clip_video, sent_file, clip_start, clip_end)
             if sent_file.exists():
@@ -1850,7 +1864,7 @@ async def clip_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
         f"✂️ Clip added to queue\n"
         f"🔢 Position: {pos}\n"
-        f"🕒 {clip_start} → {clip_end}"
+        f"{format_clip_range(clip_start, clip_end)}"
     )
 
 async def queue_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
@@ -2386,5 +2400,6 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
 
 
