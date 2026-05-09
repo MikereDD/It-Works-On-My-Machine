@@ -1,9 +1,9 @@
-# 🎬 Raziel v5.8.3
+# 🎬 Raziel v5.8.4
 
 > A typezerø Project
 > Built for real-world use, not perfection.
 
-![Version](https://img.shields.io/badge/version-v5.8.3-blue)
+![Version](https://img.shields.io/badge/version-v5.8.4-blue)
 ![Python](https://img.shields.io/badge/python-3.10+-blue)
 ![License](https://img.shields.io/badge/license-WTFPL-lightgrey)
 
@@ -11,7 +11,7 @@
 
 ## 🚀 Overview
 
-**Raziel v5.8.3** is a full media pipeline bot with:
+**Raziel v5.8.4** is a full media pipeline bot with:
 
 * **automatic group link ingestion**
 * **clean chat behavior**
@@ -29,6 +29,7 @@
 * **mention-driven conversational interaction**
 * **Telegram inline mode support**
 * **consistent DM queue cleanup behavior**
+* **Facebook platform validation support**
 
 It accepts input from:
 
@@ -402,6 +403,38 @@ This keeps chats cleaner while preserving operational visibility.
 
 ---
 
+### 📘 Facebook Platform Registry Fix (v5.8.4)
+
+Raziel now properly validates and accepts Facebook video URLs when
+Facebook support is enabled in configuration.
+
+Supported Facebook domains now include:
+
+```python
+"facebook": (
+    "facebook.com",
+    "m.facebook.com",
+    "www.facebook.com",
+    "fb.watch",
+)
+```
+
+This restores compatibility with:
+- Facebook reels
+- Facebook video URLs
+- fb.watch links
+- mobile Facebook links
+
+Fixes:
+- validation layer mismatch
+- unsupported source rejection
+- preset/config inconsistency
+
+This ensures Facebook behaves consistently with all other
+config-driven platform presets.
+
+---
+
 
 ### 📥 Media Handling
 
@@ -490,7 +523,17 @@ python ytbot.py --audio "<link>"
 
 ## 🧠 Version History
 
-### v5.8.3 (Current)
+### v5.8.4 (Current)
+
+* Fixed Facebook platform validation support
+* Added Facebook preset registry domains
+* Fixed config/preset mismatch behavior
+* Restored Facebook reel compatibility
+* Fixed unsupported-source rejection for Facebook links
+
+---
+
+### v5.8.3
 
 * Fixed queue cleanup behavior in DMs
 * Added consistent queue message tracking

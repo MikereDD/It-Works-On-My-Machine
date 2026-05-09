@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file:     ytbot.py
 # author:   Mike Redd
-# version:  5.8.3.2
+# version:  5.8.4
 # created:  2026-04-18
 # updated:  2026-05-01
 # desc:     Queue-based Telegram media bot
@@ -32,7 +32,7 @@ from urllib.request import urlopen
 # ── Branding ─────────────────────────────────────────────────
 
 BOT_NAME = "Raziel"
-BOT_VERSION = "5.8.3"
+BOT_VERSION = "5.8.4"
 
 import yt_dlp
 from telegram import (
@@ -119,6 +119,12 @@ VIDEO_PLATFORM_PRESETS = {
     "twitter": (
         "x.com",
         "twitter.com",
+    ),
+    "facebook": (
+        "facebook.com",
+        "m.facebook.com",
+        "www.facebook.com",
+        "fb.watch",
     ),
 }
 
@@ -3214,6 +3220,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
-
 

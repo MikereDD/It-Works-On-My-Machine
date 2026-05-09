@@ -56,3 +56,4 @@
 * [v5.7](v5.7.md) — Mention command layer and conversational inline interaction support
 * [v5.8.2](v5.8.2.md) — Telegram inline mode and global inline utility interaction
 * [v5.8.3](v5.8.3.md) — Queue cleanup consistency and DM upload UX polish
+* [v5.8.4](v5.8.4.md) — Facebook platform registry validation fix
