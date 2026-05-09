@@ -1,9 +1,9 @@
-# 🎬 Raziel v5.8.2
+# 🎬 Raziel v5.8.3
 
 > A typezerø Project
 > Built for real-world use, not perfection.
 
-![Version](https://img.shields.io/badge/version-v5.8.2-blue)
+![Version](https://img.shields.io/badge/version-v5.8.3-blue)
 ![Python](https://img.shields.io/badge/python-3.10+-blue)
 ![License](https://img.shields.io/badge/license-WTFPL-lightgrey)
 
@@ -11,7 +11,7 @@
 
 ## 🚀 Overview
 
-**Raziel v5.8.2** is a full media pipeline bot with:
+**Raziel v5.8.3** is a full media pipeline bot with:
 
 * **automatic group link ingestion**
 * **clean chat behavior**
@@ -28,6 +28,7 @@
 * **live Telegram progress updates**
 * **mention-driven conversational interaction**
 * **Telegram inline mode support**
+* **consistent DM queue cleanup behavior**
 
 It accepts input from:
 
@@ -372,6 +373,35 @@ into:
 
 ---
 
+### 🧹 Queue Cleanup Consistency (v5.8.3)
+
+Raziel now consistently removes temporary queue confirmation messages
+across:
+- direct messages
+- private chats
+- groups
+- operational channels
+
+Improved behavior:
+- queue confirmations are tracked per job
+- temporary enqueue notices are auto-removed
+- upload UX remains clean during processing
+- DM behavior now matches group behavior
+
+Typical flow:
+
+```text
+/dl <url>
+→ Added to queue
+→ Live progress
+→ Final upload
+→ Queue message removed
+```
+
+This keeps chats cleaner while preserving operational visibility.
+
+---
+
 
 ### 📥 Media Handling
 
@@ -460,7 +490,17 @@ python ytbot.py --audio "<link>"
 
 ## 🧠 Version History
 
-### v5.8.2 (Current)
+### v5.8.3 (Current)
+
+* Fixed queue cleanup behavior in DMs
+* Added consistent queue message tracking
+* Improved temporary enqueue cleanup logic
+* Unified DM and group upload UX
+* Reduced stale queue message clutter
+
+---
+
+### v5.8.2
 
 * Added Telegram inline mode support
 * Added inline weather and forecast utilities

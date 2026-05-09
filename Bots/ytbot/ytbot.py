@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file:     ytbot.py
 # author:   Mike Redd
-# version:  5.8.2
+# version:  5.8.3.2
 # created:  2026-04-18
 # updated:  2026-05-01
 # desc:     Queue-based Telegram media bot
@@ -32,7 +32,7 @@ from urllib.request import urlopen
 # ── Branding ─────────────────────────────────────────────────
 
 BOT_NAME = "Raziel"
-BOT_VERSION = "5.8"
+BOT_VERSION = "5.8.3"
 
 import yt_dlp
 from telegram import (
@@ -1864,6 +1864,9 @@ async def process_job(app, job: dict) -> None:
 
         size_str = format_size(sent_file.stat().st_size)
 
+        # Queue confirmation messages are temporary in all chat types,
+        # including DMs. Delete them once upload begins so only the final
+        # media/caption remains.
         queue_message_id = job.get("queue_message_id")
         if queue_message_id:
             try:
@@ -2304,7 +2307,7 @@ async def queue_video_command(
         await update.message.reply_text("❌ Unsupported video source.")
         return
 
-    QUEUE.append(create_job(
+    job = create_job(
         update.effective_user.id,
         update.effective_chat.id,
         url,
@@ -2312,15 +2315,18 @@ async def queue_video_command(
         source=label,
         reply_to_message_id=update.message.message_id if update.message else None,
         quality=quality,
-    ))
+    )
+    QUEUE.append(job)
     save_queue_state()
     pos = get_queue_position()
-    await update.message.reply_text(
+    queue_msg = await update.message.reply_text(
         f"📥 Added to queue\n"
         f"🔢 Position: {pos}\n"
         f"🎬 Mode: video\n"
         f"📺 Quality: {get_quality_label(quality)}"
     )
+    job["queue_message_id"] = queue_msg.message_id
+    save_queue_state()
 
 async def dl_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     await queue_video_command(update, ctx, quality="default", label="dl")
@@ -2359,20 +2365,23 @@ async def audio_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text("ffmpeg is required for audio extraction.")
         return
 
-    QUEUE.append(create_job(
+    job = create_job(
         update.effective_user.id,
         update.effective_chat.id,
         url,
         mode="audio",
         source="audio"
-    ))
+    )
+    QUEUE.append(job)
     save_queue_state()
     pos = get_queue_position()
-    await update.message.reply_text(
+    queue_msg = await update.message.reply_text(
         f"📥 Added to queue\n"
         f"🔢 Position: {pos}\n"
         f"🎵 Mode: audio"
     )
+    job["queue_message_id"] = queue_msg.message_id
+    save_queue_state()
 
 async def clip_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     remember_chat(update.effective_chat)
@@ -2417,7 +2426,7 @@ async def clip_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text(f"Clip time error: {e}")
         return
 
-    QUEUE.append(create_job(
+    job = create_job(
         update.effective_user.id,
         update.effective_chat.id,
         url,
@@ -2427,15 +2436,18 @@ async def clip_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         clip_start=clip_start,
         clip_end=clip_end,
         quality="default",
-    ))
+    )
+    QUEUE.append(job)
     save_queue_state()
 
     pos = get_queue_position()
-    await update.message.reply_text(
+    queue_msg = await update.message.reply_text(
         f"✂️ Clip added to queue\n"
         f"🔢 Position: {pos}\n"
         f"{format_clip_range(clip_start, clip_end)}"
     )
+    job["queue_message_id"] = queue_msg.message_id
+    save_queue_state()
 
 async def queue_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not QUEUE and not CURRENT_JOB:
@@ -3202,4 +3214,6 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
 
