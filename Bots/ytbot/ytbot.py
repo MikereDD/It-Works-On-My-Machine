@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file:     ytbot.py
 # author:   Mike Redd
-# version:  5.7
+# version:  5.7.2
 # created:  2026-04-18
 # updated:  2026-05-01
 # desc:     Queue-based Telegram media bot
@@ -32,7 +32,7 @@ from urllib.request import urlopen
 # ── Branding ─────────────────────────────────────────────────
 
 BOT_NAME = "Raziel"
-BOT_VERSION = "5.7"
+BOT_VERSION = "5.7.2"
 
 import yt_dlp
 from telegram import (
@@ -465,21 +465,40 @@ def extract_url(text: str | None) -> str | None:
 def get_bot_mention_names() -> set[str]:
     """
     Names that should wake Raziel in normal chat messages.
-    Keep this local/simple so it works even before get_me() is available.
+
+    Deployment-specific Telegram usernames belong in ytbotrc.py, not here.
+
+    Config options:
+    BOT_USERNAME = "Razi3l_bot"
+
+    BOT_MENTION_ALIASES = (
+        "raziel",
+        "@raziel",
+        "razi3l_bot",
+        "@razi3l_bot",
+    )
     """
     names = {
         BOT_NAME.lower(),
         f"@{BOT_NAME.lower()}",
     }
 
+    bot_username = getattr(ytbotrc, "BOT_USERNAME", "")
+    if bot_username:
+        username = str(bot_username).strip().lower().lstrip("@")
+        if username:
+            names.add(username)
+            names.add(f"@{username}")
+
     configured = getattr(ytbotrc, "BOT_MENTION_ALIASES", ())
     for item in configured or ():
         name = str(item).strip().lower()
         if not name:
             continue
-        names.add(name)
-        if not name.startswith("@"):
-            names.add(f"@{name}")
+
+        cleaned = name.lstrip("@")
+        names.add(cleaned)
+        names.add(f"@{cleaned}")
 
     return names
 
@@ -528,6 +547,173 @@ def parse_mention_command(text: str | None) -> tuple[str, str] | None:
 
     command = aliases.get(command, command)
     return command, args
+
+
+async def run_mention_command(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> bool:
+    """
+    Execute mention commands before normal URL handling.
+
+    Returning True means the message was handled and should not continue
+    into the media/link ingestion pipeline.
+    """
+    remember_chat(update.effective_chat)
+
+    message = update.effective_message
+    user = update.effective_user
+    chat = update.effective_chat
+
+    if not message or not user or not chat:
+        return False
+
+    if getattr(user, "is_bot", False):
+        return True
+
+    parsed = parse_mention_command(
+        getattr(message, "text", None) or getattr(message, "caption", None)
+    )
+
+    if not parsed:
+        return False
+
+    command, args = parsed
+    user_id = user.id
+    admin_here = is_admin(user_id)
+
+    try:
+        if command == "weather":
+            if not args:
+                await message.reply_text("Usage: @Raziel weather Houston")
+                return True
+            result = await asyncio.to_thread(get_current_weather_for_location, args)
+            await message.reply_text(result, parse_mode=ParseMode.MARKDOWN)
+            return True
+
+        if command == "forecast":
+            if not args:
+                await message.reply_text("Usage: @Raziel forecast Houston")
+                return True
+            result = await asyncio.to_thread(get_5day_forecast_for_location, args)
+            await message.reply_text(result, parse_mode=ParseMode.MARKDOWN)
+            return True
+
+        if command == "queue":
+            if not QUEUE and not CURRENT_JOB:
+                await message.reply_text("Queue is empty.")
+                return True
+
+            lines = ["📋 *Queue*"]
+            if CURRENT_JOB:
+                lines.extend([
+                    "",
+                    "*Now Processing:*",
+                    f"• `{CURRENT_JOB['url']}`",
+                    f"• mode: `{CURRENT_JOB.get('mode', 'video')}`",
+                    f"• quality: `{get_quality_label(CURRENT_JOB.get('quality', 'default'))}`",
+                ])
+
+            if QUEUE:
+                lines.extend(["", "*Pending:*"])
+                for idx, job in enumerate(QUEUE[:10], start=1):
+                    lines.append(
+                        f"{idx}. `{job['url']}` "
+                        f"[{job.get('mode', 'video')} / {get_quality_label(job.get('quality', 'default'))}]"
+                    )
+
+            await message.reply_text("\\n".join(lines), parse_mode=ParseMode.MARKDOWN)
+            return True
+
+        if command == "help":
+            lines = [
+                f"🎬 *{BOT_NAME} v{BOT_VERSION}*",
+                "The watcher of links.",
+                "",
+                "*Mention Commands:*",
+                "@Raziel weather <place>",
+                "@Raziel forecast <place>",
+                "@Raziel queue",
+                "@Raziel help",
+            ]
+
+            if admin_here:
+                lines.extend([
+                    "",
+                    "*Admin Mentions:*",
+                    "@Raziel status",
+                    "@Raziel stats",
+                    "@Raziel reload",
+                    "@Raziel restart",
+                ])
+
+            await message.reply_text("\\n".join(lines), parse_mode=ParseMode.MARKDOWN)
+            return True
+
+        if command == "status":
+            if not admin_here:
+                return True
+            await message.reply_text(
+                f"*Bot Status:* online\\n"
+                f"*Current Job:* {'yes' if CURRENT_JOB else 'no'}\\n"
+                f"*Queue Length:* {len(QUEUE)}\\n"
+                f"*Debug Mode:* {DEBUG_MODE}\\n"
+                f"*Dedupe:* {DEDUP_ENABLED} ({DEDUP_TTL_HOURS}h TTL)\\n"
+                f"*Enabled Platforms:* {', '.join(ENABLED_VIDEO_PLATFORMS)}\\n"
+                f"*Supported Domains:* {', '.join(SUPPORTED_VIDEO_DOMAINS)}",
+                parse_mode=ParseMode.MARKDOWN,
+            )
+            return True
+
+        if command == "stats":
+            if not admin_here:
+                return True
+            unique_users = len({h["user"] for h in HISTORY if "user" in h})
+            await message.reply_text(
+                f"📊 *{BOT_NAME} Stats*\\n\\n"
+                f"• Queue: {len(QUEUE)}\\n"
+                f"• Active Job: {'yes' if CURRENT_JOB else 'no'}\\n"
+                f"• Completed: {len(HISTORY)}\\n"
+                f"• Failed: {len(FAILURES)}\\n"
+                f"• Unique Users: {unique_users}",
+                parse_mode=ParseMode.MARKDOWN,
+            )
+            return True
+
+        if command == "reload":
+            if not admin_here:
+                return True
+            reload_runtime_config()
+            await message.reply_text(
+                f"♻️ *{BOT_NAME} v{BOT_VERSION} reloaded*\\n\\n"
+                f"*Debug Mode:* `{DEBUG_MODE}`\\n"
+                f"*Enabled Platforms:* `{', '.join(ENABLED_VIDEO_PLATFORMS)}`\\n"
+                f"*Supported Domains:* `{', '.join(SUPPORTED_VIDEO_DOMAINS)}`",
+                parse_mode=ParseMode.MARKDOWN,
+            )
+            return True
+
+        if command == "restart":
+            if not admin_here:
+                return True
+
+            if CURRENT_JOB or QUEUE:
+                await message.reply_text(
+                    "⚠️ Cannot restart while Raziel is busy.\\n"
+                    "Queue or current job is active."
+                )
+                return True
+
+            await message.reply_text(f"🔄 {BOT_NAME} v{BOT_VERSION} restarting...")
+            log.warning("Mention restart requested by admin %s", user_id)
+            await asyncio.sleep(2)
+            os.execv(sys.executable, [sys.executable] + sys.argv)
+
+        # Mentioned Raziel, but command is unknown. Stay quiet.
+        return True
+
+    except Exception as e:
+        log.exception("Mention command failed: %s", command)
+        await message.reply_text(f"❌ {str(e)[:300]}")
+        return True
+
 
 def is_forwarded_bot_output(message) -> bool:
     """
@@ -2458,6 +2644,9 @@ async def handle_url(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
     remember_chat(update.effective_chat)
 
+    if await run_mention_command(update, ctx):
+        return
+
     user = update.effective_user
     chat = update.effective_chat
 
@@ -2614,7 +2803,6 @@ def build_app():
 
     app = builder.build()
 
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, mention_cmd))
     app.add_handler(CommandHandler("start", start_cmd))
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CommandHandler("dl", dl_cmd))
@@ -2856,6 +3044,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
-
 
