@@ -1,4 +1,4 @@
-# ⚙️ YTBot Setup Guide (v5.4.8)
+# ⚙️ YTBot Setup Guide (v5.4.9)
 
 > Full setup for Arakiel / Arch Linux environment
 > Covers dependencies, Telegram Bot API, and ytbot configuration

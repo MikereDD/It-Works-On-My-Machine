@@ -1,9 +1,9 @@
-# 🎬 Raziel v5.4.8
+# 🎬 Raziel v5.4.9
 
 > A typezerø Project
 > Built for real-world use, not perfection.
 
-![Version](https://img.shields.io/badge/version-v5.4.8-blue)
+![Version](https://img.shields.io/badge/version-v5.4.9-blue)
 ![Python](https://img.shields.io/badge/python-3.10+-blue)
 ![License](https://img.shields.io/badge/license-WTFPL-lightgrey)
 
@@ -11,7 +11,7 @@
 
 ## 🚀 Overview
 
-**Raziel v5.4.8** is a full media pipeline bot with:
+**Raziel v5.4.9** is a full media pipeline bot with:
 
 * **automatic group link ingestion**
 * **clean chat behavior**
@@ -23,6 +23,7 @@
 * **user-controlled quality selection**
 * **reply-loop protection**
 * **enhanced clip metadata captions**
+* **runtime configuration reloading**
 
 It accepts input from:
 
@@ -186,6 +187,32 @@ Example:
 
 ---
 
+### ♻️ Runtime Reloading (v5.4.9)
+
+Raziel now supports live runtime configuration reloading.
+
+```text
+/reload
+```
+
+Reloads:
+- debug mode
+- platform settings
+- quality settings
+- access control
+- timeout configuration
+- archive/watch settings
+
+without restarting:
+- queue workers
+- active jobs
+- Telegram application
+- persistence state
+
+This enables safer live tuning and faster development iteration.
+
+---
+
 ### 📥 Media Handling
 
 * YouTube, Instagram (default enabled)
@@ -273,7 +300,17 @@ python ytbot.py --audio "<link>"
 
 ## 🧠 Version History
 
-### v5.4.8 (Current)
+### v5.4.9 (Current)
+
+* Runtime-safe `/reload` command
+* Live configuration reloading
+* No process restart required
+* Preserves queue workers and active jobs
+* Faster development and operational tuning
+
+---
+
+### v5.4.8
 
 * Added normalized clip timestamp formatting
 * Added clip duration calculation

@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file:     ytbot.py
 # author:   Mike Redd
-# version:  5.4.8
+# version:  5.4.9
 # created:  2026-04-18
 # updated:  2026-05-01
 # desc:     Queue-based Telegram media bot
@@ -12,6 +12,7 @@
 #--------------------------------------------
 
 import argparse
+import importlib
 import asyncio
 from datetime import datetime
 import json
@@ -31,7 +32,7 @@ from urllib.request import urlopen
 # ── Branding ─────────────────────────────────────────────────
 
 BOT_NAME = "Raziel"
-BOT_VERSION = "5.4.8"
+BOT_VERSION = "5.4.9"
 
 import yt_dlp
 from telegram import (
@@ -222,6 +223,62 @@ logging.basicConfig(
 )
 log = logging.getLogger("ytbot")
 log.setLevel(logging.INFO if DEBUG_MODE else logging.WARNING)
+
+
+def reload_runtime_config() -> None:
+    """
+    Reload ytbotrc.py and refresh runtime-safe settings.
+
+    This does not restart the Telegram app, active downloads, queue worker,
+    or persisted state. It only refreshes values that are safe to update live.
+    """
+    global ytbotrc
+    global ADMIN_USERS, ALLOWED_USERS, ALLOW_ALL_USERS
+    global DOWNLOAD_TIMEOUT, TELEGRAM_UPLOAD_TIMEOUT, DEBUG_MODE
+    global DEDUP_ENABLED, DEDUP_TTL_HOURS, MAX_VIDEO_HEIGHT, PREFER_MP4
+    global LOCAL_BOT_API_URL, LOCAL_BOT_API_FILE_URL
+    global DEFAULT_VIDEO_HEIGHT, HD_VIDEO_HEIGHT
+    global ENABLED_VIDEO_PLATFORMS, EXTRA_VIDEO_DOMAINS, SUPPORTED_VIDEO_DOMAINS
+    global ARCHIVE_CHAT_ID, WATCH_FOLDER_ENABLED, WATCH_FOLDER_CHAT_ID
+
+    importlib.invalidate_caches()
+    ytbotrc = importlib.reload(ytbotrc)
+
+    ADMIN_USERS = set(getattr(ytbotrc, "ADMIN_USERS", [OWNER_ID]) or [OWNER_ID])
+    ALLOWED_USERS = set(getattr(ytbotrc, "ALLOWED_USERS", [OWNER_ID]) or [OWNER_ID])
+    ALLOW_ALL_USERS = getattr(ytbotrc, "ALLOW_ALL_USERS", False)
+
+    DOWNLOAD_TIMEOUT = getattr(ytbotrc, "DOWNLOAD_TIMEOUT", 3600)
+    TELEGRAM_UPLOAD_TIMEOUT = getattr(ytbotrc, "TELEGRAM_UPLOAD_TIMEOUT", 3600)
+    DEBUG_MODE = getattr(ytbotrc, "DEBUG_MODE", False)
+    DEDUP_ENABLED = getattr(ytbotrc, "DEDUP_ENABLED", True)
+    DEDUP_TTL_HOURS = getattr(ytbotrc, "DEDUP_TTL_HOURS", 24)
+    MAX_VIDEO_HEIGHT = getattr(ytbotrc, "MAX_VIDEO_HEIGHT", 1080)
+    PREFER_MP4 = getattr(ytbotrc, "PREFER_MP4", True)
+
+    LOCAL_BOT_API_URL = getattr(ytbotrc, "LOCAL_BOT_API_URL", "")
+    LOCAL_BOT_API_FILE_URL = getattr(ytbotrc, "LOCAL_BOT_API_FILE_URL", "")
+
+    DEFAULT_VIDEO_HEIGHT = getattr(ytbotrc, "DEFAULT_VIDEO_HEIGHT", 720)
+    HD_VIDEO_HEIGHT = getattr(ytbotrc, "HD_VIDEO_HEIGHT", 1080)
+
+    ENABLED_VIDEO_PLATFORMS = tuple(getattr(
+        ytbotrc,
+        "ENABLED_VIDEO_PLATFORMS",
+        (
+            "youtube",
+            "instagram",
+        ),
+    ))
+    EXTRA_VIDEO_DOMAINS = tuple(getattr(ytbotrc, "EXTRA_VIDEO_DOMAINS", ()))
+    SUPPORTED_VIDEO_DOMAINS = build_supported_video_domains()
+
+    ARCHIVE_CHAT_ID = getattr(ytbotrc, "ARCHIVE_CHAT_ID", None)
+    WATCH_FOLDER_ENABLED = getattr(ytbotrc, "WATCH_FOLDER_ENABLED", True)
+    WATCH_FOLDER_CHAT_ID = getattr(ytbotrc, "WATCH_FOLDER_CHAT_ID", None) or OWNER_ID
+
+    log.setLevel(logging.INFO if DEBUG_MODE else logging.WARNING)
+
 
 
 # ── JSON persistence ────────────────────────────────────────────────────────────
@@ -1623,6 +1680,7 @@ ADMIN_COMMAND_LIST = (
     "/cleanup       — clear downloads folder\n"
     "/failures      — recent failures\n"
     "/retrylast     — retry last failure\n"
+    "/reload        — reload config without restart\n"
     "/clearqueue    — clear queue\n"
     "/leave         — leave current group\n"
     "/leavechat     — leave a group by ID\n"
@@ -2095,6 +2153,34 @@ async def retrylast_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None
         f"🔢 Position: {pos}"
     )
 
+
+async def reload_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    if not is_admin(update.effective_user.id):
+        return
+
+    try:
+        reload_runtime_config()
+
+        await update.message.reply_text(
+            f"♻️ *{BOT_NAME} v{BOT_VERSION} reloaded*\n\n"
+            f"*Config:* `{CONFIG_FILE}`\n"
+            f"*Debug Mode:* `{DEBUG_MODE}`\n"
+            f"*Download Timeout:* `{DOWNLOAD_TIMEOUT}s`\n"
+            f"*Telegram Upload Timeout:* `{TELEGRAM_UPLOAD_TIMEOUT}s`\n"
+            f"*Default Quality:* `{DEFAULT_VIDEO_HEIGHT}p`\n"
+            f"*HD Quality:* `{HD_VIDEO_HEIGHT}p`\n"
+            f"*Enabled Platforms:* `{', '.join(ENABLED_VIDEO_PLATFORMS)}`\n"
+            f"*Supported Domains:* `{', '.join(SUPPORTED_VIDEO_DOMAINS)}`",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+    except Exception as e:
+        log.exception("Config reload failed")
+        await update.message.reply_text(
+            f"❌ *Reload failed*\n\n`{str(e)[:500]}`",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+
+
 async def clearqueue_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not is_admin(update.effective_user.id):
         return
@@ -2351,6 +2437,7 @@ def build_app():
     app.add_handler(CommandHandler("cleanup", cleanup_cmd))
     app.add_handler(CommandHandler("failures", failures_cmd))
     app.add_handler(CommandHandler("retrylast", retrylast_cmd))
+    app.add_handler(CommandHandler("reload", reload_cmd))
     app.add_handler(CommandHandler("clearqueue", clearqueue_cmd))
     app.add_handler(CommandHandler("leave", leave_cmd))
     app.add_handler(CommandHandler("leavechat", leavechat_cmd))
