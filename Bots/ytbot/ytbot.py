@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file:     ytbot.py
 # author:   Mike Redd
-# version:  5.4.9
+# version:  5.5
 # created:  2026-04-18
 # updated:  2026-05-01
 # desc:     Queue-based Telegram media bot
@@ -32,7 +32,7 @@ from urllib.request import urlopen
 # ── Branding ─────────────────────────────────────────────────
 
 BOT_NAME = "Raziel"
-BOT_VERSION = "5.4.9"
+BOT_VERSION = "5.5"
 
 import yt_dlp
 from telegram import (
@@ -1681,6 +1681,7 @@ ADMIN_COMMAND_LIST = (
     "/failures      — recent failures\n"
     "/retrylast     — retry last failure\n"
     "/reload        — reload config without restart\n"
+    "/restart       — restart Raziel safely\n"
     "/clearqueue    — clear queue\n"
     "/leave         — leave current group\n"
     "/leavechat     — leave a group by ID\n"
@@ -2154,6 +2155,33 @@ async def retrylast_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None
     )
 
 
+
+async def restart_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    if not is_admin(update.effective_user.id):
+        return
+
+    if has_active_jobs():
+        await update.message.reply_text(
+            "⚠️ Cannot restart while Raziel is busy.\n"
+            "Queue or current job is active."
+        )
+        return
+
+    await update.message.reply_text(
+        f"🔄 {BOT_NAME} v{BOT_VERSION} restarting..."
+    )
+
+    try:
+        log.warning("Restart requested by admin %s", update.effective_user.id)
+        log.warning("Restarting Raziel via os.execv...")
+    except Exception:
+        pass
+
+    await asyncio.sleep(2)
+
+    os.execv(sys.executable, [sys.executable] + sys.argv)
+
+
 async def reload_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not is_admin(update.effective_user.id):
         return
@@ -2438,6 +2466,7 @@ def build_app():
     app.add_handler(CommandHandler("failures", failures_cmd))
     app.add_handler(CommandHandler("retrylast", retrylast_cmd))
     app.add_handler(CommandHandler("reload", reload_cmd))
+    app.add_handler(CommandHandler("restart", restart_cmd))
     app.add_handler(CommandHandler("clearqueue", clearqueue_cmd))
     app.add_handler(CommandHandler("leave", leave_cmd))
     app.add_handler(CommandHandler("leavechat", leavechat_cmd))

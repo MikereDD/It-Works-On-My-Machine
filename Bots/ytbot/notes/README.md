@@ -51,3 +51,4 @@
 * [v5.4.7](v5.4.7.md) — Finalized reply-loop protection system and stable repost prevention behavior
 * [v5.4.8](v5.4.8.md) — Clip metadata captions, normalized timestamps, and duration display polish
 * [v5.4.9](v5.4.9.md) — Runtime configuration reloading without process restart
+* [v5.5](v5.5.md) — Runtime process restart control and tmux-safe self-restarting

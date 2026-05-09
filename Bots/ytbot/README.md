@@ -1,9 +1,9 @@
-# 🎬 Raziel v5.4.9
+# 🎬 Raziel v5.5
 
 > A typezerø Project
 > Built for real-world use, not perfection.
 
-![Version](https://img.shields.io/badge/version-v5.4.9-blue)
+![Version](https://img.shields.io/badge/version-v5.5-blue)
 ![Python](https://img.shields.io/badge/python-3.10+-blue)
 ![License](https://img.shields.io/badge/license-WTFPL-lightgrey)
 
@@ -11,7 +11,7 @@
 
 ## 🚀 Overview
 
-**Raziel v5.4.9** is a full media pipeline bot with:
+**Raziel v5.5** is a full media pipeline bot with:
 
 * **automatic group link ingestion**
 * **clean chat behavior**
@@ -24,6 +24,7 @@
 * **reply-loop protection**
 * **enhanced clip metadata captions**
 * **runtime configuration reloading**
+* **runtime process restart control**
 
 It accepts input from:
 
@@ -213,6 +214,43 @@ This enables safer live tuning and faster development iteration.
 
 ---
 
+### 🔄 Runtime Restart Control (v5.5)
+
+Raziel now supports safe runtime process restarting directly from Telegram.
+
+```text
+/restart
+```
+
+Raziel:
+1. validates restart safety
+2. checks for active jobs
+3. prevents interruption during processing
+4. sends restart confirmation
+5. safely replaces its own process
+6. reconnects automatically
+
+Uses:
+
+```python
+os.execv(sys.executable, [sys.executable] + sys.argv)
+```
+
+Benefits:
+- tmux-safe restarting
+- virtualenv preservation
+- no shell intervention required
+- same process environment retained
+- safer operational control
+
+Protected operations:
+- active downloads
+- uploads
+- ffmpeg clip jobs
+- queued processing
+
+---
+
 ### 📥 Media Handling
 
 * YouTube, Instagram (default enabled)
@@ -300,7 +338,17 @@ python ytbot.py --audio "<link>"
 
 ## 🧠 Version History
 
-### v5.4.9 (Current)
+### v5.5 (Current)
+
+* Added `/restart` runtime process control
+* Added tmux-safe self-restarting
+* Added active job restart protection
+* Added virtualenv-preserving restart architecture
+* Added safe operational runtime process replacement
+
+---
+
+### v5.4.9
 
 * Runtime-safe `/reload` command
 * Live configuration reloading
