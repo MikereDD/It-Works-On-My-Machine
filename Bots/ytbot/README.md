@@ -1,9 +1,9 @@
-# 🎬 Raziel v5.6
+# 🎬 Raziel v5.7
 
 > A typezerø Project
 > Built for real-world use, not perfection.
 
-![Version](https://img.shields.io/badge/version-v5.6-blue)
+![Version](https://img.shields.io/badge/version-v5.7-blue)
 ![Python](https://img.shields.io/badge/python-3.10+-blue)
 ![License](https://img.shields.io/badge/license-WTFPL-lightgrey)
 
@@ -11,7 +11,7 @@
 
 ## 🚀 Overview
 
-**Raziel v5.6** is a full media pipeline bot with:
+**Raziel v5.7** is a full media pipeline bot with:
 
 * **automatic group link ingestion**
 * **clean chat behavior**
@@ -26,6 +26,7 @@
 * **runtime configuration reloading**
 * **runtime process restart control**
 * **live Telegram progress updates**
+* **mention-driven conversational interaction**
 
 It accepts input from:
 
@@ -288,6 +289,50 @@ download experience.
 
 ---
 
+### 💬 Mention & Inline Intelligence Layer (v5.7)
+
+Raziel now supports conversational mention commands directly inside chats.
+
+Examples:
+
+```text
+@Raziel weather Houston
+@Raziel forecast Tokyo
+@Raziel queue
+@Raziel help
+```
+
+Administrative examples:
+
+```text
+@Raziel status
+@Raziel stats
+@Raziel reload
+@Raziel restart
+```
+
+Features:
+- mention detection
+- conversational command parsing
+- inline operational requests
+- queue visibility
+- weather utilities
+- admin runtime control
+
+Behavior:
+- ignores unrelated chat noise
+- avoids unknown-command spam
+- preserves clean group UX
+
+This establishes the foundation for:
+- operational assistant behavior
+- cross-bot orchestration
+- conversational AI integration
+- remote Pi management
+- dashboard ecosystem integration
+
+---
+
 ### 📥 Media Handling
 
 * YouTube, Instagram (default enabled)
@@ -375,7 +420,18 @@ python ytbot.py --audio "<link>"
 
 ## 🧠 Version History
 
-### v5.6 (Current)
+### v5.7 (Current)
+
+* Added conversational mention command system
+* Added inline weather and forecast utilities
+* Added queue visibility via mentions
+* Added mention parsing and command routing
+* Added conversational operational interaction
+* Established assistant ecosystem foundation
+
+---
+
+### v5.6
 
 * Added live Telegram download progress updates
 * Added yt-dlp progress hook integration

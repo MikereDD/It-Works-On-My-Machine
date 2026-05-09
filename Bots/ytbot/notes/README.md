@@ -53,3 +53,4 @@
 * [v5.4.9](v5.4.9.md) — Runtime configuration reloading without process restart
 * [v5.5](v5.5.md) — Runtime process restart control and tmux-safe self-restarting
 * [v5.6](v5.6.md) — Live Telegram progress system with real-time download status updates
+* [v5.7](v5.7.md) — Mention command layer and conversational inline interaction support

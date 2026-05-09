@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file:     ytbot.py
 # author:   Mike Redd
-# version:  5.6
+# version:  5.7
 # created:  2026-04-18
 # updated:  2026-05-01
 # desc:     Queue-based Telegram media bot
@@ -32,7 +32,7 @@ from urllib.request import urlopen
 # ── Branding ─────────────────────────────────────────────────
 
 BOT_NAME = "Raziel"
-BOT_VERSION = "5.6"
+BOT_VERSION = "5.7"
 
 import yt_dlp
 from telegram import (
@@ -461,6 +461,73 @@ def extract_url(text: str | None) -> str | None:
     match = URL_RE.search(text.strip())
     return match.group(0) if match else None
 
+
+def get_bot_mention_names() -> set[str]:
+    """
+    Names that should wake Raziel in normal chat messages.
+    Keep this local/simple so it works even before get_me() is available.
+    """
+    names = {
+        BOT_NAME.lower(),
+        f"@{BOT_NAME.lower()}",
+    }
+
+    configured = getattr(ytbotrc, "BOT_MENTION_ALIASES", ())
+    for item in configured or ():
+        name = str(item).strip().lower()
+        if not name:
+            continue
+        names.add(name)
+        if not name.startswith("@"):
+            names.add(f"@{name}")
+
+    return names
+
+def parse_mention_command(text: str | None) -> tuple[str, str] | None:
+    """
+    Parse natural mention commands.
+
+    Supported examples:
+    - @Raziel weather Houston
+    - Raziel forecast Houston
+    - @Raziel queue
+    - @Raziel status
+    - @Raziel help
+    """
+    if not text:
+        return None
+
+    raw = text.strip()
+    if not raw:
+        return None
+
+    parts = raw.split(maxsplit=2)
+    if len(parts) < 2:
+        return None
+
+    mention = parts[0].strip().rstrip(":,").lower()
+    if mention not in get_bot_mention_names():
+        return None
+
+    command = parts[1].strip().lower().lstrip("/")
+    args = parts[2].strip() if len(parts) >= 3 else ""
+
+    aliases = {
+        "w": "weather",
+        "temp": "weather",
+        "temps": "weather",
+        "f": "forecast",
+        "q": "queue",
+        "help": "help",
+        "commands": "help",
+        "status": "status",
+        "stats": "stats",
+        "reload": "reload",
+        "restart": "restart",
+    }
+
+    command = aliases.get(command, command)
+    return command, args
 
 def is_forwarded_bot_output(message) -> bool:
     """
@@ -1769,7 +1836,8 @@ USER_COMMAND_LIST = (
     "/queue         — show queue\n"
     "/weather <p>   — current weather\n"
     "/forecast <p>  — 5-day forecast\n"
-    "/whoami        — show your Telegram/chat IDs"
+    "/whoami        — show your Telegram/chat IDs\n"
+    "@Raziel weather <place> — mention-style weather"
 )
 
 ADMIN_COMMAND_LIST = (
@@ -2546,6 +2614,7 @@ def build_app():
 
     app = builder.build()
 
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, mention_cmd))
     app.add_handler(CommandHandler("start", start_cmd))
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CommandHandler("dl", dl_cmd))
@@ -2583,6 +2652,177 @@ def build_app():
     app.post_init = on_start
     return app
 
+
+async def mention_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Group-friendly natural command layer.
+
+    Allows:
+    @Raziel weather Houston
+    @Raziel forecast Houston
+    @Raziel queue
+    @Raziel status
+    @Raziel help
+    """
+    remember_chat(update.effective_chat)
+
+    message = update.effective_message
+    user = update.effective_user
+    chat = update.effective_chat
+
+    if not message or not user or not chat:
+        return
+
+    if getattr(user, "is_bot", False):
+        return
+
+    parsed = parse_mention_command(getattr(message, "text", None) or getattr(message, "caption", None))
+    if not parsed:
+        return
+
+    command, args = parsed
+    user_id = user.id
+    chat_id = chat.id
+    chat_type = chat.type
+
+    allowed_here = can_use_context(user_id, chat_id, chat_type)
+    admin_here = is_admin(user_id)
+
+    try:
+        if command == "weather":
+            if not args:
+                await message.reply_text("Usage: @Raziel weather Houston")
+                return
+            result = await asyncio.to_thread(get_current_weather_for_location, args)
+            await message.reply_text(result, parse_mode=ParseMode.MARKDOWN)
+            return
+
+        if command == "forecast":
+            if not args:
+                await message.reply_text("Usage: @Raziel forecast Houston")
+                return
+            result = await asyncio.to_thread(get_5day_forecast_for_location, args)
+            await message.reply_text(result, parse_mode=ParseMode.MARKDOWN)
+            return
+
+        if command == "queue":
+            if not QUEUE and not CURRENT_JOB:
+                await message.reply_text("Queue is empty.")
+                return
+
+            lines = ["📋 *Queue*"]
+            if CURRENT_JOB:
+                lines.extend([
+                    "",
+                    "*Now Processing:*",
+                    f"• `{CURRENT_JOB['url']}`",
+                    f"• mode: `{CURRENT_JOB.get('mode', 'video')}`",
+                    f"• quality: `{get_quality_label(CURRENT_JOB.get('quality', 'default'))}`",
+                ])
+
+            if QUEUE:
+                lines.extend(["", "*Pending:*"])
+                for idx, job in enumerate(QUEUE[:10], start=1):
+                    lines.append(
+                        f"{idx}. `{job['url']}` "
+                        f"[{job.get('mode', 'video')} / {get_quality_label(job.get('quality', 'default'))}]"
+                    )
+
+            await message.reply_text("\n".join(lines), parse_mode=ParseMode.MARKDOWN)
+            return
+
+        if command == "help":
+            lines = [
+                f"🎬 *{BOT_NAME} v{BOT_VERSION}*",
+                "The watcher of links.",
+                "",
+                "*Mention Commands:*",
+                "@Raziel weather <place>",
+                "@Raziel forecast <place>",
+                "@Raziel queue",
+                "@Raziel help",
+            ]
+
+            if admin_here:
+                lines.extend([
+                    "",
+                    "*Admin Mentions:*",
+                    "@Raziel status",
+                    "@Raziel stats",
+                    "@Raziel reload",
+                    "@Raziel restart",
+                ])
+
+            await message.reply_text("\n".join(lines), parse_mode=ParseMode.MARKDOWN)
+            return
+
+        if command == "status":
+            if not admin_here:
+                return
+            await message.reply_text(
+                f"*Bot Status:* online\n"
+                f"*Current Job:* {'yes' if CURRENT_JOB else 'no'}\n"
+                f"*Queue Length:* {len(QUEUE)}\n"
+                f"*Debug Mode:* {DEBUG_MODE}\n"
+                f"*Dedupe:* {DEDUP_ENABLED} ({DEDUP_TTL_HOURS}h TTL)\n"
+                f"*Enabled Platforms:* {', '.join(ENABLED_VIDEO_PLATFORMS)}\n"
+                f"*Supported Domains:* {', '.join(SUPPORTED_VIDEO_DOMAINS)}",
+                parse_mode=ParseMode.MARKDOWN,
+            )
+            return
+
+        if command == "stats":
+            if not admin_here:
+                return
+            unique_users = len({h["user"] for h in HISTORY if "user" in h})
+            await message.reply_text(
+                f"📊 *{BOT_NAME} Stats*\n\n"
+                f"• Queue: {len(QUEUE)}\n"
+                f"• Active Job: {'yes' if CURRENT_JOB else 'no'}\n"
+                f"• Completed: {len(HISTORY)}\n"
+                f"• Failed: {len(FAILURES)}\n"
+                f"• Unique Users: {unique_users}",
+                parse_mode=ParseMode.MARKDOWN,
+            )
+            return
+
+        if command == "reload":
+            if not admin_here:
+                return
+            reload_runtime_config()
+            await message.reply_text(
+                f"♻️ *{BOT_NAME} v{BOT_VERSION} reloaded*\n\n"
+                f"*Debug Mode:* `{DEBUG_MODE}`\n"
+                f"*Enabled Platforms:* `{', '.join(ENABLED_VIDEO_PLATFORMS)}`\n"
+                f"*Supported Domains:* `{', '.join(SUPPORTED_VIDEO_DOMAINS)}`",
+                parse_mode=ParseMode.MARKDOWN,
+            )
+            return
+
+        if command == "restart":
+            if not admin_here:
+                return
+
+            if CURRENT_JOB or QUEUE:
+                await message.reply_text(
+                    "⚠️ Cannot restart while Raziel is busy.\n"
+                    "Queue or current job is active."
+                )
+                return
+
+            await message.reply_text(f"🔄 {BOT_NAME} v{BOT_VERSION} restarting...")
+            log.warning("Mention restart requested by admin %s", user_id)
+            await asyncio.sleep(2)
+            os.execv(sys.executable, [sys.executable] + sys.argv)
+
+        # Unknown mention command: stay quiet to avoid being annoying in groups.
+        return
+
+    except Exception as e:
+        log.exception("Mention command failed: %s", command)
+        await message.reply_text(f"❌ {str(e)[:300]}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--url", help="Download one URL from CLI")
@@ -2616,3 +2856,6 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+
