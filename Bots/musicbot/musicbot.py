@@ -2,16 +2,17 @@
 # ------------------------------------------------------------
 # file:     musicbot.py
 # author:   Mike Redd
-# version:  2.0
+# version:  2.1
 # created:  2026-05-03
 # updated:  2026-05-03
-# desc:     Sandalphon - Queue/cache music bot with library mode
+# desc:     Sandalphon - Queue/cache music bot with reload/restart controls
 # ------------------------------------------------------------
 
 import asyncio
 import hashlib
 import json
 import logging
+import os
 import re
 import shutil
 import subprocess
@@ -26,13 +27,15 @@ from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandl
 
 # ── Branding ─────────────────────────────────────────────────
 BOT_NAME = "Sandalphon"
-BOT_VERSION = "2.0"
+BOT_VERSION = "2.1"
 
 # ── Config ───────────────────────────────────────────────────
 sys.path.insert(0, str(Path.home() / "bots/config"))
 import musicbotrc as cfg  # noqa: E402
 
 BOT_TOKEN = cfg.BOT_TOKEN
+
+ADMIN_USERS = set(getattr(cfg, "ADMIN_USERS", []))
 
 DOWNLOAD_DIR = Path(cfg.DOWNLOAD_DIR)
 DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
@@ -803,6 +806,23 @@ async def process_queue(app):
 
     PROCESSING = False
 
+
+
+def is_admin(user_id):
+    return not ADMIN_USERS or user_id in ADMIN_USERS
+
+
+async def admin_only(update):
+    user_id = update.effective_user.id if update.effective_user else 0
+
+    if not is_admin(user_id):
+        await update.message.reply_text("❌ Admin only")
+        return False
+
+    return True
+
+
+
 # ── Commands ─────────────────────────────────────────────────
 async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await help_cmd(update, context)
@@ -821,6 +841,8 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/play <artist or song>\n"
         "/clearcache\n"
         "/clearlibrary\n"
+        "/reload\n"
+        "/restart\n"
         "/help\n\n"
         "You can also just type an artist/song search or paste a supported link."
     )
@@ -1019,6 +1041,38 @@ async def clearlibrary_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 
+
+
+async def reload_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await admin_only(update):
+        return
+
+    global PROCESSING
+
+    PROCESSING = False
+
+    logging.info("Reload requested")
+
+    await update.message.reply_text(
+        f"♻️ {BOT_NAME} config/state reloaded"
+    )
+
+
+async def restart_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await admin_only(update):
+        return
+
+    await update.message.reply_text(
+        f"🔄 Restarting {BOT_NAME}..."
+    )
+
+    logging.info("Restart requested")
+
+    python = sys.executable
+    os.execv(python, [python] + sys.argv)
+
+
+
 # ── Main ─────────────────────────────────────────────────────
 def main():
     logging.basicConfig(
@@ -1049,6 +1103,8 @@ def main():
     app.add_handler(CommandHandler("play", play_cmd))
     app.add_handler(CommandHandler("clearcache", clearcache_cmd))
     app.add_handler(CommandHandler("clearlibrary", clearlibrary_cmd))
+    app.add_handler(CommandHandler("reload", reload_cmd))
+    app.add_handler(CommandHandler("restart", restart_cmd))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, auto_music))
 
     logging.info("%s v%s started.", BOT_NAME, BOT_VERSION)

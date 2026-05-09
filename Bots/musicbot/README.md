@@ -26,6 +26,7 @@ Sandalphon is a Telegram music bot that:
 * supports large file delivery (Local API)
 * accepts plain text (no command required)
 * supports Spotify metadata → YouTube/yt-dlp matching
+* supports admin-only `/reload` and `/restart` controls
 
 ---
 
@@ -67,6 +68,16 @@ Sandalphon is a Telegram music bot that:
 
 ---
 
+### v2.1
+
+* adds admin-only `/reload` command
+* adds admin-only `/restart` command
+* supports live config/state reload workflow
+* supports full process restart from inside Telegram
+* improves testing workflow when running inside tmux
+
+---
+
 ## 🧠 Core Flow
 
 ```id="flow1"
@@ -87,6 +98,8 @@ Input → Queue → Resolve → Metadata/Spotify → Cache Metadata → Download
 /play <artist or song>
 /clearcache
 /clearlibrary
+/reload
+/restart
 /id
 /help
 ```
@@ -115,6 +128,13 @@ Play from your library:
 
 ```text id="usage4"
 /play The Smiths
+```
+
+Reload or restart the bot from Telegram:
+
+```text id="usage5"
+/reload
+/restart
 ```
 
 ---
@@ -162,6 +182,7 @@ empty ALLOWED_USER_IDS → public bot
 * metadata cache reduces repeated lookups
 * library search is text-based (not perfect matching yet)
 * plain text auto-trigger may ignore very short or generic messages
+* `/reload` and `/restart` are admin-only controls
 
 ---
 
@@ -173,6 +194,7 @@ empty ALLOWED_USER_IDS → public bot
 * some sources may require cookies
 * first-time requests still require metadata lookup
 * library index depends on cached/downloaded files
+* `/restart` restarts the Python process; tmux/systemd should keep the session visible/manageable
 
 ---
 
