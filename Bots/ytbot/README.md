@@ -1,9 +1,9 @@
-# 🎬 Raziel v5.7
+# 🎬 Raziel v5.8.2
 
 > A typezerø Project
 > Built for real-world use, not perfection.
 
-![Version](https://img.shields.io/badge/version-v5.7-blue)
+![Version](https://img.shields.io/badge/version-v5.8.2-blue)
 ![Python](https://img.shields.io/badge/python-3.10+-blue)
 ![License](https://img.shields.io/badge/license-WTFPL-lightgrey)
 
@@ -11,7 +11,7 @@
 
 ## 🚀 Overview
 
-**Raziel v5.7** is a full media pipeline bot with:
+**Raziel v5.8.2** is a full media pipeline bot with:
 
 * **automatic group link ingestion**
 * **clean chat behavior**
@@ -27,6 +27,7 @@
 * **runtime process restart control**
 * **live Telegram progress updates**
 * **mention-driven conversational interaction**
+* **Telegram inline mode support**
 
 It accepts input from:
 
@@ -333,6 +334,45 @@ This establishes the foundation for:
 
 ---
 
+### 🌐 Telegram Inline Mode (v5.8.2)
+
+Raziel now supports Telegram inline queries.
+
+Users can now type:
+
+```text
+@Razi3l_bot weather Houston
+@Razi3l_bot forecast Tokyo
+```
+
+inside:
+- group chats
+- private chats
+- channels
+- chats where Raziel is not a member
+
+Features:
+- Telegram `InlineQueryHandler`
+- inline weather lookup
+- inline forecast lookup
+- inline Markdown responses
+- inline help system
+- lightweight cached inline results
+
+Behavior:
+- ignores unsupported inline queries
+- avoids inline spam behavior
+- safely throttles inline responses
+- preserves clean Telegram UX
+
+This significantly expands Raziel from:
+- a group-based utility bot
+into:
+- a globally accessible Telegram assistant platform
+
+---
+
+
 ### 📥 Media Handling
 
 * YouTube, Instagram (default enabled)
@@ -420,7 +460,18 @@ python ytbot.py --audio "<link>"
 
 ## 🧠 Version History
 
-### v5.7 (Current)
+### v5.8.2 (Current)
+
+* Added Telegram inline mode support
+* Added inline weather and forecast utilities
+* Added InlineQueryHandler integration
+* Added inline article/result generation
+* Added global Telegram utility access
+* Expanded Raziel beyond joined-group interaction
+
+---
+
+### v5.7
 
 * Added conversational mention command system
 * Added inline weather and forecast utilities

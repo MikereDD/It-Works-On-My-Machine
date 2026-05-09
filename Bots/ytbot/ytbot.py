@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file:     ytbot.py
 # author:   Mike Redd
-# version:  5.7.2
+# version:  5.8.2
 # created:  2026-04-18
 # updated:  2026-05-01
 # desc:     Queue-based Telegram media bot
@@ -32,12 +32,14 @@ from urllib.request import urlopen
 # ── Branding ─────────────────────────────────────────────────
 
 BOT_NAME = "Raziel"
-BOT_VERSION = "5.7.2"
+BOT_VERSION = "5.8"
 
 import yt_dlp
 from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
+    InlineQueryResultArticle,
+    InputTextMessageContent,
     Update,
 )
 from telegram.constants import ParseMode
@@ -47,6 +49,7 @@ from telegram.ext import (
     ChatMemberHandler,
     CommandHandler,
     ContextTypes,
+    InlineQueryHandler,
     MessageHandler,
     filters,
 )
@@ -713,6 +716,160 @@ async def run_mention_command(update: Update, ctx: ContextTypes.DEFAULT_TYPE) ->
         log.exception("Mention command failed: %s", command)
         await message.reply_text(f"❌ {str(e)[:300]}")
         return True
+
+
+
+def parse_inline_query(text: str | None) -> tuple[str, str] | None:
+    """
+    Parse Telegram inline-mode queries.
+
+    Telegram sends only the text after the bot username, so:
+    @Razi3l_bot weather Houston
+    arrives here as:
+    weather Houston
+    """
+    if not text:
+        return None
+
+    raw = text.strip()
+    if not raw:
+        return None
+
+    parts = raw.split(maxsplit=1)
+    command = parts[0].strip().lower().lstrip("/")
+    args = parts[1].strip() if len(parts) > 1 else ""
+
+    aliases = {
+        "w": "weather",
+        "temp": "weather",
+        "temps": "weather",
+        "f": "forecast",
+        "weather": "weather",
+        "forecast": "forecast",
+        "help": "help",
+        "commands": "help",
+    }
+
+    command = aliases.get(command, command)
+    if command not in {"weather", "forecast", "help"}:
+        return None
+
+    return command, args
+
+
+async def inline_query_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Telegram inline mode support.
+
+    After enabling inline mode in BotFather, users can type:
+    @Razi3l_bot weather Houston
+    inside chats where Raziel is not a member.
+    """
+    query = update.inline_query
+    if not query:
+        return
+
+    parsed = parse_inline_query(query.query or "")
+    results = []
+
+    if not parsed:
+        help_text = (
+            f"🎬 {BOT_NAME} v{BOT_VERSION}\n\n"
+            "Inline examples:\n"
+            "@Razi3l_bot weather Houston\n"
+            "@Razi3l_bot forecast Houston"
+        )
+
+        results.append(
+            InlineQueryResultArticle(
+                id=str(uuid.uuid4()),
+                title="Raziel inline help",
+                description="Try: weather Houston or forecast Houston",
+                input_message_content=InputTextMessageContent(help_text),
+            )
+        )
+
+        await query.answer(results, cache_time=5, is_personal=True)
+        return
+
+    command, args = parsed
+
+    if command == "help":
+        help_text = (
+            f"🎬 *{BOT_NAME} v{BOT_VERSION}*\n\n"
+            "*Inline Commands:*\n"
+            "`weather <place>` — current weather\n"
+            "`forecast <place>` — 5-day forecast\n\n"
+            "*Examples:*\n"
+            "`@Razi3l_bot weather Houston`\n"
+            "`@Razi3l_bot forecast Tokyo`"
+        )
+
+        results.append(
+            InlineQueryResultArticle(
+                id=str(uuid.uuid4()),
+                title="Raziel inline commands",
+                description="Weather and forecast from any chat",
+                input_message_content=InputTextMessageContent(
+                    help_text,
+                    parse_mode=ParseMode.MARKDOWN,
+                ),
+            )
+        )
+
+        await query.answer(results, cache_time=5, is_personal=True)
+        return
+
+    if not args:
+        usage = "Usage:\nweather Houston\nforecast Houston"
+        results.append(
+            InlineQueryResultArticle(
+                id=str(uuid.uuid4()),
+                title="Missing location",
+                description="Example: weather Houston",
+                input_message_content=InputTextMessageContent(usage),
+            )
+        )
+        await query.answer(results, cache_time=5, is_personal=True)
+        return
+
+    try:
+        if command == "weather":
+            result_text = await asyncio.to_thread(get_current_weather_for_location, args)
+            title = f"Weather for {args}"
+            description = "Current weather"
+        elif command == "forecast":
+            result_text = await asyncio.to_thread(get_5day_forecast_for_location, args)
+            title = f"Forecast for {args}"
+            description = "5-day forecast"
+        else:
+            return
+
+        results.append(
+            InlineQueryResultArticle(
+                id=str(uuid.uuid4()),
+                title=title[:64],
+                description=description,
+                input_message_content=InputTextMessageContent(
+                    result_text,
+                    parse_mode=ParseMode.MARKDOWN,
+                ),
+            )
+        )
+    except Exception as e:
+        results.append(
+            InlineQueryResultArticle(
+                id=str(uuid.uuid4()),
+                title="Raziel lookup failed",
+                description=str(e)[:80],
+                input_message_content=InputTextMessageContent(
+                    f"❌ Inline lookup failed:\n{str(e)[:300]}"
+                ),
+            )
+        )
+
+    await query.answer(results, cache_time=30, is_personal=True)
+
 
 
 def is_forwarded_bot_output(message) -> bool:
@@ -2803,6 +2960,7 @@ def build_app():
 
     app = builder.build()
 
+    app.add_handler(InlineQueryHandler(inline_query_cmd))
     app.add_handler(CommandHandler("start", start_cmd))
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CommandHandler("dl", dl_cmd))

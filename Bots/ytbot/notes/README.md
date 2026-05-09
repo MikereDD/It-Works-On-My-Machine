@@ -54,3 +54,4 @@
 * [v5.5](v5.5.md) — Runtime process restart control and tmux-safe self-restarting
 * [v5.6](v5.6.md) — Live Telegram progress system with real-time download status updates
 * [v5.7](v5.7.md) — Mention command layer and conversational inline interaction support
+* [v5.8.2](v5.8.2.md) — Telegram inline mode and global inline utility interaction
