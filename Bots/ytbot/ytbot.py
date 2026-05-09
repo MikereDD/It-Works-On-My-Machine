@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file:     ytbot.py
 # author:   Mike Redd
-# version:  5.5
+# version:  5.6
 # created:  2026-04-18
 # updated:  2026-05-01
 # desc:     Queue-based Telegram media bot
@@ -32,7 +32,7 @@ from urllib.request import urlopen
 # ── Branding ─────────────────────────────────────────────────
 
 BOT_NAME = "Raziel"
-BOT_VERSION = "5.5"
+BOT_VERSION = "5.6"
 
 import yt_dlp
 from telegram import (
@@ -350,6 +350,93 @@ def format_duration(seconds: int | float | None) -> str:
 
 def shorten_url(url: str, max_len: int = 50) -> str:
     return url if len(url) <= max_len else url[:max_len - 3] + "..."
+
+
+def make_progress_bar(percent: float | None, width: int = 12) -> str:
+    if percent is None:
+        return "░" * width
+    percent = max(0.0, min(100.0, float(percent)))
+    filled = int(round((percent / 100.0) * width))
+    return "█" * filled + "░" * (width - filled)
+
+def format_eta(seconds: int | float | None) -> str:
+    if seconds is None:
+        return "unknown"
+    try:
+        seconds = int(seconds)
+    except Exception:
+        return "unknown"
+    h, rem = divmod(seconds, 3600)
+    m, s = divmod(rem, 60)
+    return f"{h:02}:{m:02}:{s:02}" if h else f"{m:02}:{s:02}"
+
+def percent_from_progress(progress: dict) -> float | None:
+    downloaded = progress.get("downloaded_bytes") or 0
+    total = progress.get("total_bytes") or progress.get("total_bytes_estimate")
+    if not total:
+        return None
+    try:
+        return (float(downloaded) / float(total)) * 100.0
+    except Exception:
+        return None
+
+def format_progress_status(title: str, uploader: str, mode: str, quality: str, progress: dict) -> str:
+    percent = percent_from_progress(progress)
+    bar = make_progress_bar(percent)
+    pct = f"{percent:.1f}%" if percent is not None else "working"
+    downloaded = progress.get("downloaded_bytes") or 0
+    total = progress.get("total_bytes") or progress.get("total_bytes_estimate") or 0
+    speed = progress.get("speed")
+    eta = progress.get("eta")
+    phase = "✅ Download complete" if progress.get("status") == "finished" else f"⬇️ Downloading {mode} ({get_quality_label(quality)})…"
+
+    lines = [f"🎞️ {title}", f"👤 {uploader}", "", phase, f"{bar} {pct}"]
+
+    if total:
+        lines.append(f"📦 {format_size(int(downloaded))} / {format_size(int(total))}")
+    elif downloaded:
+        lines.append(f"📦 {format_size(int(downloaded))}")
+
+    if speed:
+        try:
+            lines.append(f"⚡ {format_size(int(speed))}/s")
+        except Exception:
+            pass
+
+    if eta is not None:
+        lines.append(f"⏱️ ETA: {format_eta(eta)}")
+
+    return "\n".join(lines)
+
+def make_download_progress_hook(app, chat_id: int, message_id: int, title: str, uploader: str, mode: str, quality: str):
+    loop = asyncio.get_running_loop()
+    state = {"last_edit": 0.0, "last_text": ""}
+
+    async def edit_status(text: str) -> None:
+        try:
+            await app.bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=text[:3900])
+        except Exception as e:
+            if DEBUG_MODE:
+                log.debug("Progress edit skipped: %s", e)
+
+    def hook(progress: dict) -> None:
+        now = time.time()
+        if progress.get("status") != "finished" and now - state["last_edit"] < 3.0:
+            return
+
+        text = format_progress_status(title, uploader, mode, quality, progress)
+        if text == state["last_text"]:
+            return
+
+        state["last_edit"] = now
+        state["last_text"] = text
+
+        try:
+            loop.call_soon_threadsafe(asyncio.create_task, edit_status(text))
+        except RuntimeError:
+            pass
+
+    return hook
 
 def get_queue_position() -> int:
     return len(QUEUE) + (1 if CURRENT_JOB else 0)
@@ -1023,7 +1110,7 @@ def get_quality_label(quality: str | None) -> str:
     return f"default/{DEFAULT_VIDEO_HEIGHT}p"
 
 
-def build_ydl_opts(url: str, outtmpl: str, mode: str, quality: str = "default") -> dict:
+def build_ydl_opts(url: str, outtmpl: str, mode: str, quality: str = "default", progress_hook=None) -> dict:
     opts: dict = {
         "outtmpl": outtmpl,
         "noplaylist": True,
@@ -1032,6 +1119,9 @@ def build_ydl_opts(url: str, outtmpl: str, mode: str, quality: str = "default") 
         "restrictfilenames": False,
         "compat_opts": ["no-certifi"],
     }
+
+    if progress_hook:
+        opts["progress_hooks"] = [progress_hook]
 
     if mode == "audio":
         opts["format"] = "bestaudio/best"
@@ -1092,7 +1182,7 @@ def build_ydl_opts(url: str, outtmpl: str, mode: str, quality: str = "default") 
 
     return opts
 
-def download_media(url: str, mode: str, quality: str = "default") -> Path:
+def download_media(url: str, mode: str, quality: str = "default", progress_hook=None) -> Path:
     if not is_supported_video_url(url):
         raise RuntimeError("Unsupported video source.")
 
@@ -1101,7 +1191,7 @@ def download_media(url: str, mode: str, quality: str = "default") -> Path:
     ext_hint = "%(ext)s" if mode != "audio" else "mp3"
     outtmpl = str(DOWNLOAD_DIR / f"%(title).100s [%(id)s].{ext_hint}")
 
-    opts = build_ydl_opts(url, outtmpl, mode, quality)
+    opts = build_ydl_opts(url, outtmpl, mode, quality, progress_hook=progress_hook)
 
     with yt_dlp.YoutubeDL(opts) as ydl:
         ydl.download([url])
@@ -1323,8 +1413,18 @@ async def process_job(app, job: dict) -> None:
 
         download_mode = "audio" if mode == "audio" else "video"
 
+        progress_hook = make_download_progress_hook(
+            app,
+            chat_id,
+            status_msg.message_id,
+            meta["title"],
+            meta["uploader"],
+            mode,
+            quality,
+        )
+
         downloaded_file = await asyncio.wait_for(
-            asyncio.to_thread(download_media, url, download_mode, quality),
+            asyncio.to_thread(download_media, url, download_mode, quality, progress_hook),
             timeout=DOWNLOAD_TIMEOUT,
         )
         sent_file = downloaded_file
@@ -2516,6 +2616,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
-
-

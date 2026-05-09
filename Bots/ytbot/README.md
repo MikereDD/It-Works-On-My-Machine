@@ -1,9 +1,9 @@
-# 🎬 Raziel v5.5
+# 🎬 Raziel v5.6
 
 > A typezerø Project
 > Built for real-world use, not perfection.
 
-![Version](https://img.shields.io/badge/version-v5.5-blue)
+![Version](https://img.shields.io/badge/version-v5.6-blue)
 ![Python](https://img.shields.io/badge/python-3.10+-blue)
 ![License](https://img.shields.io/badge/license-WTFPL-lightgrey)
 
@@ -11,7 +11,7 @@
 
 ## 🚀 Overview
 
-**Raziel v5.5** is a full media pipeline bot with:
+**Raziel v5.6** is a full media pipeline bot with:
 
 * **automatic group link ingestion**
 * **clean chat behavior**
@@ -25,6 +25,7 @@
 * **enhanced clip metadata captions**
 * **runtime configuration reloading**
 * **runtime process restart control**
+* **live Telegram progress updates**
 
 It accepts input from:
 
@@ -251,6 +252,42 @@ Protected operations:
 
 ---
 
+### 📊 Live Progress System (v5.6)
+
+Raziel now supports live Telegram progress updates during downloads.
+
+Live status messages now display:
+- progress bars
+- percentage completion
+- download size
+- transfer speed
+- ETA estimates
+
+Example:
+
+```text
+🎞️ Example Video
+
+⬇️ Downloading video (720p)…
+████████░░░░ 82.4%
+
+📦 842 MB / 1.1 GB
+⚡ 7.2 MB/s
+⏱️ ETA: 00:12
+```
+
+Features:
+- yt-dlp progress hooks
+- live Telegram message editing
+- throttled status updates
+- cleaner operational UX
+- reduced chat spam
+
+This creates a significantly more interactive and responsive
+download experience.
+
+---
+
 ### 📥 Media Handling
 
 * YouTube, Instagram (default enabled)
@@ -338,7 +375,18 @@ python ytbot.py --audio "<link>"
 
 ## 🧠 Version History
 
-### v5.5 (Current)
+### v5.6 (Current)
+
+* Added live Telegram download progress updates
+* Added yt-dlp progress hook integration
+* Added progress bars and ETA tracking
+* Added live speed and transfer statistics
+* Added throttled Telegram status editing
+* Improved operational visibility during downloads
+
+---
+
+### v5.5
 
 * Added `/restart` runtime process control
 * Added tmux-safe self-restarting
