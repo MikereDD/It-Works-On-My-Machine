@@ -1,14 +1,16 @@
 # ------------------------------------------------------------
 # file:     aibot.py
 # author:   Mike Redd
-# version:  3.4
+# version:  3.5
 # created:  2026-04-19
 # updated:  2026-04-29
 # desc:     Telegram AI bot with text + tiered image generation
 #           Config via /mnt/nvme1/work/bots/config/aibotrc.py
 # ------------------------------------------------------------
 
+import asyncio
 import base64
+import importlib
 import logging
 import os
 import re
@@ -25,7 +27,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 # ── Branding ─────────────────────────────────────────────────
 
 BOT_NAME = "Zaphkiel"
-BOT_VERSION = "3.4"
+BOT_VERSION = "3.5"
 
 # ── Load config ───────────────────────────────────────────────
 CONFIG_PATH = Path(
@@ -66,6 +68,22 @@ logger = logging.getLogger(__name__)
 
 # ── OpenAI client ─────────────────────────────────────────────
 client = AsyncOpenAI(api_key=cfg.OPENAI_API_KEY)
+
+# ── Reload Support ────────────────────────────────────────────
+def reload_runtime_config() -> None:
+    global cfg, LOG_DIR, IMAGE_DIR, LOG_FILE, client
+
+    cfg = importlib.reload(cfg)
+
+    LOG_DIR = Path(cfg.LOG_DIR)
+    IMAGE_DIR = Path(cfg.IMAGE_SAVE_DIR)
+
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    IMAGE_DIR.mkdir(parents=True, exist_ok=True)
+
+    LOG_FILE = LOG_DIR / "aibot.log"
+
+    client = AsyncOpenAI(api_key=cfg.OPENAI_API_KEY)
 
 # ── Helpers ──────────────────────────────────────────────────
 def is_allowed(update: Update) -> bool:
@@ -190,6 +208,10 @@ def format_api_error(exc: Exception) -> str:
 
     return f"Request failed: {exc}"
 
+async def delayed_restart() -> None:
+    await asyncio.sleep(1)
+    os.execv(sys.executable, [sys.executable] + sys.argv)
+
 # ── Commands ─────────────────────────────────────────────────
 async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not is_allowed(update) or not update.message:
@@ -204,6 +226,8 @@ async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "/img <prompt> [--square|--portrait|--landscape]\n"
         "/help\n"
         "/status\n"
+        "/reload\n"
+        "/restart\n"
         "/reset"
     )
 
@@ -232,8 +256,10 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "/img angel warrior --low\n"
         "/img zaphkiel white gold armor --ultra --portrait\n"
         "/img dark fantasy throne room --high --landscape\n\n"
-        "Info:\n"
+        "System:\n"
         "/status\n"
+        "/reload   Reload config without restarting\n"
+        "/restart  Restart bot process after code edits\n"
         "/reset\n\n"
         "⚙️ Built for clarity, not chaos."
     )
@@ -362,6 +388,44 @@ async def status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         f"Images:        {IMAGE_DIR}"
     )
 
+async def reload_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not is_allowed(update) or not update.message:
+        return
+
+    try:
+        reload_runtime_config()
+
+        logger.info("Config reloaded from %s", CONFIG_PATH)
+
+        await update.message.reply_text(
+            f"🔄 {BOT_NAME} config reloaded\n\n"
+            f"Text model:    {cfg.MODEL}\n"
+            f"Image model:   {cfg.IMAGE_MODEL}\n"
+            f"Default tier:  {getattr(cfg, 'DEFAULT_IMAGE_TIER', 'high')}\n"
+            f"Image size:    {cfg.IMAGE_SIZE}\n"
+            f"Image quality: {cfg.IMAGE_QUALITY}\n"
+            f"Image format:  {cfg.IMAGE_OUTPUT_FORMAT}\n"
+            f"Logs:          {LOG_FILE}\n"
+            f"Images:        {IMAGE_DIR}"
+        )
+
+    except Exception as exc:
+        logger.exception("Config reload failed")
+        await update.message.reply_text(f"Config reload failed: {exc}")
+
+async def restart_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not is_allowed(update) or not update.message:
+        return
+
+    logger.info("Restart requested by user_id=%s", update.effective_user.id)
+
+    await update.message.reply_text(
+        f"♻️ Restarting {BOT_NAME}...\n"
+        "The tmux pane should stay alive."
+    )
+
+    context.application.create_task(delayed_restart())
+
 async def reset_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not is_allowed(update) or not update.message:
         return
@@ -385,6 +449,8 @@ def main() -> None:
     app.add_handler(CommandHandler("ai", ai_cmd))
     app.add_handler(CommandHandler("img", img_cmd))
     app.add_handler(CommandHandler("status", status_cmd))
+    app.add_handler(CommandHandler("reload", reload_cmd))
+    app.add_handler(CommandHandler("restart", restart_cmd))
     app.add_handler(CommandHandler("reset", reset_cmd))
 
     logger.info("%s v%s starting...", BOT_NAME, BOT_VERSION)
