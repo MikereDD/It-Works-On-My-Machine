@@ -65,6 +65,16 @@ EXTRA_VIDEO_DOMAINS = (
 # "example.com",
 )
 
+# ── Mention / Conversational Layer ───────────
+BOT_USERNAME = "Razi3l_bot"
+
+BOT_MENTION_ALIASES = (
+    "raziel",
+    "@raziel",
+    "razi3l_bot",
+    "@razi3l_bot",
+)
+
 # ── Paths ────────────────────────────────────
 # Default is resolved relative to the bot parent directory.
 # Override if you want a fixed bot data root.
