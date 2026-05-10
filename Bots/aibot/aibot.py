@@ -204,13 +204,19 @@ def get_convert_presets() -> dict:
         "CONVERT_STYLE_PRESETS",
         {
             "ghibli": (
-                "Transform this image into a Studio Ghibli-inspired hand-painted animated film frame. "
-                "Preserve the original composition, camera angle, subject count, poses, facial identity, "
-                "and object placement. Use soft watercolor and gouache backgrounds, delicate hand-drawn "
-                "contour lines, warm natural light, expressive but believable faces, whimsical fantasy "
-                "atmosphere, rich lived-in environmental detail, painterly paper texture, gentle shadows, "
-                "and a calm cinematic sense of wonder. Avoid muddy sepia wash, blurry faces, extra limbs, "
-                "text, logos, signatures, or watermarks."
+                "Convert this image into an authentic Studio Ghibli-style animated film frame. "
+                "Faithfully preserve the original composition, pose, clothing silhouette, camera angle, "
+                "facial identity (same person, recognizable features), and subject count. "
+                "Render in high-quality hand-painted cel animation with: soft watercolor backgrounds, "
+                "gouache textures, warm natural lighting (golden hour / overcast soft glow), "
+                "expressive but gentle eyes, subtle emotions, clean hand-drawn linework, atmospheric depth, "
+                "lush environmental details, whimsical realism, and cinematic framing inspired by "
+                "1990s Studio Ghibli films such as Totoro, Kiki's Delivery Service, and Whisper of the Heart. "
+                "Skin should have gentle hand-painted shading, not plastic or airbrushed. "
+                "Avoid: modern glossy anime rendering, oversaturated colors, blurry faces, distorted anatomy, "
+                "extra fingers/limbs, missing limbs, text, logos, watermarks, or low-detail backgrounds. "
+                "Use Miyazaki-inspired color palettes with soft earth tones, pastel skies, muted greens, "
+                "warm creams, and gentle shadows with no harsh contrast."
             ),
             "cozy-anime": (
                 "Transform this image into a whimsical hand-painted animated fantasy style, "
