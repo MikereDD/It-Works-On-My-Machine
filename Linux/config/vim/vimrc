@@ -1,6 +1,7 @@
 " ~/.config/vim/vimrc
 " Mike Redd / typezero
 " Pi 5 Arch Vim (XDG layout)
+" Version: 2.0 - Enhanced with plugins
 
 set nocompatible
 filetype plugin indent on
@@ -32,14 +33,188 @@ set history=1000
 " -------------------------
 call plug#begin('~/.vim/plugged')
 
-Plug 'preservim/nerdtree'
-Plug 'mhinz/vim-startify'
-Plug 'iamcco/markdown-preview.nvim'
-Plug 'jreybert/vimagit'
-Plug 'dense-analysis/ale'
-Plug 'vim-airline/vim-airline'
+" --- Core Essentials ---
+Plug 'tpope/vim-fugitive'        " Git integration
+Plug 'tpope/vim-commentary'      " Commenting (gc/gcc)
+Plug 'tpope/vim-surround'        " Surround text objects (ds/cs/ys)
+Plug 'tpope/vim-repeat'          " Enhanced . repeat
+Plug 'junegunn/fzf', { 'do': { -> fzf#install() } }
+Plug 'junegunn/fzf.vim'          " Fuzzy finder
+Plug 'easymotion/vim-easymotion' " Jump anywhere
+Plug 'chaoren/vim-wordmotion'    " Better w/b/e for CamelCase
+
+" --- Navigation & Search ---
+Plug 'BurntSushi/ripgrep'        " Fast grep (requires ripgrep installed)
+Plug 'dyng/ctrlsf.vim'           " Search across project
+Plug 'preservim/tagbar'          " Tag viewer
+
+" --- Visual & UI ---
+Plug 'itchyny/lightline.vim'     " Lightweight status line
+Plug 'morhetz/gruvbox'           " Colorscheme
+Plug 'Yggdroot/indentLine'       " Indent guides
+Plug 'ryanoasis/vim-devicons'    " Nerd Font icons
+Plug 'mhinz/vim-startify'        " Start screen (you already have)
+Plug 'preservim/nerdtree'        " File explorer (you already have)
+
+" --- Git ---
+Plug 'airblade/vim-gitgutter'    " Git diff signs in gutter
+
+" --- Language Specific ---
+Plug 'plasticboy/vim-markdown'   " Better Markdown
+Plug 'vim-python/python-syntax'  " Enhanced Python
+Plug 'stephpy/vim-yaml'          " YAML support
+Plug 'elzr/vim-json'             " JSON support
+
+" --- Sessions & Tmux ---
+Plug 'tpope/vim-obsession'       " Session management
+Plug 'christoomey/vim-tmux-navigator' " Tmux/Vim navigation
+
+" --- You already had these ---
+Plug 'jreybert/vimagit'          " Magit-like interface
+Plug 'dense-analysis/ale'        " Linting engine
 
 call plug#end()
+
+" -------------------------
+" Lightline Configuration (replaces airline)
+" -------------------------
+set laststatus=2
+if !exists('g:lightline')
+  let g:lightline = {
+        \ 'colorscheme': 'gruvbox',
+        \ 'active': {
+        \   'left': [ [ 'mode', 'paste' ],
+        \             [ 'gitbranch', 'readonly', 'filename', 'modified' ] ],
+        \   'right': [ [ 'lineinfo' ],
+        \              [ 'percent' ],
+        \              [ 'fileformat', 'fileencoding', 'filetype' ] ]
+        \ },
+        \ 'component_function': {
+        \   'gitbranch': 'FugitiveHead'
+        \ },
+        \ 'component_expand': {
+        \   'linter_checking': 'ale#statusline#Check',
+        \   'linter_errors': 'ale#statusline#Count',
+        \ },
+        \ 'component_type': {
+        \   'linter_checking': 'left',
+        \   'linter_errors': 'error',
+        \ }
+        \ }
+endif
+
+" -------------------------
+" Gruvbox Colorscheme
+" -------------------------
+set background=dark
+let g:gruvbox_contrast_dark = 'hard'
+colorscheme gruvbox
+
+" -------------------------
+" Python Syntax
+" -------------------------
+let g:python_highlight_all = 1
+
+" -------------------------
+" Markdown Configuration
+" -------------------------
+let g:vim_markdown_folding_disabled = 1
+let g:vim_markdown_frontmatter = 1
+let g:vim_markdown_conceal = 0
+
+" -------------------------
+" ALE (Linting) Configuration
+" -------------------------
+let g:ale_linters = {
+      \ 'python': ['flake8', 'pylint'],
+      \ 'bash': ['shellcheck'],
+      \ 'markdown': ['markdownlint'],
+      \ 'yaml': ['yamllint'],
+      \ 'json': ['jsonlint'],
+      \}
+let g:ale_fixers = {
+      \ 'python': ['black', 'isort'],
+      \ 'bash': ['shfmt'],
+      \}
+let g:ale_fix_on_save = 0
+let g:ale_sign_column_always = 1
+let g:ale_set_highlights = 1
+
+" -------------------------
+" CtrlSF (Project Search)
+" -------------------------
+let g:ctrlsf_auto_focus = 1
+let g:ctrlsf_auto_close = 0
+let g:ctrlsf_search_mode = 'async'
+nnoremap <leader>s :CtrlSF<CR>
+
+" -------------------------
+" Tagbar
+" -------------------------
+nnoremap <leader>t :TagbarToggle<CR>
+let g:tagbar_width = 30
+
+" -------------------------
+" FZF Configuration
+" -------------------------
+nnoremap <leader>ff :Files<CR>
+nnoremap <leader>fg :Rg<CR>
+nnoremap <leader>fb :Buffers<CR>
+nnoremap <leader>fh :History<CR>
+nnoremap <leader>fl :Lines<CR>
+nnoremap <leader>fc :Commits<CR>
+
+" Use ripgrep for fzf
+if executable('rg')
+  let $FZF_DEFAULT_COMMAND = 'rg --files --hidden --follow --glob "!.git/*"'
+  set grepprg=rg\ --vimgrep
+  command! -bang -nargs=* Rg call fzf#vim#grep("rg --column --line-number --no-heading --color=always --smart-case ".shellescape(<q-args>), 1, {'options': '--delimiter : --nth 4..'}, <bang>0)
+endif
+
+" -------------------------
+" Git Mappings (Fugitive)
+" -------------------------
+nnoremap <leader>gs :Git<CR>
+nnoremap <leader>gd :Gdiffsplit<CR>
+nnoremap <leader>gb :Git blame<CR>
+nnoremap <leader>gl :Git log<CR>
+nnoremap <leader>gw :Gwrite<CR>
+nnoremap <leader>gc :Git commit<CR>
+nnoremap <leader>gp :Git push<CR>
+nnoremap <leader>gP :Git pull<CR>
+
+" -------------------------
+" GitGutter
+" -------------------------
+set updatetime=100
+let g:gitgutter_sign_added = '✚'
+let g:gitgutter_sign_modified = '➜'
+let g:gitgutter_sign_removed = '✘'
+let g:gitgutter_sign_removed_first_line = '✘'
+let g:gitgutter_sign_modified_removed = '➜✘'
+nnoremap <leader>gh :GitGutterLineHighlightsToggle<CR>
+
+" -------------------------
+" EasyMotion
+" -------------------------
+nmap <leader>e <Plug>(easymotion-s2)
+nmap <leader>w <Plug>(easymotion-t2)
+nmap <leader>l <Plug>(easymotion-lineforward)
+nmap <leader>h <Plug>(easymotion-linebackward)
+
+" -------------------------
+" NERDTree
+" -------------------------
+nnoremap <leader>n :NERDTreeToggle<CR>
+nnoremap <leader>nf :NERDTreeFind<CR>
+let NERDTreeShowHidden = 1
+let NERDTreeIgnore = ['\.pyc$', '__pycache__$', '\.swp$', '\.git$']
+
+" -------------------------
+" Tmux Navigator
+" -------------------------
+let g:tmux_navigator_no_mappings = 0
+let g:tmux_navigator_save_on_switch = 1
 
 " -------------------------
 " Lines
@@ -48,13 +223,13 @@ set number
 set relativenumber
 
 " Toggle absolute line numbers
-nnoremap <leader>n :setlocal number!<CR>
+nnoremap <leader>nu :setlocal number!<CR>
 
 " Toggle relative line numbers
-nnoremap <leader>r :setlocal relativenumber!<CR>
+nnoremap <leader>ru :setlocal relativenumber!<CR>
 
 " Toggle both line number modes
-nnoremap <leader>N :setlocal number! relativenumber!<CR>
+nnoremap <leader>nu :setlocal number! relativenumber!<CR>
 
 " -------------------------
 " Tabs/spaces
@@ -85,7 +260,7 @@ set smartcase
 set incsearch
 set hlsearch
 set showmatch
-nnoremap <leader><space> :nohlsearch<CR>
+nnoremap <leader>/ :nohlsearch<CR>
 
 " -------------------------
 " Movement
@@ -141,6 +316,12 @@ execute 'set directory=' . g:vim_swap_dir . '//'
 execute 'set viminfo+=n' . g:vim_info_file
 
 " -------------------------
+" Obsession Session Management
+" -------------------------
+nnoremap <leader>os :Obsession<CR>
+nnoremap <leader>oo :source Session.vim<CR>
+
+" -------------------------
 " Wildmenu
 " -------------------------
 set wildmenu
@@ -149,6 +330,7 @@ set wildignore+=.git,.svn,.hg
 set wildignore+=*.o,*.obj,*.exe,*.dll
 set wildignore+=*.pyc,*.swp,*~,*.bak
 set wildignore+=*.jpg,*.png,*.gif,*.jpeg
+set wildignore+=node_modules,__pycache__,venv,.venv
 
 " -------------------------
 " Autocommands
@@ -163,6 +345,12 @@ augroup resize_splits
     autocmd VimResized * wincmd =
 augroup END
 
+" Auto-source vimrc on save
+augroup vimrc_auto_source
+    autocmd!
+    autocmd BufWritePost ~/.config/vim/vimrc source %
+augroup END
+
 " -------------------------
 " Highlight conflict markers
 " -------------------------
@@ -173,7 +361,7 @@ match ErrorMsg '^\(<\|=\|>\)\{7\}\([^=].\+\)\?$'
 " -------------------------
 
 " Trim trailing whitespace
-nnoremap <leader>w mz:%s/\s\+$//<CR>:let @/=''<CR>`z
+nnoremap <leader>W mz:%s/\s\+$//<CR>:let @/=''<CR>`z
 
 " Save file with sudo
 cnoremap w!! w !sudo tee % >/dev/null
@@ -196,9 +384,24 @@ command! -bang Qa qa<bang>
 command! -bang QA qa<bang>
 
 " -------------------------
-" Colors
+" Additional Usability
 " -------------------------
-set background=dark
-colorscheme desert
 
+" Quick save
+nnoremap <leader>w :w<CR>
+
+" Quick quit
+nnoremap <leader>q :q<CR>
+
+" Zoom in/out of window
+nnoremap <leader>z <C-w>o
+
+" Clear highlights
+nnoremap <leader>/ :noh<CR>
+
+" Toggle paste mode
+nnoremap <leader>p :set paste!<CR>
+
+" Indent whole file
+nnoremap <leader>= gg=G``
 
