@@ -1,7 +1,7 @@
 # ------------------------------------------------------------
 # file:     aibot.py
 # author:   Mike Redd
-# version:  3.7
+# version:  3.8
 # created:  2026-04-19
 # updated:  2026-05-09
 # desc:     Telegram AI bot with text + tiered image generation
@@ -27,7 +27,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 # ── Branding ─────────────────────────────────────────────────
 
 BOT_NAME = "Zaphkiel"
-BOT_VERSION = "3.7"
+BOT_VERSION = "3.8"
 
 # ── Load config ───────────────────────────────────────────────
 CONFIG_PATH = Path(
@@ -277,6 +277,55 @@ def format_api_error(exc: Exception) -> str:
 
     return f"Request failed: {exc}"
 
+
+async def animate_progress(message, done_event: asyncio.Event, label: str = "Working") -> None:
+    frames = [
+        "▱▱▱▱▱▱▱▱▱▱ 0%",
+        "▰▱▱▱▱▱▱▱▱▱ 10%",
+        "▰▰▱▱▱▱▱▱▱▱ 20%",
+        "▰▰▰▱▱▱▱▱▱▱ 30%",
+        "▰▰▰▰▱▱▱▱▱▱ 40%",
+        "▰▰▰▰▰▱▱▱▱▱ 50%",
+        "▰▰▰▰▰▰▱▱▱▱ 60%",
+        "▰▰▰▰▰▰▰▱▱▱ 70%",
+        "▰▰▰▰▰▰▰▰▱▱ 80%",
+        "▰▰▰▰▰▰▰▰▰▱ 90%",
+    ]
+
+    i = 0
+
+    while not done_event.is_set():
+        try:
+            await message.edit_text(f"🎨 {label}...\n{frames[i % len(frames)]}")
+        except Exception:
+            pass
+
+        i += 1
+        await asyncio.sleep(2)
+
+async def stop_progress(
+    progress_msg,
+    done_event: asyncio.Event,
+    progress_task,
+    delete_message: bool = True,
+) -> None:
+    try:
+        done_event.set()
+    except Exception:
+        pass
+
+    try:
+        await progress_task
+    except Exception:
+        pass
+
+    if delete_message:
+        try:
+            await progress_msg.delete()
+        except Exception:
+            pass
+
+
 async def delayed_restart() -> None:
     await asyncio.sleep(1)
     os.execv(sys.executable, [sys.executable] + sys.argv)
@@ -498,7 +547,19 @@ async def convert_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             style,
         )
 
-        await update.message.reply_text(f"🎨 Converting image using style: {style}")
+        progress_msg = await update.message.reply_text(
+            f"🎨 Converting image using style: {style}\n"
+            "▱▱▱▱▱▱▱▱▱▱ 0%"
+        )
+
+        done_event = asyncio.Event()
+        progress_task = context.application.create_task(
+            animate_progress(
+                progress_msg,
+                done_event,
+                f"Converting image using style: {style}",
+            )
+        )
 
         input_path = await download_reply_photo(update)
 
@@ -538,17 +599,37 @@ async def convert_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             pool_timeout=getattr(cfg, "TELEGRAM_POOL_TIMEOUT", 30),
         )
 
+        await stop_progress(progress_msg, done_event, progress_task, delete_message=True)
+
         logger.info("CONVERT success | saved=%s", image_path)
 
     except TimedOut:
         logger.warning("Telegram timed out while sending converted image.")
-        await update.message.reply_text(
-            "Image was converted and saved locally, but Telegram timed out while sending it."
-        )
+
+        if "done_event" in locals() and "progress_task" in locals() and "progress_msg" in locals():
+            await stop_progress(progress_msg, done_event, progress_task, delete_message=False)
+            try:
+                await progress_msg.edit_text(
+                    "⚠️ Image was converted and saved locally, but Telegram timed out while sending it."
+                )
+            except Exception:
+                pass
+        else:
+            await update.message.reply_text(
+                "Image was converted and saved locally, but Telegram timed out while sending it."
+            )
 
     except Exception as exc:
         logger.exception("Image conversion failed")
-        await update.message.reply_text(format_api_error(exc))
+
+        if "done_event" in locals() and "progress_task" in locals() and "progress_msg" in locals():
+            await stop_progress(progress_msg, done_event, progress_task, delete_message=False)
+            try:
+                await progress_msg.edit_text(f"❌ Conversion failed: {format_api_error(exc)}")
+            except Exception:
+                await update.message.reply_text(format_api_error(exc))
+        else:
+            await update.message.reply_text(format_api_error(exc))
 
 
 async def status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

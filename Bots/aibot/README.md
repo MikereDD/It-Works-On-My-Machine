@@ -16,6 +16,7 @@ A private, self-hosted Telegram AI assistant built for real-world use — chat, 
 * 🎨 Tiered image generation (`/img`)
 * 🖼️ Image conversion + style transfer (`/convert`)
 * 🎨 Conversion style listing (`/styles`)
+* 📊 Animated conversion progress display
 * ⚡ Live config reloads (`/reload`)
 * ♻️ Hot restart support (`/restart`)
 * 💾 Automatic local image saving
@@ -126,6 +127,8 @@ Converted images are automatically saved locally:
 ```text
 G:\bots\images\converted
 ```
+
+During conversion the bot displays a live animated progress bar and automatically removes the temporary conversion message after the final image uploads successfully.
 
 ---
 
@@ -281,6 +284,7 @@ Includes:
 * AI requests
 * Image generation activity
 * Image conversion activity
+* Conversion progress events
 * Reload events
 * Restart events
 * Errors and exceptions
@@ -331,6 +335,8 @@ python aibot.py
 * `/reload` reloads configuration live
 * `/restart` performs an in-place Python restart using `os.execv()`
 * `/convert` supports reply-to-image style transfer workflows
+* Animated progress indicators are shown during conversions
+* Conversion progress messages auto-clean after successful uploads
 * Built around tmux-based development workflows
 
 ---
@@ -346,6 +352,7 @@ python aibot.py
 * Script/tool execution integration
 * Multi-bot orchestration
 * Shared bot dashboard
+* True API-side progress tracking (future if supported)
 
 ---
 
