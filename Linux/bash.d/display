@@ -6,7 +6,6 @@
 # desc:     Display/WM auto-start configuration
 #--------------------------------------------
 
-# Auto-start i3 on TTY1 only (first virtual console)
-if [ -z "${DISPLAY}" ] && [ "${XDG_VTNR}" -eq 1 ]; then
+if [ -z "${DISPLAY}" ] && [ "${XDG_VTNR:-0}" -eq 1 ]; then
     startx
 fi
