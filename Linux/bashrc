@@ -19,7 +19,3 @@ done
 # Load exports
 export PATH="$HOME/bin:$PATH"
 
-# Auto-start i3 on TTY1
-if [ -z "${DISPLAY}" ] && [ "${XDG_VTNR}" -eq 1 ]; then
-    exec i3
-fi
