@@ -2,7 +2,7 @@
 #--------------------------------------------
 # file:     ~/.bash.d/motd
 # author:   Mike Redd
-# version:  2.3
+# version:  2.4
 # desc:     Custom login message for SSH sessions (Unicode borders)
 #--------------------------------------------
 
@@ -56,24 +56,24 @@ if [ -n "$SSH_CONNECTION" ]; then
     echo -e "${BOLD}${MAGENTA}┌──────────────────────────────────────────────────────────────────┐${NC}"
     echo -e "${BOLD}${MAGENTA}│                                                                  │${NC}"
     echo -e "${BOLD}${MAGENTA}│${NC}              ${BOLD}${WHITE}WELCOME TO ARAKIEL${NC}  ${BOLD}${MAGENTA}                                │${NC}"
-    echo -e "${BOLD}${MAGENTA}│${NC}              ${CYAN}Raspberry Pi 5 | Arch Linux${NC}                     ${BOLD}${MAGENTA}│${NC}"
+    echo -e "${BOLD}${MAGENTA}│${NC}              ${CYAN}Raspberry Pi 5 | Arch Linux${NC}                     	   ${BOLD}${MAGENTA}│${NC}"
     echo -e "${BOLD}${MAGENTA}│                                                                  │${NC}"
     echo -e "${BOLD}${MAGENTA}└──────────────────────────────────────────────────────────────────┘${NC}"
     echo ""
 
     # System Info
     echo -e "${BOLD}${CYAN}┌──────────────────────────────────────────────────────────────────┐${NC}"
-    echo -e "${BOLD}${CYAN}│${NC}  ${BOLD}SYSTEM INFORMATION${NC}                                                  ${BOLD}${CYAN}│${NC}"
+    echo -e "${BOLD}${CYAN}│${NC}  ${BOLD}SYSTEM INFORMATION${NC}                                              ${BOLD}${CYAN}│${NC}"
     echo -e "${BOLD}${CYAN}├──────────────────────────────────────────────────────────────────┤${NC}"
-    printf "${CYAN}│${NC}  ${GREEN}Hostname${NC}        ${WHITE}%-43s${NC}  ${CYAN}│${NC}\n" "$HOSTNAME"
-    printf "${CYAN}│${NC}  ${GREEN}Kernel${NC}          ${WHITE}%-43s${NC}  ${CYAN}│${NC}\n" "$(uname -r)"
-    printf "${CYAN}│${NC}  ${GREEN}Uptime${NC}          ${WHITE}%-43s${NC}  ${CYAN}│${NC}\n" "$UPTIME"
-    printf "${CYAN}│${NC}  ${GREEN}Load Avg${NC}        ${WHITE}%-43s${NC}  ${CYAN}│${NC}\n" "$LOAD"
-    printf "${CYAN}│${NC}  ${GREEN}Memory${NC}          ${WHITE}%-43s${NC}  ${CYAN}│${NC}\n" "$MEM"
-    printf "${CYAN}│${NC}  ${GREEN}Disk (root)${NC}     ${WHITE}%-43s${NC}  ${CYAN}│${NC}\n" "$DISK"
-    printf "${CYAN}│${NC}  ${GREEN}CPU Temp${NC}        ${WHITE}%-43s${NC}  ${CYAN}│${NC}\n" "$TEMP"
-    printf "${CYAN}│${NC}  ${GREEN}Packages${NC}        ${WHITE}%-43s${NC}  ${CYAN}│${NC}\n" "$PACKAGES"
-    printf "${CYAN}│${NC}  ${GREEN}Sessions${NC}        ${WHITE}%-43s${NC}  ${CYAN}│${NC}\n" "$SESSIONS"
+    printf "${CYAN}│${NC}  ${GREEN}Hostname${NC}        ${WHITE}%-43s${NC}     ${CYAN}│${NC}\n" "$HOSTNAME"
+    printf "${CYAN}│${NC}  ${GREEN}Kernel${NC}          ${WHITE}%-43s${NC}     ${CYAN}│${NC}\n" "$(uname -r)"
+    printf "${CYAN}│${NC}  ${GREEN}Uptime${NC}          ${WHITE}%-43s${NC}     ${CYAN}│${NC}\n" "$UPTIME"
+    printf "${CYAN}│${NC}  ${GREEN}Load Avg${NC}        ${WHITE}%-43s${NC}     ${CYAN}│${NC}\n" "$LOAD"
+    printf "${CYAN}│${NC}  ${GREEN}Memory${NC}          ${WHITE}%-43s${NC}     ${CYAN}│${NC}\n" "$MEM"
+    printf "${CYAN}│${NC}  ${GREEN}Disk (root)${NC}     ${WHITE}%-43s${NC}     ${CYAN}│${NC}\n" "$DISK"
+    printf "${CYAN}│${NC}  ${GREEN}CPU Temp${NC}        ${WHITE}%-43s${NC}      ${CYAN}│${NC}\n" "$TEMP"
+    printf "${CYAN}│${NC}  ${GREEN}Packages${NC}        ${WHITE}%-43s${NC}     ${CYAN}│${NC}\n" "$PACKAGES"
+    printf "${CYAN}│${NC}  ${GREEN}Sessions${NC}        ${WHITE}%-43s${NC}     ${CYAN}│${NC}\n" "$SESSIONS"
     echo -e "${BOLD}${CYAN}└──────────────────────────────────────────────────────────────────┘${NC}"
     echo ""
 
@@ -81,22 +81,22 @@ if [ -n "$SSH_CONNECTION" ]; then
     echo -e "${BOLD}${YELLOW}┌──────────────────────────────────────────────────────────────────┐${NC}"
     echo -e "${BOLD}${YELLOW}│${NC}  ${BOLD}SECURITY STATUS${NC}                                                 ${BOLD}${YELLOW}│${NC}"
     echo -e "${BOLD}${YELLOW}├──────────────────────────────────────────────────────────────────┤${NC}"
-    echo -e "${YELLOW}│${NC}  ${UFW_ICON} UFW                     ${UFW_COLOR}UFW: $UFW_STATUS${NC}                                          ${YELLOW}│${NC}"
-    echo -e "${YELLOW}│${NC}  ${SG_ICON} SSHGuard                ${SG_COLOR}SSHGuard: $SG_STATUS${NC}                                    ${YELLOW}│${NC}"
-    echo -e "${YELLOW}│${NC}  ${GREEN}[+]${NC} SSH Keys                ${GREEN}Password auth: disabled${NC}                                    ${YELLOW}│${NC}"
+    echo -e "${YELLOW}│${NC}  ${UFW_ICON} UFW                     ${UFW_COLOR}UFW: $UFW_STATUS${NC}                         ${YELLOW}│${NC}"
+    echo -e "${YELLOW}│${NC}  ${SG_ICON} SSHGuard                ${SG_COLOR}SSHGuard: $SG_STATUS${NC}                    ${YELLOW}│${NC}"
+    echo -e "${YELLOW}│${NC}  ${GREEN}[+]${NC} SSH Keys                ${GREEN}Password auth: disabled${NC}             ${YELLOW}│${NC}"
     echo -e "${BOLD}${YELLOW}└──────────────────────────────────────────────────────────────────┘${NC}"
     echo ""
 
     # Quick Commands
     echo -e "${BOLD}${GREEN}┌──────────────────────────────────────────────────────────────────┐${NC}"
-    echo -e "${BOLD}${GREEN}│${NC}  ${BOLD}QUICK COMMANDS${NC}                                                 ${BOLD}${GREEN}│${NC}"
+    echo -e "${BOLD}${GREEN}│${NC}  ${BOLD}QUICK COMMANDS${NC}                                                  ${BOLD}${GREEN}│${NC}"
     echo -e "${BOLD}${GREEN}├──────────────────────────────────────────────────────────────────┤${NC}"
-    echo -e "${GREEN}│${NC}  ${WHITE}tools${NC}      → Tool menu                                      ${GREEN}│${NC}"
-    echo -e "${GREEN}│${NC}  ${WHITE}rp5si${NC}      → Full system info                             ${GREEN}│${NC}"
-    echo -e "${GREEN}│${NC}  ${WHITE}pifw${NC}       → Firewall manager                             ${GREEN}│${NC}"
-    echo -e "${GREEN}│${NC}  ${WHITE}ff${NC}         → Fast system info (fastfetch)                 ${GREEN}│${NC}"
-    echo -e "${GREEN}│${NC}  ${WHITE}update${NC}      → System update (pacman -Syu)                  ${GREEN}│${NC}"
-    echo -e "${GREEN}│${NC}  ${WHITE}tmuxaa${NC}     → Attach to arakiel tmux session               ${GREEN}│${NC}"
+    echo -e "${GREEN}│${NC}  ${WHITE}tools${NC}      → Tool menu                                          ${GREEN}│${NC}"
+    echo -e "${GREEN}│${NC}  ${WHITE}rp5si${NC}      → Full system info                                   ${GREEN}│${NC}"
+    echo -e "${GREEN}│${NC}  ${WHITE}pifw${NC}       → Firewall manager                                   ${GREEN}│${NC}"
+    echo -e "${GREEN}│${NC}  ${WHITE}ff${NC}         → Fast system info (fastfetch)                       ${GREEN}│${NC}"
+    echo -e "${GREEN}│${NC}  ${WHITE}update${NC}      → System update (pacman -Syu)                       ${GREEN}│${NC}"
+    echo -e "${GREEN}│${NC}  ${WHITE}tmuxaa${NC}     → Attach to arakiel tmux session                     ${GREEN}│${NC}"
     echo -e "${BOLD}${GREEN}└──────────────────────────────────────────────────────────────────┘${NC}"
     echo ""
 fi
