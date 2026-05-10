@@ -203,6 +203,15 @@ def get_convert_presets() -> dict:
         cfg,
         "CONVERT_STYLE_PRESETS",
         {
+            "ghibli": (
+                "Transform this image into a Studio Ghibli-inspired hand-painted animated film frame. "
+                "Preserve the original composition, camera angle, subject count, poses, facial identity, "
+                "and object placement. Use soft watercolor and gouache backgrounds, delicate hand-drawn "
+                "contour lines, warm natural light, expressive but believable faces, whimsical fantasy "
+                "atmosphere, rich lived-in environmental detail, painterly paper texture, gentle shadows, "
+                "and a calm cinematic sense of wonder. Avoid muddy sepia wash, blurry faces, extra limbs, "
+                "text, logos, signatures, or watermarks."
+            ),
             "cozy-anime": (
                 "Transform this image into a whimsical hand-painted animated fantasy style, "
                 "soft watercolor backgrounds, warm lighting, dreamy atmosphere, expressive detail."
