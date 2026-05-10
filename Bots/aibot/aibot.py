@@ -1,9 +1,9 @@
 # ------------------------------------------------------------
 # file:     aibot.py
 # author:   Mike Redd
-# version:  3.5
+# version:  3.6
 # created:  2026-04-19
-# updated:  2026-04-29
+# updated:  2026-05-09
 # desc:     Telegram AI bot with text + tiered image generation
 #           Config via /mnt/nvme1/work/bots/config/aibotrc.py
 # ------------------------------------------------------------
@@ -27,7 +27,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 # ── Branding ─────────────────────────────────────────────────
 
 BOT_NAME = "Zaphkiel"
-BOT_VERSION = "3.5"
+BOT_VERSION = "3.6"
 
 # ── Load config ───────────────────────────────────────────────
 CONFIG_PATH = Path(
@@ -52,6 +52,9 @@ IMAGE_DIR = Path(cfg.IMAGE_SAVE_DIR)
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 IMAGE_DIR.mkdir(parents=True, exist_ok=True)
 
+CONVERT_DIR = IMAGE_DIR / "converted"
+CONVERT_DIR.mkdir(parents=True, exist_ok=True)
+
 LOG_FILE = LOG_DIR / "aibot.log"
 
 # ── Logging ──────────────────────────────────────────────────
@@ -71,7 +74,7 @@ client = AsyncOpenAI(api_key=cfg.OPENAI_API_KEY)
 
 # ── Reload Support ────────────────────────────────────────────
 def reload_runtime_config() -> None:
-    global cfg, LOG_DIR, IMAGE_DIR, LOG_FILE, client
+    global cfg, LOG_DIR, IMAGE_DIR, CONVERT_DIR, LOG_FILE, client
 
     cfg = importlib.reload(cfg)
 
@@ -80,6 +83,9 @@ def reload_runtime_config() -> None:
 
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     IMAGE_DIR.mkdir(parents=True, exist_ok=True)
+
+    CONVERT_DIR = IMAGE_DIR / "converted"
+    CONVERT_DIR.mkdir(parents=True, exist_ok=True)
 
     LOG_FILE = LOG_DIR / "aibot.log"
 
@@ -191,6 +197,61 @@ def parse_img_request(raw_prompt: str):
 
     return prompt, final_prompt, tier, size, quality
 
+
+def get_convert_presets() -> dict:
+    return getattr(
+        cfg,
+        "CONVERT_STYLE_PRESETS",
+        {
+            "cozy-anime": (
+                "Transform this image into a whimsical hand-painted animated fantasy style, "
+                "soft watercolor backgrounds, warm lighting, dreamy atmosphere, expressive detail."
+            ),
+            "comic": (
+                "Transform this image into a dramatic comic book illustration, bold ink lines, "
+                "cinematic lighting, vivid colors, dynamic composition."
+            ),
+            "hyperreal": (
+                "Transform this image into a hyper-realistic cinematic 4K photograph, "
+                "lifelike textures, realistic lighting, sharp focus, natural detail."
+            ),
+            "oilpaint": (
+                "Transform this image into a detailed classical oil painting, rich brush strokes, "
+                "painterly texture, dramatic light, museum-quality finish."
+            ),
+            "darkfantasy": (
+                "Transform this image into a dark fantasy movie poster style, moody lighting, "
+                "cinematic atmosphere, gothic detail, dramatic composition."
+            ),
+        },
+    )
+
+def get_convert_style_prompt(style: str) -> str | None:
+    presets = get_convert_presets()
+    return presets.get(style)
+
+def make_converted_filename(style: str) -> str:
+    stamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    return f"{slugify(style)}_converted_{stamp}.png"
+
+async def download_reply_photo(update: Update) -> Path:
+    if not update.message or not update.message.reply_to_message:
+        raise RuntimeError("Reply to an image with /convert <style>")
+
+    reply = update.message.reply_to_message
+
+    if not reply.photo:
+        raise RuntimeError("Reply target does not contain an image.")
+
+    photo = reply.photo[-1]
+    telegram_file = await photo.get_file()
+
+    temp_input = CONVERT_DIR / "convert_input.jpg"
+    await telegram_file.download_to_drive(temp_input)
+
+    return temp_input
+
+
 def format_api_error(exc: Exception) -> str:
     msg = str(exc).lower()
 
@@ -224,6 +285,8 @@ async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "/ai <message>\n"
         "/img <prompt> [--low|--med|--high|--ultra]\n"
         "/img <prompt> [--square|--portrait|--landscape]\n"
+        "/convert <style>  (reply to image)\n"
+        "/styles\n"
         "/help\n"
         "/status\n"
         "/reload\n"
@@ -256,6 +319,11 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "/img angel warrior --low\n"
         "/img zaphkiel white gold armor --ultra --portrait\n"
         "/img dark fantasy throne room --high --landscape\n\n"
+        "Convert images:\n"
+        "/convert cozy-anime   Reply to an image to restyle it\n"
+        "/convert comic\n"
+        "/convert hyperreal\n"
+        "/styles              List available convert styles\n\n"
         "System:\n"
         "/status\n"
         "/reload   Reload config without restarting\n"
@@ -371,6 +439,110 @@ async def img_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         logger.exception("Image generation failed")
         await update.message.reply_text(format_api_error(exc))
 
+
+async def styles_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not is_allowed(update) or not update.message:
+        return
+
+    presets = get_convert_presets()
+
+    lines = [f"🎨 {BOT_NAME} conversion styles:", ""]
+    for name in sorted(presets.keys()):
+        lines.append(f"• {name}")
+
+    lines.extend([
+        "",
+        "Usage:",
+        "/convert <style>",
+        "",
+        "Reply to an image with the command above.",
+    ])
+
+    await update.message.reply_text("\n".join(lines))
+
+async def convert_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not is_allowed(update) or not update.message:
+        return
+
+    style = " ".join(context.args).strip().lower()
+
+    if not style:
+        await update.message.reply_text(
+            "Usage: /convert <style>\n\n"
+            "Reply to an image with this command.\n"
+            "Use /styles to list available styles."
+        )
+        return
+
+    style_prompt = get_convert_style_prompt(style)
+
+    if not style_prompt:
+        await update.message.reply_text(
+            f"Unknown style: {style}\n\n"
+            "Use /styles to list available styles."
+        )
+        return
+
+    try:
+        logger.info(
+            "CONVERT request from user_id=%s | style=%s",
+            update.effective_user.id,
+            style,
+        )
+
+        await update.message.reply_text(f"🎨 Converting image using style: {style}")
+
+        input_path = await download_reply_photo(update)
+
+        with open(input_path, "rb") as image_file:
+            result = await client.images.edit(
+                model=cfg.IMAGE_MODEL,
+                image=image_file,
+                prompt=style_prompt,
+                size=getattr(cfg, "CONVERT_IMAGE_SIZE", cfg.IMAGE_SIZE),
+                quality=getattr(cfg, "CONVERT_IMAGE_QUALITY", cfg.IMAGE_QUALITY),
+            )
+
+        if not result.data:
+            raise RuntimeError("Image edit API returned no data.")
+
+        image_b64 = result.data[0].b64_json
+
+        if not image_b64:
+            raise RuntimeError("Image edit API returned no base64 image payload.")
+
+        image_data = base64.b64decode(image_b64)
+
+        image_filename = make_converted_filename(style)
+        image_path = CONVERT_DIR / image_filename
+        image_path.write_bytes(image_data)
+
+        image_stream = BytesIO(image_data)
+        image_stream.name = image_filename
+        image_stream.seek(0)
+
+        await update.message.reply_photo(
+            photo=image_stream,
+            caption=f"Converted style: {style}",
+            read_timeout=getattr(cfg, "TELEGRAM_READ_TIMEOUT", 120),
+            write_timeout=getattr(cfg, "TELEGRAM_WRITE_TIMEOUT", 120),
+            connect_timeout=getattr(cfg, "TELEGRAM_CONNECT_TIMEOUT", 30),
+            pool_timeout=getattr(cfg, "TELEGRAM_POOL_TIMEOUT", 30),
+        )
+
+        logger.info("CONVERT success | saved=%s", image_path)
+
+    except TimedOut:
+        logger.warning("Telegram timed out while sending converted image.")
+        await update.message.reply_text(
+            "Image was converted and saved locally, but Telegram timed out while sending it."
+        )
+
+    except Exception as exc:
+        logger.exception("Image conversion failed")
+        await update.message.reply_text(format_api_error(exc))
+
+
 async def status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not is_allowed(update) or not update.message:
         return
@@ -385,7 +557,9 @@ async def status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         f"Image format:  {cfg.IMAGE_OUTPUT_FORMAT}\n"
         f"Config:        {CONFIG_PATH}\n"
         f"Logs:          {LOG_FILE}\n"
-        f"Images:        {IMAGE_DIR}"
+        f"Images:        {IMAGE_DIR}\n"
+        f"Converted:     {CONVERT_DIR}\n"
+        f"Styles:        {len(get_convert_presets())}"
     )
 
 async def reload_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -406,7 +580,9 @@ async def reload_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             f"Image quality: {cfg.IMAGE_QUALITY}\n"
             f"Image format:  {cfg.IMAGE_OUTPUT_FORMAT}\n"
             f"Logs:          {LOG_FILE}\n"
-            f"Images:        {IMAGE_DIR}"
+            f"Images:        {IMAGE_DIR}\n"
+            f"Converted:     {CONVERT_DIR}\n"
+            f"Styles:        {len(get_convert_presets())}"
         )
 
     except Exception as exc:
@@ -448,6 +624,8 @@ def main() -> None:
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CommandHandler("ai", ai_cmd))
     app.add_handler(CommandHandler("img", img_cmd))
+    app.add_handler(CommandHandler("convert", convert_cmd))
+    app.add_handler(CommandHandler("styles", styles_cmd))
     app.add_handler(CommandHandler("status", status_cmd))
     app.add_handler(CommandHandler("reload", reload_cmd))
     app.add_handler(CommandHandler("restart", restart_cmd))

@@ -14,6 +14,7 @@ A private, self-hosted Telegram AI assistant built for real-world use — chat, 
 
 * 🧠 AI chat via OpenAI (`/ai`)
 * 🎨 Tiered image generation (`/img`)
+* 🖼️ Image conversion + style transfer (`/convert`)
 * ⚡ Live config reloads (`/reload`)
 * ♻️ Hot restart support (`/restart`)
 * 💾 Automatic local image saving
@@ -67,6 +68,57 @@ Ask the AI anything.
 /img angel warrior --low
 /img zaphkiel white gold armor --ultra --portrait
 /img dark fantasy throne room --high --landscape
+```
+
+---
+
+
+### 🖼️ Image Conversion
+
+Reply to an image with:
+
+```bash
+/convert <style>
+```
+
+Transforms an existing image into another artistic style using OpenAI image editing.
+
+### Available Styles
+
+| Style | Effect |
+|---|---|
+| `cozy-anime` | Soft hand-painted fantasy animation |
+| `comic` | Bold comic book illustration |
+| `hyperreal` | Cinematic photorealism |
+| `oilpaint` | Classical oil painting |
+| `darkfantasy` | Dark fantasy movie-poster aesthetic |
+
+### Examples
+
+Reply to an image with:
+
+```bash
+/convert cozy-anime
+```
+
+```bash
+/convert comic
+```
+
+```bash
+/convert hyperreal
+```
+
+### List Available Styles
+
+```bash
+/styles
+```
+
+Converted images are automatically saved locally:
+
+```text
+G:\bots\images\converted
 ```
 
 ---
@@ -163,6 +215,7 @@ G:\bots\
 ├── config\
 │   └── aibotrc.py
 ├── images\
+│   └── converted\
 ├── logs\
 ```
 
@@ -221,6 +274,7 @@ Includes:
 
 * AI requests
 * Image generation activity
+* Image conversion activity
 * Reload events
 * Restart events
 * Errors and exceptions
@@ -270,6 +324,7 @@ python aibot.py
 * Image generation speed depends on API + network
 * `/reload` reloads configuration live
 * `/restart` performs an in-place Python restart using `os.execv()`
+* `/convert` supports reply-to-image style transfer workflows
 * Built around tmux-based development workflows
 
 ---
@@ -279,6 +334,7 @@ python aibot.py
 * Streaming AI responses
 * Telegram mention support
 * Inline bot interactions
+* Custom conversion presets
 * Cross-bot communication
 * `/web` live search support
 * Script/tool execution integration
