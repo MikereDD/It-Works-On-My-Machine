@@ -2,7 +2,7 @@
 #--------------------------------------------
 # file:     ~/.bash.d/aliases
 # author:   Mike Redd
-# version:  1.2
+# version:  1.3
 # desc:     Bash aliases (organized + documented)
 #--------------------------------------------
 
@@ -37,10 +37,12 @@ alias myip='ip -4 addr show end0 | awk "/inet / {print $2}" | cut -d/ -f1'  # lo
 
 alias arakiel='~/bin/arakiel-tmux.sh'   # custom launcher
 alias tools="$HOME/scripts/tool-menu.sh"  # unified tool menu
+alias pifw='sudo $HOME/scripts/admintools/pi-fw.sh' # firewall
 
 # ── System Info ─────────────────────────────
 
 alias ff='fastfetch --logo small'  # quick system info
+alias rp5si='sudo $HOME/scripts/admintools/rp5-systeminfo.sh' # custom full system info
 
 # ── Telegram Bot API (systemd) ──────────────
 
