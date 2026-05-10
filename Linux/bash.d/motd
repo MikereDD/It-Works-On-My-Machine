@@ -56,7 +56,7 @@ if [ -n "$SSH_CONNECTION" ]; then
     echo -e "${BOLD}${MAGENTA}┌──────────────────────────────────────────────────────────────────┐${NC}"
     echo -e "${BOLD}${MAGENTA}│                                                                  │${NC}"
     echo -e "${BOLD}${MAGENTA}│${NC}              ${BOLD}${WHITE}WELCOME TO ARAKIEL${NC}  ${BOLD}${MAGENTA}                                │${NC}"
-    echo -e "${BOLD}${MAGENTA}│${NC}              ${CYAN}Raspberry Pi 5 | Arch Linux${NC}                     	   ${BOLD}${MAGENTA}│${NC}"
+    echo -e "${BOLD}${MAGENTA}│${NC}              ${CYAN}Raspberry Pi 5 |  Arch Linux${NC}             	   ${BOLD}${MAGENTA}│${NC}"
     echo -e "${BOLD}${MAGENTA}│                                                                  │${NC}"
     echo -e "${BOLD}${MAGENTA}└──────────────────────────────────────────────────────────────────┘${NC}"
     echo ""
