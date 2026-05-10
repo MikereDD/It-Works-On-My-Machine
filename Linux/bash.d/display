@@ -8,5 +8,5 @@
 
 # Auto-start i3 on TTY1 only (first virtual console)
 if [ -z "${DISPLAY}" ] && [ "${XDG_VTNR}" -eq 1 ]; then
-    exec i3
+    startx
 fi
