@@ -6,7 +6,7 @@
 ![Status](https://img.shields.io/badge/Status-Private-informational)
 ![License](https://img.shields.io/badge/License-Personal-lightgrey)
 
-A private, self-hosted Telegram AI assistant built for real-world use — chat, image generation, runtime reloads, and automation.
+A private, self-hosted Telegram AI assistant built for real-world use — chat, image generation, image conversion, runtime reloads, and automation.
 
 ---
 
@@ -15,6 +15,7 @@ A private, self-hosted Telegram AI assistant built for real-world use — chat, 
 * 🧠 AI chat via OpenAI (`/ai`)
 * 🎨 Tiered image generation (`/img`)
 * 🖼️ Image conversion + style transfer (`/convert`)
+* 🎨 Conversion style listing (`/styles`)
 * ⚡ Live config reloads (`/reload`)
 * ♻️ Hot restart support (`/restart`)
 * 💾 Automatic local image saving

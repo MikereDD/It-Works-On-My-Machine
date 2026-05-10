@@ -1,7 +1,7 @@
 # ------------------------------------------------------------
 # file:     aibot.py
 # author:   Mike Redd
-# version:  3.6
+# version:  3.7
 # created:  2026-04-19
 # updated:  2026-05-09
 # desc:     Telegram AI bot with text + tiered image generation
@@ -27,7 +27,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 # ── Branding ─────────────────────────────────────────────────
 
 BOT_NAME = "Zaphkiel"
-BOT_VERSION = "3.6"
+BOT_VERSION = "3.7"
 
 # ── Load config ───────────────────────────────────────────────
 CONFIG_PATH = Path(
