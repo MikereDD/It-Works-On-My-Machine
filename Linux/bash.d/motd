@@ -95,8 +95,9 @@ if [ -n "$SSH_CONNECTION" ]; then
     echo -e "${GREEN}│${NC}  ${WHITE}rp5si${NC}      → Full system info                                   ${GREEN}│${NC}"
     echo -e "${GREEN}│${NC}  ${WHITE}pifw${NC}       → Firewall manager                                   ${GREEN}│${NC}"
     echo -e "${GREEN}│${NC}  ${WHITE}ff${NC}         → Fast system info (fastfetch)                       ${GREEN}│${NC}"
-    echo -e "${GREEN}│${NC}  ${WHITE}update${NC}      → System update (pacman -Syu)                       ${GREEN}│${NC}"
+    echo -e "${GREEN}│${NC}  ${WHITE}update${NC}     → System update (pacman -Syu)                        ${GREEN}│${NC}"
     echo -e "${GREEN}│${NC}  ${WHITE}tmuxaa${NC}     → Attach to arakiel tmux session                     ${GREEN}│${NC}"
     echo -e "${BOLD}${GREEN}└──────────────────────────────────────────────────────────────────┘${NC}"
     echo ""
 fi
+
