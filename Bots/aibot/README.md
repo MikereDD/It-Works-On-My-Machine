@@ -88,6 +88,7 @@ Transforms an existing image into another artistic style using OpenAI image edit
 
 | Style | Effect |
 |---|---|
+| `ghibli` | Studio Ghibli-inspired hand-painted animation |
 | `cozy-anime` | Soft hand-painted fantasy animation |
 | `comic` | Bold comic book illustration |
 | `hyperreal` | Cinematic photorealism |
@@ -97,6 +98,10 @@ Transforms an existing image into another artistic style using OpenAI image edit
 ### Examples
 
 Reply to an image with:
+
+```bash
+/convert ghibli
+```
 
 ```bash
 /convert cozy-anime
@@ -335,7 +340,7 @@ python aibot.py
 * Streaming AI responses
 * Telegram mention support
 * Inline bot interactions
-* Custom conversion presets
+* Additional conversion presets
 * Cross-bot communication
 * `/web` live search support
 * Script/tool execution integration
