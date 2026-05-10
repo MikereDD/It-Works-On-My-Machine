@@ -204,9 +204,12 @@ def get_convert_presets() -> dict:
         "CONVERT_STYLE_PRESETS",
         {
             "ghibli": (
-                "Studio Ghibli-inspired anime style. Soft watercolor, gouache textures, "
-                "warm lighting, hand-drawn lines, earthy pastel palette. "
-                "No text, no watermarks."
+                "Studio Ghibli 1990s hand-painted cel animation style. Preserve composition, pose, "
+                "facial identity, clothing, camera angle, and subject count. Soft watercolor backgrounds, "
+                "gouache textures, warm natural lighting, cinematic framing, expressive eyes, subtle emotion, "
+                "clean hand-drawn lines, and whimsical environmental detail. Avoid: modern anime gloss, "
+                "plastic skin, oversaturated colors, blurry faces, distorted anatomy, extra/missing limbs, "
+                "text, logos, or watermarks."
             ),
             "cozy-anime": (
                 "Transform this image into a whimsical hand-painted animated fantasy style, "
