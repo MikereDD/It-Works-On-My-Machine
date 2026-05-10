@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+#--------------------------------------------
+# file:     ~/.bash.d/display
+# author:   Mike Redd
+# version:  1.0
+# desc:     Display/WM auto-start configuration
+#--------------------------------------------
+
+# Auto-start i3 on TTY1 only (first virtual console)
+if [ -z "${DISPLAY}" ] && [ "${XDG_VTNR}" -eq 1 ]; then
+    exec i3
+fi
