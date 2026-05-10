@@ -33,6 +33,11 @@ set history=1000
 call plug#begin('~/.vim/plugged')
 
 Plug 'preservim/nerdtree'
+Plug 'mhinz/vim-startify'
+Plug 'iamcco/markdown-preview.nvim'
+Plug 'jreybert/vimagit'
+Plug 'dense-analysis/ale'
+Plug 'vim-airline/vim-airline'
 
 call plug#end()
 
@@ -195,4 +200,5 @@ command! -bang QA qa<bang>
 " -------------------------
 set background=dark
 colorscheme desert
+
 
