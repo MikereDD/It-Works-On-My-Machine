@@ -204,19 +204,12 @@ def get_convert_presets() -> dict:
         "CONVERT_STYLE_PRESETS",
         {
             "ghibli": (
-                "Convert this image into an authentic Studio Ghibli-style animated film frame. "
-                "Faithfully preserve the original composition, pose, clothing silhouette, camera angle, "
-                "facial identity (same person, recognizable features), and subject count. "
-                "Render in high-quality hand-painted cel animation with: soft watercolor backgrounds, "
-                "gouache textures, warm natural lighting (golden hour / overcast soft glow), "
-                "expressive but gentle eyes, subtle emotions, clean hand-drawn linework, atmospheric depth, "
-                "lush environmental details, whimsical realism, and cinematic framing inspired by "
-                "1990s Studio Ghibli films such as Totoro, Kiki's Delivery Service, and Whisper of the Heart. "
-                "Skin should have gentle hand-painted shading, not plastic or airbrushed. "
-                "Avoid: modern glossy anime rendering, oversaturated colors, blurry faces, distorted anatomy, "
-                "extra fingers/limbs, missing limbs, text, logos, watermarks, or low-detail backgrounds. "
-                "Use Miyazaki-inspired color palettes with soft earth tones, pastel skies, muted greens, "
-                "warm creams, and gentle shadows with no harsh contrast."
+                "Studio Ghibli 1990s hand-painted cel animation style. Preserve composition, pose, "
+                "facial identity, clothing, camera angle, and subject count. Soft watercolor backgrounds, "
+                "gouache textures, warm natural lighting, cinematic framing, expressive eyes, subtle emotion, "
+                "clean hand-drawn lines, and whimsical environmental detail. Avoid: modern anime gloss, "
+                "plastic skin, oversaturated colors, blurry faces, distorted anatomy, extra/missing limbs, "
+                "text, logos, or watermarks."
             ),
             "cozy-anime": (
                 "Transform this image into a whimsical hand-painted animated fantasy style, "
