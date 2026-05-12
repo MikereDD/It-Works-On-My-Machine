@@ -57,3 +57,4 @@
 * [v5.8.2](v5.8.2.md) — Telegram inline mode and global inline utility interaction
 * [v5.8.3](v5.8.3.md) — Queue cleanup consistency and DM upload UX polish
 * [v5.8.4](v5.8.4.md) — Facebook platform registry validation fix
+* [v5.8.5](v5.8.5.md) — BitChute platform registry and validation support

@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file:     ytbot.py
 # author:   Mike Redd
-# version:  5.8.4
+# version:  5.8.5
 # created:  2026-04-18
 # updated:  2026-05-01
 # desc:     Queue-based Telegram media bot
@@ -32,7 +32,7 @@ from urllib.request import urlopen
 # ── Branding ─────────────────────────────────────────────────
 
 BOT_NAME = "Raziel"
-BOT_VERSION = "5.8.4"
+BOT_VERSION = "5.8.5"
 
 import yt_dlp
 from telegram import (
@@ -125,6 +125,10 @@ VIDEO_PLATFORM_PRESETS = {
         "m.facebook.com",
         "www.facebook.com",
         "fb.watch",
+    ),
+    "bitchute": (
+        "bitchute.com",
+        "www.bitchute.com",
     ),
 }
 
@@ -2819,7 +2823,7 @@ async def handle_url(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
     remember_chat(update.effective_chat)
 
-    if await run_mention_command(update, _ctx):
+    if await run_mention_command(update, ctx):
         return
 
     user = update.effective_user
@@ -2978,7 +2982,6 @@ def build_app():
 
     app = builder.build()
 
-    app.add_error_handler(error_handler)
     app.add_handler(InlineQueryHandler(inline_query_cmd))
     app.add_handler(CommandHandler("start", start_cmd))
     app.add_handler(CommandHandler("help", help_cmd))
@@ -3188,13 +3191,6 @@ async def mention_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         await message.reply_text(f"❌ {str(e)[:300]}")
 
 
-
-async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Log Telegram handler exceptions cleanly."""
-    log.exception("Telegram update handler error", exc_info=context.error)
-
-
-
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--url", help="Download one URL from CLI")
@@ -3228,4 +3224,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

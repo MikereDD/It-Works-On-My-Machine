@@ -1,9 +1,9 @@
-# 🎬 Raziel v5.8.4
+# 🎬 Raziel v5.8.5
 
 > A typezerø Project
 > Built for real-world use, not perfection.
 
-![Version](https://img.shields.io/badge/version-v5.8.4-blue)
+![Version](https://img.shields.io/badge/version-v5.8.5-blue)
 ![Python](https://img.shields.io/badge/python-3.10+-blue)
 ![License](https://img.shields.io/badge/license-WTFPL-lightgrey)
 
@@ -11,7 +11,7 @@
 
 ## 🚀 Overview
 
-**Raziel v5.8.4** is a full media pipeline bot with:
+**Raziel v5.8.5** is a full media pipeline bot with:
 
 * **automatic group link ingestion**
 * **clean chat behavior**
@@ -30,6 +30,7 @@
 * **Telegram inline mode support**
 * **consistent DM queue cleanup behavior**
 * **Facebook platform validation support**
+* **BitChute platform validation support**
 
 It accepts input from:
 
@@ -435,6 +436,38 @@ config-driven platform presets.
 
 ---
 
+### 📺 BitChute Platform Support (v5.8.5)
+
+Raziel now supports BitChute URLs through the native validation and
+platform registry system.
+
+Supported domains:
+
+```python
+"bitchute": (
+    "bitchute.com",
+    "www.bitchute.com",
+)
+```
+
+BitChute can now be enabled directly through:
+
+```python
+ENABLED_VIDEO_PLATFORMS = (
+    "bitchute",
+)
+```
+
+This allows:
+- BitChute video links
+- native validation support
+- config-driven enablement
+- standard yt-dlp routing behavior
+
+without requiring custom domain overrides.
+
+---
+
 
 ### 📥 Media Handling
 
@@ -523,7 +556,17 @@ python ytbot.py --audio "<link>"
 
 ## 🧠 Version History
 
-### v5.8.4 (Current)
+### v5.8.5 (Current)
+
+* Added BitChute platform validation support
+* Added BitChute preset registry domains
+* Added config-driven BitChute enablement
+* Expanded native platform registry coverage
+* Improved validation layer compatibility
+
+---
+
+### v5.8.4
 
 * Fixed Facebook platform validation support
 * Added Facebook preset registry domains
