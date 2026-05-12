@@ -1,9 +1,9 @@
-# 🎬 Raziel v5.8.5
+# 🎬 Raziel v5.9
 
 > A typezerø Project
 > Built for real-world use, not perfection.
 
-![Version](https://img.shields.io/badge/version-v5.8.5-blue)
+![Version](https://img.shields.io/badge/version-v5.9-blue)
 ![Python](https://img.shields.io/badge/python-3.10+-blue)
 ![License](https://img.shields.io/badge/license-WTFPL-lightgrey)
 
@@ -11,7 +11,7 @@
 
 ## 🚀 Overview
 
-**Raziel v5.8.5** is a full media pipeline bot with:
+**Raziel v5.9** is a full media pipeline bot with:
 
 * **automatic group link ingestion**
 * **clean chat behavior**
@@ -31,6 +31,8 @@
 * **consistent DM queue cleanup behavior**
 * **Facebook platform validation support**
 * **BitChute platform validation support**
+* **config-controlled validation policy**
+* **open yt-dlp compatibility mode**
 
 It accepts input from:
 
@@ -100,14 +102,64 @@ DEBUG_MODE = False
 
 ---
 
-### 🚫 Validation Layer (v5.4.1)
+### ⚙️ Config-Controlled Validation Policy (v5.9)
 
-* Only supported video sources are processed
-* Blocks:
+Raziel now supports configurable validation behavior through:
 
-  * non-video URLs
-  * unsupported platforms
-  * random links
+```python
+STRICT_PLATFORM_VALIDATION = False
+```
+
+Raziel can now operate in two modes:
+
+#### Strict Mode
+
+```python
+STRICT_PLATFORM_VALIDATION = True
+```
+
+Behavior:
+- only configured platforms allowed
+- preset/domain validation enforced
+- unsupported domains rejected
+
+#### Open yt-dlp Mode
+
+```python
+STRICT_PLATFORM_VALIDATION = False
+```
+
+Behavior:
+- allows any valid HTTP/HTTPS URL
+- yt-dlp determines extractor compatibility
+- removes the need for endless preset additions
+- automatically benefits from new yt-dlp extractors
+
+This significantly reduces long-term maintenance overhead while
+expanding compatibility across supported yt-dlp platforms.
+
+Architecture evolution:
+
+```text
+config
+→ validation policy
+→ yt-dlp
+```
+
+instead of:
+
+```text
+config
+→ preset registry
+→ validation allow-list
+→ yt-dlp
+```
+
+Benefits:
+- simpler maintenance
+- future extractor compatibility
+- optional strict operational control
+- improved deployment flexibility
 
 ---
 
@@ -556,7 +608,19 @@ python ytbot.py --audio "<link>"
 
 ## 🧠 Version History
 
-### v5.8.5 (Current)
+### v5.9 (Current)
+
+* Added config-controlled validation policy
+* Added STRICT_PLATFORM_VALIDATION
+* Added open yt-dlp compatibility mode
+* Added dynamic extractor compatibility behavior
+* Reduced long-term preset maintenance overhead
+* Preserved strict allow-list operational mode
+* Improved future yt-dlp compatibility architecture
+
+---
+
+### v5.8.5
 
 * Added BitChute platform validation support
 * Added BitChute preset registry domains

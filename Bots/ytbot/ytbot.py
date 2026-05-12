@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file:     ytbot.py
 # author:   Mike Redd
-# version:  5.8.5
+# version:  5.9
 # created:  2026-04-18
 # updated:  2026-05-01
 # desc:     Queue-based Telegram media bot
@@ -32,7 +32,7 @@ from urllib.request import urlopen
 # ── Branding ─────────────────────────────────────────────────
 
 BOT_NAME = "Raziel"
-BOT_VERSION = "5.8.5"
+BOT_VERSION = "5.9"
 
 import yt_dlp
 from telegram import (
@@ -89,6 +89,11 @@ DEDUP_ENABLED = getattr(ytbotrc, "DEDUP_ENABLED", True)
 DEDUP_TTL_HOURS = getattr(ytbotrc, "DEDUP_TTL_HOURS", 24)
 MAX_VIDEO_HEIGHT = getattr(ytbotrc, "MAX_VIDEO_HEIGHT", 1080)
 PREFER_MP4 = getattr(ytbotrc, "PREFER_MP4", True)
+
+# Validation policy:
+# True  = only allow configured ENABLED_VIDEO_PLATFORMS / EXTRA_VIDEO_DOMAINS
+# False = allow any URL and let yt-dlp decide if it can extract it
+STRICT_PLATFORM_VALIDATION = getattr(ytbotrc, "STRICT_PLATFORM_VALIDATION", False)
 
 # Local Telegram Bot API support (optional)
 LOCAL_BOT_API_URL = getattr(ytbotrc, "LOCAL_BOT_API_URL", "")
@@ -249,6 +254,7 @@ def reload_runtime_config() -> None:
     global ADMIN_USERS, ALLOWED_USERS, ALLOW_ALL_USERS
     global DOWNLOAD_TIMEOUT, TELEGRAM_UPLOAD_TIMEOUT, DEBUG_MODE
     global DEDUP_ENABLED, DEDUP_TTL_HOURS, MAX_VIDEO_HEIGHT, PREFER_MP4
+    global STRICT_PLATFORM_VALIDATION
     global LOCAL_BOT_API_URL, LOCAL_BOT_API_FILE_URL
     global DEFAULT_VIDEO_HEIGHT, HD_VIDEO_HEIGHT
     global ENABLED_VIDEO_PLATFORMS, EXTRA_VIDEO_DOMAINS, SUPPORTED_VIDEO_DOMAINS
@@ -268,6 +274,7 @@ def reload_runtime_config() -> None:
     DEDUP_TTL_HOURS = getattr(ytbotrc, "DEDUP_TTL_HOURS", 24)
     MAX_VIDEO_HEIGHT = getattr(ytbotrc, "MAX_VIDEO_HEIGHT", 1080)
     PREFER_MP4 = getattr(ytbotrc, "PREFER_MP4", True)
+    STRICT_PLATFORM_VALIDATION = getattr(ytbotrc, "STRICT_PLATFORM_VALIDATION", False)
 
     LOCAL_BOT_API_URL = getattr(ytbotrc, "LOCAL_BOT_API_URL", "")
     LOCAL_BOT_API_FILE_URL = getattr(ytbotrc, "LOCAL_BOT_API_FILE_URL", "")
@@ -1106,6 +1113,7 @@ def log_startup_checks() -> None:
     log.info("ffmpeg found: %s", ffmpeg_exists())
     log.info("ffprobe found: %s", ffprobe_exists())
     log.info("YouTube cookie file present: %s", YOUTUBE_COOKIES_FILE.exists())
+    log.info("Strict platform validation: %s", STRICT_PLATFORM_VALIDATION)
     log.info("Enabled video platforms: %s", ENABLED_VIDEO_PLATFORMS)
     log.info("Supported video domains: %s", SUPPORTED_VIDEO_DOMAINS)
 
@@ -1416,13 +1424,28 @@ def is_instagram_url(url: str) -> bool:
 
 def is_supported_video_url(url: str) -> bool:
     """
-    Only allow configured video-source URLs into the media pipeline.
-    This prevents random articles, tracking links, and non-video pages
-    from being handed to yt-dlp.
+    Validate media URLs according to config policy.
+
+    STRICT_PLATFORM_VALIDATION = True:
+        Only allow domains from ENABLED_VIDEO_PLATFORMS and EXTRA_VIDEO_DOMAINS.
+
+    STRICT_PLATFORM_VALIDATION = False:
+        Allow any http(s) URL and let yt-dlp decide whether it can extract it.
+        This avoids constantly editing ytbot.py for every yt-dlp-supported site.
     """
     try:
         parsed = urlparse(url.strip())
         host = parsed.netloc.lower()
+        scheme = parsed.scheme.lower()
+
+        if scheme not in ("http", "https"):
+            return False
+
+        if not host:
+            return False
+
+        if not STRICT_PLATFORM_VALIDATION:
+            return True
 
         if host.startswith("www."):
             host = host[4:]
@@ -2730,6 +2753,7 @@ async def reload_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
             f"*Telegram Upload Timeout:* `{TELEGRAM_UPLOAD_TIMEOUT}s`\n"
             f"*Default Quality:* `{DEFAULT_VIDEO_HEIGHT}p`\n"
             f"*HD Quality:* `{HD_VIDEO_HEIGHT}p`\n"
+            f"*Validation Mode:* `{'strict' if STRICT_PLATFORM_VALIDATION else 'open yt-dlp'}`\n"
             f"*Enabled Platforms:* `{', '.join(ENABLED_VIDEO_PLATFORMS)}`\n"
             f"*Supported Domains:* `{', '.join(SUPPORTED_VIDEO_DOMAINS)}`",
             parse_mode=ParseMode.MARKDOWN,
@@ -3161,6 +3185,7 @@ async def mention_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
             await message.reply_text(
                 f"♻️ *{BOT_NAME} v{BOT_VERSION} reloaded*\n\n"
                 f"*Debug Mode:* `{DEBUG_MODE}`\n"
+                f"*Validation Mode:* `{'strict' if STRICT_PLATFORM_VALIDATION else 'open yt-dlp'}`\n"
                 f"*Enabled Platforms:* `{', '.join(ENABLED_VIDEO_PLATFORMS)}`\n"
                 f"*Supported Domains:* `{', '.join(SUPPORTED_VIDEO_DOMAINS)}`",
                 parse_mode=ParseMode.MARKDOWN,

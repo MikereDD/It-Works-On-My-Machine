@@ -58,3 +58,4 @@
 * [v5.8.3](v5.8.3.md) — Queue cleanup consistency and DM upload UX polish
 * [v5.8.4](v5.8.4.md) — Facebook platform registry validation fix
 * [v5.8.5](v5.8.5.md) — BitChute platform registry and validation support
+* [v5.9](v5.9.md) — Config-controlled validation policy and open yt-dlp compatibility mode

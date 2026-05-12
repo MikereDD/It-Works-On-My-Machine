@@ -52,9 +52,18 @@ DEDUP_TTL_HOURS = 24
 MAX_VIDEO_HEIGHT = 1080
 PREFER_MP4 = True
 
+# ── Validation Policy ────────────────────────
+# True  = only allow configured platforms/domains
+# False = allow any URL and let yt-dlp decide
+STRICT_PLATFORM_VALIDATION = False,
+
 # ── Supported Video Platforms ────────────────
+# Used only when:
+# STRICT_PLATFORM_VALIDATION = True
+#
 # Available preset names:
-# youtube, instagram, reddit, tiktok, twitter
+# youtube, instagram, reddit, tiktok,
+# twitter, facebook, bitchute
 ENABLED_VIDEO_PLATFORMS = (
 "youtube",
 "instagram",
