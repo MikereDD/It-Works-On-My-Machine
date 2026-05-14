@@ -1,7 +1,7 @@
 # ------------------------------------------------------------
 # file:     aibot.py
 # author:   Mike Redd
-# version:  3.8
+# version:  3.9
 # created:  2026-04-19
 # updated:  2026-05-09
 # desc:     Telegram AI bot with text + tiered image generation
@@ -22,12 +22,12 @@ from pathlib import Path
 from openai import AsyncOpenAI
 from telegram import Update
 from telegram.error import TimedOut
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
 # ── Branding ─────────────────────────────────────────────────
 
 BOT_NAME = "Zaphkiel"
-BOT_VERSION = "3.8"
+BOT_VERSION = "3.9"
 
 # ── Load config ───────────────────────────────────────────────
 CONFIG_PATH = Path(
@@ -92,16 +92,85 @@ def reload_runtime_config() -> None:
     client = AsyncOpenAI(api_key=cfg.OPENAI_API_KEY)
 
 # ── Helpers ──────────────────────────────────────────────────
+def get_admin_users() -> set[int]:
+    users = set(getattr(cfg, "ADMIN_USERS", []) or [])
+    owner = getattr(cfg, "ALLOWED_USER_ID", 0)
+    if owner:
+        users.add(owner)
+    return users
+
+def is_admin(user_id: int | None) -> bool:
+    return bool(user_id and user_id in get_admin_users())
+
+def can_use_context(user_id: int | None, chat_type: str | None) -> bool:
+    if not user_id:
+        return False
+
+    if is_admin(user_id):
+        return chat_type == "private" or bool(getattr(cfg, "ALLOW_GROUPS", False))
+
+    allowed_users = set(getattr(cfg, "ALLOWED_USERS", []) or [])
+    if user_id in allowed_users:
+        return chat_type == "private" or bool(getattr(cfg, "ALLOW_GROUPS", False))
+
+    return False
+
 def is_allowed(update: Update) -> bool:
     user = update.effective_user
     chat = update.effective_chat
+    return bool(user and chat and can_use_context(user.id, chat.type))
 
-    return bool(
-        user
-        and chat
-        and user.id == cfg.ALLOWED_USER_ID
-        and chat.type == "private"
-    )
+def get_public_bot_mention() -> str:
+    username = str(getattr(cfg, "BOT_USERNAME", "") or "").strip().lstrip("@")
+    return f"@{username}" if username else BOT_NAME
+
+def get_bot_mention_names() -> set[str]:
+    names = {BOT_NAME.lower()}
+
+    username = str(getattr(cfg, "BOT_USERNAME", "") or "").strip().lower().lstrip("@")
+    if username:
+        names.add(username)
+        names.add(f"@{username}")
+
+    for item in getattr(cfg, "BOT_MENTION_ALIASES", ()) or ():
+        alias = str(item).strip().lower().lstrip("@")
+        if alias:
+            names.add(alias)
+            names.add(f"@{alias}")
+
+    return names
+
+def parse_mention_command(text: str | None) -> tuple[str, str] | None:
+    if not text:
+        return None
+
+    parts = text.strip().split(maxsplit=2)
+    if len(parts) < 2:
+        return None
+
+    mention = parts[0].strip().rstrip(":,").lower()
+    if mention not in get_bot_mention_names():
+        return None
+
+    command = parts[1].strip().lower().lstrip("/")
+    args = parts[2].strip() if len(parts) >= 3 else ""
+
+    aliases = {
+        "ask": "ai",
+        "chat": "ai",
+        "talk": "ai",
+        "draw": "img",
+        "image": "img",
+        "picture": "img",
+        "styles": "styles",
+        "style": "styles",
+        "help": "help",
+        "status": "status",
+        "reload": "reload",
+        "restart": "restart",
+    }
+
+    return aliases.get(command, command), args
 
 def slugify(text: str, max_len: int = 64) -> str:
     text = text.lower().strip()
@@ -348,7 +417,10 @@ async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "/status\n"
         "/reload\n"
         "/restart\n"
-        "/reset"
+        "/reset\n\n"
+        "Mention examples:\n"
+        f"{get_public_bot_mention()} ask <message>\n"
+        f"{get_public_bot_mention()} img <prompt>"
     )
 
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -376,6 +448,9 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "/img angel warrior --low\n"
         "/img zaphkiel white gold armor --ultra --portrait\n"
         "/img dark fantasy throne room --high --landscape\n\n"
+        "Mention examples:\n"
+        f"{get_public_bot_mention()} ask explain this error\n"
+        f"{get_public_bot_mention()} img angel warrior --ultra --portrait\n\n"
         "Convert images:\n"
         "/convert cozy-anime   Reply to an image to restyle it\n"
         "/convert comic\n"
@@ -389,11 +464,10 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "⚙️ Built for clarity, not chaos."
     )
 
-async def ai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not is_allowed(update) or not update.message:
-        return
 
-    prompt = " ".join(context.args).strip()
+async def send_ai_reply(update: Update, prompt: str) -> None:
+    if not update.message:
+        return
 
     if not prompt:
         await update.message.reply_text("Usage: /ai <message>")
@@ -417,11 +491,10 @@ async def ai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         logger.exception("AI request failed")
         await update.message.reply_text(format_api_error(exc))
 
-async def img_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not is_allowed(update) or not update.message:
-        return
 
-    raw_prompt = " ".join(context.args).strip()
+async def send_image_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, raw_prompt: str) -> None:
+    if not update.message:
+        return
 
     if not raw_prompt:
         await update.message.reply_text(
@@ -437,6 +510,11 @@ async def img_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     try:
+        progress_msg = await update.message.reply_text(
+            f"🎨 Generating image...\n"
+            f"Tier: {tier} | Size: {size} | Quality: {quality}"
+        )
+
         logger.info(
             "IMG request from user_id=%s | tier=%s | size=%s | quality=%s | prompt=%r",
             update.effective_user.id,
@@ -458,12 +536,10 @@ async def img_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             raise RuntimeError("Image API returned no data.")
 
         image_b64 = result.data[0].b64_json
-
         if not image_b64:
             raise RuntimeError("Image API returned no base64 image payload.")
 
         image_data = base64.b64decode(image_b64)
-
         image_filename = make_image_filename(prompt, tier)
         image_path = IMAGE_DIR / image_filename
         image_path.write_bytes(image_data)
@@ -484,6 +560,11 @@ async def img_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             pool_timeout=getattr(cfg, "TELEGRAM_POOL_TIMEOUT", 30),
         )
 
+        try:
+            await progress_msg.delete()
+        except Exception:
+            pass
+
         logger.info("IMG success | saved=%s", image_path)
 
     except TimedOut:
@@ -496,6 +577,19 @@ async def img_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         logger.exception("Image generation failed")
         await update.message.reply_text(format_api_error(exc))
 
+
+
+async def ai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not is_allowed(update) or not update.message:
+        return
+
+    await send_ai_reply(update, " ".join(context.args).strip())
+
+async def img_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not is_allowed(update) or not update.message:
+        return
+
+    await send_image_reply(update, context, " ".join(context.args).strip())
 
 async def styles_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not is_allowed(update) or not update.message:
@@ -632,6 +726,49 @@ async def convert_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             await update.message.reply_text(format_api_error(exc))
 
 
+
+async def mention_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not update.message:
+        return
+
+    parsed = parse_mention_command(update.message.text)
+    if not parsed:
+        return
+
+    if not is_allowed(update):
+        return
+
+    command, args = parsed
+
+    if command == "ai":
+        await send_ai_reply(update, args)
+        return
+
+    if command == "img":
+        await send_image_reply(update, context, args)
+        return
+
+    if command == "help":
+        await help_cmd(update, context)
+        return
+
+    if command == "styles":
+        await styles_cmd(update, context)
+        return
+
+    if command == "status":
+        await status_cmd(update, context)
+        return
+
+    if command == "reload":
+        await reload_cmd(update, context)
+        return
+
+    if command == "restart":
+        await restart_cmd(update, context)
+        return
+
+
 async def status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not is_allowed(update) or not update.message:
         return
@@ -644,6 +781,9 @@ async def status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         f"Image size:    {cfg.IMAGE_SIZE}\n"
         f"Image quality: {cfg.IMAGE_QUALITY}\n"
         f"Image format:  {cfg.IMAGE_OUTPUT_FORMAT}\n"
+        f"Bot username:  {get_public_bot_mention()}\n"
+        f"Groups:        {'enabled' if getattr(cfg, 'ALLOW_GROUPS', False) else 'disabled'}\n"
+        f"Admins:        {len(get_admin_users())}\n"
         f"Config:        {CONFIG_PATH}\n"
         f"Logs:          {LOG_FILE}\n"
         f"Images:        {IMAGE_DIR}\n"
@@ -709,6 +849,7 @@ def main() -> None:
         .build()
     )
 
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, mention_cmd))
     app.add_handler(CommandHandler("start", start_cmd))
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CommandHandler("ai", ai_cmd))

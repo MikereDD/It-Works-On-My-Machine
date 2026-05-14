@@ -1,4 +1,4 @@
-# 🤖 Zaphkiel AI Bot
+# 🤖 Zaphkiel AI Bot v3.9
 
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
 ![Platform](https://img.shields.io/badge/Platform-Telegram-green)
@@ -25,6 +25,9 @@ A private, self-hosted Telegram AI assistant built for real-world use — chat, 
 * 🧾 File + console logging
 * 🔄 Runtime configuration reloads
 * 🖥️ tmux-friendly restart behavior
+* 🔒 Config-driven admin + access control
+* 💬 Telegram mention command support
+* 👥 Optional group interaction mode
 * 🔒 Private access (user ID restricted)
 
 ---
@@ -38,6 +41,30 @@ A private, self-hosted Telegram AI assistant built for real-world use — chat, 
 ```
 
 Ask the AI anything.
+
+### 💬 Mention Examples
+
+```bash
+@YourBotUsername ask explain this Python error
+```
+
+```bash
+@YourBotUsername img angel warrior --ultra --portrait
+```
+
+```bash
+@YourBotUsername help
+```
+
+Mention commands support:
+- AI chat
+- image generation
+- help
+- status
+- reload
+- restart
+
+Group support can be enabled through configuration.
 
 ---
 
@@ -147,6 +174,9 @@ Displays:
 * Config path
 * Image save directory
 * Log file location
+* Mention identity
+* Group access status
+* Admin count
 
 ---
 
@@ -245,6 +275,14 @@ BOT_TOKEN = "..."
 OPENAI_API_KEY = "..."
 ALLOWED_USER_ID = 123456789
 
+ADMIN_USERS = [
+    ALLOWED_USER_ID,
+]
+
+ALLOW_GROUPS = False
+
+BOT_USERNAME = "YourBotUsername"
+
 MODEL = "gpt-5.4-mini"
 IMAGE_MODEL = "gpt-image-1"
 
@@ -341,10 +379,22 @@ python aibot.py
 
 ---
 
+## 🧠 v3.9 Highlights
+
+* Config-driven mention identity
+* Real Telegram username integration
+* Mention command parsing
+* Optional group support
+* Multi-admin access model
+* Shared ecosystem architecture direction
+* Raziel-style operational polish
+* Cleaner status/help visibility
+
+---
+
 ## 🧠 Roadmap
 
 * Streaming AI responses
-* Telegram mention support
 * Inline bot interactions
 * Additional conversion presets
 * Cross-bot communication

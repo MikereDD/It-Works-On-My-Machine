@@ -1,16 +1,35 @@
 # ------------------------------------------------------------
 # file:     aibotrc.py
 # author:   Mike Redd
-# version:  1.1
+# version:  1.2
 # created:  2026-04-29
-# updated:  2026-04-29
-# desc:     Configuration for Zahkiel AI bot
+# updated:  2026-05-13
+# desc:     Configuration for Zaphkiel AI bot
 # ------------------------------------------------------------
 
 # ── REQUIRED ─────────────────────────────────────────────────
 BOT_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
 OPENAI_API_KEY = "YOUR_OPENAI_API_KEY"
 ALLOWED_USER_ID = 123456789
+
+# ── ACCESS / ADMIN ───────────────────────────────────────────
+ADMIN_USERS = [
+    ALLOWED_USER_ID,
+]
+
+ALLOWED_USERS = [
+# 123456789,
+]
+
+ALLOW_GROUPS = False
+
+# ── TELEGRAM IDENTITY / MENTIONS ─────────────────────────────
+BOT_USERNAME = "YOUR_ZAPHKIEL_BOT_USERNAME"
+
+BOT_MENTION_ALIASES = (
+# "zaphkiel",
+# "@zaphkiel",
+)
 
 # ── MODELS ───────────────────────────────────────────────────
 MODEL = "gpt-5.4-mini"
