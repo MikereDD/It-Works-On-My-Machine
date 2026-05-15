@@ -651,7 +651,7 @@ python ytbot.py --audio "<link>"
 
 ## 🧠 Version History
 
-### v5.9.1
+### v5.9.1 (Current)
 
 * Added DM natural command support
 * Improved mention parser behavior
@@ -664,7 +664,7 @@ python ytbot.py --audio "<link>"
 
 ---
 
-### v5.9 (Current)
+### v5.9
 
 * Added config-controlled validation policy
 * Added STRICT_PLATFORM_VALIDATION
