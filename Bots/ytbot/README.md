@@ -1,9 +1,9 @@
-# 🎬 Raziel v5.9
+# 🎬 Raziel v5.9.1
 
 > A typezerø Project
 > Built for real-world use, not perfection.
 
-![Version](https://img.shields.io/badge/version-v5.9-blue)
+![Version](https://img.shields.io/badge/version-v5.9.1-blue)
 ![Python](https://img.shields.io/badge/python-3.10+-blue)
 ![License](https://img.shields.io/badge/license-WTFPL-lightgrey)
 
@@ -137,6 +137,49 @@ Behavior:
 
 This significantly reduces long-term maintenance overhead while
 expanding compatibility across supported yt-dlp platforms.
+
+### 🌐 Telegram UX & Mention Refinement (v5.9.1)
+
+Raziel now includes refined Telegram mention behavior and cleaner
+direct-message interaction handling.
+
+Private chats now support natural commands without requiring mentions.
+
+Examples:
+
+```text
+weather Houston
+forecast Tokyo
+queue
+status
+help
+```
+
+Groups still safely require:
+- slash commands
+- real bot mentions
+
+Examples:
+
+```text
+@Razi3l_bot weather Houston
+@Razi3l_bot forecast Tokyo
+```
+
+Improvements:
+- standardized real Telegram username usage
+- removed misleading fake clickable aliases
+- improved mention parser consistency
+- improved Telegram inline UX
+- corrected underscore rendering in help output
+- wrapped inline examples using backticks
+- improved DM conversational behavior
+- preserved safer group interaction behavior
+
+This finalizes the inline/mention cleanup introduced during
+the v5.8.x → v5.9 transition.
+
+---
 
 Architecture evolution:
 
@@ -607,6 +650,19 @@ python ytbot.py --audio "<link>"
 ---
 
 ## 🧠 Version History
+
+### v5.9.1
+
+* Added DM natural command support
+* Improved mention parser behavior
+* Standardized real Telegram username usage
+* Removed misleading clickable alias examples
+* Improved inline/mention help formatting
+* Fixed underscore rendering in Telegram help output
+* Improved private chat conversational UX
+* Preserved safer group mention behavior
+
+---
 
 ### v5.9 (Current)
 

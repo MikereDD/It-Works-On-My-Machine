@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file:     ytbot.py
 # author:   Mike Redd
-# version:  5.9
+# version:  5.9.1
 # created:  2026-04-18
 # updated:  2026-05-01
 # desc:     Queue-based Telegram media bot
@@ -32,7 +32,7 @@ from urllib.request import urlopen
 # ── Branding ─────────────────────────────────────────────────
 
 BOT_NAME = "Raziel"
-BOT_VERSION = "5.9"
+BOT_VERSION = "5.9.1"
 
 import yt_dlp
 from telegram import (
@@ -2216,7 +2216,8 @@ USER_COMMAND_LIST = (
     "/weather <p>   — current weather\n"
     "/forecast <p>  — 5-day forecast\n"
     "/whoami        — show your Telegram/chat IDs\n"
-    "@Raziel weather <place> — mention-style weather"
+    "`@Razi3l_bot weather <place>` — inline/mention weather\n"
+    "`@Razi3l_bot forecast <place>` — inline/mention forecast"
 )
 
 ADMIN_COMMAND_LIST = (
