@@ -225,6 +225,19 @@ Sandalphon is a Telegram music bot that:
 * stabilizes standalone dashboard runtime on Pi/Linux systems
 * confirms dashboard binding on port `8181`
 
+
+---
+
+### v3.1.3
+
+* improves dashboard library compatibility with older cache entries
+* adds fallback parsing for `display`-only tracks
+* automatically derives artist/title from:
+  * `Artist - Title`
+  * filename fallback parsing
+* restores readable library rendering without rebuilding indexes
+* improves dashboard resilience against incomplete metadata
+
 ---
 
 ## 🧠 Core Flow
@@ -354,7 +367,7 @@ Dashboard/status commands:
 Sandalphon now includes a lightweight Flask dashboard:
 
 ```text id="dash1"
-musicbot_dashboard.py (v3.1.2)
+musicbot_dashboard.py (v3.1.3)
 ```
 
 Default URL:
@@ -447,6 +460,7 @@ empty ALLOWED_USER_IDS → public bot
 * playlist sync only queues previously unseen playlist entries
 * export snapshots are JSON-based and intended for future dashboard tooling
 * Flask dashboard runs independently from the Telegram bot runtime
+* dashboard can derive artist/title fields from legacy display-only entries
 
 ---
 
@@ -473,6 +487,8 @@ empty ALLOWED_USER_IDS → public bot
 * smarter sync conflict handling
 * live auto-refresh dashboard
 * websocket/live status support
+* clickable media rows
+* direct media playback/download routes
 * dashboard queue controls
 
 ---

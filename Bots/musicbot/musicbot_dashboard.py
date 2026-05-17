@@ -2,15 +2,16 @@
 # ------------------------------------------------------------
 # file:     musicbot_dashboard.py
 # author:   Mike Redd
-# version:  3.1.2
+# version:  3.1.3
 # created:  2026-05-17
 # updated:  2026-05-17
-# desc:     Sandalphon dashboard foundation (read-only Flask UI)
+# desc:     Sandalphon dashboard foundation with library display fallback
 # ------------------------------------------------------------
 
 from pathlib import Path
 import json
 import time
+from html import escape
 
 from flask import Flask, jsonify, render_template_string, request
 
@@ -25,7 +26,7 @@ PLAYLIST_INDEX_FILE = CACHE_DIR / "playlists.json"
 FAILED_INDEX_FILE = CACHE_DIR / "failed.json"
 
 BOT_NAME = "Sandalphon"
-BOT_VERSION = "3.1.2"
+BOT_VERSION = "3.1.3"
 
 # IMPORTANT:
 # Flask app must exist BEFORE any @app.route decorators.
@@ -79,6 +80,33 @@ def cache_size_mb():
             total += path.stat().st_size
 
     return round(total / (1024 * 1024), 2)
+
+
+def split_display(display):
+    display = (display or "").strip()
+
+    if " - " in display:
+        artist, title = display.split(" - ", 1)
+        return artist.strip(), title.strip()
+
+    return "", display
+
+
+def fallback_track_fields(item):
+    display = (item.get("display") or "").strip()
+    path = Path(item.get("path", ""))
+
+    if not display and path.name:
+        display = path.stem
+
+    parsed_artist, parsed_title = split_display(display)
+
+    artist = (item.get("artist") or "").strip() or parsed_artist
+    title = (item.get("title") or "").strip() or parsed_title or display
+    album = (item.get("album") or "").strip()
+    plays = item.get("plays", 0)
+
+    return artist, title, album, plays
 
 
 def dashboard_stats():
@@ -260,31 +288,47 @@ def library():
     items = []
 
     for item in library_data.values():
+        artist, title, album, plays = fallback_track_fields(item)
 
         if term:
             haystack = " ".join([
-                item.get("artist", ""),
-                item.get("title", ""),
-                item.get("album", ""),
+                artist,
+                title,
+                album,
                 item.get("display", ""),
+                item.get("path", ""),
             ]).lower()
 
             if term not in haystack:
                 continue
 
+        item["_dashboard_artist"] = artist
+        item["_dashboard_title"] = title
+        item["_dashboard_album"] = album
+        item["_dashboard_plays"] = plays
         items.append(item)
 
-    items.sort(key=lambda x: x.get("artist", "").lower())
+    items.sort(
+        key=lambda x: (
+            x.get("_dashboard_artist", "").lower(),
+            x.get("_dashboard_title", "").lower(),
+        )
+    )
 
     rows = []
 
     for item in items[:500]:
+        artist = escape(str(item.get("_dashboard_artist", "")))
+        title = escape(str(item.get("_dashboard_title", "")))
+        album = escape(str(item.get("_dashboard_album", "")))
+        plays = escape(str(item.get("_dashboard_plays", 0)))
+
         rows.append(f"""
         <tr>
-            <td>{item.get('artist', '')}</td>
-            <td>{item.get('title', item.get('display', ''))}</td>
-            <td>{item.get('album', '')}</td>
-            <td>{item.get('plays', 0)}</td>
+            <td>{artist}</td>
+            <td>{title}</td>
+            <td>{album}</td>
+            <td>{plays}</td>
         </tr>
         """)
 
