@@ -2,10 +2,10 @@
 # ------------------------------------------------------------
 # file:     musicbot.py
 # author:   Mike Redd
-# version:  2.3
+# version:  2.4
 # created:  2026-05-03
 # updated:  2026-05-03
-# desc:     Sandalphon - Queue/cache music bot with smarter library matching
+# desc:     Sandalphon - Queue/cache music bot with album and artist browsing
 # ------------------------------------------------------------
 
 import asyncio
@@ -28,7 +28,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandl
 
 # ── Branding ─────────────────────────────────────────────────
 BOT_NAME = "Sandalphon"
-BOT_VERSION = "2.3"
+BOT_VERSION = "2.4"
 
 # ── Config ───────────────────────────────────────────────────
 sys.path.insert(0, str(Path.home() / "bots/config"))
@@ -510,6 +510,103 @@ def clear_library():
         LIBRARY_INDEX_FILE.unlink()
 
 
+def group_library_by_artist():
+    index = load_library_index()
+    groups = {}
+
+    for item in index.values():
+        path = Path(item.get("path", ""))
+        if not path.exists():
+            continue
+
+        artist = item.get("artist") or "Unknown Artist"
+        groups.setdefault(artist, []).append(item)
+
+    for artist in groups:
+        groups[artist].sort(
+            key=lambda item: (
+                normalize_library_text(item.get("album", "")),
+                normalize_library_text(item.get("title", item.get("display", ""))),
+            )
+        )
+
+    return dict(sorted(groups.items(), key=lambda x: normalize_library_text(x[0])))
+
+
+def group_library_by_album():
+    index = load_library_index()
+    groups = {}
+
+    for item in index.values():
+        path = Path(item.get("path", ""))
+        if not path.exists():
+            continue
+
+        artist = item.get("artist") or "Unknown Artist"
+        album = item.get("album") or "Unknown Album"
+        key = f"{artist} - {album}"
+        groups.setdefault(key, []).append(item)
+
+    for album_key in groups:
+        groups[album_key].sort(
+            key=lambda item: normalize_library_text(item.get("title", item.get("display", "")))
+        )
+
+    return dict(sorted(groups.items(), key=lambda x: normalize_library_text(x[0])))
+
+
+def search_album_groups(term, limit=10):
+    term_norm = normalize_library_text(term)
+    groups = group_library_by_album()
+    results = []
+
+    for album_key, items in groups.items():
+        album_norm = normalize_library_text(album_key)
+        score = 0
+
+        if term_norm == album_norm:
+            score += 100
+        elif term_norm in album_norm:
+            score += 50
+
+        score += int(fuzzy_ratio(term_norm, album_norm) * 40)
+
+        for item in items:
+            score += library_match_score(term, item) // 4
+
+        if score >= 15:
+            results.append((score, album_key, items))
+
+    results.sort(key=lambda x: x[0], reverse=True)
+    return [(album_key, items) for _, album_key, items in results[:limit]]
+
+
+def search_artist_groups(term, limit=10):
+    term_norm = normalize_library_text(term)
+    groups = group_library_by_artist()
+    results = []
+
+    for artist, items in groups.items():
+        artist_norm = normalize_library_text(artist)
+        score = 0
+
+        if term_norm == artist_norm:
+            score += 100
+        elif term_norm in artist_norm:
+            score += 50
+
+        score += int(fuzzy_ratio(term_norm, artist_norm) * 45)
+
+        for item in items:
+            score += library_match_score(term, item) // 5
+
+        if score >= 15:
+            results.append((score, artist, items))
+
+    results.sort(key=lambda x: x[0], reverse=True)
+    return [(artist, items) for _, artist, items in results[:limit]]
+
+
 def get_media_metadata(query):
     """
     Read metadata from yt-dlp JSON so we can use real artist/title when available
@@ -977,6 +1074,10 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/queue\n"
         "/cache\n"
         "/library\n"
+        "/artists\n"
+        "/artist <artist>\n"
+        "/albums\n"
+        "/album <album or artist>\n"
         "/find <artist or song>\n"
         "/play <artist or song>\n"
         "/clearcache\n"
@@ -1193,6 +1294,88 @@ async def clearlibrary_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 
+async def artists_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    groups = group_library_by_artist()
+
+    if not groups:
+        await update.message.reply_text("🎤 Artist library empty")
+        return
+
+    lines = [f"🎤 Artists ({len(groups)})", ""]
+
+    for i, (artist, items) in enumerate(list(groups.items())[:25], start=1):
+        lines.append(f"{i}. {artist} ({len(items)})")
+
+    await update.message.reply_text("\n".join(lines))
+
+
+async def artist_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    term = " ".join(context.args).strip()
+
+    if not term:
+        await update.message.reply_text("Usage: /artist <artist>")
+        return
+
+    results = search_artist_groups(term, limit=1)
+
+    if not results:
+        await update.message.reply_text("No artist match found.")
+        return
+
+    artist, items = results[0]
+
+    lines = [f"🎤 {artist} ({len(items)} tracks)", ""]
+
+    for i, item in enumerate(items[:25], start=1):
+        album = item.get("album", "")
+        title = item.get("title") or item.get("display", "Unknown")
+        if album:
+            lines.append(f"{i}. {title} — {album}")
+        else:
+            lines.append(f"{i}. {title}")
+
+    await update.message.reply_text("\n".join(lines))
+
+
+async def albums_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    groups = group_library_by_album()
+
+    if not groups:
+        await update.message.reply_text("💿 Album library empty")
+        return
+
+    lines = [f"💿 Albums ({len(groups)})", ""]
+
+    for i, (album_key, items) in enumerate(list(groups.items())[:25], start=1):
+        lines.append(f"{i}. {album_key} ({len(items)})")
+
+    await update.message.reply_text("\n".join(lines))
+
+
+async def album_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    term = " ".join(context.args).strip()
+
+    if not term:
+        await update.message.reply_text("Usage: /album <album or artist>")
+        return
+
+    results = search_album_groups(term, limit=1)
+
+    if not results:
+        await update.message.reply_text("No album match found.")
+        return
+
+    album_key, items = results[0]
+
+    lines = [f"💿 {album_key} ({len(items)} tracks)", ""]
+
+    for i, item in enumerate(items[:25], start=1):
+        title = item.get("title") or item.get("display", "Unknown")
+        lines.append(f"{i}. {title}")
+
+    await update.message.reply_text("\n".join(lines))
+
+
 async def reload_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await admin_only(update):
         return
@@ -1249,6 +1432,10 @@ def main():
     app.add_handler(CommandHandler("queue", queue_cmd))
     app.add_handler(CommandHandler("cache", cache_cmd))
     app.add_handler(CommandHandler("library", library_cmd))
+    app.add_handler(CommandHandler("artists", artists_cmd))
+    app.add_handler(CommandHandler("artist", artist_cmd))
+    app.add_handler(CommandHandler("albums", albums_cmd))
+    app.add_handler(CommandHandler("album", album_cmd))
     app.add_handler(CommandHandler("find", find_cmd))
     app.add_handler(CommandHandler("play", play_cmd))
     app.add_handler(CommandHandler("clearcache", clearcache_cmd))

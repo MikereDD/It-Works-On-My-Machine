@@ -99,6 +99,18 @@ Sandalphon is a Telegram music bot that:
 * deduplicates library entries using artist/title identity
 * tracks local play counts for future ranking improvements
 
+
+---
+
+### v2.4
+
+* introduces album and artist browsing
+* adds `/artists` and `/artist <artist>`
+* adds `/albums` and `/album <album or artist>`
+* groups tracks by album and artist metadata
+* improves library navigation and collection browsing
+* pushes Sandalphon further toward media-server behavior
+
 ---
 
 ## 🧠 Core Flow
@@ -117,6 +129,10 @@ Input → Queue → Progress UI → Resolve → Metadata/Spotify → Cache Metad
 /queue
 /cache
 /library
+/artists
+/artist <artist>
+/albums
+/album <album or artist>
 /find <artist or song>
 /play <artist or song>
 /clearcache
@@ -151,6 +167,20 @@ Play from your library:
 
 ```text id="usage4"
 /play The Smiths
+```
+
+Browse artists:
+
+```text id="usage6"
+/artists
+/artist Deftones
+```
+
+Browse albums:
+
+```text id="usage7"
+/albums
+/album White Pony
 ```
 
 Reload or restart the bot from Telegram:
@@ -204,6 +234,7 @@ empty ALLOWED_USER_IDS → public bot
 * cache is query-based (exact match required)
 * metadata cache reduces repeated lookups
 * library search supports fuzzy matching and typo tolerance
+* album/artist browsing depends on available metadata quality
 * plain text auto-trigger may ignore very short or generic messages
 * `/reload` and `/restart` are admin-only controls
 * queue/progress messages auto-update and self-clean when possible
@@ -224,9 +255,9 @@ empty ALLOWED_USER_IDS → public bot
 
 ## 🧭 Next Up (Planned)
 
+* smarter album ranking refinements
+* artist popularity/play weighting
 * smarter artist/title ranking refinements
-* album-aware search grouping
-* album-based browsing
 * background prefetching
 * improved album art handling
 
