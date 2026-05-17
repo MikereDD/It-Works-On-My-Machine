@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file:     brEncoder.ps1
 # author:   Mike Redd
-# version:  1.7
+# version:  1.8
 # created:  2026-02-11
 # updated:  2026-05-17
 # desc:     Encode Blu-ray .m2ts files
@@ -10,6 +10,8 @@
 #           sample clip from the finished MKV
 #           and apply track metadata from
 #           sidecar JSON when available
+#           validates metadata, verifies final MKV
+#           language/default/forced tags
 #--------------------------------------------
 
 param()
@@ -49,7 +51,7 @@ else {
 $ErrorActionPreference = 'Stop'
 
 $ScriptName    = "Blu-ray Encoder"
-$ScriptVersion = "1.7"
+$ScriptVersion = "1.8"
 $ScriptAuthor  = "Mike Redd"
 
 # ── Config ────────────────────────────────────────────────────
@@ -72,6 +74,7 @@ $Script:DefaultLength   = 60
 $Script:FFmpegPath      = $null
 $Script:FFprobePath     = $null
 $Script:MKVPropEditPath = $null
+$Script:MKVMergePath    = $null
 $Script:MetadataScanLimit = 200
 
 # ── Header ────────────────────────────────────────────────────
@@ -141,10 +144,12 @@ function Ensure-Dependencies {
     $Script:FFmpegPath      = Get-ToolPath -CommandName 'ffmpeg'
     $Script:FFprobePath     = Get-ToolPath -CommandName 'ffprobe'
     $Script:MKVPropEditPath = Get-ToolPath -CommandName 'mkvpropedit'
+    $Script:MKVMergePath    = Get-ToolPath -CommandName 'mkvmerge'
 
     if (-not $Script:FFmpegPath)      { $missing += 'ffmpeg' }
     if (-not $Script:FFprobePath)     { $missing += 'ffprobe' }
     if (-not $Script:MKVPropEditPath) { $missing += 'mkvpropedit' }
+    if (-not $Script:MKVMergePath)    { $missing += 'mkvmerge' }
 
     if ($missing.Count -gt 0) {
         Write-UiBlankLine
@@ -430,6 +435,14 @@ function Test-TrackMetadataMatch {
     if ($Meta.LargestPath) { $metaNames += [System.IO.Path]::GetFileName([string]$Meta.LargestPath) }
     if ($Meta.Title -and $Meta.Title.SourceFile) { $metaNames += [string]$Meta.Title.SourceFile }
     if ($Meta.Title -and $Meta.Title.OutputName) { $metaNames += [string]$Meta.Title.OutputName }
+    if ($Meta.MainTitle -and $Meta.MainTitle.SourceFile) { $metaNames += [string]$Meta.MainTitle.SourceFile }
+    if ($Meta.MainTitle -and $Meta.MainTitle.OutputName) { $metaNames += [string]$Meta.MainTitle.OutputName }
+    if ($Meta.SourceFingerprint) {
+        if ($Meta.SourceFingerprint.FileName) { $metaNames += [string]$Meta.SourceFingerprint.FileName }
+        if ($Meta.SourceFingerprint.StreamFile) { $metaNames += [string]$Meta.SourceFingerprint.StreamFile }
+        if ($Meta.SourceFingerprint.OutputName) { $metaNames += [string]$Meta.SourceFingerprint.OutputName }
+        if ($Meta.SourceFingerprint.Playlist) { $metaNames += [string]$Meta.SourceFingerprint.Playlist }
+    }
 
     foreach ($name in $metaNames) {
         if ([string]::IsNullOrWhiteSpace($name)) { continue }
@@ -522,30 +535,128 @@ function Resolve-LanguageCode {
     }
 }
 
+
+function Get-TrackMetaTitle {
+    param([Parameter(Mandatory)][object]$Meta)
+
+    if ($Meta.MainTitle) { return $Meta.MainTitle }
+    if ($Meta.Title)     { return $Meta.Title }
+    return $null
+}
+
+function Resolve-TrackList {
+    param(
+        [Parameter(Mandatory)][object]$Title,
+        [Parameter(Mandatory)][ValidateSet('audio','subtitle')][string]$Kind
+    )
+
+    if ($Kind -eq 'audio') {
+        if ($Title.AudioTracks) { return @($Title.AudioTracks | Sort-Object TrackId) }
+        if ($Title.Tracks)      { return @($Title.Tracks | Where-Object { $_.Type -eq 'Audio' } | Sort-Object TrackId) }
+    }
+
+    if ($Kind -eq 'subtitle') {
+        if ($Title.SubtitleTracks) { return @($Title.SubtitleTracks | Sort-Object TrackId) }
+        if ($Title.Tracks)         { return @($Title.Tracks | Where-Object { $_.Type -eq 'Subtitles' } | Sort-Object TrackId) }
+    }
+
+    return @()
+}
+
 function Get-OutputTrackLayout {
     param([Parameter(Mandatory)][string]$Path)
 
-    $args = @(
-        '-v', 'error',
-        '-show_streams',
-        '-of', 'json',
-        $Path
-    )
-
-    $jsonText = & $Script:FFprobePath @args 2>$null
+    $jsonText = & $Script:MKVMergePath -J $Path 2>$null
     if ($LASTEXITCODE -ne 0) {
-        throw "ffprobe failed while reading output track layout."
+        throw "mkvmerge -J failed while reading output track layout."
     }
 
     $json = ($jsonText | Out-String) | ConvertFrom-Json
-    $streams = @($json.streams)
-
-    $audio = @($streams | Where-Object { $_.codec_type -eq 'audio' })
-    $subs  = @($streams | Where-Object { $_.codec_type -eq 'subtitle' })
+    $tracks = @($json.tracks)
+    $audio = @($tracks | Where-Object { $_.type -eq 'audio' })
+    $subs  = @($tracks | Where-Object { $_.type -eq 'subtitles' })
 
     [pscustomobject]@{
         AudioCount    = $audio.Count
         SubtitleCount = $subs.Count
+        Tracks        = $tracks
+        AudioTracks   = $audio
+        SubtitleTracks = $subs
+    }
+}
+
+function Test-BRTrackMetadata {
+    param(
+        [Parameter(Mandatory)][object]$Meta,
+        [Parameter(Mandatory)][object]$Title,
+        [Parameter(Mandatory)][object]$TrackLayout
+    )
+
+    $warnings = New-Object System.Collections.Generic.List[string]
+    $audioMeta = @(Resolve-TrackList -Title $Title -Kind audio)
+    $subMeta   = @(Resolve-TrackList -Title $Title -Kind subtitle)
+
+    if ($audioMeta.Count -eq 0) { $warnings.Add('Metadata has no audio tracks.') }
+    if ($TrackLayout.AudioCount -ne $audioMeta.Count) {
+        $warnings.Add("Audio count mismatch: output=$($TrackLayout.AudioCount), metadata=$($audioMeta.Count). Will apply the safe minimum.")
+    }
+    if ($TrackLayout.SubtitleCount -ne $subMeta.Count) {
+        $warnings.Add("Subtitle count mismatch: output=$($TrackLayout.SubtitleCount), metadata=$($subMeta.Count). Will apply the safe minimum.")
+    }
+
+    $knownAudio = @($audioMeta | Where-Object { (Resolve-LanguageCode -Code $_.LanguageCode) -ne 'und' })
+    $knownSubs  = @($subMeta   | Where-Object { (Resolve-LanguageCode -Code $_.LanguageCode) -ne 'und' })
+    if ($audioMeta.Count -gt 0 -and $knownAudio.Count -eq 0) { $warnings.Add('All metadata audio languages are und/unknown.') }
+    if ($subMeta.Count   -gt 0 -and $knownSubs.Count  -eq 0) { $warnings.Add('All metadata subtitle languages are und/unknown.') }
+
+    return @($warnings)
+}
+
+function Show-MetadataWarnings {
+    param([string[]]$Warnings)
+
+    if (-not $Warnings -or $Warnings.Count -eq 0) { return }
+
+    Write-UiBlankLine
+    Write-Host "  $($global:UI_YLW)Metadata validation warnings:$($global:UI_R)"
+    foreach ($w in $Warnings) {
+        Write-Host "  $($global:UI_YLW)-$($global:UI_R) $w"
+    }
+}
+
+function Show-FinalMetadataVerification {
+    param([Parameter(Mandatory)][string]$OutputFile)
+
+    $layout = Get-OutputTrackLayout -Path $OutputFile
+
+    Write-UiBlankLine
+    Write-Host "  $($global:UI_CYN)Final MKV metadata verification:$($global:UI_R)"
+
+    if ($layout.AudioTracks.Count -gt 0) {
+        Write-Host "  $($global:UI_MAG)Audio:$($global:UI_R)"
+        $n = 1
+        foreach ($t in $layout.AudioTracks) {
+            $p = $t.properties
+            $lang = if ($p.language) { $p.language } else { 'und' }
+            $name = if ($p.track_name) { $p.track_name } else { '' }
+            $def  = if ($p.default_track) { ' default' } else { '' }
+            Write-Host ("    a{0}: {1} {2}{3}" -f $n, $lang, $name, $def)
+            $n++
+        }
+    }
+
+    if ($layout.SubtitleTracks.Count -gt 0) {
+        Write-Host "  $($global:UI_MAG)Subtitles:$($global:UI_R)"
+        $n = 1
+        foreach ($t in $layout.SubtitleTracks) {
+            $p = $t.properties
+            $lang = if ($p.language) { $p.language } else { 'und' }
+            $name = if ($p.track_name) { $p.track_name } else { '' }
+            $def  = if ($p.default_track) { ' default' } else { '' }
+            $forc = if ($p.forced_track)  { ' forced' } else { '' }
+            Write-Host ("    s{0}: {1} {2}{3}{4}" -f $n, $lang, $name, $def, $forc)
+            $n++
+        }
     }
 }
 
@@ -566,14 +677,18 @@ function Apply-TrackMetadata {
     $trackLayout = Get-OutputTrackLayout -Path $OutputFile
     $meta = $metaInfo.Data
 
-    if (-not $meta.Title) {
+    $title = Get-TrackMetaTitle -Meta $meta
+    if (-not $title) {
         Write-UiBlankLine
-        Write-CoreError "Track metadata JSON does not contain Title data."
+        Write-CoreError "Track metadata JSON does not contain MainTitle/Title data."
         return $metaInfo.Path
     }
 
-    $audioMeta = @($meta.Title.AudioTracks | Sort-Object TrackId)
-    $subMeta   = @($meta.Title.SubtitleTracks | Sort-Object TrackId)
+    $warnings = Test-BRTrackMetadata -Meta $meta -Title $title -TrackLayout $trackLayout
+    Show-MetadataWarnings -Warnings $warnings
+
+    $audioMeta = @(Resolve-TrackList -Title $title -Kind audio)
+    $subMeta   = @(Resolve-TrackList -Title $title -Kind subtitle)
 
     $audioToApply = [Math]::Min($trackLayout.AudioCount, $audioMeta.Count)
     $subToApply   = [Math]::Min($trackLayout.SubtitleCount, $subMeta.Count)
@@ -638,6 +753,7 @@ function Apply-TrackMetadata {
 
     Write-UiBlankLine
     Write-Host "  $($global:UI_GRN)Track metadata applied.$($global:UI_R)"
+    Show-FinalMetadataVerification -OutputFile $OutputFile
     return $metaInfo.Path
 }
 
@@ -853,6 +969,7 @@ function Show-Config {
     Write-UiRow "FFmpeg"       $Script:FFmpegPath $global:UI_GRY
     Write-UiRow "FFprobe"      $Script:FFprobePath $global:UI_GRY
     Write-UiRow "MKVPropEdit"  $Script:MKVPropEditPath $global:UI_GRY
+    Write-UiRow "MKVMerge"     $Script:MKVMergePath $global:UI_GRY
     Pause-Script
 }
 
