@@ -16,6 +16,7 @@ Sandalphon is a Telegram music bot that:
 * enforces `Artist - Song` format for all audio
 * delivers Telegram-ready audio
 * supports playlists
+* supports intelligent playlist ingestion
 * processes requests through a queue (stable under load)
 * caches audio for instant reuse
 * caches metadata for faster repeated requests
@@ -124,12 +125,25 @@ Sandalphon is a Telegram music bot that:
 * reduces repeated artwork processing/download overhead
 * expands cache reporting with artwork statistics
 
+
+---
+
+### v2.6
+
+* introduces playlist ingestion and batch importing
+* adds `/playlist <playlist url>`
+* adds `/playlists`
+* supports flat playlist scanning without immediate downloads
+* skips existing library tracks when possible
+* tracks playlist import history and statistics
+* improves large-scale library population workflows
+
 ---
 
 ## 🧠 Core Flow
 
 ```id="flow1"
-Input → Queue → Progress UI → Resolve → Metadata/Spotify → Cache Metadata → Download → Cache Audio → Cache Art → Library Index → Tag (ID3 + Art) → Deliver
+Input → Playlist Import → Queue → Progress UI → Resolve → Metadata/Spotify → Cache Metadata → Download → Cache Audio → Cache Art → Library Index → Tag (ID3 + Art) → Deliver
 ```
 
 ---
@@ -139,6 +153,7 @@ Input → Queue → Progress UI → Resolve → Metadata/Spotify → Cache Metad
 ```id="cmds1"
 /music <url or search>
 /playlist <playlist url>
+/playlists
 /queue
 /cache
 /library
@@ -194,6 +209,12 @@ Browse albums:
 ```text id="usage7"
 /albums
 /album White Pony
+```
+
+Import playlists:
+
+```text id="usage8"
+/playlist https://youtube.com/playlist?list=...
 ```
 
 Reload or restart the bot from Telegram:
@@ -253,6 +274,7 @@ empty ALLOWED_USER_IDS → public bot
 * plain text auto-trigger may ignore very short or generic messages
 * `/reload` and `/restart` are admin-only controls
 * queue/progress messages auto-update and self-clean when possible
+* playlist imports attempt duplicate skipping using library identity
 
 ---
 
@@ -276,6 +298,7 @@ empty ALLOWED_USER_IDS → public bot
 * artist popularity/play weighting
 * smarter artist/title ranking refinements
 * background prefetching
+* playlist sync/update support
 
 ---
 

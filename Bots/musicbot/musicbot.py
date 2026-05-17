@@ -2,10 +2,10 @@
 # ------------------------------------------------------------
 # file:     musicbot.py
 # author:   Mike Redd
-# version:  2.5
+# version:  2.6
 # created:  2026-05-03
 # updated:  2026-05-03
-# desc:     Sandalphon - Queue/cache music bot with smart album art cache
+# desc:     Sandalphon - Queue/cache music bot with playlist ingestion
 # ------------------------------------------------------------
 
 import asyncio
@@ -28,7 +28,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandl
 
 # ── Branding ─────────────────────────────────────────────────
 BOT_NAME = "Sandalphon"
-BOT_VERSION = "2.5"
+BOT_VERSION = "2.6"
 
 # ── Config ───────────────────────────────────────────────────
 sys.path.insert(0, str(Path.home() / "bots/config"))
@@ -57,6 +57,7 @@ METADATA_CACHE_FILE = CACHE_DIR / "metadata.json"
 LIBRARY_INDEX_FILE = CACHE_DIR / "library.json"
 ART_CACHE_DIR = CACHE_DIR / "art"
 ART_INDEX_FILE = CACHE_DIR / "art.json"
+PLAYLIST_INDEX_FILE = CACHE_DIR / "playlists.json"
 
 if CACHE_ENABLED:
     CACHE_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
@@ -512,6 +513,9 @@ def clear_library():
     if LIBRARY_INDEX_FILE.exists():
         LIBRARY_INDEX_FILE.unlink()
 
+    if PLAYLIST_INDEX_FILE.exists():
+        PLAYLIST_INDEX_FILE.unlink()
+
     if ART_INDEX_FILE.exists():
         ART_INDEX_FILE.unlink()
 
@@ -616,6 +620,100 @@ def search_artist_groups(term, limit=10):
 
     results.sort(key=lambda x: x[0], reverse=True)
     return [(artist, items) for _, artist, items in results[:limit]]
+
+
+def load_playlist_index():
+    if not CACHE_ENABLED or not PLAYLIST_INDEX_FILE.exists():
+        return {}
+
+    try:
+        return json.loads(PLAYLIST_INDEX_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        logging.exception("Failed to read playlist index")
+        return {}
+
+
+def save_playlist_index(index):
+    if not CACHE_ENABLED:
+        return
+
+    try:
+        tmp = PLAYLIST_INDEX_FILE.with_suffix(".tmp")
+        tmp.write_text(json.dumps(index, indent=2, sort_keys=True), encoding="utf-8")
+        tmp.replace(PLAYLIST_INDEX_FILE)
+    except Exception:
+        logging.exception("Failed to write playlist index")
+
+
+def extract_playlist_entries(url, limit=50):
+    """
+    Extract a playlist as flat metadata without downloading media.
+    """
+    cmd = [
+        "yt-dlp",
+        "--flat-playlist",
+        "--dump-json",
+        "--playlist-end", str(limit),
+        url,
+    ]
+
+    result = run_cmd(cmd)
+
+    if result.returncode != 0 or not result.stdout.strip():
+        logging.error(result.stdout)
+        return []
+
+    entries = []
+
+    for line in result.stdout.splitlines():
+        line = line.strip()
+
+        if not line:
+            continue
+
+        try:
+            data = json.loads(line)
+        except Exception:
+            continue
+
+        title = clean_title(data.get("title", ""))
+        webpage_url = data.get("webpage_url") or data.get("url") or ""
+
+        if webpage_url and not webpage_url.startswith("http"):
+            webpage_url = f"https://www.youtube.com/watch?v={webpage_url}"
+
+        if title or webpage_url:
+            entries.append({
+                "title": title,
+                "url": webpage_url,
+            })
+
+    return entries
+
+
+def library_has_identity(metadata=None, display=None):
+    key = library_identity(metadata, display)
+    index = load_library_index()
+    return key in index
+
+
+def add_playlist_import(url, queued, skipped, failed, total):
+    if not CACHE_ENABLED:
+        return
+
+    index = load_playlist_index()
+    key = cache_key(url)
+
+    index[key] = {
+        "url": url,
+        "queued": queued,
+        "skipped": skipped,
+        "failed": failed,
+        "total": total,
+        "imported": int(time.time()),
+    }
+
+    save_playlist_index(index)
 
 
 def get_media_metadata(query):
@@ -1193,6 +1291,8 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "The voice of music.\n\n"
         "Commands:\n"
         "/music <url or search>\n"
+        "/playlist <playlist url>\n"
+        "/playlists\n"
         "/queue\n"
         "/cache\n"
         "/library\n"
@@ -1311,6 +1411,7 @@ async def cache_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     metadata_count = len(load_metadata_cache())
     library_count = len(load_library_index())
     art_count = len(load_art_index())
+    playlist_count = len(load_playlist_index())
 
     await update.message.reply_text(
         f"🗃 Cache\n"
@@ -1319,6 +1420,7 @@ async def cache_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Metadata: {metadata_count}\n"
         f"Library: {library_count}\n"
         f"Art: {art_count}\n"
+        f"Playlists: {playlist_count}\n"
         f"Size: {size_mb:.1f} MB"
     )
 
@@ -1500,6 +1602,83 @@ async def album_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("\n".join(lines))
 
 
+async def playlist_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    url = " ".join(context.args).strip()
+
+    if not url:
+        await update.message.reply_text("Usage: /playlist <playlist url>")
+        return
+
+    status = await update.message.reply_text(
+        f"{progress_bar(5)} 5%\n🎵 Reading playlist...\n{url}"
+    )
+
+    entries = await asyncio.to_thread(extract_playlist_entries, url)
+
+    if not entries:
+        await status.edit_text("❌ No playlist entries found")
+        return
+
+    queued = 0
+    skipped = 0
+    failed = 0
+
+    for entry in entries:
+        query = entry.get("url") or entry.get("title", "")
+
+        if not query:
+            failed += 1
+            continue
+
+        # Try to skip obvious duplicates when metadata is available.
+        meta = await asyncio.to_thread(get_media_metadata, query)
+
+        if meta and library_has_identity(meta, meta.get("display")):
+            skipped += 1
+            continue
+
+        QUEUE.append((update, query, None))
+        queued += 1
+
+    add_playlist_import(url, queued, skipped, failed, len(entries))
+
+    await status.edit_text(
+        f"🎵 Playlist Import\n"
+        f"Tracks found: {len(entries)}\n"
+        f"Queued: {queued}\n"
+        f"Skipped existing: {skipped}\n"
+        f"Failed: {failed}"
+    )
+
+    if queued:
+        asyncio.create_task(process_queue(context.application))
+
+
+async def playlists_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    index = load_playlist_index()
+
+    if not index:
+        await update.message.reply_text("🎵 No playlist imports recorded")
+        return
+
+    items = sorted(
+        index.values(),
+        key=lambda item: item.get("imported", 0),
+        reverse=True,
+    )[:10]
+
+    lines = [f"🎵 Playlist Imports ({len(index)})", ""]
+
+    for i, item in enumerate(items, start=1):
+        lines.append(
+            f"{i}. {item.get('queued', 0)} queued / "
+            f"{item.get('skipped', 0)} skipped / "
+            f"{item.get('total', 0)} total"
+        )
+
+    await update.message.reply_text("\n".join(lines))
+
+
 async def reload_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await admin_only(update):
         return
@@ -1553,6 +1732,8 @@ def main():
     app.add_handler(CommandHandler("start", start_cmd))
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CommandHandler("music", music))
+    app.add_handler(CommandHandler("playlist", playlist_cmd))
+    app.add_handler(CommandHandler("playlists", playlists_cmd))
     app.add_handler(CommandHandler("queue", queue_cmd))
     app.add_handler(CommandHandler("cache", cache_cmd))
     app.add_handler(CommandHandler("library", library_cmd))
