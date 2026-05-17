@@ -18,6 +18,7 @@ Sandalphon is a Telegram music bot that:
 * supports playlists
 * supports intelligent playlist ingestion
 * supports background library ingestion workflows
+* supports persistent failure recovery and retry workflows
 * processes requests through a queue (stable under load)
 * caches audio for instant reuse
 * caches metadata for faster repeated requests
@@ -151,12 +152,25 @@ Sandalphon is a Telegram music bot that:
 * improves large playlist import efficiency
 * expands queue system to support background ingest workflows
 
+
+---
+
+### v2.8
+
+* introduces persistent failure recovery tracking
+* adds `/failed`
+* adds `/retryfailed`
+* adds `/clearfailed`
+* tracks failed downloads, queue errors, and oversized files
+* automatically removes successful retries from the failed queue
+* improves reliability for large playlist/library ingestion workflows
+
 ---
 
 ## 🧠 Core Flow
 
 ```id="flow1"
-Input → Playlist Import → Smart Queue Ordering → Queue → Progress UI → Resolve → Metadata/Spotify → Cache Metadata → Download → Cache Audio → Cache Art → Library Index → Tag (ID3 + Art) → Deliver
+Input → Playlist Import → Smart Queue Ordering → Queue → Progress UI → Resolve → Metadata/Spotify → Cache Metadata → Download → Failure Recovery → Cache Audio → Cache Art → Library Index → Tag (ID3 + Art) → Deliver
 ```
 
 ---
@@ -178,6 +192,9 @@ Input → Playlist Import → Smart Queue Ordering → Queue → Progress UI →
 /play <artist or song>
 /clearcache
 /clearlibrary
+/failed
+/retryfailed
+/clearfailed
 /reload
 /restart
 /id
@@ -243,6 +260,14 @@ Reload or restart the bot from Telegram:
 /restart
 ```
 
+Retry failed tracks:
+
+```text id="usage10"
+/failed
+/retryfailed
+/clearfailed
+```
+
 ---
 
 ## ⚙️ Config Notes
@@ -295,6 +320,7 @@ empty ALLOWED_USER_IDS → public bot
 * queue/progress messages auto-update and self-clean when possible
 * playlist imports attempt duplicate skipping using library identity
 * uncached playlist tracks are prioritized before cache hits
+* failed queue entries persist until retried or cleared
 
 ---
 
@@ -317,7 +343,6 @@ empty ALLOWED_USER_IDS → public bot
 * smarter album ranking refinements
 * artist popularity/play weighting
 * smarter artist/title ranking refinements
-* retry queue support
 * background prefetching
 * playlist sync/update support
 

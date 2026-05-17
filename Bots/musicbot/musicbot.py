@@ -2,10 +2,10 @@
 # ------------------------------------------------------------
 # file:     musicbot.py
 # author:   Mike Redd
-# version:  2.7
+# version:  2.8
 # created:  2026-05-03
 # updated:  2026-05-03
-# desc:     Sandalphon - Queue/cache music bot with smart playlist queueing
+# desc:     Sandalphon - Queue/cache music bot with failure recovery
 # ------------------------------------------------------------
 
 import asyncio
@@ -28,7 +28,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandl
 
 # ── Branding ─────────────────────────────────────────────────
 BOT_NAME = "Sandalphon"
-BOT_VERSION = "2.7"
+BOT_VERSION = "2.8"
 
 # ── Config ───────────────────────────────────────────────────
 sys.path.insert(0, str(Path.home() / "bots/config"))
@@ -58,6 +58,7 @@ LIBRARY_INDEX_FILE = CACHE_DIR / "library.json"
 ART_CACHE_DIR = CACHE_DIR / "art"
 ART_INDEX_FILE = CACHE_DIR / "art.json"
 PLAYLIST_INDEX_FILE = CACHE_DIR / "playlists.json"
+FAILED_INDEX_FILE = CACHE_DIR / "failed.json"
 
 if CACHE_ENABLED:
     CACHE_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
@@ -517,6 +518,9 @@ def clear_library():
     if PLAYLIST_INDEX_FILE.exists():
         PLAYLIST_INDEX_FILE.unlink()
 
+    if FAILED_INDEX_FILE.exists():
+        FAILED_INDEX_FILE.unlink()
+
     if ART_INDEX_FILE.exists():
         ART_INDEX_FILE.unlink()
 
@@ -715,6 +719,67 @@ def add_playlist_import(url, queued, skipped, failed, total):
     }
 
     save_playlist_index(index)
+
+
+def load_failed_index():
+    if not CACHE_ENABLED or not FAILED_INDEX_FILE.exists():
+        return {}
+
+    try:
+        return json.loads(FAILED_INDEX_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        logging.exception("Failed to read failed index")
+        return {}
+
+
+def save_failed_index(index):
+    if not CACHE_ENABLED:
+        return
+
+    try:
+        tmp = FAILED_INDEX_FILE.with_suffix(".tmp")
+        tmp.write_text(json.dumps(index, indent=2, sort_keys=True), encoding="utf-8")
+        tmp.replace(FAILED_INDEX_FILE)
+    except Exception:
+        logging.exception("Failed to write failed index")
+
+
+def add_failed_query(query, reason="failed", send_audio=True):
+    if not CACHE_ENABLED or not query:
+        return
+
+    index = load_failed_index()
+    key = cache_key(query)
+    existing = index.get(key, {})
+
+    index[key] = {
+        "query": query,
+        "reason": reason,
+        "send_audio": bool(send_audio),
+        "first_failed": int(existing.get("first_failed", time.time())),
+        "last_failed": int(time.time()),
+        "attempts": int(existing.get("attempts", 0)) + 1,
+    }
+
+    save_failed_index(index)
+
+
+def remove_failed_query(query):
+    if not CACHE_ENABLED or not query:
+        return
+
+    index = load_failed_index()
+    key = cache_key(query)
+
+    if key in index:
+        index.pop(key, None)
+        save_failed_index(index)
+
+
+def clear_failed_queries():
+    if FAILED_INDEX_FILE.exists():
+        FAILED_INDEX_FILE.unlink()
+
 
 
 def get_media_metadata(query):
@@ -930,6 +995,9 @@ def clear_cache():
 
     if LIBRARY_INDEX_FILE.exists():
         LIBRARY_INDEX_FILE.unlink()
+
+    if FAILED_INDEX_FILE.exists():
+        FAILED_INDEX_FILE.unlink()
 
 # ── Downloading ──────────────────────────────────────────────
 
@@ -1231,6 +1299,7 @@ async def process_queue(app):
                 audio, from_cache = await asyncio.to_thread(download_audio, query)
 
             if not audio:
+                add_failed_query(query, "download failed", send_audio)
                 await msg.edit_text("❌ Failed")
                 continue
 
@@ -1243,10 +1312,12 @@ async def process_queue(app):
             title = build_title_from_metadata(query, title)
 
             if size > MAX_FILE_MB:
+                add_failed_query(query, f"too large ({size:.1f} MB)", send_audio)
                 await msg.edit_text(f"📦 Too large ({size:.1f} MB)")
                 continue
 
             if not send_audio:
+                remove_failed_query(query)
                 await update_status(msg, 100, "📚 Saved to library", title)
                 try:
                     await msg.delete()
@@ -1267,6 +1338,7 @@ async def process_queue(app):
                     title=title[:64],
                 )
 
+            remove_failed_query(query)
             await update_status(msg, 100, "✅ Sent", title)
 
             try:
@@ -1276,6 +1348,7 @@ async def process_queue(app):
 
         except Exception:
             logging.exception("Queue error")
+            add_failed_query(query, "queue error", send_audio)
             if msg:
                 try:
                     await msg.edit_text("❌ Queue error")
@@ -1323,6 +1396,9 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/play <artist or song>\n"
         "/clearcache\n"
         "/clearlibrary\n"
+        "/failed\n"
+        "/retryfailed\n"
+        "/clearfailed\n"
         "/reload\n"
         "/restart\n"
         "/help\n\n"
@@ -1431,6 +1507,7 @@ async def cache_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     library_count = len(load_library_index())
     art_count = len(load_art_index())
     playlist_count = len(load_playlist_index())
+    failed_count = len(load_failed_index())
 
     await update.message.reply_text(
         f"🗃 Cache\n"
@@ -1440,6 +1517,7 @@ async def cache_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Library: {library_count}\n"
         f"Art: {art_count}\n"
         f"Playlists: {playlist_count}\n"
+        f"Failed: {failed_count}\n"
         f"Size: {size_mb:.1f} MB"
     )
 
@@ -1725,6 +1803,61 @@ async def playlists_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("\n".join(lines))
 
 
+async def failed_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    index = load_failed_index()
+
+    if not index:
+        await update.message.reply_text("✅ No failed tracks recorded")
+        return
+
+    items = sorted(
+        index.values(),
+        key=lambda item: item.get("last_failed", 0),
+        reverse=True,
+    )[:15]
+
+    lines = [f"❌ Failed Tracks ({len(index)})", ""]
+
+    for i, item in enumerate(items, start=1):
+        query = item.get("query", "Unknown")
+        reason = item.get("reason", "failed")
+        attempts = item.get("attempts", 0)
+        if len(query) > 70:
+            query = query[:67] + "..."
+        lines.append(f"{i}. {query}")
+        lines.append(f"   ↳ {reason} | attempts: {attempts}")
+
+    await update.message.reply_text("\n".join(lines))
+
+
+async def retryfailed_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    index = load_failed_index()
+
+    if not index:
+        await update.message.reply_text("✅ No failed tracks to retry")
+        return
+
+    items = list(index.values())
+    clear_failed_queries()
+
+    for item in items:
+        query = item.get("query", "")
+        send_audio = bool(item.get("send_audio", True))
+
+        if query:
+            QUEUE.append((update, query, None, send_audio))
+
+    await update.message.reply_text(f"🔁 Requeued {len(items)} failed track(s)")
+
+    if items:
+        asyncio.create_task(process_queue(context.application))
+
+
+async def clearfailed_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    clear_failed_queries()
+    await update.message.reply_text("🧹 Failed track list cleared")
+
+
 async def reload_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await admin_only(update):
         return
@@ -1791,6 +1924,9 @@ def main():
     app.add_handler(CommandHandler("play", play_cmd))
     app.add_handler(CommandHandler("clearcache", clearcache_cmd))
     app.add_handler(CommandHandler("clearlibrary", clearlibrary_cmd))
+    app.add_handler(CommandHandler("failed", failed_cmd))
+    app.add_handler(CommandHandler("retryfailed", retryfailed_cmd))
+    app.add_handler(CommandHandler("clearfailed", clearfailed_cmd))
     app.add_handler(CommandHandler("reload", reload_cmd))
     app.add_handler(CommandHandler("restart", restart_cmd))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, auto_music))
