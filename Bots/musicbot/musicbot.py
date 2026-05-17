@@ -2,13 +2,14 @@
 # ------------------------------------------------------------
 # file:     musicbot.py
 # author:   Mike Redd
-# version:  2.2
+# version:  2.3
 # created:  2026-05-03
 # updated:  2026-05-03
-# desc:     Sandalphon - Queue/cache music bot with unified progress status
+# desc:     Sandalphon - Queue/cache music bot with smarter library matching
 # ------------------------------------------------------------
 
 import asyncio
+import difflib
 import hashlib
 import json
 import logging
@@ -27,7 +28,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandl
 
 # ── Branding ─────────────────────────────────────────────────
 BOT_NAME = "Sandalphon"
-BOT_VERSION = "2.2"
+BOT_VERSION = "2.3"
 
 # ── Config ───────────────────────────────────────────────────
 sys.path.insert(0, str(Path.home() / "bots/config"))
@@ -351,6 +352,88 @@ def normalize_library_text(text):
     return text
 
 
+def library_identity(metadata=None, display=None):
+    """
+    Build a stable library identity so the same song does not get added
+    multiple times from different queries/links.
+    """
+    metadata = metadata or {}
+
+    artist = normalize_library_text(metadata.get("artist", ""))
+    title = normalize_library_text(metadata.get("title", ""))
+
+    if artist and title:
+        return cache_key(f"{artist} - {title}")
+
+    return cache_key(normalize_library_text(display or ""))
+
+
+def fuzzy_ratio(a, b):
+    return difflib.SequenceMatcher(
+        None,
+        normalize_library_text(a),
+        normalize_library_text(b),
+    ).ratio()
+
+
+def library_match_score(term, item):
+    term_norm = normalize_library_text(term)
+
+    if not term_norm:
+        return 0
+
+    artist = normalize_library_text(item.get("artist", ""))
+    title = normalize_library_text(item.get("title", ""))
+    album = normalize_library_text(item.get("album", ""))
+    display = normalize_library_text(item.get("display", ""))
+    search_text = normalize_library_text(item.get("search_text", display))
+
+    score = 0
+
+    # Exact/contains matches
+    if term_norm == display:
+        score += 100
+    elif term_norm in display:
+        score += 50
+
+    if artist and term_norm == artist:
+        score += 45
+    elif artist and term_norm in artist:
+        score += 30
+
+    if title and term_norm == title:
+        score += 40
+    elif title and term_norm in title:
+        score += 25
+
+    if album and term_norm in album:
+        score += 10
+
+    # Word scoring
+    words = [w for w in term_norm.split() if w]
+
+    for word in words:
+        if artist and word in artist:
+            score += 8
+        if title and word in title:
+            score += 7
+        if album and word in album:
+            score += 3
+        if word in search_text:
+            score += 2
+
+    # Fuzzy scoring for typos
+    fuzzy_display = fuzzy_ratio(term_norm, display)
+    fuzzy_artist = fuzzy_ratio(term_norm, artist) if artist else 0
+    fuzzy_title = fuzzy_ratio(term_norm, title) if title else 0
+
+    score += int(fuzzy_display * 25)
+    score += int(fuzzy_artist * 20)
+    score += int(fuzzy_title * 20)
+
+    return score
+
+
 def add_to_library(query, audio_file, metadata=None):
     if not CACHE_ENABLED or not audio_file or not audio_file.exists():
         return
@@ -371,9 +454,11 @@ def add_to_library(query, audio_file, metadata=None):
     if not display:
         display = get_cached_title_by_path(audio_file) or clean_title(audio_file.stem)
 
-    key = cache_key(display)
+    key = library_identity(metadata, display)
     index = load_library_index()
+    existing = index.get(key, {})
 
+    # Keep first-added timestamp, but refresh path/query/metadata.
     index[key] = {
         "query": query,
         "display": display,
@@ -383,21 +468,19 @@ def add_to_library(query, audio_file, metadata=None):
         "year": year,
         "path": str(audio_file),
         "search_text": normalize_library_text(f"{display} {artist} {title} {album} {year}"),
-        "added": int(time.time()),
+        "added": int(existing.get("added", time.time())),
+        "updated": int(time.time()),
+        "plays": int(existing.get("plays", 0)),
     }
 
     save_library_index(index)
 
 
 def search_library(term, limit=10):
-    term = normalize_library_text(term)
-
-    if not term:
+    if not normalize_library_text(term):
         return []
 
     index = load_library_index()
-    words = [w for w in term.split() if w]
-
     results = []
 
     for key, item in index.items():
@@ -405,20 +488,20 @@ def search_library(term, limit=10):
         if not path.exists():
             continue
 
-        haystack = item.get("search_text", normalize_library_text(item.get("display", "")))
+        score = library_match_score(term, item)
 
-        score = 0
-        if term in haystack:
-            score += 10
-
-        for word in words:
-            if word in haystack:
-                score += 2
-
-        if score:
+        if score >= 12:
             results.append((score, item))
 
-    results.sort(key=lambda x: x[0], reverse=True)
+    results.sort(
+        key=lambda x: (
+            x[0],
+            x[1].get("plays", 0),
+            x[1].get("updated", x[1].get("added", 0)),
+        ),
+        reverse=True,
+    )
+
     return [item for _, item in results[:limit]]
 
 
@@ -1083,6 +1166,16 @@ async def play_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     title = item.get("display", clean_title(path.stem))
+
+    # Track local library plays for future ranking.
+    index = load_library_index()
+    for key, entry in index.items():
+        if entry.get("path") == str(path):
+            entry["plays"] = int(entry.get("plays", 0)) + 1
+            entry["last_played"] = int(time.time())
+            index[key] = entry
+            save_library_index(index)
+            break
 
     with path.open("rb") as f:
         await update.message.reply_audio(

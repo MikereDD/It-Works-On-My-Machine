@@ -87,6 +87,18 @@ Sandalphon is a Telegram music bot that:
 * improves perceived responsiveness during downloads and tagging
 * cleans up Telegram chat flow significantly
 
+
+---
+
+### v2.3
+
+* introduces smarter fuzzy library matching
+* adds typo-tolerant `/find` and `/play`
+* improves artist/title ranking logic
+* adds weighted search scoring
+* deduplicates library entries using artist/title identity
+* tracks local play counts for future ranking improvements
+
 ---
 
 ## 🧠 Core Flow
@@ -191,7 +203,7 @@ empty ALLOWED_USER_IDS → public bot
 * Local Bot API removes standard Telegram limits
 * cache is query-based (exact match required)
 * metadata cache reduces repeated lookups
-* library search is text-based (not perfect matching yet)
+* library search supports fuzzy matching and typo tolerance
 * plain text auto-trigger may ignore very short or generic messages
 * `/reload` and `/restart` are admin-only controls
 * queue/progress messages auto-update and self-clean when possible
@@ -212,9 +224,8 @@ empty ALLOWED_USER_IDS → public bot
 
 ## 🧭 Next Up (Planned)
 
-* smarter library matching (fuzzy + ranking improvements)
-* animated/staged progress transitions
-* deduplicated library entries
+* smarter artist/title ranking refinements
+* album-aware search grouping
 * album-based browsing
 * background prefetching
 * improved album art handling
