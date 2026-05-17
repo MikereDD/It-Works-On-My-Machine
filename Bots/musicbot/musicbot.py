@@ -2,10 +2,10 @@
 # ------------------------------------------------------------
 # file:     musicbot.py
 # author:   Mike Redd
-# version:  2.8
+# version:  2.9
 # created:  2026-05-03
 # updated:  2026-05-03
-# desc:     Sandalphon - Queue/cache music bot with failure recovery
+# desc:     Sandalphon - Queue/cache music bot with playlist sync
 # ------------------------------------------------------------
 
 import asyncio
@@ -28,7 +28,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandl
 
 # ── Branding ─────────────────────────────────────────────────
 BOT_NAME = "Sandalphon"
-BOT_VERSION = "2.8"
+BOT_VERSION = "2.9"
 
 # ── Config ───────────────────────────────────────────────────
 sys.path.insert(0, str(Path.home() / "bots/config"))
@@ -702,12 +702,22 @@ def library_has_identity(metadata=None, display=None):
     return key in index
 
 
-def add_playlist_import(url, queued, skipped, failed, total):
+def playlist_entry_key(entry):
+    query = entry.get("url") or entry.get("title", "")
+    return cache_key(query)
+
+
+def add_playlist_import(url, queued, skipped, failed, total, entries=None, mode="import"):
     if not CACHE_ENABLED:
         return
 
     index = load_playlist_index()
     key = cache_key(url)
+    existing = index.get(key, {})
+
+    entry_keys = []
+    if entries:
+        entry_keys = [playlist_entry_key(entry) for entry in entries if entry.get("url") or entry.get("title")]
 
     index[key] = {
         "url": url,
@@ -715,10 +725,34 @@ def add_playlist_import(url, queued, skipped, failed, total):
         "skipped": skipped,
         "failed": failed,
         "total": total,
+        "mode": mode,
+        "entries": entry_keys,
+        "first_imported": int(existing.get("first_imported", time.time())),
         "imported": int(time.time()),
+        "syncs": int(existing.get("syncs", 0)) + (1 if mode == "sync" else 0),
     }
 
     save_playlist_index(index)
+
+
+def get_playlist_record(url):
+    if not CACHE_ENABLED:
+        return None
+
+    return load_playlist_index().get(cache_key(url))
+
+
+def find_new_playlist_entries(url, entries):
+    record = get_playlist_record(url)
+    known = set((record or {}).get("entries", []))
+    new_entries = []
+
+    for entry in entries:
+        key = playlist_entry_key(entry)
+        if key and key not in known:
+            new_entries.append(entry)
+
+    return new_entries
 
 
 def load_failed_index():
@@ -1384,6 +1418,7 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Commands:\n"
         "/music <url or search>\n"
         "/playlist <playlist url> [--library-only]\n"
+        "/syncplaylist <playlist url> [--library-only]\n"
         "/playlists\n"
         "/queue\n"
         "/cache\n"
@@ -1761,7 +1796,7 @@ async def playlist_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         QUEUE.append((update, query, None, not library_only))
         queued += 1
 
-    add_playlist_import(url, queued, skipped, failed, len(entries))
+    add_playlist_import(url, queued, skipped, failed, len(entries), entries=entries, mode="import")
 
     mode = "Library-only" if library_only else "Download + Send"
 
@@ -1777,6 +1812,84 @@ async def playlist_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if queued:
         asyncio.create_task(process_queue(context.application))
+
+async def syncplaylist_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    args = list(context.args)
+    library_only = False
+
+    flags = {"--library-only", "--ingest-only", "--no-send"}
+
+    clean_args = []
+    for arg in args:
+        if arg in flags:
+            library_only = True
+        else:
+            clean_args.append(arg)
+
+    url = " ".join(clean_args).strip()
+
+    if not url:
+        await update.message.reply_text(
+            "Usage: /syncplaylist <playlist url> [--library-only]"
+        )
+        return
+
+    status = await update.message.reply_text(
+        f"{progress_bar(5)} 5%\n🔄 Syncing playlist...\n{url}"
+    )
+
+    entries = await asyncio.to_thread(extract_playlist_entries, url)
+
+    if not entries:
+        await status.edit_text("❌ No playlist entries found")
+        return
+
+    new_entries = find_new_playlist_entries(url, entries)
+
+    queued = 0
+    skipped = len(entries) - len(new_entries)
+    failed = 0
+    uncached = []
+    cached_items = []
+
+    for entry in new_entries:
+        query = entry.get("url") or entry.get("title", "")
+
+        if not query:
+            failed += 1
+            continue
+
+        meta = await asyncio.to_thread(get_media_metadata, query)
+
+        if meta and library_has_identity(meta, meta.get("display")):
+            skipped += 1
+            continue
+
+        if get_cached_audio(query):
+            cached_items.append(query)
+        else:
+            uncached.append(query)
+
+    for query in [*uncached, *cached_items]:
+        QUEUE.append((update, query, None, not library_only))
+        queued += 1
+
+    add_playlist_import(url, queued, skipped, failed, len(entries), entries=entries, mode="sync")
+
+    mode = "Library-only" if library_only else "Download + Send"
+
+    await status.edit_text(
+        f"🔄 Playlist Sync ({mode})\n"
+        f"Tracks found: {len(entries)}\n"
+        f"New tracks: {len(new_entries)}\n"
+        f"Queued: {queued}\n"
+        f"Skipped known/existing: {skipped}\n"
+        f"Failed: {failed}"
+    )
+
+    if queued:
+        asyncio.create_task(process_queue(context.application))
+
 
 async def playlists_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     index = load_playlist_index()
@@ -1797,7 +1910,8 @@ async def playlists_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         lines.append(
             f"{i}. {item.get('queued', 0)} queued / "
             f"{item.get('skipped', 0)} skipped / "
-            f"{item.get('total', 0)} total"
+            f"{item.get('total', 0)} total / "
+            f"{item.get('syncs', 0)} syncs"
         )
 
     await update.message.reply_text("\n".join(lines))
@@ -1912,6 +2026,7 @@ def main():
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CommandHandler("music", music))
     app.add_handler(CommandHandler("playlist", playlist_cmd))
+    app.add_handler(CommandHandler("syncplaylist", syncplaylist_cmd))
     app.add_handler(CommandHandler("playlists", playlists_cmd))
     app.add_handler(CommandHandler("queue", queue_cmd))
     app.add_handler(CommandHandler("cache", cache_cmd))

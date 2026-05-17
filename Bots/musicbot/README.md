@@ -19,6 +19,7 @@ Sandalphon is a Telegram music bot that:
 * supports intelligent playlist ingestion
 * supports background library ingestion workflows
 * supports persistent failure recovery and retry workflows
+* supports persistent playlist sync/update workflows
 * processes requests through a queue (stable under load)
 * caches audio for instant reuse
 * caches metadata for faster repeated requests
@@ -165,12 +166,24 @@ Sandalphon is a Telegram music bot that:
 * automatically removes successful retries from the failed queue
 * improves reliability for large playlist/library ingestion workflows
 
+
+---
+
+### v2.9
+
+* introduces playlist sync/update support
+* adds `/syncplaylist <playlist url> [--library-only]`
+* tracks playlist entry fingerprints
+* sync mode queues only new playlist entries
+* playlist history now tracks sync counts
+* improves long-term playlist maintenance workflows
+
 ---
 
 ## 🧠 Core Flow
 
 ```id="flow1"
-Input → Playlist Import → Smart Queue Ordering → Queue → Progress UI → Resolve → Metadata/Spotify → Cache Metadata → Download → Failure Recovery → Cache Audio → Cache Art → Library Index → Tag (ID3 + Art) → Deliver
+Input → Playlist Import/Sync → Smart Queue Ordering → Queue → Progress UI → Resolve → Metadata/Spotify → Cache Metadata → Download → Failure Recovery → Cache Audio → Cache Art → Library Index → Tag (ID3 + Art) → Deliver
 ```
 
 ---
@@ -180,6 +193,7 @@ Input → Playlist Import → Smart Queue Ordering → Queue → Progress UI →
 ```id="cmds1"
 /music <url or search>
 /playlist <playlist url>
+/syncplaylist <playlist url>
 /playlists
 /queue
 /cache
@@ -253,6 +267,12 @@ Library ingest only:
 /playlist https://youtube.com/playlist?list=... --library-only
 ```
 
+Sync existing playlists:
+
+```text id="usage11"
+/syncplaylist https://youtube.com/playlist?list=...
+```
+
 Reload or restart the bot from Telegram:
 
 ```text id="usage5"
@@ -321,6 +341,7 @@ empty ALLOWED_USER_IDS → public bot
 * playlist imports attempt duplicate skipping using library identity
 * uncached playlist tracks are prioritized before cache hits
 * failed queue entries persist until retried or cleared
+* playlist sync only queues previously unseen playlist entries
 
 ---
 
@@ -344,6 +365,7 @@ empty ALLOWED_USER_IDS → public bot
 * artist popularity/play weighting
 * smarter artist/title ranking refinements
 * background prefetching
+* smarter sync conflict handling
 * playlist sync/update support
 
 ---
