@@ -17,6 +17,7 @@ Sandalphon is a Telegram music bot that:
 * delivers Telegram-ready audio
 * supports playlists
 * supports intelligent playlist ingestion
+* supports background library ingestion workflows
 * processes requests through a queue (stable under load)
 * caches audio for instant reuse
 * caches metadata for faster repeated requests
@@ -131,19 +132,31 @@ Sandalphon is a Telegram music bot that:
 ### v2.6
 
 * introduces playlist ingestion and batch importing
-* adds `/playlist <playlist url>`
+* adds `/playlist <playlist url> [--library-only]`
 * adds `/playlists`
 * supports flat playlist scanning without immediate downloads
 * skips existing library tracks when possible
 * tracks playlist import history and statistics
 * improves large-scale library population workflows
 
+
+---
+
+### v2.7
+
+* introduces smarter playlist queue ordering
+* queues uncached tracks before cached tracks during playlist imports
+* adds `--library-only` playlist ingestion mode
+* supports cache/library population without Telegram upload spam
+* improves large playlist import efficiency
+* expands queue system to support background ingest workflows
+
 ---
 
 ## 🧠 Core Flow
 
 ```id="flow1"
-Input → Playlist Import → Queue → Progress UI → Resolve → Metadata/Spotify → Cache Metadata → Download → Cache Audio → Cache Art → Library Index → Tag (ID3 + Art) → Deliver
+Input → Playlist Import → Smart Queue Ordering → Queue → Progress UI → Resolve → Metadata/Spotify → Cache Metadata → Download → Cache Audio → Cache Art → Library Index → Tag (ID3 + Art) → Deliver
 ```
 
 ---
@@ -217,6 +230,12 @@ Import playlists:
 /playlist https://youtube.com/playlist?list=...
 ```
 
+Library ingest only:
+
+```text id="usage9"
+/playlist https://youtube.com/playlist?list=... --library-only
+```
+
 Reload or restart the bot from Telegram:
 
 ```text id="usage5"
@@ -275,6 +294,7 @@ empty ALLOWED_USER_IDS → public bot
 * `/reload` and `/restart` are admin-only controls
 * queue/progress messages auto-update and self-clean when possible
 * playlist imports attempt duplicate skipping using library identity
+* uncached playlist tracks are prioritized before cache hits
 
 ---
 
@@ -297,6 +317,7 @@ empty ALLOWED_USER_IDS → public bot
 * smarter album ranking refinements
 * artist popularity/play weighting
 * smarter artist/title ranking refinements
+* retry queue support
 * background prefetching
 * playlist sync/update support
 

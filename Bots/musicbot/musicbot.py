@@ -2,10 +2,10 @@
 # ------------------------------------------------------------
 # file:     musicbot.py
 # author:   Mike Redd
-# version:  2.6
+# version:  2.7
 # created:  2026-05-03
 # updated:  2026-05-03
-# desc:     Sandalphon - Queue/cache music bot with playlist ingestion
+# desc:     Sandalphon - Queue/cache music bot with smart playlist queueing
 # ------------------------------------------------------------
 
 import asyncio
@@ -28,7 +28,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandl
 
 # ── Branding ─────────────────────────────────────────────────
 BOT_NAME = "Sandalphon"
-BOT_VERSION = "2.6"
+BOT_VERSION = "2.7"
 
 # ── Config ───────────────────────────────────────────────────
 sys.path.insert(0, str(Path.home() / "bots/config"))
@@ -65,6 +65,7 @@ if CACHE_ENABLED:
     CACHE_INDEX_FILE.parent.mkdir(parents=True, exist_ok=True)
 
 # ── Queue System ─────────────────────────────────────────────
+# Queue item format: (update, query, queue_message_id, send_audio)
 QUEUE = deque()
 PROCESSING = False
 
@@ -1182,7 +1183,17 @@ async def process_queue(app):
     PROCESSING = True
 
     while QUEUE:
-        update, query, queue_message_id = QUEUE.popleft()
+        item = QUEUE.popleft()
+
+        # v2.7 supports an optional 4th queue value:
+        # send_audio=True  -> download/cache/library/send
+        # send_audio=False -> download/cache/library only
+        if len(item) == 4:
+            update, query, queue_message_id, send_audio = item
+        else:
+            update, query, queue_message_id = item
+            send_audio = True
+
         chat_id = update.effective_chat.id
         msg = None
 
@@ -1233,6 +1244,14 @@ async def process_queue(app):
 
             if size > MAX_FILE_MB:
                 await msg.edit_text(f"📦 Too large ({size:.1f} MB)")
+                continue
+
+            if not send_audio:
+                await update_status(msg, 100, "📚 Saved to library", title)
+                try:
+                    await msg.delete()
+                except Exception:
+                    pass
                 continue
 
             if from_cache:
@@ -1291,7 +1310,7 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "The voice of music.\n\n"
         "Commands:\n"
         "/music <url or search>\n"
-        "/playlist <playlist url>\n"
+        "/playlist <playlist url> [--library-only]\n"
         "/playlists\n"
         "/queue\n"
         "/cache\n"
@@ -1323,7 +1342,7 @@ async def music(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         queue_msg = await update.message.reply_text("➕ Queued")
 
-    QUEUE.append((update, query, queue_msg.message_id))
+    QUEUE.append((update, query, queue_msg.message_id, True))
 
     asyncio.create_task(process_queue(context.application))
 
@@ -1384,7 +1403,7 @@ async def auto_music(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         queue_msg = await update.message.reply_text("➕ Queued")
 
-    QUEUE.append((update, query, queue_msg.message_id))
+    QUEUE.append((update, query, queue_msg.message_id, True))
 
     asyncio.create_task(process_queue(context.application))
 
@@ -1394,7 +1413,7 @@ async def queue_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Queue empty")
         return
 
-    text = "\n".join([f"{i + 1}. {q}" for i, (_, q, _) in enumerate(QUEUE)])
+    text = "\n".join([f"{i + 1}. {item[1]}" for i, item in enumerate(QUEUE)])
     await update.message.reply_text(text)
 
 
@@ -1603,10 +1622,24 @@ async def album_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def playlist_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    url = " ".join(context.args).strip()
+    args = list(context.args)
+    library_only = False
+
+    flags = {"--library-only", "--ingest-only", "--no-send"}
+
+    clean_args = []
+    for arg in args:
+        if arg in flags:
+            library_only = True
+        else:
+            clean_args.append(arg)
+
+    url = " ".join(clean_args).strip()
 
     if not url:
-        await update.message.reply_text("Usage: /playlist <playlist url>")
+        await update.message.reply_text(
+            "Usage: /playlist <playlist url> [--library-only]"
+        )
         return
 
     status = await update.message.reply_text(
@@ -1622,6 +1655,8 @@ async def playlist_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     queued = 0
     skipped = 0
     failed = 0
+    uncached = []
+    cached_items = []
 
     for entry in entries:
         query = entry.get("url") or entry.get("title", "")
@@ -1637,22 +1672,33 @@ async def playlist_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             skipped += 1
             continue
 
-        QUEUE.append((update, query, None))
+        if get_cached_audio(query):
+            cached_items.append(query)
+        else:
+            uncached.append(query)
+
+    # v2.7 queues uncached items first so playlist imports build the library
+    # instead of wasting early queue slots on cache hits.
+    for query in [*uncached, *cached_items]:
+        QUEUE.append((update, query, None, not library_only))
         queued += 1
 
     add_playlist_import(url, queued, skipped, failed, len(entries))
 
+    mode = "Library-only" if library_only else "Download + Send"
+
     await status.edit_text(
-        f"🎵 Playlist Import\n"
+        f"🎵 Playlist Import ({mode})\n"
         f"Tracks found: {len(entries)}\n"
         f"Queued: {queued}\n"
+        f"Uncached first: {len(uncached)}\n"
+        f"Cached queued: {len(cached_items)}\n"
         f"Skipped existing: {skipped}\n"
         f"Failed: {failed}"
     )
 
     if queued:
         asyncio.create_task(process_queue(context.application))
-
 
 async def playlists_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     index = load_playlist_index()
