@@ -1,4 +1,321 @@
 #!/usr/bin/env python3
+# ------------------------------------------------------------
+# file:     musicbot_dashboard.py
+# author:   Mike Redd
+# version:  3.1.2
+# created:  2026-05-17
+# updated:  2026-05-17
+# desc:     Sandalphon dashboard foundation (read-only Flask UI)
+# ------------------------------------------------------------
+
+from pathlib import Path
+import json
+import time
+
+from flask import Flask, jsonify, render_template_string, request
+
+# ── Config ───────────────────────────────────────────────────
+CACHE_DIR = Path("/mnt/nvme1/work/bots/cache/musicbot")
+
+CACHE_INDEX_FILE = CACHE_DIR / "index.json"
+METADATA_CACHE_FILE = CACHE_DIR / "metadata.json"
+LIBRARY_INDEX_FILE = CACHE_DIR / "library.json"
+ART_INDEX_FILE = CACHE_DIR / "art.json"
+PLAYLIST_INDEX_FILE = CACHE_DIR / "playlists.json"
+FAILED_INDEX_FILE = CACHE_DIR / "failed.json"
+
+BOT_NAME = "Sandalphon"
+BOT_VERSION = "3.1.2"
+
+# IMPORTANT:
+# Flask app must exist BEFORE any @app.route decorators.
+app = Flask(__name__)
+
+# ── Helpers ──────────────────────────────────────────────────
+def read_json(path):
+    if not path.exists():
+        return {}
+
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def load_cache():
+    return read_json(CACHE_INDEX_FILE)
+
+
+def load_metadata():
+    return read_json(METADATA_CACHE_FILE)
+
+
+def load_library():
+    return read_json(LIBRARY_INDEX_FILE)
+
+
+def load_art():
+    return read_json(ART_INDEX_FILE)
+
+
+def load_playlists():
+    return read_json(PLAYLIST_INDEX_FILE)
+
+
+def load_failed():
+    return read_json(FAILED_INDEX_FILE)
+
+
+def cache_size_mb():
+    total = 0
+
+    audio_dir = CACHE_DIR / "audio"
+
+    if not audio_dir.exists():
+        return 0
+
+    for path in audio_dir.glob("*"):
+        if path.is_file():
+            total += path.stat().st_size
+
+    return round(total / (1024 * 1024), 2)
+
+
+def dashboard_stats():
+    return {
+        "bot": BOT_NAME,
+        "version": BOT_VERSION,
+        "tracks": len(load_cache()),
+        "metadata": len(load_metadata()),
+        "library": len(load_library()),
+        "art": len(load_art()),
+        "playlists": len(load_playlists()),
+        "failed": len(load_failed()),
+        "cache_size_mb": cache_size_mb(),
+        "generated": int(time.time()),
+    }
+
+
+BASE_TEMPLATE = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{{ title }}</title>
+    <meta charset="utf-8">
+
+    <style>
+        body {
+            background: #0f1117;
+            color: #d7dde8;
+            font-family: monospace;
+            margin: 0;
+            padding: 24px;
+        }
+
+        h1, h2 {
+            color: #7cc7ff;
+        }
+
+        a {
+            color: #8be9fd;
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+
+        .nav {
+            margin-bottom: 24px;
+        }
+
+        .nav a {
+            margin-right: 18px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 16px;
+        }
+
+        .card {
+            background: #171b24;
+            border: 1px solid #2b3242;
+            border-radius: 10px;
+            padding: 16px;
+        }
+
+        .value {
+            font-size: 28px;
+            color: #50fa7b;
+            margin-top: 8px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 16px;
+        }
+
+        th, td {
+            border-bottom: 1px solid #2b3242;
+            text-align: left;
+            padding: 10px;
+        }
+
+        tr:hover {
+            background: #1c2230;
+        }
+
+        input {
+            background: #171b24;
+            color: white;
+            border: 1px solid #2b3242;
+            border-radius: 8px;
+            padding: 10px;
+            width: 320px;
+        }
+
+        .muted {
+            color: #7a8399;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="nav">
+    <a href="/">Dashboard</a>
+    <a href="/library">Library</a>
+    <a href="/playlists">Playlists</a>
+    <a href="/failed">Failed</a>
+    <a href="/stats.json">stats.json</a>
+</div>
+
+{{ content|safe }}
+
+</body>
+</html>
+"""
+
+# ── Dashboard ────────────────────────────────────────────────
+@app.route("/")
+def home():
+    stats = dashboard_stats()
+
+    content = f"""
+    <h1>🎵 {BOT_NAME} v{BOT_VERSION}</h1>
+    <p class='muted'>Read-only dashboard foundation</p>
+
+    <div class="grid">
+
+        <div class="card">
+            <div>Tracks</div>
+            <div class="value">{stats['tracks']}</div>
+        </div>
+
+        <div class="card">
+            <div>Library</div>
+            <div class="value">{stats['library']}</div>
+        </div>
+
+        <div class="card">
+            <div>Playlists</div>
+            <div class="value">{stats['playlists']}</div>
+        </div>
+
+        <div class="card">
+            <div>Failed</div>
+            <div class="value">{stats['failed']}</div>
+        </div>
+
+        <div class="card">
+            <div>Artwork</div>
+            <div class="value">{stats['art']}</div>
+        </div>
+
+        <div class="card">
+            <div>Cache Size</div>
+            <div class="value">{stats['cache_size_mb']} MB</div>
+        </div>
+
+    </div>
+    """
+
+    return render_template_string(
+        BASE_TEMPLATE,
+        title="Sandalphon Dashboard",
+        content=content,
+    )
+
+
+# ── Library ──────────────────────────────────────────────────
+@app.route("/library")
+def library():
+    term = request.args.get("q", "").lower().strip()
+
+    library_data = load_library()
+
+    items = []
+
+    for item in library_data.values():
+
+        if term:
+            haystack = " ".join([
+                item.get("artist", ""),
+                item.get("title", ""),
+                item.get("album", ""),
+                item.get("display", ""),
+            ]).lower()
+
+            if term not in haystack:
+                continue
+
+        items.append(item)
+
+    items.sort(key=lambda x: x.get("artist", "").lower())
+
+    rows = []
+
+    for item in items[:500]:
+        rows.append(f"""
+        <tr>
+            <td>{item.get('artist', '')}</td>
+            <td>{item.get('title', item.get('display', ''))}</td>
+            <td>{item.get('album', '')}</td>
+            <td>{item.get('plays', 0)}</td>
+        </tr>
+        """)
+
+    content = f"""
+    <h1>📚 Library</h1>
+
+    <form>
+        <input type="text" name="q" value="{term}" placeholder="Search library...">
+    </form>
+
+    <table>
+        <tr>
+            <th>Artist</th>
+            <th>Title</th>
+            <th>Album</th>
+            <th>Plays</th>
+        </tr>
+
+        {''.join(rows)}
+    </table>
+    """
+
+    return render_template_string(
+        BASE_TEMPLATE,
+        title="Library",
+        content=content,
+    )
+
+
+# ── Playlists ────────────────────────────────────────────────
+@app.route("/playlists")
 def playlists():
     playlists_data = load_playlists()
 
@@ -35,7 +352,11 @@ def playlists():
     </table>
     """
 
-    return render_template_string(BASE_TEMPLATE, title="Playlists", content=content)
+    return render_template_string(
+        BASE_TEMPLATE,
+        title="Playlists",
+        content=content,
+    )
 
 
 # ── Failed ───────────────────────────────────────────────────
@@ -72,7 +393,11 @@ def failed():
     </table>
     """
 
-    return render_template_string(BASE_TEMPLATE, title="Failed", content=content)
+    return render_template_string(
+        BASE_TEMPLATE,
+        title="Failed",
+        content=content,
+    )
 
 
 # ── JSON API ─────────────────────────────────────────────────

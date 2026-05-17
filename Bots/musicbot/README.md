@@ -214,6 +214,17 @@ Sandalphon is a Telegram music bot that:
 * exposes cache/library state through lightweight HTTP APIs
 * designed to evolve independently from the Telegram bot runtime
 
+
+---
+
+### v3.1.2
+
+* fixes Flask dashboard startup ordering issue
+* moves Flask app initialization before route decorators
+* resolves `NameError: name 'app' is not defined`
+* stabilizes standalone dashboard runtime on Pi/Linux systems
+* confirms dashboard binding on port `8181`
+
 ---
 
 ## 🧠 Core Flow
@@ -343,7 +354,7 @@ Dashboard/status commands:
 Sandalphon now includes a lightweight Flask dashboard:
 
 ```text id="dash1"
-musicbot_dashboard.py
+musicbot_dashboard.py (v3.1.2)
 ```
 
 Default URL:
@@ -435,6 +446,7 @@ empty ALLOWED_USER_IDS → public bot
 * failed queue entries persist until retried or cleared
 * playlist sync only queues previously unseen playlist entries
 * export snapshots are JSON-based and intended for future dashboard tooling
+* Flask dashboard runs independently from the Telegram bot runtime
 
 ---
 
