@@ -28,6 +28,7 @@ Sandalphon is a Telegram music bot that:
 * supports Spotify metadata → YouTube/yt-dlp matching
 * supports admin-only `/reload` and `/restart` controls
 * uses unified live progress/status messages
+* caches and reuses album artwork intelligently
 
 ---
 
@@ -111,12 +112,24 @@ Sandalphon is a Telegram music bot that:
 * improves library navigation and collection browsing
 * pushes Sandalphon further toward media-server behavior
 
+
+---
+
+### v2.5
+
+* introduces smart album art caching
+* adds reusable artwork cache/index system
+* falls back to cached artwork when fresh thumbnails are unavailable
+* improves consistency of Telegram audio cards
+* reduces repeated artwork processing/download overhead
+* expands cache reporting with artwork statistics
+
 ---
 
 ## 🧠 Core Flow
 
 ```id="flow1"
-Input → Queue → Progress UI → Resolve → Metadata/Spotify → Cache Metadata → Download → Cache Audio → Library Index → Tag (ID3 + Art) → Deliver
+Input → Queue → Progress UI → Resolve → Metadata/Spotify → Cache Metadata → Download → Cache Audio → Cache Art → Library Index → Tag (ID3 + Art) → Deliver
 ```
 
 ---
@@ -208,6 +221,7 @@ LOG_FILE
 CACHE_ENABLED
 CACHE_DIR
 MAX_FILE_MB
+ART_CACHE_DIR
 SPOTIFY_METADATA_ENABLED
 SPOTIFY_CLIENT_ID
 SPOTIFY_CLIENT_SECRET
@@ -235,6 +249,7 @@ empty ALLOWED_USER_IDS → public bot
 * metadata cache reduces repeated lookups
 * library search supports fuzzy matching and typo tolerance
 * album/artist browsing depends on available metadata quality
+* artwork cache may reuse album art across related tracks
 * plain text auto-trigger may ignore very short or generic messages
 * `/reload` and `/restart` are admin-only controls
 * queue/progress messages auto-update and self-clean when possible
@@ -255,11 +270,12 @@ empty ALLOWED_USER_IDS → public bot
 
 ## 🧭 Next Up (Planned)
 
+* higher resolution artwork preference
+* artwork normalization/cropping
 * smarter album ranking refinements
 * artist popularity/play weighting
 * smarter artist/title ranking refinements
 * background prefetching
-* improved album art handling
 
 ---
 

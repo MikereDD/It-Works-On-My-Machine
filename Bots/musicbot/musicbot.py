@@ -2,10 +2,10 @@
 # ------------------------------------------------------------
 # file:     musicbot.py
 # author:   Mike Redd
-# version:  2.4
+# version:  2.5
 # created:  2026-05-03
 # updated:  2026-05-03
-# desc:     Sandalphon - Queue/cache music bot with album and artist browsing
+# desc:     Sandalphon - Queue/cache music bot with smart album art cache
 # ------------------------------------------------------------
 
 import asyncio
@@ -28,7 +28,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandl
 
 # ── Branding ─────────────────────────────────────────────────
 BOT_NAME = "Sandalphon"
-BOT_VERSION = "2.4"
+BOT_VERSION = "2.5"
 
 # ── Config ───────────────────────────────────────────────────
 sys.path.insert(0, str(Path.home() / "bots/config"))
@@ -55,9 +55,12 @@ CACHE_AUDIO_DIR = CACHE_DIR / "audio"
 CACHE_INDEX_FILE = CACHE_DIR / "index.json"
 METADATA_CACHE_FILE = CACHE_DIR / "metadata.json"
 LIBRARY_INDEX_FILE = CACHE_DIR / "library.json"
+ART_CACHE_DIR = CACHE_DIR / "art"
+ART_INDEX_FILE = CACHE_DIR / "art.json"
 
 if CACHE_ENABLED:
     CACHE_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
+    ART_CACHE_DIR.mkdir(parents=True, exist_ok=True)
     CACHE_INDEX_FILE.parent.mkdir(parents=True, exist_ok=True)
 
 # ── Queue System ─────────────────────────────────────────────
@@ -509,6 +512,14 @@ def clear_library():
     if LIBRARY_INDEX_FILE.exists():
         LIBRARY_INDEX_FILE.unlink()
 
+    if ART_INDEX_FILE.exists():
+        ART_INDEX_FILE.unlink()
+
+    if ART_CACHE_DIR.exists():
+        shutil.rmtree(ART_CACHE_DIR, ignore_errors=True)
+
+    ART_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
 
 def group_library_by_artist():
     index = load_library_index()
@@ -823,6 +834,116 @@ def clear_cache():
 
 # ── Downloading ──────────────────────────────────────────────
 
+def load_art_index():
+    if not CACHE_ENABLED or not ART_INDEX_FILE.exists():
+        return {}
+
+    try:
+        return json.loads(ART_INDEX_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        logging.exception("Failed to read art index")
+        return {}
+
+
+def save_art_index(index):
+    if not CACHE_ENABLED:
+        return
+
+    try:
+        tmp = ART_INDEX_FILE.with_suffix(".tmp")
+        tmp.write_text(json.dumps(index, indent=2, sort_keys=True), encoding="utf-8")
+        tmp.replace(ART_INDEX_FILE)
+    except Exception:
+        logging.exception("Failed to write art index")
+
+
+def art_identity(metadata=None):
+    metadata = metadata or {}
+
+    artist = normalize_library_text(metadata.get("artist", ""))
+    album = normalize_library_text(metadata.get("album", ""))
+    title = normalize_library_text(metadata.get("title", ""))
+
+    if artist and album and album != "unknown album":
+        return cache_key(f"{artist} - {album}")
+
+    if artist and title:
+        return cache_key(f"{artist} - {title}")
+
+    return None
+
+
+def cache_art(metadata, thumbnail_path):
+    if not CACHE_ENABLED or not metadata or not thumbnail_path or not thumbnail_path.exists():
+        return None
+
+    key = art_identity(metadata)
+
+    if not key:
+        return None
+
+    suffix = thumbnail_path.suffix.lower() or ".jpg"
+    cached_art = ART_CACHE_DIR / f"{key}{suffix}"
+
+    try:
+        if not cached_art.exists():
+            shutil.copy2(thumbnail_path, cached_art)
+
+        index = load_art_index()
+        index[key] = {
+            "artist": metadata.get("artist", ""),
+            "album": metadata.get("album", ""),
+            "title": metadata.get("title", ""),
+            "path": str(cached_art),
+            "created": int(index.get(key, {}).get("created", time.time())),
+            "updated": int(time.time()),
+        }
+        save_art_index(index)
+
+        return cached_art
+
+    except Exception:
+        logging.exception("Failed to cache album art")
+        return None
+
+
+def get_cached_art(metadata):
+    if not CACHE_ENABLED or not metadata:
+        return None
+
+    key = art_identity(metadata)
+
+    if not key:
+        return None
+
+    index = load_art_index()
+    item = index.get(key)
+
+    if not item:
+        return None
+
+    path = Path(item.get("path", ""))
+
+    if not path.exists():
+        index.pop(key, None)
+        save_art_index(index)
+        return None
+
+    return path
+
+
+def resolve_art(metadata, thumbnail_path=None):
+    """
+    Prefer fresh thumbnail art, cache it, and fall back to cached album/track art.
+    """
+    if thumbnail_path and thumbnail_path.exists():
+        cached = cache_art(metadata, thumbnail_path)
+        return cached or thumbnail_path
+
+    return get_cached_art(metadata)
+
+
+
 def embed_metadata(audio_path, metadata, thumbnail_path=None):
     if not audio_path.exists():
         return audio_path
@@ -908,7 +1029,8 @@ def download_audio(query):
 
         meta = source_meta or get_media_metadata(query)
         if meta:
-            file = embed_metadata(file, meta, thumbnail)
+            artwork = resolve_art(meta, thumbnail)
+            file = embed_metadata(file, meta, artwork)
 
         title = (meta.get("display") if meta else None) or build_title_from_metadata(query, clean_title(file.stem))
         final = DOWNLOAD_DIR / f"{safe_filename(title)}{file.suffix.lower()}"
@@ -1188,6 +1310,7 @@ async def cache_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     metadata_count = len(load_metadata_cache())
     library_count = len(load_library_index())
+    art_count = len(load_art_index())
 
     await update.message.reply_text(
         f"🗃 Cache\n"
@@ -1195,6 +1318,7 @@ async def cache_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Tracks: {count}\n"
         f"Metadata: {metadata_count}\n"
         f"Library: {library_count}\n"
+        f"Art: {art_count}\n"
         f"Size: {size_mb:.1f} MB"
     )
 
