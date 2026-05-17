@@ -1,9 +1,9 @@
 #--------------------------------------------
 # file:     bluray-backup.ps1
 # author:   Mike Redd
-# version:  1.7
+# version:  1.8
 # created:  2026-04-11
-# updated:  2026-04-18
+# updated:  2026-05-17
 # desc:     Blu-ray backup + decrypt wrapper
 #           for MakeMKV
 #           ToolMenu-friendly version
@@ -62,7 +62,7 @@ else {
 }
 
 $ScriptName    = "Blu-ray Backup"
-$ScriptVersion = "1.7"
+$ScriptVersion = "1.8"
 $ScriptAuthor  = "Mike Redd"
 
 # ── Config ───────────────────────────────────────────────────
@@ -413,7 +413,26 @@ function Save-TrackMeta {
     $jsonPath = "$BasePath.json"
     $txtPath  = "$BasePath.tracks.txt"
 
-    $Meta | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $jsonPath -Encoding UTF8
+    $jsonText = $Meta | ConvertTo-Json -Depth 12
+    $jsonText | Set-Content -LiteralPath $jsonPath -Encoding UTF8
+
+    # Also write alias JSON files that BREncoder can find when the source
+    # file is named like 00004.m2ts instead of the movie name.
+    $aliasNames = @()
+    if ($Meta.LargestM2TS) { $aliasNames += [System.IO.Path]::GetFileNameWithoutExtension([string]$Meta.LargestM2TS) }
+    if ($Meta.Title -and $Meta.Title.SourceFile) { $aliasNames += [System.IO.Path]::GetFileNameWithoutExtension([string]$Meta.Title.SourceFile) }
+    if ($Meta.Title -and $Meta.Title.OutputName) { $aliasNames += [System.IO.Path]::GetFileNameWithoutExtension([string]$Meta.Title.OutputName) }
+
+    foreach ($alias in ($aliasNames | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)) {
+        # Skip generic stream aliases like 00004.json because those collide between discs.
+        if ($alias -match '^\d{5}$') { continue }
+
+        $aliasSafe = Get-SafeName -Name $alias
+        $aliasPath = Join-Path ([System.IO.Path]::GetDirectoryName($BasePath)) "$aliasSafe.json"
+        if ($aliasPath -ne $jsonPath) {
+            $jsonText | Set-Content -LiteralPath $aliasPath -Encoding UTF8
+        }
+    }
 
     $out = @()
     $out += "Movie      : $($Meta.MovieName)"

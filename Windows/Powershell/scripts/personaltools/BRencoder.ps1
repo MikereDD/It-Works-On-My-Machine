@@ -1,9 +1,9 @@
 #--------------------------------------------
 # file:     brEncoder.ps1
 # author:   Mike Redd
-# version:  1.6
+# version:  1.7
 # created:  2026-02-11
-# updated:  2026-04-18
+# updated:  2026-05-17
 # desc:     Encode Blu-ray .m2ts files
 #           to H.265/HEVC on Windows
 #           using ffmpeg, then create a
@@ -49,7 +49,7 @@ else {
 $ErrorActionPreference = 'Stop'
 
 $ScriptName    = "Blu-ray Encoder"
-$ScriptVersion = "1.6"
+$ScriptVersion = "1.7"
 $ScriptAuthor  = "Mike Redd"
 
 # ── Config ────────────────────────────────────────────────────
@@ -72,6 +72,7 @@ $Script:DefaultLength   = 60
 $Script:FFmpegPath      = $null
 $Script:FFprobePath     = $null
 $Script:MKVPropEditPath = $null
+$Script:MetadataScanLimit = 200
 
 # ── Header ────────────────────────────────────────────────────
 function Show-Header {
@@ -251,7 +252,21 @@ function Get-SafeSampleStart {
 
 function Get-DefaultMovieName {
     param([Parameter(Mandatory)][System.IO.FileInfo]$File)
-    return [string]([System.IO.Path]::GetFileNameWithoutExtension($File.Name))
+
+    # Blu-ray streams are often named 00000.m2ts/00004.m2ts.
+    # When that happens, use the backup folder name instead of the stream file name.
+    $base = [System.IO.Path]::GetFileNameWithoutExtension($File.Name)
+    if ($base -match '^\d{5}$') {
+        $dir = $File.Directory
+        while ($dir -and $dir.FullName -ne $Script:InputRoot) {
+            if ($dir.Name -and $dir.Name -notin @('STREAM', 'BDMV')) {
+                return [string]$dir.Name
+            }
+            $dir = $dir.Parent
+        }
+    }
+
+    return [string]$base
 }
 
 function Read-MovieNameWithYear {
@@ -372,15 +387,65 @@ function Get-TrackMetaCandidates {
         [Parameter(Mandatory)][string]$MovieName
     )
 
-    $candidates = @()
+    $candidates = New-Object System.Collections.Generic.List[string]
 
     $sourceBase = [System.IO.Path]::GetFileNameWithoutExtension($SourceFile.Name)
     $movieSafe  = New-SafeName -Name $MovieName
 
-    $candidates += (Join-Path $Script:MetaRoot "$sourceBase.json")
-    $candidates += (Join-Path $Script:MetaRoot "$movieSafe.json")
+    # Direct matches first. Avoid generic Blu-ray stream aliases like 00004.json;
+    # those can collide between different discs.
+    if ($sourceBase -notmatch '^\d{5}$') {
+        $candidates.Add((Join-Path $Script:MetaRoot "$sourceBase.json"))
+    }
+    $candidates.Add((Join-Path $Script:MetaRoot "$movieSafe.json"))
+
+    # If the source is a Blu-ray stream such as 00004.m2ts, also check the
+    # parent backup folder name, because backup metadata is saved as Movie.json.
+    $dir = $SourceFile.Directory
+    while ($dir -and $dir.FullName -ne $Script:InputRoot) {
+        if ($dir.Name -and $dir.Name -notin @('STREAM', 'BDMV')) {
+            $folderSafe = New-SafeName -Name $dir.Name
+            $candidates.Add((Join-Path $Script:MetaRoot "$folderSafe.json"))
+        }
+        $dir = $dir.Parent
+    }
 
     return @($candidates | Select-Object -Unique)
+}
+
+function Test-TrackMetadataMatch {
+    param(
+        [Parameter(Mandatory)][object]$Meta,
+        [Parameter(Mandatory)][System.IO.FileInfo]$SourceFile,
+        [Parameter(Mandatory)][string]$MovieName
+    )
+
+    $sourceName = $SourceFile.Name
+    $sourceBase = [System.IO.Path]::GetFileNameWithoutExtension($SourceFile.Name)
+    $movieSafe = New-SafeName -Name $MovieName
+
+    $metaNames = @()
+    if ($Meta.MovieName) { $metaNames += [string]$Meta.MovieName }
+    if ($Meta.LargestM2TS) { $metaNames += [string]$Meta.LargestM2TS }
+    if ($Meta.LargestPath) { $metaNames += [System.IO.Path]::GetFileName([string]$Meta.LargestPath) }
+    if ($Meta.Title -and $Meta.Title.SourceFile) { $metaNames += [string]$Meta.Title.SourceFile }
+    if ($Meta.Title -and $Meta.Title.OutputName) { $metaNames += [string]$Meta.Title.OutputName }
+
+    foreach ($name in $metaNames) {
+        if ([string]::IsNullOrWhiteSpace($name)) { continue }
+        $base = [System.IO.Path]::GetFileNameWithoutExtension($name)
+        if ($name -ieq $sourceName) { return $true }
+        if ($base -ieq $sourceBase) { return $true }
+        if ((New-SafeName -Name $name) -ieq $movieSafe) { return $true }
+        if ((New-SafeName -Name $base) -ieq $movieSafe) { return $true }
+    }
+
+    # Last useful fallback: if the movie name equals the JSON movie name.
+    if ($Meta.MovieName -and ((New-SafeName -Name ([string]$Meta.MovieName)) -ieq $movieSafe)) {
+        return $true
+    }
+
+    return $false
 }
 
 function Load-TrackMetadata {
@@ -410,7 +475,51 @@ function Load-TrackMetadata {
         }
     }
 
+    # Fallback scan: useful when the source file is 00004.m2ts but the metadata
+    # sidecar is named after the movie. This prevents the dreaded 'und' tracks.
+    if (Test-Path -LiteralPath $Script:MetaRoot) {
+        $jsonFiles = Get-ChildItem -LiteralPath $Script:MetaRoot -Filter *.json -File -ErrorAction SilentlyContinue |
+                     Sort-Object LastWriteTime -Descending |
+                     Select-Object -First $Script:MetadataScanLimit
+
+        foreach ($file in $jsonFiles) {
+            try {
+                $raw = Get-Content -LiteralPath $file.FullName -Raw -Encoding UTF8
+                $json = $raw | ConvertFrom-Json
+                if (Test-TrackMetadataMatch -Meta $json -SourceFile $SourceFile -MovieName $MovieName) {
+                    return [pscustomobject]@{
+                        Path = $file.FullName
+                        Data = $json
+                    }
+                }
+            }
+            catch {
+                continue
+            }
+        }
+    }
+
     return $null
+}
+
+function Resolve-LanguageCode {
+    param([string]$Code)
+
+    if ([string]::IsNullOrWhiteSpace($Code)) { return 'und' }
+
+    $clean = $Code.Trim().ToLowerInvariant()
+    switch ($clean) {
+        'english' { return 'eng' }
+        'spanish' { return 'spa' }
+        'french'  { return 'fre' }
+        'japanese' { return 'jpn' }
+        'german' { return 'ger' }
+        'italian' { return 'ita' }
+        'portuguese' { return 'por' }
+        'unknown' { return 'und' }
+        'undetermined' { return 'und' }
+        default { return $clean }
+    }
 }
 
 function Get-OutputTrackLayout {
@@ -485,10 +594,9 @@ function Apply-TrackMetadata {
         $args += '--edit'
         $args += "track:a$trackNum"
 
-        if (-not [string]::IsNullOrWhiteSpace($track.LanguageCode)) {
-            $args += '--set'
-            $args += "language=$($track.LanguageCode)"
-        }
+        $lang = Resolve-LanguageCode -Code $track.LanguageCode
+        $args += '--set'
+        $args += "language=$lang"
 
         if (-not [string]::IsNullOrWhiteSpace($track.Description)) {
             $args += '--set'
@@ -506,10 +614,9 @@ function Apply-TrackMetadata {
         $args += '--edit'
         $args += "track:s$trackNum"
 
-        if (-not [string]::IsNullOrWhiteSpace($track.LanguageCode)) {
-            $args += '--set'
-            $args += "language=$($track.LanguageCode)"
-        }
+        $lang = Resolve-LanguageCode -Code $track.LanguageCode
+        $args += '--set'
+        $args += "language=$lang"
 
         if (-not [string]::IsNullOrWhiteSpace($track.Description)) {
             $args += '--set'
