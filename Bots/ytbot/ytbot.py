@@ -1,9 +1,9 @@
 #--------------------------------------------
 # file:     ytbot.py
 # author:   Mike Redd
-# version:  5.9.1
+# version:  6.0
 # created:  2026-04-18
-# updated:  2026-05-01
+# updated:  2026-05-17
 # desc:     Queue-based Telegram media bot
 #           with interactive UI, weather,
 #           forecast, routing, archive send,
@@ -32,7 +32,7 @@ from urllib.request import urlopen
 # ── Branding ─────────────────────────────────────────────────
 
 BOT_NAME = "Raziel"
-BOT_VERSION = "5.9.1"
+BOT_VERSION = "6.0"
 
 import yt_dlp
 from telegram import (
@@ -370,6 +370,135 @@ def format_duration(seconds: int | float | None) -> str:
 
 def shorten_url(url: str, max_len: int = 50) -> str:
     return url if len(url) <= max_len else url[:max_len - 3] + "..."
+
+
+def clean_metadata_text(value: str | None, max_len: int = 2600) -> str:
+    """
+    Clean source post text / description for Telegram captions.
+    """
+    if not value:
+        return ""
+
+    text_value = str(value).replace("\r\n", "\n").replace("\r", "\n")
+    text_value = re.sub(r"\n{3,}", "\n\n", text_value)
+    text_value = re.sub(r"[ \t]+", " ", text_value)
+    text_value = text_value.strip()
+
+    if not text_value:
+        return ""
+
+    if len(text_value) <= max_len:
+        return text_value
+
+    trimmed = text_value[: max_len - 1].rstrip()
+    last_break = max(
+        trimmed.rfind("\n\n"),
+        trimmed.rfind(". "),
+        trimmed.rfind("! "),
+        trimmed.rfind("? "),
+    )
+
+    if last_break > max_len * 0.55:
+        trimmed = trimmed[: last_break + 1].rstrip()
+
+    return trimmed + "…"
+
+
+def first_nonempty(*values) -> str:
+    for value in values:
+        if value is None:
+            continue
+        text_value = str(value).strip()
+        if text_value:
+            return text_value
+    return ""
+
+
+def platform_label(url: str) -> str:
+    host = get_domain(url)
+    if "youtube" in host or "youtu.be" in host:
+        return "YouTube"
+    if "x.com" in host or "twitter.com" in host:
+        return "X / Twitter"
+    if "instagram.com" in host:
+        return "Instagram"
+    if "facebook.com" in host or "fb.watch" in host:
+        return "Facebook"
+    if "tiktok.com" in host:
+        return "TikTok"
+    if "reddit.com" in host or "redd.it" in host:
+        return "Reddit"
+    if "bitchute.com" in host:
+        return "BitChute"
+    return host or "Source"
+
+
+def build_upload_caption(
+    meta: dict,
+    mode: str,
+    clip_start: str | None = None,
+    clip_end: str | None = None,
+) -> str:
+    """
+    Build a self-contained Telegram caption from yt-dlp metadata.
+
+    Prioritizes:
+    title -> post/description/about text -> uploader -> platform -> duration -> URL.
+
+    Telegram media captions are limited, so long source text is trimmed
+    intelligently while keeping the upload self-documenting.
+    """
+    title = clean_metadata_text(meta.get("title"), max_len=180) or "Untitled"
+    uploader = clean_metadata_text(meta.get("uploader"), max_len=120) or "Unknown uploader"
+    url = meta.get("webpage_url") or meta.get("original_url") or ""
+    about = clean_metadata_text(
+        first_nonempty(
+            meta.get("post_text"),
+            meta.get("description"),
+            meta.get("fulltitle"),
+            meta.get("alt_title"),
+        ),
+        max_len=2600,
+    )
+
+    if about and about.strip().lower() == title.strip().lower():
+        about = ""
+
+    footer_lines = [
+        f"👤 {uploader}",
+        f"🌐 {platform_label(url)}",
+    ]
+
+    duration = meta.get("duration")
+    if duration:
+        footer_lines.append(f"⏱️ {format_duration(duration)}")
+
+    if mode == "clip" and clip_start and clip_end:
+        footer_lines.append(format_clip_range(clip_start, clip_end))
+
+    if url:
+        footer_lines.append(f"🔗 {url}")
+
+    footer = "\n".join(footer_lines)
+
+    caption = (
+        f"🎞️ {title}\n\n{about}\n\n{footer}"
+        if about
+        else f"🎞️ {title}\n\n{footer}"
+    )
+
+    if len(caption) <= 1000:
+        return caption
+
+    prefix = f"🎞️ {title}\n\n"
+    suffix = f"\n\n{footer}"
+    available = max(0, 1000 - len(prefix) - len(suffix))
+
+    if available > 80 and about:
+        about_trimmed = clean_metadata_text(about, max_len=available)
+        return f"{prefix}{about_trimmed}{suffix}"[:1000]
+
+    return f"{prefix}{suffix.strip()}"[:1000]
 
 
 def make_progress_bar(percent: float | None, width: int = 12) -> str:
@@ -1483,11 +1612,29 @@ def get_media_info(url: str) -> dict:
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=False)
 
+    post_text = first_nonempty(
+        info.get("description"),
+        info.get("fulltitle"),
+        info.get("alt_title"),
+        info.get("title"),
+    )
+
     return {
         "title": info.get("title", "Unknown title"),
+        "fulltitle": info.get("fulltitle"),
+        "alt_title": info.get("alt_title"),
+        "description": info.get("description"),
+        "post_text": post_text,
         "duration": info.get("duration"),
-        "uploader": info.get("uploader", "Unknown uploader"),
+        "uploader": first_nonempty(
+            info.get("uploader"),
+            info.get("channel"),
+            info.get("creator"),
+            info.get("artist"),
+            "Unknown uploader",
+        ),
         "webpage_url": info.get("webpage_url", url),
+        "original_url": url,
     }
 
 def has_video_stream(path: Path) -> bool:
@@ -1838,14 +1985,7 @@ async def process_job(app, job: dict) -> None:
 
         caption = None
         if job.get("source") in ("ui", "dl", "audio", "clip", "raw_url"):
-            caption_lines = [
-                f"🎞️ {meta['title']}",
-                f"👤 {meta['uploader']}",
-                f"🔗 {meta['webpage_url']}",
-            ]
-            if mode == "clip" and clip_start and clip_end:
-                caption_lines.append(format_clip_range(clip_start, clip_end))
-            caption = "\n".join(caption_lines)[:1000]
+            caption = build_upload_caption(meta, mode, clip_start, clip_end)
 
         await status_msg.edit_text(
             f"🎞️ {meta['title']}\n"

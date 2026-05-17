@@ -1,9 +1,9 @@
-# 🎬 Raziel v5.9.1
+# 🎬 Raziel v6.0
 
 > A typezerø Project
 > Built for real-world use, not perfection.
 
-![Version](https://img.shields.io/badge/version-v5.9.1-blue)
+![Version](https://img.shields.io/badge/version-v6.0-blue)
 ![Python](https://img.shields.io/badge/python-3.10+-blue)
 ![License](https://img.shields.io/badge/license-WTFPL-lightgrey)
 
@@ -33,6 +33,7 @@
 * **BitChute platform validation support**
 * **config-controlled validation policy**
 * **open yt-dlp compatibility mode**
+* **metadata-aware uploads with full source context**
 
 It accepts input from:
 
@@ -178,6 +179,69 @@ Improvements:
 
 This finalizes the inline/mention cleanup introduced during
 the v5.8.x → v5.9 transition.
+
+---
+
+### 🎞️ Metadata-Aware Uploads (v6.0)
+
+Raziel now preserves and embeds source context directly into uploaded
+Telegram media.
+
+Uploads are no longer simple file transfers —
+they now function as self-contained media archives.
+
+Supported metadata sources include:
+- X/Twitter post text
+- YouTube descriptions
+- Instagram captions
+- TikTok captions
+- Reddit post text
+- Facebook descriptions (when exposed)
+- BitChute descriptions
+
+Raziel now intelligently builds upload captions using:
+- title
+- uploader
+- source/about text
+- platform label
+- duration
+- clip metadata
+- original source URL
+
+Example upload structure:
+
+```text
+🎞️ Media Title
+
+Original source text...
+
+👤 Uploader
+🌐 Platform
+⏱️ Duration
+
+🔗 Source URL
+```
+
+New internal helpers:
+- `build_upload_caption()`
+- `clean_metadata_text()`
+- `platform_label()`
+- `first_nonempty()`
+
+Features:
+- cleaner Telegram presentation
+- self-documenting uploads
+- preserved source context
+- improved archival quality
+- improved forwarding readability
+- smarter metadata trimming
+- Telegram caption-limit awareness
+
+This marks the beginning of Raziel's transition toward:
+- richer metadata handling
+- self-contained media archives
+- intelligent caption processing
+- future AI-assisted metadata refinement
 
 ---
 
@@ -651,7 +715,7 @@ python ytbot.py --audio "<link>"
 
 ## 🧠 Version History
 
-### v5.9.1 (Current)
+### v6.0 (Current)
 
 * Added DM natural command support
 * Improved mention parser behavior

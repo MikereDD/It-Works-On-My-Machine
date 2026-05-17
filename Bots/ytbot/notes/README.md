@@ -60,3 +60,4 @@
 * [v5.8.5](v5.8.5.md) — BitChute platform registry and validation support
 * [v5.9](v5.9.md) — Config-controlled validation policy and open yt-dlp compatibility mode
 * [v5.9.1](v5.9.1.md) — Telegram inline UX cleanup, DM natural commands, and mention parser refinement
+* [v6.0](v6.0.md) — Metadata-aware uploads, full source context preservation, and self-contained media captions
