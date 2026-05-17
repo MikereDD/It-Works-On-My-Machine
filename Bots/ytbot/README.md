@@ -1,9 +1,9 @@
-# 🎬 Raziel v6.0
+# 🎬 Raziel v6.1
 
 > A typezerø Project
 > Built for real-world use, not perfection.
 
-![Version](https://img.shields.io/badge/version-v6.0-blue)
+![Version](https://img.shields.io/badge/version-v6.1-blue)
 ![Python](https://img.shields.io/badge/python-3.10+-blue)
 ![License](https://img.shields.io/badge/license-WTFPL-lightgrey)
 
@@ -11,7 +11,7 @@
 
 ## 🚀 Overview
 
-**Raziel v5.9** is a full media pipeline bot with:
+**Raziel v6.1** is a full media pipeline bot with:
 
 * **automatic group link ingestion**
 * **clean chat behavior**
@@ -34,6 +34,7 @@
 * **config-controlled validation policy**
 * **open yt-dlp compatibility mode**
 * **metadata-aware uploads with full source context**
+* **platform-aware upload branding and visual caption polish**
 
 It accepts input from:
 
@@ -242,6 +243,71 @@ This marks the beginning of Raziel's transition toward:
 - self-contained media archives
 - intelligent caption processing
 - future AI-assisted metadata refinement
+
+---
+
+### 🎨 Platform-Aware Upload Branding (v6.1)
+
+Raziel now visually brands uploads using platform-aware caption icons
+and cleaner Telegram presentation formatting.
+
+Supported platform displays now include:
+
+```text
+▶ YouTube
+𝕏 Twitter
+◎ Instagram
+♫ TikTok
+ⓕ Facebook
+⬡ Reddit
+◉ BitChute
+```
+
+This replaces the older generic:
+
+```text
+🌐 Platform
+```
+
+presentation style.
+
+Uploads now follow a cleaner media presentation format:
+
+```text
+🎞️ Media Title
+
+Source text...
+
+◉ Uploader
+𝕏 Twitter
+◷ 1m 37s
+
+⤷ Source URL
+```
+
+Benefits:
+- improved Telegram readability
+- cleaner mobile presentation
+- faster platform recognition
+- reduced emoji clutter
+- improved archival presentation quality
+- visually consistent uploads
+
+Internal additions:
+- `PLATFORM_ICONS`
+- `platform_display()`
+
+Additional improvements:
+- cleaner X/Twitter rendering behavior
+- improved Telegram font compatibility
+- refined platform-aware caption formatting
+- improved media scanning usability
+
+This continues Raziel's transition toward:
+- polished media archival behavior
+- visually organized uploads
+- cleaner Telegram-native presentation
+- configurable future caption themes
 
 ---
 
@@ -715,7 +781,7 @@ python ytbot.py --audio "<link>"
 
 ## 🧠 Version History
 
-### v6.0 (Current)
+### v6.1 (Current)
 
 * Added DM natural command support
 * Improved mention parser behavior

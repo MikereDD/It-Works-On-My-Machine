@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file:     ytbot.py
 # author:   Mike Redd
-# version:  6.0
+# version:  6.1
 # created:  2026-04-18
 # updated:  2026-05-17
 # desc:     Queue-based Telegram media bot
@@ -32,7 +32,7 @@ from urllib.request import urlopen
 # ── Branding ─────────────────────────────────────────────────
 
 BOT_NAME = "Raziel"
-BOT_VERSION = "6.0"
+BOT_VERSION = "6.1"
 
 import yt_dlp
 from telegram import (
@@ -414,6 +414,17 @@ def first_nonempty(*values) -> str:
     return ""
 
 
+PLATFORM_ICONS = {
+    "YouTube": "▶",
+    "X / Twitter": "𝕏",
+    "Instagram": "◎",
+    "TikTok": "♫",
+    "Facebook": "ⓕ",
+    "Reddit": "⬡",
+    "BitChute": "◉",
+}
+
+
 def platform_label(url: str) -> str:
     host = get_domain(url)
     if "youtube" in host or "youtu.be" in host:
@@ -431,6 +442,20 @@ def platform_label(url: str) -> str:
     if "bitchute.com" in host:
         return "BitChute"
     return host or "Source"
+
+
+def platform_display(url: str) -> str:
+    label = platform_label(url)
+    icon = PLATFORM_ICONS.get(label, "◇")
+
+    # Avoid ugly "X X / Twitter" rendering when Telegram fonts display
+    # the X icon as a plain X.
+    display_names = {
+        "X / Twitter": "Twitter",
+    }
+
+    display_name = display_names.get(label, label)
+    return f"{icon} {display_name}"
 
 
 def build_upload_caption(
@@ -466,7 +491,7 @@ def build_upload_caption(
 
     footer_lines = [
         f"👤 {uploader}",
-        f"🌐 {platform_label(url)}",
+        f"{platform_display(url)}",
     ]
 
     duration = meta.get("duration")
