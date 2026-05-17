@@ -2,10 +2,10 @@
 # ------------------------------------------------------------
 # file:     musicbot.py
 # author:   Mike Redd
-# version:  2.9
+# version:  3.0
 # created:  2026-05-03
 # updated:  2026-05-03
-# desc:     Sandalphon - Queue/cache music bot with playlist sync
+# desc:     Sandalphon - Dashboard/status foundation for MusicBot
 # ------------------------------------------------------------
 
 import asyncio
@@ -28,7 +28,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandl
 
 # ── Branding ─────────────────────────────────────────────────
 BOT_NAME = "Sandalphon"
-BOT_VERSION = "2.9"
+BOT_VERSION = "3.0"
 
 # ── Config ───────────────────────────────────────────────────
 sys.path.insert(0, str(Path.home() / "bots/config"))
@@ -59,10 +59,12 @@ ART_CACHE_DIR = CACHE_DIR / "art"
 ART_INDEX_FILE = CACHE_DIR / "art.json"
 PLAYLIST_INDEX_FILE = CACHE_DIR / "playlists.json"
 FAILED_INDEX_FILE = CACHE_DIR / "failed.json"
+EXPORT_DIR = CACHE_DIR / "exports"
 
 if CACHE_ENABLED:
     CACHE_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
     ART_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    EXPORT_DIR.mkdir(parents=True, exist_ok=True)
     CACHE_INDEX_FILE.parent.mkdir(parents=True, exist_ok=True)
 
 # ── Queue System ─────────────────────────────────────────────
@@ -1421,6 +1423,9 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/syncplaylist <playlist url> [--library-only]\n"
         "/playlists\n"
         "/queue\n"
+        "/status\n"
+        "/stats\n"
+        "/exportlibrary\n"
         "/cache\n"
         "/library\n"
         "/artists\n"
@@ -1917,6 +1922,107 @@ async def playlists_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("\n".join(lines))
 
 
+def cache_size_mb():
+    size_mb = 0.0
+
+    if CACHE_AUDIO_DIR.exists():
+        for path in CACHE_AUDIO_DIR.glob("*"):
+            if path.is_file():
+                size_mb += file_size_mb(path)
+
+    return size_mb
+
+
+def local_api_enabled():
+    return bool(getattr(cfg, "LOCAL_BOT_API_URL", ""))
+
+
+def build_stats_snapshot():
+    return {
+        "bot": BOT_NAME,
+        "version": BOT_VERSION,
+        "queue_size": len(QUEUE),
+        "processing": PROCESSING,
+        "cache_enabled": CACHE_ENABLED,
+        "local_bot_api": local_api_enabled(),
+        "tracks": len(load_cache_index()),
+        "metadata": len(load_metadata_cache()),
+        "library": len(load_library_index()),
+        "art": len(load_art_index()),
+        "playlists": len(load_playlist_index()),
+        "failed": len(load_failed_index()),
+        "cache_size_mb": round(cache_size_mb(), 2),
+        "max_file_mb": MAX_FILE_MB,
+        "exported": int(time.time()),
+    }
+
+
+def build_library_export():
+    return {
+        "bot": BOT_NAME,
+        "version": BOT_VERSION,
+        "exported": int(time.time()),
+        "stats": build_stats_snapshot(),
+        "library": load_library_index(),
+        "playlists": load_playlist_index(),
+        "failed": load_failed_index(),
+    }
+
+
+def write_library_export():
+    EXPORT_DIR.mkdir(parents=True, exist_ok=True)
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    path = EXPORT_DIR / f"musicbot-library-{stamp}.json"
+    payload = build_library_export()
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    return path
+
+
+async def status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    stats = build_stats_snapshot()
+
+    await update.message.reply_text(
+        f"🎵 {stats['bot']} v{stats['version']}\n"
+        f"Processing: {stats['processing']}\n"
+        f"Queue: {stats['queue_size']}\n"
+        f"Local Bot API: {stats['local_bot_api']}\n"
+        f"Cache: {stats['cache_enabled']}\n"
+        f"Library: {stats['library']}\n"
+        f"Failed: {stats['failed']}"
+    )
+
+
+async def stats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    stats = build_stats_snapshot()
+
+    await update.message.reply_text(
+        f"📊 {BOT_NAME} Stats\n"
+        f"Version: {stats['version']}\n"
+        f"Queue: {stats['queue_size']}\n"
+        f"Processing: {stats['processing']}\n"
+        f"Tracks: {stats['tracks']}\n"
+        f"Metadata: {stats['metadata']}\n"
+        f"Library: {stats['library']}\n"
+        f"Art: {stats['art']}\n"
+        f"Playlists: {stats['playlists']}\n"
+        f"Failed: {stats['failed']}\n"
+        f"Cache Size: {stats['cache_size_mb']} MB\n"
+        f"Max File: {stats['max_file_mb']} MB\n"
+        f"Local API: {stats['local_bot_api']}"
+    )
+
+
+async def exportlibrary_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    path = await asyncio.to_thread(write_library_export)
+
+    with path.open("rb") as f:
+        await update.message.reply_document(
+            document=f,
+            filename=path.name,
+            caption=f"📦 {BOT_NAME} library export",
+        )
+
+
 async def failed_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     index = load_failed_index()
 
@@ -2029,6 +2135,9 @@ def main():
     app.add_handler(CommandHandler("syncplaylist", syncplaylist_cmd))
     app.add_handler(CommandHandler("playlists", playlists_cmd))
     app.add_handler(CommandHandler("queue", queue_cmd))
+    app.add_handler(CommandHandler("status", status_cmd))
+    app.add_handler(CommandHandler("stats", stats_cmd))
+    app.add_handler(CommandHandler("exportlibrary", exportlibrary_cmd))
     app.add_handler(CommandHandler("cache", cache_cmd))
     app.add_handler(CommandHandler("library", library_cmd))
     app.add_handler(CommandHandler("artists", artists_cmd))

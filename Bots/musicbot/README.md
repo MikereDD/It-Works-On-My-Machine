@@ -33,6 +33,7 @@ Sandalphon is a Telegram music bot that:
 * supports admin-only `/reload` and `/restart` controls
 * uses unified live progress/status messages
 * caches and reuses album artwork intelligently
+* exposes dashboard-ready statistics and export data
 
 ---
 
@@ -178,12 +179,26 @@ Sandalphon is a Telegram music bot that:
 * playlist history now tracks sync counts
 * improves long-term playlist maintenance workflows
 
+
+---
+
+### v3.0
+
+* introduces dashboard/status foundation features
+* adds `/status`
+* adds `/stats`
+* adds `/exportlibrary`
+* supports JSON library/database export snapshots
+* exposes dashboard-ready bot/cache statistics
+* reports Local Bot API status directly from Telegram
+* lays groundwork for future web dashboard integration
+
 ---
 
 ## 🧠 Core Flow
 
 ```id="flow1"
-Input → Playlist Import/Sync → Smart Queue Ordering → Queue → Progress UI → Resolve → Metadata/Spotify → Cache Metadata → Download → Failure Recovery → Cache Audio → Cache Art → Library Index → Tag (ID3 + Art) → Deliver
+Input → Playlist Import/Sync → Smart Queue Ordering → Queue → Progress UI → Resolve → Metadata/Spotify → Cache Metadata → Download → Failure Recovery → Cache Audio → Cache Art → Library Index → Export/Stats Layer → Tag (ID3 + Art) → Deliver
 ```
 
 ---
@@ -196,6 +211,9 @@ Input → Playlist Import/Sync → Smart Queue Ordering → Queue → Progress U
 /syncplaylist <playlist url>
 /playlists
 /queue
+/status
+/stats
+/exportlibrary
 /cache
 /library
 /artists
@@ -288,6 +306,14 @@ Retry failed tracks:
 /clearfailed
 ```
 
+Dashboard/status commands:
+
+```text id="usage12"
+/status
+/stats
+/exportlibrary
+```
+
 ---
 
 ## ⚙️ Config Notes
@@ -307,6 +333,7 @@ CACHE_ENABLED
 CACHE_DIR
 MAX_FILE_MB
 ART_CACHE_DIR
+EXPORT_DIR
 SPOTIFY_METADATA_ENABLED
 SPOTIFY_CLIENT_ID
 SPOTIFY_CLIENT_SECRET
@@ -342,6 +369,7 @@ empty ALLOWED_USER_IDS → public bot
 * uncached playlist tracks are prioritized before cache hits
 * failed queue entries persist until retried or cleared
 * playlist sync only queues previously unseen playlist entries
+* export snapshots are JSON-based and intended for future dashboard tooling
 
 ---
 
@@ -366,7 +394,8 @@ empty ALLOWED_USER_IDS → public bot
 * smarter artist/title ranking refinements
 * background prefetching
 * smarter sync conflict handling
-* playlist sync/update support
+* live web dashboard
+* websocket/live status support
 
 ---
 
