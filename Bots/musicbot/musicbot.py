@@ -2,10 +2,10 @@
 # ------------------------------------------------------------
 # file:     musicbot.py
 # author:   Mike Redd
-# version:  2.1
+# version:  2.2
 # created:  2026-05-03
 # updated:  2026-05-03
-# desc:     Sandalphon - Queue/cache music bot with reload/restart controls
+# desc:     Sandalphon - Queue/cache music bot with unified progress status
 # ------------------------------------------------------------
 
 import asyncio
@@ -27,7 +27,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandl
 
 # ── Branding ─────────────────────────────────────────────────
 BOT_NAME = "Sandalphon"
-BOT_VERSION = "2.1"
+BOT_VERSION = "2.2"
 
 # ── Config ───────────────────────────────────────────────────
 sys.path.insert(0, str(Path.home() / "bots/config"))
@@ -747,6 +747,31 @@ def download_audio(query):
     finally:
         shutil.rmtree(job, ignore_errors=True)
 
+
+def progress_bar(percent, width=10):
+    percent = max(0, min(100, int(percent)))
+    filled = round(width * percent / 100)
+    return "█" * filled + "░" * (width - filled)
+
+
+async def update_status(msg, percent, stage, detail=None):
+    bar = progress_bar(percent)
+
+    text = f"{bar} {percent}%\n{stage}"
+
+    if detail:
+        detail = str(detail)
+        if len(detail) > 120:
+            detail = detail[:117] + "..."
+        text += f"\n{detail}"
+
+    try:
+        await msg.edit_text(text)
+    except Exception:
+        logging.exception("Failed to update status message")
+
+
+
 # ── Queue Processor ──────────────────────────────────────────
 async def process_queue(app):
     global PROCESSING
@@ -759,18 +784,51 @@ async def process_queue(app):
     while QUEUE:
         update, query, queue_message_id = QUEUE.popleft()
         chat_id = update.effective_chat.id
+        msg = None
 
         try:
-            msg = await app.bot.send_message(chat_id, f"🎶 Processing: {query}")
+            # Reuse the queue confirmation as the live status message.
+            # This keeps the chat clean: one message evolves instead of many.
+            if queue_message_id:
+                try:
+                    msg = await app.bot.edit_message_text(
+                        chat_id=chat_id,
+                        message_id=queue_message_id,
+                        text=f"{progress_bar(5)} 5%\n🎶 Queued\n{query}",
+                    )
+                except Exception:
+                    msg = await app.bot.send_message(
+                        chat_id,
+                        f"{progress_bar(5)} 5%\n🎶 Queued\n{query}",
+                    )
+            else:
+                msg = await app.bot.send_message(
+                    chat_id,
+                    f"{progress_bar(5)} 5%\n🎶 Queued\n{query}",
+                )
 
-            audio, from_cache = await asyncio.to_thread(download_audio, query)
+            await update_status(msg, 15, "🔎 Resolving metadata...", query)
+
+            cached = get_cached_audio(query)
+
+            if cached:
+                audio = cached
+                from_cache = True
+                await update_status(msg, 70, "⚡ Found in cache", query)
+            else:
+                await update_status(msg, 25, "⬇️ Downloading audio...", query)
+                audio, from_cache = await asyncio.to_thread(download_audio, query)
 
             if not audio:
                 await msg.edit_text("❌ Failed")
                 continue
 
+            await update_status(msg, 75, "🧪 Checking file...", audio.name)
+
             size = file_size_mb(audio)
             title = get_cached_title_by_path(audio) or clean_title(audio.stem)
+
+            await update_status(msg, 85, "🏷️ Preparing title/metadata...", title)
             title = build_title_from_metadata(query, title)
 
             if size > MAX_FILE_MB:
@@ -778,9 +836,9 @@ async def process_queue(app):
                 continue
 
             if from_cache:
-                await msg.edit_text("⚡ Found in cache. Sending...")
+                await update_status(msg, 95, "⚡ Cached. Sending...", title)
             else:
-                await msg.edit_text("⬆️ Sending...")
+                await update_status(msg, 95, "⬆️ Sending...", title)
 
             with audio.open("rb") as f:
                 await app.bot.send_audio(
@@ -790,23 +848,22 @@ async def process_queue(app):
                     title=title[:64],
                 )
 
-            if queue_message_id:
-                try:
-                    await app.bot.delete_message(
-                        chat_id=chat_id,
-                        message_id=queue_message_id,
-                    )
-                except Exception:
-                    pass
+            await update_status(msg, 100, "✅ Sent", title)
 
-            await msg.delete()
+            try:
+                await msg.delete()
+            except Exception:
+                pass
 
         except Exception:
             logging.exception("Queue error")
+            if msg:
+                try:
+                    await msg.edit_text("❌ Queue error")
+                except Exception:
+                    pass
 
     PROCESSING = False
-
-
 
 def is_admin(user_id):
     return not ADMIN_USERS or user_id in ADMIN_USERS
@@ -856,9 +913,9 @@ async def music(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if PROCESSING:
-        queue_msg = await update.message.reply_text(f"➕ Added to queue ({len(QUEUE) + 1} waiting)")
+        queue_msg = await update.message.reply_text(f"➕ Queued ({len(QUEUE) + 1} waiting)")
     else:
-        queue_msg = await update.message.reply_text("➕ Added to queue")
+        queue_msg = await update.message.reply_text("➕ Queued")
 
     QUEUE.append((update, query, queue_msg.message_id))
 
@@ -916,10 +973,10 @@ async def auto_music(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if PROCESSING:
         queue_msg = await update.message.reply_text(
-            f"➕ Added to queue ({len(QUEUE) + 1} waiting)"
+            f"➕ Queued ({len(QUEUE) + 1} waiting)"
         )
     else:
-        queue_msg = await update.message.reply_text("➕ Added to queue")
+        queue_msg = await update.message.reply_text("➕ Queued")
 
     QUEUE.append((update, query, queue_msg.message_id))
 

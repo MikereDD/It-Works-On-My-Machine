@@ -27,6 +27,7 @@ Sandalphon is a Telegram music bot that:
 * accepts plain text (no command required)
 * supports Spotify metadata → YouTube/yt-dlp matching
 * supports admin-only `/reload` and `/restart` controls
+* uses unified live progress/status messages
 
 ---
 
@@ -78,10 +79,20 @@ Sandalphon is a Telegram music bot that:
 
 ---
 
+### v2.2
+
+* introduces unified live progress/status messages
+* replaces noisy multi-message updates with a single evolving status message
+* adds visual progress bars during processing
+* improves perceived responsiveness during downloads and tagging
+* cleans up Telegram chat flow significantly
+
+---
+
 ## 🧠 Core Flow
 
 ```id="flow1"
-Input → Queue → Resolve → Metadata/Spotify → Cache Metadata → Download → Cache Audio → Library Index → Tag (ID3 + Art) → Deliver
+Input → Queue → Progress UI → Resolve → Metadata/Spotify → Cache Metadata → Download → Cache Audio → Library Index → Tag (ID3 + Art) → Deliver
 ```
 
 ---
@@ -183,6 +194,7 @@ empty ALLOWED_USER_IDS → public bot
 * library search is text-based (not perfect matching yet)
 * plain text auto-trigger may ignore very short or generic messages
 * `/reload` and `/restart` are admin-only controls
+* queue/progress messages auto-update and self-clean when possible
 
 ---
 
@@ -201,6 +213,7 @@ empty ALLOWED_USER_IDS → public bot
 ## 🧭 Next Up (Planned)
 
 * smarter library matching (fuzzy + ranking improvements)
+* animated/staged progress transitions
 * deduplicated library entries
 * album-based browsing
 * background prefetching
