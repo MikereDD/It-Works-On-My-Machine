@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file:     bluray-backup.ps1
 # author:   Mike Redd
-# version:  1.8
+# version:  1.9
 # created:  2026-04-11
 # updated:  2026-05-17
 # desc:     Blu-ray backup + decrypt wrapper
@@ -62,7 +62,7 @@ else {
 }
 
 $ScriptName    = "Blu-ray Backup"
-$ScriptVersion = "1.8"
+$ScriptVersion = "1.9"
 $ScriptAuthor  = "Mike Redd"
 
 # ── Config ───────────────────────────────────────────────────
@@ -404,16 +404,48 @@ function Get-MainTitleFromInfo {
         Select-Object -First 1
 }
 
+function New-BRTrackMetadataSchema {
+    param([Parameter(Mandatory)][object]$Meta)
+
+    $title = $Meta.Title
+
+    return [pscustomobject]@{
+        SchemaVersion     = 'BRTrackMeta/1.0'
+        CreatedAt         = (Get-Date).ToString('s')
+        CreatedBy         = ('bluray-backup.ps1 v' + $ScriptVersion)
+        MovieName         = $Meta.MovieName
+        LargestM2TS       = $Meta.LargestM2TS
+        LargestPath       = $Meta.LargestPath
+        SourceFingerprint = [pscustomobject]@{
+            FileName   = $Meta.LargestM2TS
+            FullPath   = $Meta.LargestPath
+            TitleId    = $title.TitleId
+            TitleName  = $title.Name
+            Duration   = $title.Duration
+            SizeText   = $title.SizeText
+            SizeBytes  = $title.SizeBytes
+            Playlist   = $title.SourceFile
+            SegmentMap = $title.SegmentMap
+            OutputName = $title.OutputName
+        }
+        MainTitle         = $title
+        # Backward compatibility for older BREncoder versions.
+        Title             = $title
+    }
+}
+
 function Save-TrackMeta {
     param(
         [Parameter(Mandatory)][object]$Meta,
         [Parameter(Mandatory)][string]$BasePath
     )
 
+    $Meta = New-BRTrackMetadataSchema -Meta $Meta
+
     $jsonPath = "$BasePath.json"
     $txtPath  = "$BasePath.tracks.txt"
 
-    $jsonText = $Meta | ConvertTo-Json -Depth 12
+    $jsonText = $Meta | ConvertTo-Json -Depth 16
     $jsonText | Set-Content -LiteralPath $jsonPath -Encoding UTF8
 
     # Also write alias JSON files that BREncoder can find when the source
@@ -435,6 +467,7 @@ function Save-TrackMeta {
     }
 
     $out = @()
+    $out += "Schema     : $($Meta.SchemaVersion)"
     $out += "Movie      : $($Meta.MovieName)"
     $out += "LargestM2TS: $($Meta.LargestM2TS)"
     $out += "TitleId    : $($Meta.Title.TitleId)"
@@ -442,6 +475,7 @@ function Save-TrackMeta {
     $out += "SourceFile : $($Meta.Title.SourceFile)"
     $out += "Duration   : $($Meta.Title.Duration)"
     $out += "Size       : $($Meta.Title.SizeText)"
+    $out += "Fingerprint: title=$($Meta.SourceFingerprint.TitleId) playlist=$($Meta.SourceFingerprint.Playlist) bytes=$($Meta.SourceFingerprint.SizeBytes)"
     $out += ""
 
     if ($Meta.Title.AudioTracks.Count -gt 0) {
