@@ -1,9 +1,9 @@
-# 🎬 Raziel v6.1
+# 🎬 Raziel v6.3
 
 > A typezerø Project
 > Built for real-world use, not perfection.
 
-![Version](https://img.shields.io/badge/version-v6.1-blue)
+![Version](https://img.shields.io/badge/version-v6.3-blue)
 ![Python](https://img.shields.io/badge/python-3.10+-blue)
 ![License](https://img.shields.io/badge/license-WTFPL-lightgrey)
 
@@ -11,7 +11,7 @@
 
 ## 🚀 Overview
 
-**Raziel v6.1** is a full media pipeline bot with:
+**Raziel v6.3** is a full media pipeline bot with:
 
 * **automatic group link ingestion**
 * **clean chat behavior**
@@ -35,6 +35,10 @@
 * **open yt-dlp compatibility mode**
 * **metadata-aware uploads with full source context**
 * **platform-aware upload branding and visual caption polish**
+* **expandable source-context preservation**
+* **meaningful metadata detection**
+* **low-value metadata filtering**
+* **clean non-reply context presentation**
 
 It accepts input from:
 
@@ -243,6 +247,105 @@ This marks the beginning of Raziel's transition toward:
 - self-contained media archives
 - intelligent caption processing
 - future AI-assisted metadata refinement
+
+---
+
+### 🧠 Meaningful Context Filtering (v6.3)
+
+Raziel now intelligently evaluates whether source metadata is actually
+worth displaying before sending expandable context blocks.
+
+v6.3 introduced heuristic-based filtering to suppress:
+
+* social link dumps
+* sponsor blocks
+* promo codes
+* merch funnels
+* repeated URLs
+* timestamp spam
+* tour-date lists
+* low-information creator infrastructure
+
+while preserving:
+
+* creator commentary
+* meaningful descriptions
+* contextual source information
+* actual post content
+
+New internal systems:
+
+* `is_meaningful_source_context()`
+* `strip_context_line_noise()`
+
+Config additions:
+
+```python
+CAPTION_SKIP_LOW_VALUE_CONTEXT = True
+CAPTION_CONTEXT_MIN_MEANINGFUL_CHARS = 60
+```
+
+Benefits:
+
+* reduced metadata spam
+* cleaner Telegram UX
+* better signal-to-noise ratio
+* smarter context preservation
+* more intentional expandable metadata
+
+This evolves Raziel from:
+
+* raw metadata dumping
+
+into:
+
+* intelligent metadata presentation
+
+### 📖 Expandable Source Context System (v6.2)
+
+Raziel now supports expandable source-context preservation using
+Telegram expandable blockquotes.
+
+Instead of aggressively stripping metadata, Raziel now preserves:
+- creator commentary
+- source descriptions
+- post context
+- attached social text
+
+while keeping uploads visually clean.
+
+Final upload structure:
+
+1. Clean media upload bubble
+2. Separate expandable source-context message
+
+This architecture avoids:
+- Telegram caption parser instability
+- malformed caption entities
+- inconsistent media-caption rendering
+- reply-thread clutter
+
+Expandable source context uses Telegram HTML formatting:
+
+```html
+<blockquote expandable>
+...
+</blockquote>
+```
+
+Benefits:
+
+* cleaner Telegram scrolling
+* preserved archival metadata
+* optional context expansion
+* reduced visual noise
+* improved forwarding readability
+
+This established the foundation for:
+
+* intelligent metadata handling
+* expandable archival context
+* smarter future metadata presentation systems
 
 ---
 
@@ -781,7 +884,34 @@ python ytbot.py --audio "<link>"
 
 ## 🧠 Version History
 
-### v6.1 (Current)
+### v6.3 (Current)
+
+* Added meaningful source-context detection
+* Added low-value metadata filtering
+* Added sponsor/promo noise suppression
+* Added social-link dump filtering
+* Added expandable context relevance heuristics
+* Reduced unnecessary metadata expansion spam
+* Improved Telegram readability and scroll cleanliness
+* Preserved meaningful creator commentary
+* Added intelligent context presentation behavior
+
+---
+
+### v6.2
+
+* Added expandable source-context system
+* Added Telegram expandable blockquote support
+* Added clean non-reply context presentation
+* Added metadata preservation architecture
+* Improved Telegram metadata readability
+* Reduced media-caption parsing instability
+* Preserved archival source context
+* Established expandable metadata pipeline foundation
+
+---
+
+### v6.1
 
 * Added DM natural command support
 * Improved mention parser behavior

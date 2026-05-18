@@ -1,9 +1,9 @@
 #--------------------------------------------
 # file:     ytbot.py
 # author:   Mike Redd
-# version:  6.1
+# version:  6.3
 # created:  2026-04-18
-# updated:  2026-05-17
+# updated:  2026-05-18
 # desc:     Queue-based Telegram media bot
 #           with interactive UI, weather,
 #           forecast, routing, archive send,
@@ -16,6 +16,7 @@ import importlib
 import asyncio
 from datetime import datetime
 import json
+import html
 import logging
 import os
 import re
@@ -32,7 +33,7 @@ from urllib.request import urlopen
 # ── Branding ─────────────────────────────────────────────────
 
 BOT_NAME = "Raziel"
-BOT_VERSION = "6.1"
+BOT_VERSION = "6.3"
 
 import yt_dlp
 from telegram import (
@@ -89,6 +90,15 @@ DEDUP_ENABLED = getattr(ytbotrc, "DEDUP_ENABLED", True)
 DEDUP_TTL_HOURS = getattr(ytbotrc, "DEDUP_TTL_HOURS", 24)
 MAX_VIDEO_HEIGHT = getattr(ytbotrc, "MAX_VIDEO_HEIGHT", 1080)
 PREFER_MP4 = getattr(ytbotrc, "PREFER_MP4", True)
+
+# Caption/context behavior:
+# expandable = clean media caption + full source context in expandable reply
+# caption    = legacy v6.0-style source text inside media caption
+# minimal    = title/uploader/platform/duration/source only
+CAPTION_METADATA_MODE = getattr(ytbotrc, "CAPTION_METADATA_MODE", "expandable")
+CAPTION_CONTEXT_MAX_CHARS = int(getattr(ytbotrc, "CAPTION_CONTEXT_MAX_CHARS", 3500))
+CAPTION_SKIP_LOW_VALUE_CONTEXT = getattr(ytbotrc, "CAPTION_SKIP_LOW_VALUE_CONTEXT", True)
+CAPTION_CONTEXT_MIN_MEANINGFUL_CHARS = int(getattr(ytbotrc, "CAPTION_CONTEXT_MIN_MEANINGFUL_CHARS", 60))
 
 # Validation policy:
 # True  = only allow configured ENABLED_VIDEO_PLATFORMS / EXTRA_VIDEO_DOMAINS
@@ -254,6 +264,7 @@ def reload_runtime_config() -> None:
     global ADMIN_USERS, ALLOWED_USERS, ALLOW_ALL_USERS
     global DOWNLOAD_TIMEOUT, TELEGRAM_UPLOAD_TIMEOUT, DEBUG_MODE
     global DEDUP_ENABLED, DEDUP_TTL_HOURS, MAX_VIDEO_HEIGHT, PREFER_MP4
+    global CAPTION_METADATA_MODE, CAPTION_CONTEXT_MAX_CHARS, CAPTION_SKIP_LOW_VALUE_CONTEXT, CAPTION_CONTEXT_MIN_MEANINGFUL_CHARS
     global STRICT_PLATFORM_VALIDATION
     global LOCAL_BOT_API_URL, LOCAL_BOT_API_FILE_URL
     global DEFAULT_VIDEO_HEIGHT, HD_VIDEO_HEIGHT
@@ -274,6 +285,10 @@ def reload_runtime_config() -> None:
     DEDUP_TTL_HOURS = getattr(ytbotrc, "DEDUP_TTL_HOURS", 24)
     MAX_VIDEO_HEIGHT = getattr(ytbotrc, "MAX_VIDEO_HEIGHT", 1080)
     PREFER_MP4 = getattr(ytbotrc, "PREFER_MP4", True)
+    CAPTION_METADATA_MODE = getattr(ytbotrc, "CAPTION_METADATA_MODE", "expandable")
+    CAPTION_CONTEXT_MAX_CHARS = int(getattr(ytbotrc, "CAPTION_CONTEXT_MAX_CHARS", 3500))
+    CAPTION_SKIP_LOW_VALUE_CONTEXT = getattr(ytbotrc, "CAPTION_SKIP_LOW_VALUE_CONTEXT", True)
+    CAPTION_CONTEXT_MIN_MEANINGFUL_CHARS = int(getattr(ytbotrc, "CAPTION_CONTEXT_MIN_MEANINGFUL_CHARS", 60))
     STRICT_PLATFORM_VALIDATION = getattr(ytbotrc, "STRICT_PLATFORM_VALIDATION", False)
 
     LOCAL_BOT_API_URL = getattr(ytbotrc, "LOCAL_BOT_API_URL", "")
@@ -458,24 +473,15 @@ def platform_display(url: str) -> str:
     return f"{icon} {display_name}"
 
 
-def build_upload_caption(
-    meta: dict,
-    mode: str,
-    clip_start: str | None = None,
-    clip_end: str | None = None,
-) -> str:
+def get_source_context(meta: dict) -> str:
     """
-    Build a self-contained Telegram caption from yt-dlp metadata.
+    Return the best available source context from yt-dlp metadata.
 
-    Prioritizes:
-    title -> post/description/about text -> uploader -> platform -> duration -> URL.
-
-    Telegram media captions are limited, so long source text is trimmed
-    intelligently while keeping the upload self-documenting.
+    v6.2 preserves source context separately from the media caption because
+    Telegram expandable blockquotes are reliable in normal messages, but not
+    reliable inside video/audio/document captions across clients.
     """
-    title = clean_metadata_text(meta.get("title"), max_len=180) or "Untitled"
-    uploader = clean_metadata_text(meta.get("uploader"), max_len=120) or "Unknown uploader"
-    url = meta.get("webpage_url") or meta.get("original_url") or ""
+    title = clean_metadata_text(meta.get("title"), max_len=180) or ""
     about = clean_metadata_text(
         first_nonempty(
             meta.get("post_text"),
@@ -483,11 +489,33 @@ def build_upload_caption(
             meta.get("fulltitle"),
             meta.get("alt_title"),
         ),
-        max_len=2600,
+        max_len=max(CAPTION_CONTEXT_MAX_CHARS, 500),
     )
 
-    if about and about.strip().lower() == title.strip().lower():
-        about = ""
+    if about and title and about.strip().lower() == title.strip().lower():
+        return ""
+
+    return about
+
+
+def build_upload_caption(
+    meta: dict,
+    mode: str,
+    clip_start: str | None = None,
+    clip_end: str | None = None,
+) -> str:
+    """
+    Build the visible Telegram media caption.
+
+    v6.2 keeps media uploads clean and stable:
+    title -> uploader -> platform -> duration -> clip range -> source URL.
+
+    Source context is sent as a separate expandable normal message when enabled,
+    avoiding unreliable caption parsing and malformed media caption entities.
+    """
+    title = clean_metadata_text(meta.get("title"), max_len=180) or "Untitled"
+    uploader = clean_metadata_text(meta.get("uploader"), max_len=120) or "Unknown uploader"
+    url = meta.get("webpage_url") or meta.get("original_url") or ""
 
     footer_lines = [
         f"👤 {uploader}",
@@ -504,26 +532,204 @@ def build_upload_caption(
     if url:
         footer_lines.append(f"🔗 {url}")
 
-    footer = "\n".join(footer_lines)
+    return (f"🎞️ {title}\n\n" + "\n".join(footer_lines))[:1000]
 
-    caption = (
-        f"🎞️ {title}\n\n{about}\n\n{footer}"
-        if about
-        else f"🎞️ {title}\n\n{footer}"
+
+LOW_VALUE_CONTEXT_PREFIXES = (
+    "watch more",
+    "watch full",
+    "full video",
+    "full episode",
+    "listen here",
+    "read more",
+    "more here",
+    "subscribe",
+    "like and subscribe",
+    "follow me",
+    "follow us",
+    "check out",
+    "sign up",
+    "sign-up",
+    "join our",
+    "join my",
+    "catch my livestream",
+    "for merch",
+    "merch",
+    "tour &",
+    "tour and",
+    "premium content",
+    "sponsor",
+    "new sponsor",
+    "promo code",
+    "use code",
+    "affiliate",
+    "patreon",
+    "discord",
+    "telegram",
+    "instagram",
+    "tiktok",
+    "rumble",
+    "youtube",
+    "x ▶",
+    "x:",
+    "twitter",
+)
+
+LOW_VALUE_CONTEXT_DOMAINS = (
+    "youtube.com/",
+    "youtu.be/",
+    "t.me/",
+    "telegram.me/",
+    "instagram.com/",
+    "twitter.com/",
+    "x.com/",
+    "tiktok.com/",
+    "rumble.com/",
+    "patreon.com/",
+    "discord.gg/",
+    "discord.com/",
+    "buymeacoffee.com/",
+    "locals.com/",
+    "substack.com/",
+    "linktr.ee/",
+)
+
+def strip_context_line_noise(context: str, source_url: str = "") -> str:
+    """
+    Remove obvious creator-infrastructure lines from source context.
+
+    This is intentionally conservative. It targets link dumps, sponsor/promo
+    boilerplate, merch/social funnels, and event-list style lines while keeping
+    actual post commentary when present.
+    """
+    if not context:
+        return ""
+
+    source_url_norm = (source_url or "").strip().lower()
+    kept: list[str] = []
+
+    for raw_line in context.splitlines():
+        line = raw_line.strip()
+        if not line:
+            if kept and kept[-1] != "":
+                kept.append("")
+            continue
+
+        lowered = line.lower()
+        compact = re.sub(r"\s+", " ", lowered)
+
+        # Drop exact/near source URL repeats and pure links.
+        if source_url_norm and lowered == source_url_norm:
+            continue
+        if re.fullmatch(r"https?://\S+", line, flags=re.IGNORECASE):
+            continue
+
+        # Drop obvious promo/social/funnel prefix lines.
+        if any(compact.startswith(prefix) for prefix in LOW_VALUE_CONTEXT_PREFIXES):
+            continue
+
+        # Drop lines that are mostly social/platform link dumps.
+        if any(domain in lowered for domain in LOW_VALUE_CONTEXT_DOMAINS):
+            # Keep a line with a URL only if it also has enough non-URL words.
+            without_urls = re.sub(r"https?://\S+", "", line).strip()
+            word_count = len(re.findall(r"[A-Za-z]{3,}", without_urls))
+            if word_count < 8:
+                continue
+
+        # Drop compact event schedule lines like "Tampa, FL | June 13".
+        if re.search(r"\b[A-Z][a-z]+,\s*[A-Z]{2}\s*\|\s*(Jan|Feb|Mar|Apr|May|Jun|June|Jul|July|Aug|Sep|Sept|Oct|Nov|Dec)", line):
+            continue
+
+        # Drop timestamp/chapter lines.
+        if re.match(r"^\d{1,2}:\d{2}(?::\d{2})?\b", line):
+            continue
+
+        kept.append(raw_line.rstrip())
+
+    cleaned = "\n".join(kept)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+    return cleaned
+
+
+def is_meaningful_source_context(context: str, title: str = "", source_url: str = "") -> bool:
+    """
+    Decide whether source context is worth sending as an expandable message.
+
+    v6.3 avoids noisy expansions like:
+    - "Watch more here: <link>"
+    - pure social link dumps
+    - sponsor/promo blocks
+    - tour-date lists
+    - context that duplicates the title
+    """
+    if not context:
+        return False
+
+    title_norm = (title or "").strip().lower()
+    context_norm = context.strip().lower()
+
+    if title_norm and context_norm == title_norm:
+        return False
+
+    cleaned = strip_context_line_noise(context, source_url=source_url)
+    if not cleaned:
+        return False
+
+    # Count meaningful words after stripping URLs and punctuation-heavy noise.
+    no_urls = re.sub(r"https?://\S+", "", cleaned)
+    words = re.findall(r"[A-Za-z][A-Za-z'’-]{2,}", no_urls)
+    unique_words = {w.lower() for w in words}
+
+    min_chars = max(int(CAPTION_CONTEXT_MIN_MEANINGFUL_CHARS), 20)
+    if len(no_urls.strip()) < min_chars:
+        return False
+
+    if len(unique_words) < 6:
+        return False
+
+    # If the cleaned content is still mostly links/symbols, skip it.
+    alnum_chars = sum(ch.isalnum() for ch in no_urls)
+    total_chars = max(len(no_urls), 1)
+    if alnum_chars / total_chars < 0.35:
+        return False
+
+    return True
+
+
+def build_expandable_context_message(meta: dict) -> str | None:
+    """
+    Build a separate expandable source-context message.
+
+    v6.3 only sends this when the context adds meaningful information beyond
+    the media card. Low-value promo/social/link noise is skipped.
+    """
+    mode_name = str(CAPTION_METADATA_MODE or "expandable").strip().lower()
+    if mode_name != "expandable":
+        return None
+
+    about = get_source_context(meta)
+    if not about:
+        return None
+
+    title = clean_metadata_text(meta.get("title"), max_len=180) or "Source Context"
+    url = meta.get("webpage_url") or meta.get("original_url") or ""
+
+    if CAPTION_SKIP_LOW_VALUE_CONTEXT and not is_meaningful_source_context(about, title=title, source_url=url):
+        return None
+
+    about = strip_context_line_noise(about, source_url=url) if CAPTION_SKIP_LOW_VALUE_CONTEXT else about
+    about = clean_metadata_text(about, max_len=CAPTION_CONTEXT_MAX_CHARS)
+
+    if not about:
+        return None
+
+    safe_title = html.escape(title)
+    safe_about = html.escape(about)
+
+    return (
+        f"📖 <b>Source Context</b> — {safe_title}\n\n"
+        f"<blockquote expandable>{safe_about}</blockquote>"
     )
-
-    if len(caption) <= 1000:
-        return caption
-
-    prefix = f"🎞️ {title}\n\n"
-    suffix = f"\n\n{footer}"
-    available = max(0, 1000 - len(prefix) - len(suffix))
-
-    if available > 80 and about:
-        about_trimmed = clean_metadata_text(about, max_len=available)
-        return f"{prefix}{about_trimmed}{suffix}"[:1000]
-
-    return f"{prefix}{suffix.strip()}"[:1000]
 
 
 def make_progress_bar(percent: float | None, width: int = 12) -> str:
@@ -2009,8 +2215,10 @@ async def process_job(app, job: dict) -> None:
         meta = await asyncio.to_thread(get_media_info, url)
 
         caption = None
+        context_message = None
         if job.get("source") in ("ui", "dl", "audio", "clip", "raw_url"):
             caption = build_upload_caption(meta, mode, clip_start, clip_end)
+            context_message = build_expandable_context_message(meta)
 
         await status_msg.edit_text(
             f"🎞️ {meta['title']}\n"
@@ -2077,9 +2285,10 @@ async def process_job(app, job: dict) -> None:
 
         await status_msg.edit_text(f"📤 Uploading… ({size_str})")
 
+        sent_message = None
         with sent_file.open("rb") as f:
             if mode == "audio":
-                await app.bot.send_audio(
+                sent_message = await app.bot.send_audio(
                     chat_id,
                     f,
                     filename=sent_file.name,
@@ -2088,7 +2297,7 @@ async def process_job(app, job: dict) -> None:
                 )
             else:
                 try:
-                    await app.bot.send_video(
+                    sent_message = await app.bot.send_video(
                         chat_id,
                         f,
                         filename=sent_file.name,
@@ -2098,13 +2307,24 @@ async def process_job(app, job: dict) -> None:
                     )
                 except Exception:
                     f.seek(0)
-                    await app.bot.send_document(
+                    sent_message = await app.bot.send_document(
                         chat_id,
                         f,
                         filename=sent_file.name,
                         caption=caption,
                         reply_to_message_id=reply_to_message_id
                     )
+
+        if context_message and sent_message:
+            try:
+                await app.bot.send_message(
+                    chat_id=chat_id,
+                    text=context_message,
+                    parse_mode=ParseMode.HTML,
+                    disable_web_page_preview=True,
+                )
+            except Exception as e:
+                log.warning("Failed to send expandable source context: %s", e)
 
         if ARCHIVE_CHAT_ID:
             with sent_file.open("rb") as f:
@@ -2113,7 +2333,7 @@ async def process_job(app, job: dict) -> None:
                         ARCHIVE_CHAT_ID,
                         f,
                         filename=sent_file.name,
-                        caption=caption
+                        caption=caption,
                     )
                 else:
                     try:
@@ -2122,7 +2342,7 @@ async def process_job(app, job: dict) -> None:
                             f,
                             filename=sent_file.name,
                             supports_streaming=True,
-                            caption=caption
+                            caption=caption,
                         )
                     except Exception:
                         f.seek(0)
@@ -2130,7 +2350,7 @@ async def process_job(app, job: dict) -> None:
                             ARCHIVE_CHAT_ID,
                             f,
                             filename=sent_file.name,
-                            caption=caption
+                            caption=caption,
                         )
 
         routed_file = await asyncio.to_thread(route_file, sent_file, "audio" if mode == "audio" else "video")

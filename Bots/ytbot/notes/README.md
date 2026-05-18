@@ -62,3 +62,5 @@
 * [v5.9.1](v5.9.1.md) — Telegram inline UX cleanup, DM natural commands, and mention parser refinement
 * [v6.0](v6.0.md) — Metadata-aware uploads, full source context preservation, and self-contained media captions
 * [v6.1](v6.1.md) — Platform-aware upload branding, visual caption polish, and cleaner Telegram media presentation
+* [v6.2](v6.2.md) — Expandable source-context system, Telegram formatting research, and clean non-reply metadata presentation
+* [v6.3](v6.3.md) — Meaningful source-context detection, low-value metadata filtering, and smarter expandable context handling
