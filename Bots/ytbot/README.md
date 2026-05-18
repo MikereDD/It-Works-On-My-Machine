@@ -1,9 +1,9 @@
-# 🎬 Raziel v6.3
+# 🎬 Raziel v6.4
 
 > A typezerø Project
 > Built for real-world use, not perfection.
 
-![Version](https://img.shields.io/badge/version-v6.3-blue)
+![Version](https://img.shields.io/badge/version-v6.4-blue)
 ![Python](https://img.shields.io/badge/python-3.10+-blue)
 ![License](https://img.shields.io/badge/license-WTFPL-lightgrey)
 
@@ -39,6 +39,10 @@
 * **meaningful metadata detection**
 * **low-value metadata filtering**
 * **clean non-reply context presentation**
+* **collapsible forecast presentation**
+* **expandable weather forecast support**
+* **reduced forecast chat noise**
+* **dynamic HTML/Markdown forecast rendering**
 
 It accepts input from:
 
@@ -300,6 +304,73 @@ This evolves Raziel from:
 into:
 
 * intelligent metadata presentation
+
+
+### 🌦️ Collapsible Forecast System (v6.4)
+
+Raziel now supports collapsible multi-day weather forecasts using
+Telegram expandable blockquotes.
+
+Instead of flooding chats with large multi-day weather walls,
+Raziel now prioritizes:
+- immediate forecast visibility
+- reduced scroll noise
+- optional extended detail expansion
+
+Final forecast structure:
+
+```text
+🗓️ 5-Day Forecast
+
+Mon — Thunderstorm
+
+📖 Extended Forecast
+▼ expandable
+```
+
+Expanded content contains:
+- remaining forecast days
+- temperatures
+- precipitation
+- weather conditions
+
+This creates:
+- cleaner Telegram chats
+- faster forecast scanning
+- improved mobile readability
+- reduced vertical spam
+- preserved forecast detail
+
+New configuration options:
+
+```python
+FORECAST_COLLAPSE_DETAILS = True
+FORECAST_VISIBLE_DAYS = 1
+```
+
+New helper:
+
+```python
+forecast_parse_mode()
+```
+
+This dynamically selects:
+- HTML parse mode for expandable forecasts
+- Markdown mode for standard forecast output
+
+v6.4 also resolved:
+- raw HTML rendering
+- visible `<blockquote expandable>` tags
+- broken expandable forecast formatting
+- mixed Markdown/HTML rendering issues
+
+This extends Raziel’s reusable expandable UI architecture from:
+- source metadata presentation
+
+into:
+- general-purpose utility presentation systems
+
+---
 
 ### 📖 Expandable Source Context System (v6.2)
 
@@ -884,7 +955,7 @@ python ytbot.py --audio "<link>"
 
 ## 🧠 Version History
 
-### v6.3 (Current)
+### v6.4 (Current)
 
 * Added meaningful source-context detection
 * Added low-value metadata filtering

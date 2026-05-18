@@ -64,3 +64,4 @@
 * [v6.1](v6.1.md) — Platform-aware upload branding, visual caption polish, and cleaner Telegram media presentation
 * [v6.2](v6.2.md) — Expandable source-context system, Telegram formatting research, and clean non-reply metadata presentation
 * [v6.3](v6.3.md) — Meaningful source-context detection, low-value metadata filtering, and smarter expandable context handling
+* [v6.4](v6.4.md) — Collapsible forecast system, expandable weather presentation, and reduced forecast chat noise

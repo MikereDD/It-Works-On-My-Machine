@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file:     ytbot.py
 # author:   Mike Redd
-# version:  6.3
+# version:  6.4
 # created:  2026-04-18
 # updated:  2026-05-18
 # desc:     Queue-based Telegram media bot
@@ -33,7 +33,7 @@ from urllib.request import urlopen
 # ── Branding ─────────────────────────────────────────────────
 
 BOT_NAME = "Raziel"
-BOT_VERSION = "6.3"
+BOT_VERSION = "6.4"
 
 import yt_dlp
 from telegram import (
@@ -99,6 +99,9 @@ CAPTION_METADATA_MODE = getattr(ytbotrc, "CAPTION_METADATA_MODE", "expandable")
 CAPTION_CONTEXT_MAX_CHARS = int(getattr(ytbotrc, "CAPTION_CONTEXT_MAX_CHARS", 3500))
 CAPTION_SKIP_LOW_VALUE_CONTEXT = getattr(ytbotrc, "CAPTION_SKIP_LOW_VALUE_CONTEXT", True)
 CAPTION_CONTEXT_MIN_MEANINGFUL_CHARS = int(getattr(ytbotrc, "CAPTION_CONTEXT_MIN_MEANINGFUL_CHARS", 60))
+
+FORECAST_COLLAPSE_DETAILS = getattr(ytbotrc, "FORECAST_COLLAPSE_DETAILS", True)
+FORECAST_VISIBLE_DAYS = int(getattr(ytbotrc, "FORECAST_VISIBLE_DAYS", 1))
 
 # Validation policy:
 # True  = only allow configured ENABLED_VIDEO_PLATFORMS / EXTRA_VIDEO_DOMAINS
@@ -265,6 +268,7 @@ def reload_runtime_config() -> None:
     global DOWNLOAD_TIMEOUT, TELEGRAM_UPLOAD_TIMEOUT, DEBUG_MODE
     global DEDUP_ENABLED, DEDUP_TTL_HOURS, MAX_VIDEO_HEIGHT, PREFER_MP4
     global CAPTION_METADATA_MODE, CAPTION_CONTEXT_MAX_CHARS, CAPTION_SKIP_LOW_VALUE_CONTEXT, CAPTION_CONTEXT_MIN_MEANINGFUL_CHARS
+    global FORECAST_COLLAPSE_DETAILS, FORECAST_VISIBLE_DAYS
     global STRICT_PLATFORM_VALIDATION
     global LOCAL_BOT_API_URL, LOCAL_BOT_API_FILE_URL
     global DEFAULT_VIDEO_HEIGHT, HD_VIDEO_HEIGHT
@@ -965,7 +969,7 @@ async def run_mention_command(update: Update, ctx: ContextTypes.DEFAULT_TYPE) ->
                 await message.reply_text("Usage: @Raziel weather Houston")
                 return True
             result = await asyncio.to_thread(get_current_weather_for_location, args)
-            await message.reply_text(result, parse_mode=ParseMode.MARKDOWN)
+            await message.reply_text(result, parse_mode=forecast_parse_mode(result))
             return True
 
         if command == "forecast":
@@ -973,7 +977,7 @@ async def run_mention_command(update: Update, ctx: ContextTypes.DEFAULT_TYPE) ->
                 await message.reply_text("Usage: @Raziel forecast Houston")
                 return True
             result = await asyncio.to_thread(get_5day_forecast_for_location, args)
-            await message.reply_text(result, parse_mode=ParseMode.MARKDOWN)
+            await message.reply_text(result, parse_mode=forecast_parse_mode(result))
             return True
 
         if command == "queue":
@@ -1189,7 +1193,7 @@ async def inline_query_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
                 description="Weather and forecast from any chat",
                 input_message_content=InputTextMessageContent(
                     help_text,
-                    parse_mode=ParseMode.MARKDOWN,
+                    parse_mode=forecast_parse_mode(result_text),
                 ),
             )
         )
@@ -1229,7 +1233,7 @@ async def inline_query_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
                 description=description,
                 input_message_content=InputTextMessageContent(
                     result_text,
-                    parse_mode=ParseMode.MARKDOWN,
+                    parse_mode=forecast_parse_mode(result_text),
                 ),
             )
         )
@@ -1716,6 +1720,15 @@ def get_current_weather_for_location(name: str) -> str:
     ]
     return "\n".join(line for line in lines if line is not None)
 
+
+
+def forecast_parse_mode(text: str) -> str:
+    """
+    Forecasts using expandable Telegram blockquotes require HTML parse mode.
+    """
+    return ParseMode.HTML if "<blockquote expandable>" in text else ParseMode.MARKDOWN
+
+
 def get_5day_forecast_for_location(name: str) -> str:
     loc = geocode_location(name)
     label = build_place_label(loc, name)
@@ -1745,33 +1758,75 @@ def get_5day_forecast_for_location(name: str) -> str:
     if not times:
         raise RuntimeError("Forecast response did not include daily data.")
 
-    lines = [f"🗓️ *5-Day Forecast for {label}*", ""]
-
-    for i, day_str in enumerate(times):
+    def build_day_block(i: int, html_mode: bool = False) -> str:
         try:
-            day_name = datetime.fromisoformat(day_str).strftime("%a")
+            day_name = datetime.fromisoformat(times[i]).strftime("%a")
+            weekday_idx = datetime.fromisoformat(times[i]).weekday()
         except Exception:
-            day_name = day_str
+            day_name = times[i]
+            weekday_idx = i % 7
 
         code = codes[i] if i < len(codes) else None
         icon = weather_code_to_icon(code)
-        _, text = WEATHER_CODE_MAP.get(code, ("❓", "Unknown")) if code is not None else ("❓", "Unknown")
+        _, weather_text = WEATHER_CODE_MAP.get(code, ("❓", "Unknown")) if code is not None else ("❓", "Unknown")
 
-        try:
-            weekday_idx = datetime.fromisoformat(day_str).weekday()
-        except Exception:
-            weekday_idx = i % 7
-        lines.append(f"{WEEKDAY_EMOJI.get(weekday_idx, '📅')} *{day_name}* — {icon} {text}")
+        if html_mode:
+            day_fmt = f"<b>{html.escape(day_name)}</b>"
+            weather_text = html.escape(weather_text)
+        else:
+            day_fmt = f"*{day_name}*"
+
+        lines = [
+            f"{WEEKDAY_EMOJI.get(weekday_idx, '📅')} {day_fmt} — {icon} {weather_text}"
+        ]
+
         if i < len(highs):
             lines.append(f"   🔺 {highs[i]}{units.get('temperature_2m_max', '°F')}")
         if i < len(lows):
             lines.append(f"   🔻 {lows[i]}{units.get('temperature_2m_min', '°F')}")
         if i < len(rains):
-            lines.append(f"   🌧️ {rains[i]} {units.get('precipitation_sum', 'in')}")
-        if i != len(times) - 1:
-            lines.append("")
+            lines.append(f"   🌧️ {rains[i]} {units.get('precipitation_sum', 'inch')}")
 
-    return "\n".join(lines)
+        return "\n".join(lines)
+
+    if not FORECAST_COLLAPSE_DETAILS:
+        lines = [f"🗓️ *5-Day Forecast for {label}*", ""]
+        for i in range(len(times)):
+            lines.append(build_day_block(i))
+            if i != len(times) - 1:
+                lines.append("")
+        return "\n".join(lines)
+
+    visible_days = max(1, min(int(FORECAST_VISIBLE_DAYS), len(times)))
+
+    visible_blocks = [
+        build_day_block(i, html_mode=True)
+        for i in range(visible_days)
+    ]
+
+    hidden_blocks = [
+        build_day_block(i, html_mode=True)
+        for i in range(visible_days, len(times))
+    ]
+
+    lines = [
+        f"🗓️ <b>5-Day Forecast for {html.escape(label)}</b>",
+        "",
+    ]
+
+    for block in visible_blocks:
+        lines.append(block)
+        lines.append("")
+
+    if hidden_blocks:
+        lines.append("📖 <b>Extended Forecast</b>")
+        lines.append(
+            "<blockquote expandable>"
+            + "\n\n".join(hidden_blocks)
+            + "</blockquote>"
+        )
+
+    return "\n".join(lines).strip()
 
 
 # ── Media metadata / download ───────────────────────────────────────────────────
@@ -2903,7 +2958,7 @@ async def weather_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         return
     try:
         result = await asyncio.to_thread(get_current_weather_for_location, " ".join(ctx.args).strip())
-        await update.message.reply_text(result, parse_mode=ParseMode.MARKDOWN)
+        await update.message.reply_text(result, parse_mode=forecast_parse_mode(result))
     except Exception as e:
         await update.message.reply_text(f"Weather error: {e}")
 
@@ -2917,7 +2972,7 @@ async def forecast_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         return
     try:
         result = await asyncio.to_thread(get_5day_forecast_for_location, " ".join(ctx.args).strip())
-        await update.message.reply_text(result, parse_mode=ParseMode.MARKDOWN)
+        await update.message.reply_text(result, parse_mode=forecast_parse_mode(result))
     except Exception as e:
         await update.message.reply_text(f"Forecast error: {e}")
 
@@ -3472,7 +3527,7 @@ async def mention_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
                 await message.reply_text("Usage: @Raziel weather Houston")
                 return
             result = await asyncio.to_thread(get_current_weather_for_location, args)
-            await message.reply_text(result, parse_mode=ParseMode.MARKDOWN)
+            await message.reply_text(result, parse_mode=forecast_parse_mode(result))
             return
 
         if command == "forecast":
@@ -3480,7 +3535,7 @@ async def mention_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
                 await message.reply_text("Usage: @Raziel forecast Houston")
                 return
             result = await asyncio.to_thread(get_5day_forecast_for_location, args)
-            await message.reply_text(result, parse_mode=ParseMode.MARKDOWN)
+            await message.reply_text(result, parse_mode=forecast_parse_mode(result))
             return
 
         if command == "queue":
