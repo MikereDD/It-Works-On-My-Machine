@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file:     bluray-trackdump.ps1
 # author:   Mike Redd
-# version:  1.2
+# version:  1.3
 # created:  2026-04-18
 # updated:  2026-05-17
 # desc:     ToolMenu-friendly Blu-ray track
@@ -37,7 +37,7 @@ else {
 }
 
 $ScriptName    = "Blu-ray Track Dump"
-$ScriptVersion = "1.2"
+$ScriptVersion = "1.3"
 $ScriptAuthor  = "Mike Redd"
 
 # ── Config ─────────────────────────────────

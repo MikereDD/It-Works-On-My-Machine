@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file:     bluray-backup.ps1
 # author:   Mike Redd
-# version:  1.9
+# version:  2.0
 # created:  2026-04-11
 # updated:  2026-05-17
 # desc:     Blu-ray backup + decrypt wrapper
@@ -62,7 +62,7 @@ else {
 }
 
 $ScriptName    = "Blu-ray Backup"
-$ScriptVersion = "1.9"
+$ScriptVersion = "2.0"
 $ScriptAuthor  = "Mike Redd"
 
 # ── Config ───────────────────────────────────────────────────

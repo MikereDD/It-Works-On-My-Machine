@@ -1,9 +1,9 @@
 #--------------------------------------------
 # file:     tool-menu.ps1
 # author:   Mike Redd
-# version:  3.0
+# version:  3.1
 # created:  2026-03-30
-# updated:  2026-04-19
+# updated:  2026-05-17
 # desc:     Unified script launcher (Admin + Personal + Games)
 #--------------------------------------------
 
@@ -38,7 +38,7 @@ if (Test-Path $corePath) {
 }
 
 $ScriptName    = "Tool Menu"
-$ScriptVersion = "3.0"
+$ScriptVersion = "3.1"
 $ScriptAuthor  = "Mike Redd"
 
 # ── Base script paths ─────────────────────────────────────────
@@ -157,7 +157,19 @@ function Start-ToolScript {
     }
 
     try {
-        & $ScriptPath
+        # Launch child scripts through pwsh with ExecutionPolicy Bypass so
+        # downloaded/generated scripts do not fail under RemoteSigned.
+        $pwshCmd = Get-Command pwsh -ErrorAction SilentlyContinue
+
+        if (-not $pwshCmd) {
+            $pwshCmd = Get-Command powershell.exe -ErrorAction SilentlyContinue
+        }
+
+        if (-not $pwshCmd) {
+            throw "Could not find pwsh or powershell.exe to launch: $ScriptPath"
+        }
+
+        & $pwshCmd.Source -NoProfile -ExecutionPolicy Bypass -File $ScriptPath
     } catch {
         Write-CoreError "Launch failed: $($_.Exception.Message)"
         Pause-Core "Press Enter to return..."

@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file:     brEncoder.ps1
 # author:   Mike Redd
-# version:  1.8
+# version:  1.9
 # created:  2026-02-11
 # updated:  2026-05-17
 # desc:     Encode Blu-ray .m2ts files
@@ -12,6 +12,7 @@
 #           sidecar JSON when available
 #           validates metadata, verifies final MKV
 #           language/default/forced tags
+#           remuxes final MKV with real track IDs
 #--------------------------------------------
 
 param()
@@ -51,7 +52,7 @@ else {
 $ErrorActionPreference = 'Stop'
 
 $ScriptName    = "Blu-ray Encoder"
-$ScriptVersion = "1.8"
+$ScriptVersion = "1.9"
 $ScriptAuthor  = "Mike Redd"
 
 # ── Config ────────────────────────────────────────────────────
@@ -660,6 +661,138 @@ function Show-FinalMetadataVerification {
     }
 }
 
+
+function Get-MetaLanguage {
+    param([Parameter(Mandatory)][object]$Track)
+
+    $candidates = @(
+        $Track.LanguageCode,
+        $Track.Language,
+        $Track.Lang,
+        $Track.LanguageName
+    )
+
+    foreach ($c in $candidates) {
+        $lang = Resolve-LanguageCode -Code ([string]$c)
+        if ($lang -and $lang -ne 'und') { return $lang }
+    }
+
+    return 'und'
+}
+
+function Get-MetaTrackName {
+    param([Parameter(Mandatory)][object]$Track)
+
+    $candidates = @(
+        $Track.Description,
+        $Track.Name,
+        $Track.TrackName,
+        $Track.CodecLong,
+        $Track.CodecShort
+    )
+
+    foreach ($c in $candidates) {
+        if (-not [string]::IsNullOrWhiteSpace([string]$c)) {
+            return [string]$c
+        }
+    }
+
+    return $null
+}
+
+function Get-AnyTaggedLanguageCount {
+    param([Parameter(Mandatory)][object]$TrackLayout)
+
+    $count = 0
+    foreach ($t in @($TrackLayout.AudioTracks + $TrackLayout.SubtitleTracks)) {
+        $lang = if ($t.properties.language) { [string]$t.properties.language } else { 'und' }
+        if ($lang -and $lang -ne 'und') { $count++ }
+    }
+    return $count
+}
+
+function Invoke-MKVLanguageRemux {
+    param(
+        [Parameter(Mandatory)][string]$OutputFile,
+        [Parameter(Mandatory)][object]$TrackLayout,
+        [Parameter(Mandatory)][object[]]$AudioMeta,
+        [Parameter(Mandatory)][object[]]$SubMeta
+    )
+
+    $dir  = Split-Path -Parent $OutputFile
+    $base = [System.IO.Path]::GetFileNameWithoutExtension($OutputFile)
+    $ext  = [System.IO.Path]::GetExtension($OutputFile)
+    $tmp  = Join-Path $dir ("{0}.metadata_tmp{1}" -f $base, $ext)
+    $bak  = Join-Path $dir ("{0}.pre_metadata_{1}{2}" -f $base, (Get-Date -Format 'yyyyMMdd_HHmmss'), $ext)
+
+    if (Test-Path -LiteralPath $tmp) {
+        Remove-Item -LiteralPath $tmp -Force
+    }
+
+    $muxArgs = @('-o', $tmp)
+
+    $audioToApply = [Math]::Min($TrackLayout.AudioTracks.Count, $AudioMeta.Count)
+    for ($i = 0; $i -lt $audioToApply; $i++) {
+        $outTrack = $TrackLayout.AudioTracks[$i]
+        $metaTrack = $AudioMeta[$i]
+        $id = [int]$outTrack.id
+        $lang = Get-MetaLanguage -Track $metaTrack
+        $name = Get-MetaTrackName -Track $metaTrack
+
+        $muxArgs += '--language'
+        $muxArgs += ("{0}:{1}" -f $id, $lang)
+
+        if (-not [string]::IsNullOrWhiteSpace($name)) {
+            $muxArgs += '--track-name'
+            $muxArgs += ("{0}:{1}" -f $id, $name)
+        }
+
+        $muxArgs += '--default-track'
+        $muxArgs += ("{0}:{1}" -f $id, $(if ($metaTrack.Default) { 'yes' } else { 'no' }))
+    }
+
+    $subToApply = [Math]::Min($TrackLayout.SubtitleTracks.Count, $SubMeta.Count)
+    for ($i = 0; $i -lt $subToApply; $i++) {
+        $outTrack = $TrackLayout.SubtitleTracks[$i]
+        $metaTrack = $SubMeta[$i]
+        $id = [int]$outTrack.id
+        $lang = Get-MetaLanguage -Track $metaTrack
+        $name = Get-MetaTrackName -Track $metaTrack
+
+        $muxArgs += '--language'
+        $muxArgs += ("{0}:{1}" -f $id, $lang)
+
+        if (-not [string]::IsNullOrWhiteSpace($name)) {
+            $muxArgs += '--track-name'
+            $muxArgs += ("{0}:{1}" -f $id, $name)
+        }
+
+        $muxArgs += '--default-track'
+        $muxArgs += ("{0}:{1}" -f $id, $(if ($metaTrack.Default) { 'yes' } else { 'no' }))
+
+        $muxArgs += '--forced-display-flag'
+        $muxArgs += ("{0}:{1}" -f $id, $(if ($metaTrack.Forced) { 'yes' } else { 'no' }))
+    }
+
+    $muxArgs += $OutputFile
+
+    Write-Host "  $($global:UI_CYN)Remuxing with mkvmerge using real MKV track IDs...$($global:UI_R)"
+    & $Script:MKVMergePath @muxArgs
+
+    if ($LASTEXITCODE -ne 0) {
+        if (Test-Path -LiteralPath $tmp) { Remove-Item -LiteralPath $tmp -Force }
+        throw "mkvmerge metadata remux failed with exit code $LASTEXITCODE"
+    }
+
+    if (-not (Test-Path -LiteralPath $tmp)) {
+        throw "mkvmerge metadata remux did not create temp output: $tmp"
+    }
+
+    Move-Item -LiteralPath $OutputFile -Destination $bak -Force
+    Move-Item -LiteralPath $tmp -Destination $OutputFile -Force
+    Remove-Item -LiteralPath $bak -Force -ErrorAction SilentlyContinue
+}
+
 function Apply-TrackMetadata {
     param(
         [Parameter(Mandatory)][string]$OutputFile,
@@ -690,9 +823,6 @@ function Apply-TrackMetadata {
     $audioMeta = @(Resolve-TrackList -Title $title -Kind audio)
     $subMeta   = @(Resolve-TrackList -Title $title -Kind subtitle)
 
-    $audioToApply = [Math]::Min($trackLayout.AudioCount, $audioMeta.Count)
-    $subToApply   = [Math]::Min($trackLayout.SubtitleCount, $subMeta.Count)
-
     Write-UiBlankLine
     Write-Host "  $($global:UI_CYN)Applying track metadata...$($global:UI_R)"
     Write-Host "  $($global:UI_DIM)Meta  $($global:UI_R)  $($metaInfo.Path)"
@@ -700,56 +830,12 @@ function Apply-TrackMetadata {
     Write-Host "  $($global:UI_DIM)Subs  $($global:UI_R)  output=$($trackLayout.SubtitleCount) / meta=$($subMeta.Count)"
     Write-UiBlankLine
 
-    $args = @($OutputFile)
-
-    for ($i = 0; $i -lt $audioToApply; $i++) {
-        $trackNum = $i + 1
-        $track = $audioMeta[$i]
-
-        $args += '--edit'
-        $args += "track:a$trackNum"
-
-        $lang = Resolve-LanguageCode -Code $track.LanguageCode
-        $args += '--set'
-        $args += "language=$lang"
-
-        if (-not [string]::IsNullOrWhiteSpace($track.Description)) {
-            $args += '--set'
-            $args += "name=$($track.Description)"
-        }
-
-        $args += '--set'
-        $args += ("flag-default={0}" -f $(if ($track.Default) { 1 } else { 0 }))
-    }
-
-    for ($i = 0; $i -lt $subToApply; $i++) {
-        $trackNum = $i + 1
-        $track = $subMeta[$i]
-
-        $args += '--edit'
-        $args += "track:s$trackNum"
-
-        $lang = Resolve-LanguageCode -Code $track.LanguageCode
-        $args += '--set'
-        $args += "language=$lang"
-
-        if (-not [string]::IsNullOrWhiteSpace($track.Description)) {
-            $args += '--set'
-            $args += "name=$($track.Description)"
-        }
-
-        $args += '--set'
-        $args += ("flag-default={0}" -f $(if ($track.Default) { 1 } else { 0 }))
-
-        $args += '--set'
-        $args += ("flag-forced={0}" -f $(if ($track.Forced) { 1 } else { 0 }))
-    }
-
-    & $Script:MKVPropEditPath @args
-
-    if ($LASTEXITCODE -ne 0) {
-        throw "mkvpropedit failed with exit code $LASTEXITCODE"
-    }
+    # Use mkvmerge, not mkvpropedit, for the final tagging pass.
+    # mkvmerge -J gives the real MKV track IDs in the finished file. Those IDs
+    # are the only safe IDs to use when applying --language, --track-name,
+    # default-track, and forced-display-flag. This fixes the old "everything is
+    # und" failure caused by relying on positional or ffmpeg-style indexes.
+    Invoke-MKVLanguageRemux -OutputFile $OutputFile -TrackLayout $trackLayout -AudioMeta $audioMeta -SubMeta $subMeta
 
     Write-UiBlankLine
     Write-Host "  $($global:UI_GRN)Track metadata applied.$($global:UI_R)"
