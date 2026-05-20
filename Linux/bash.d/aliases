@@ -2,54 +2,61 @@
 #--------------------------------------------
 # file:     ~/.bash.d/aliases
 # author:   Mike Redd
-# version:  1.3.1
+# version:  1.4
 # desc:     Bash aliases (organized + documented)
 #--------------------------------------------
 
 # ── Filesystem Shortcuts ────────────────────
-
 alias ll='ls -alF'        # long listing (all, detailed)
 alias la='ls -A'          # all except . and ..
 alias l='ls -CF'          # compact listing
 
 # ── Navigation ──────────────────────────────
-
 alias ..='cd ..'          # up one directory
 alias ...='cd ../..'      # up two directories
 
 # ── Core Utilities ──────────────────────────
-
 alias grep='grep --color=auto'  # highlight matches
 alias cls='clear'               # clear screen
 
 # ── Package Management (Arch) ───────────────
-
 alias update='sudo pacman -Syu' # full system upgrade
 alias install='sudo pacman -S'  # install package
 alias search='pacman -Ss'       # search repo
 
 # ── Network ─────────────────────────────────
-
 alias ports='ss -tulpen'        # open/listening ports
-alias myip='ip -4 addr show end0 | awk "/inet / {print $2}" | cut -d/ -f1'  # local IPv4
+
+alias myip='ip -4 addr show end0 | awk "/inet / {print \$2}" | cut -d/ -f1'
+# local IPv4
 
 # ── Custom Tools ────────────────────────────
-
-alias arakiel='$HOME/bin/arakiel-tmux.sh'   # custom launcher
-alias tools='$HOME/scripts/tool-menu.sh'  # unified tool menu
+alias arakiel='$HOME/bin/arakiel-tmux.sh'    # custom launcher
+alias tools='$HOME/scripts/tool-menu.sh'     # unified tool menu
 alias pifw='sudo $HOME/scripts/admintools/pi-fw.sh' # firewall
-alias tmuxaa='tmux attach -d -t arakiel' # tmux attach to session
+alias tmuxaa='tmux attach -d -t arakiel'     # attach to tmux session
 
 # ── System Info ─────────────────────────────
-
-alias ff='fastfetch --logo small'  # quick system info
-alias rp5si='sudo $HOME/scripts/admintools/rp5-systeminfo.sh' # custom full system info
+alias ff='fastfetch --logo small'            # quick system info
+alias rp5si='sudo $HOME/scripts/admintools/rp5-systeminfo.sh'
+# custom full system info
 
 # ── Telegram Bot API (systemd) ──────────────
+alias botapi="systemctl status telegram-bot-api"
+alias botapi-start="sudo systemctl start telegram-bot-api"
+alias botapi-stop="sudo systemctl stop telegram-bot-api"
+alias botapi-restart="sudo systemctl restart telegram-bot-api"
+alias botapi-log="journalctl -u telegram-bot-api -f"
 
-alias botapi="systemctl status telegram-bot-api"        # check status
-alias botapi-start="sudo systemctl start telegram-bot-api"   # start service
-alias botapi-stop="sudo systemctl stop telegram-bot-api"     # stop service
-alias botapi-restart="sudo systemctl restart telegram-bot-api" # restart service
-alias botapi-log="journalctl -u telegram-bot-api -f"    # live logs
-
+# ── Git ─────────────────────────────────────
+alias gs='git status'
+alias ga='git add .'
+alias gc='git commit -m'
+alias gca='git commit --amend --no-edit'
+alias gp='git push'
+alias gpf='git push --force-with-lease'
+alias gl='git log --oneline --graph --decorate -20'
+alias gd='git diff'
+alias gpl='git pull'
+alias gpu='git pull && git push'
+alias gundo='git reset --soft HEAD~1'
