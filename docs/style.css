@@ -7,6 +7,7 @@
   --magenta: #d43cff;
   --red: #ff3f5f;
   --blue: #4aa3ff;
+  --orange: #ff9f1c;
   --white: #f4f4f4;
   --gray: #a7b0b8;
   --dim: #65717a;
@@ -127,7 +128,7 @@ h1 {
 .cards {
   margin-top: 22px;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 18px;
 }
 
@@ -215,12 +216,21 @@ h1 {
   color: var(--yellow);
 }
 
+.printing h3,
+.printing .button {
+  color: var(--orange);
+}
+
 .bots ul {
   border-color: rgba(212, 60, 255, 0.7);
 }
 
 .games ul {
   border-color: rgba(255, 242, 0, 0.7);
+}
+
+.printing ul {
+  border-color: rgba(255, 159, 28, 0.7);
 }
 
 .lower-grid {
