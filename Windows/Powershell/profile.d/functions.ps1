@@ -162,8 +162,20 @@ if ($global:ShowProfileLoad) {
     Write-Host "  functions loaded" -ForegroundColor DarkGray
 }
 
-# ── Git functions ──────────────────────────────────────────────
+# ── Git Aliases ────────────────────────────────────────────────
+
 function git-status { git status }
 function git-log    { git log --oneline --graph --decorate -20 }
-function gpf        { git push --force-with-lease }
-function gca        { git commit --amend --no-edit }
+
+Set-Alias gs  git-status
+Set-Alias gl  git-log
+
+function ga    { git add . @args }
+function gc    { git commit -m @args }
+function gca   { git commit --amend --no-edit }
+function gp    { git push }
+function gpf   { git push --force-with-lease }
+function gd    { git diff }
+function gpl   { git pull }
+function gpu   { git pull; git push }
+function gundo { git reset --soft HEAD~1 }
