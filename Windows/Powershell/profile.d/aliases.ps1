@@ -81,3 +81,7 @@ Set-Alias -Name which -Value Get-Command -Description "Find command location"
 if ($global:ShowProfileLoad) {
     Write-Host "  aliases loaded" -ForegroundColor DarkGray
 }
+
+# ── Git Aliases ────────────────────────────────────────────────
+Set-Alias gs git-status
+Set-Alias gl git-log

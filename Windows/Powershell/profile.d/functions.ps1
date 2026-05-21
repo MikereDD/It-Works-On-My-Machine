@@ -161,3 +161,9 @@ Set-Alias -Name diskuse -Value Get-DiskSummary
 if ($global:ShowProfileLoad) {
     Write-Host "  functions loaded" -ForegroundColor DarkGray
 }
+
+# ── Git functions ──────────────────────────────────────────────
+function git-status { git status }
+function git-log    { git log --oneline --graph --decorate -20 }
+function gpf        { git push --force-with-lease }
+function gca        { git commit --amend --no-edit }
