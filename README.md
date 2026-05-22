@@ -6,12 +6,13 @@
 
 ## 📦 What this is
 
-A personal archive of scripts I’ve used at some point and didn’t want to lose.
+A personal archive of scripts, projects, experiments, and random things I’ve built and didn’t want to lose.
 
 * **Windows** → PowerShell
 * **Linux** → Bash
-* **Bots** → small automation tools (Telegram, API-based, etc.)
+* **Bots** → automation tools and APIs
 * **Games** → terminal games and experiments
+* **3D Printing** → functional prints, OpenSCAD projects, and prototypes
 
 If it’s here, it probably worked once. That’s the bar.
 
@@ -35,6 +36,22 @@ If you want to use them:
 
 ---
 
+## 🖨️ 3D Printing
+
+Functional prints, prototypes, and OpenSCAD experiments.
+
+Current projects include:
+
+* Bambu X2D test prints
+* Router / networking stands
+* Cable-aware docking layouts
+* Utility trays
+* Random experiments that sounded funny at 2AM
+
+Most designs are iterative and versioned heavily while testing fitment and print behavior.
+
+---
+
 ## ❌ What this is not
 
 * Not a polished project
@@ -47,10 +64,11 @@ If you want to use them:
 ## 📁 Structure
 
 ```text
-Windows/   → PowerShell scripts  
-Linux/     → Bash scripts  
-Bots/      → automation scripts (Telegram, API-based, etc.)  
-Games/     → terminal games and experiments  
+Windows/       → PowerShell scripts
+Linux/         → Bash scripts
+Bots/          → automation scripts (Telegram, API-based, etc.)
+Games/         → terminal games and experiments
+3D-Printing/   → OpenSCAD projects, STL files, prototypes
 ```
 
 Each side is independent. No attempt is made to keep them in sync.
@@ -66,6 +84,7 @@ git clone <repo>
 Then:
 
 * Run something
+* Print something
 * See what happens
 * Fix whatever breaks
 
@@ -75,6 +94,8 @@ Then:
 
 * Paths are often specific to my setup
 * Dependencies are assumed, not documented
+* Some scripts are ugly but functional
+* Some prints are prototypes and may change rapidly
 * Things may change without warning
 
 If something works, keep it. If it doesn’t, now you know how it works.
@@ -99,4 +120,3 @@ This project is licensed under the **WTFPL (Do What The Fuck You Want To Public 
 See the [LICENSE](LICENSE) file for full details.
 
 Do what the fuck you want.
-
