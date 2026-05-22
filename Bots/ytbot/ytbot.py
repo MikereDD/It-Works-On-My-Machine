@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file:     ytbot.py
 # author:   Mike Redd
-# version:  6.4
+# version:  6.5
 # created:  2026-04-18
 # updated:  2026-05-18
 # desc:     Queue-based Telegram media bot
@@ -33,7 +33,7 @@ from urllib.request import urlopen
 # ── Branding ─────────────────────────────────────────────────
 
 BOT_NAME = "Raziel"
-BOT_VERSION = "6.4"
+BOT_VERSION = "6.5"
 
 import yt_dlp
 from telegram import (
@@ -846,6 +846,98 @@ def extract_url(text: str | None) -> str | None:
     return match.group(0) if match else None
 
 
+def extract_reply_target_url(message) -> str | None:
+    reply = getattr(message, "reply_to_message", None)
+    if not reply:
+        return None
+    return extract_url_from_message(reply)
+
+
+async def delete_command_message_later(message, delay: float = 2.0) -> None:
+    """
+    Delete short helper/command messages after Raziel has accepted the job.
+
+    This keeps reply-driven commands like /rdl from leaving command noise
+    in group chats.
+    """
+    if not message:
+        return
+
+    try:
+        await asyncio.sleep(delay)
+        await message.delete()
+    except Exception:
+        pass
+
+
+async def handle_reply_download_command(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    mode: str = "video",
+    quality: str = "default",
+    use_ui: bool = False,
+) -> None:
+    message = update.effective_message
+    chat = update.effective_chat
+    user = update.effective_user
+
+    if not message or not chat or not user:
+        return
+
+    if not can_use_context(user.id, chat.id, chat.type):
+        return
+
+    url = extract_reply_target_url(message)
+
+    if not url:
+        await message.reply_text("❌ No supported URL found in the replied message.")
+        return
+
+    if not is_supported_video_url(url):
+        await message.reply_text("❌ Unsupported or invalid media URL.")
+        return
+
+    if is_duplicate_url(url):
+        await message.reply_text("♻️ That media was already queued/downloaded recently.")
+        return
+
+    remember_chat(chat)
+
+    if use_ui:
+        await create_ui_message(update, context, url)
+        asyncio.create_task(delete_command_message_later(message))
+        return
+
+    job = create_job(
+        user_id=user.id,
+        chat_id=chat.id,
+        url=url,
+        mode=mode,
+        source="reply-command",
+        reply_to_message_id=message.reply_to_message.message_id if message.reply_to_message else None,
+        quality=quality,
+    )
+
+    async with STATE_LOCK:
+        QUEUE.append(job)
+        save_queue_state()
+
+    remember_dedup_url(url, job["id"], chat.id)
+
+    queue_msg = await message.reply_text(
+        "🎬 Added to queue\n\n"
+        f"🔗 {shorten_url(url)}\n"
+        f"📥 Mode: {mode}\n"
+        f"🎞️ Quality: {get_quality_label(quality)}\n"
+        f"📋 Queue position: {get_queue_position()}"
+    )
+
+    job["queue_message_id"] = queue_msg.message_id
+    save_queue_state()
+
+    asyncio.create_task(delete_command_message_later(message))
+
+
 def get_bot_mention_names() -> set[str]:
     """
     Names that should wake Raziel in normal chat messages.
@@ -1016,6 +1108,14 @@ async def run_mention_command(update: Update, ctx: ContextTypes.DEFAULT_TYPE) ->
                 "@Raziel forecast <place>",
                 "@Raziel queue",
                 "@Raziel help",
+                "",
+                "*Reply Commands:*",
+                "Reply to a message containing a link:",
+                "/rdl — default video",
+                "/rhd — HD video",
+                "/rfull — best/full video",
+                "/raudio — audio",
+                "/rui — quality UI",
             ]
 
             if admin_here:
@@ -1193,7 +1293,7 @@ async def inline_query_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
                 description="Weather and forecast from any chat",
                 input_message_content=InputTextMessageContent(
                     help_text,
-                    parse_mode=forecast_parse_mode(result_text),
+                    parse_mode=ParseMode.MARKDOWN,
                 ),
             )
         )
@@ -2652,6 +2752,11 @@ USER_COMMAND_LIST = (
     "/audio <url>   — queue audio download\n"
     "/clip <url> <start> <end> — queue clipped video\n"
     "/ui <url>      — preview with buttons\n"
+        "/rdl          — reply-download default video\n"
+        "/rhd          — reply-download HD video\n"
+        "/rfull        — reply-download best/full video\n"
+        "/raudio       — reply-download audio\n"
+        "/rui          — reply-open preview/buttons\n"
     "/queue         — show queue\n"
     "/weather <p>   — current weather\n"
     "/forecast <p>  — 5-day forecast\n"
@@ -3288,7 +3393,7 @@ async def handle_url(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
     remember_chat(update.effective_chat)
 
-    if await run_mention_command(update, ctx):
+    if await run_mention_command(update, _ctx):
         return
 
     user = update.effective_user
@@ -3425,6 +3530,27 @@ def run_cli(url: str, mode: str = "video") -> None:
 
 
 # ── Main ────────────────────────────────────────────────────────────────────────
+
+
+async def rdl_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await handle_reply_download_command(update, context, mode="video", quality="default")
+
+
+async def rhd_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await handle_reply_download_command(update, context, mode="video", quality="hd")
+
+
+async def rfull_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await handle_reply_download_command(update, context, mode="video", quality="full")
+
+
+async def raudio_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await handle_reply_download_command(update, context, mode="audio", quality="default")
+
+
+async def rui_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await handle_reply_download_command(update, context, mode="video", quality="default", use_ui=True)
+
 def build_app():
     request = HTTPXRequest(
         connect_timeout=30,
@@ -3450,6 +3576,13 @@ def build_app():
     app.add_handler(InlineQueryHandler(inline_query_cmd))
     app.add_handler(CommandHandler("start", start_cmd))
     app.add_handler(CommandHandler("help", help_cmd))
+
+    # ── Reply-driven commands ───────────────────────────────
+    app.add_handler(CommandHandler("rdl", rdl_cmd))
+    app.add_handler(CommandHandler("rhd", rhd_cmd))
+    app.add_handler(CommandHandler("rfull", rfull_cmd))
+    app.add_handler(CommandHandler("raudio", raudio_cmd))
+    app.add_handler(CommandHandler("rui", rui_cmd))
     app.add_handler(CommandHandler("dl", dl_cmd))
     app.add_handler(CommandHandler("hd", hd_cmd))
     app.add_handler(CommandHandler("full", full_cmd))

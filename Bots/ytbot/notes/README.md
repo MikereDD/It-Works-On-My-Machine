@@ -1,6 +1,31 @@
-## 🚀 Versions
+# README.md
 
-### Core Development
+# Raziel Notes
+
+Version history and implementation notes for Raziel (YTBot).
+
+The main project README stays intentionally cleaner and more focused on:
+
+* overview
+* setup
+* usage
+* architecture
+* command reference
+
+This notes directory tracks:
+
+* release history
+* feature evolution
+* UX improvements
+* platform changes
+* Telegram workflow refinements
+* internal architecture decisions
+
+---
+
+# 🚀 Versions
+
+## Core Development
 
 * [v4.0](v4.0.md) — Queue-based core system
 * [v4.1](v4.1.md) — yt-dlp + Telegram integration
@@ -8,7 +33,7 @@
 
 ---
 
-### Usability & Interface
+## Usability & Interface
 
 * [v4.3](v4.3.md) — Interactive UI and major polish
 * [v4.3.1](v4.3.1.md) — Config alignment and stability
@@ -21,7 +46,7 @@
 
 ---
 
-### Major Milestones
+## Major Milestones
 
 * [v5.0](v5.0.md) — Clip support and media workflow expansion
 * [v5.1](v5.1.md) — Command pipeline refinements and early automation groundwork
@@ -29,7 +54,7 @@
 
 ---
 
-### Platform Evolution
+## Platform Evolution
 
 * [v5.3](v5.3.md) — Local Telegram Bot API integration and large file support (~2GB)
 * [v5.3.1](v5.3.1.md) — Upload timeout fixes and pipeline stabilization
@@ -39,7 +64,7 @@
 
 ---
 
-### Intelligence Layer
+## Intelligence Layer
 
 * [v5.4](v5.4.md) — Dedupe system (TTL + persistence) and smarter yt-dlp format selection
 * [v5.4.1](v5.4.1.md) — Restrict pipeline to supported video sources (validation layer)
@@ -65,3 +90,4 @@
 * [v6.2](v6.2.md) — Expandable source-context system, Telegram formatting research, and clean non-reply metadata presentation
 * [v6.3](v6.3.md) — Meaningful source-context detection, low-value metadata filtering, and smarter expandable context handling
 * [v6.4](v6.4.md) — Collapsible forecast system, expandable weather presentation, and reduced forecast chat noise
+* [v6.5](v6.5.md) — Reply-driven download commands, Telegram-native reply workflows, automatic command cleanup, and reduced chat noise
