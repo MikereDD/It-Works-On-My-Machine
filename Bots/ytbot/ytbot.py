@@ -2951,6 +2951,9 @@ ADMIN_COMMAND_LIST = (
     "/clearqueue    — clear queue\n"
     "/leave         — leave current group\n"
     "/leavechat     — leave a group by ID\n"
+    "/delete        — delete replied bot message\n"
+    "/del           — alias for /delete\n"
+    "/rm            — alias for /delete\n"
     "/shutdown      — stop the bot"
 )
 
