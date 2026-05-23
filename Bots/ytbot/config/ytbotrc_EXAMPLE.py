@@ -34,6 +34,41 @@ ALLOWED_CHAT_IDS = [
 # -1001234567890,
 ]
 
+
+# ── Auto-Watch Overrides ─────────────────────
+# Disable automatic link ingestion in specific groups.
+#
+# Raziel will IGNORE pasted/shared/forwarded links in these chats,
+# but explicit commands still work:
+#
+# /dl
+# /hd
+# /full
+# /audio
+# /clip
+# /ui
+# /rdl
+# /rhd
+# /rfull
+# /raudio
+# /rui
+#
+# Useful for groups where users often paste:
+# - source links
+# - article links
+# - text-only social posts
+# - commentary threads
+#
+# Example:
+# AUTO_WATCH_DISABLED_CHAT_IDS = [
+#     -1001234567890,
+# ]
+
+AUTO_WATCH_DISABLED_CHAT_IDS = [
+# -1001234567890,
+]
+
+
 # ── Runtime Behavior ─────────────────────────
 DOWNLOAD_TIMEOUT = 3600
 TELEGRAM_UPLOAD_TIMEOUT = 3600
