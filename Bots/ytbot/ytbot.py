@@ -82,6 +82,7 @@ BASE_DIR = Path(os.path.expandvars(os.path.expanduser(str(_configured_base)))).r
 ADMIN_USERS = set(getattr(ytbotrc, "ADMIN_USERS", [OWNER_ID]) or [OWNER_ID])
 ALLOWED_USERS = set(getattr(ytbotrc, "ALLOWED_USERS", [OWNER_ID]) or [OWNER_ID])
 ALLOW_ALL_USERS = getattr(ytbotrc, "ALLOW_ALL_USERS", False)
+AUTO_WATCH_DISABLED_CHAT_IDS = set(getattr(ytbotrc, "AUTO_WATCH_DISABLED_CHAT_IDS", []))
 
 DOWNLOAD_TIMEOUT = getattr(ytbotrc, "DOWNLOAD_TIMEOUT", 3600)
 TELEGRAM_UPLOAD_TIMEOUT = getattr(ytbotrc, "TELEGRAM_UPLOAD_TIMEOUT", 3600)
@@ -268,7 +269,7 @@ def reload_runtime_config() -> None:
     or persisted state. It only refreshes values that are safe to update live.
     """
     global ytbotrc
-    global ADMIN_USERS, ALLOWED_USERS, ALLOW_ALL_USERS
+    global ADMIN_USERS, ALLOWED_USERS, ALLOW_ALL_USERS, AUTO_WATCH_DISABLED_CHAT_IDS
     global DOWNLOAD_TIMEOUT, TELEGRAM_UPLOAD_TIMEOUT, DEBUG_MODE
     global DEDUP_ENABLED, DEDUP_TTL_HOURS, MAX_VIDEO_HEIGHT, PREFER_MP4
     global CAPTION_METADATA_MODE, CAPTION_CONTEXT_MAX_CHARS, CAPTION_SKIP_LOW_VALUE_CONTEXT, CAPTION_CONTEXT_MIN_MEANINGFUL_CHARS
@@ -285,6 +286,7 @@ def reload_runtime_config() -> None:
     ADMIN_USERS = set(getattr(ytbotrc, "ADMIN_USERS", [OWNER_ID]) or [OWNER_ID])
     ALLOWED_USERS = set(getattr(ytbotrc, "ALLOWED_USERS", [OWNER_ID]) or [OWNER_ID])
     ALLOW_ALL_USERS = getattr(ytbotrc, "ALLOW_ALL_USERS", False)
+    AUTO_WATCH_DISABLED_CHAT_IDS = set(getattr(ytbotrc, "AUTO_WATCH_DISABLED_CHAT_IDS", []))
 
     DOWNLOAD_TIMEOUT = getattr(ytbotrc, "DOWNLOAD_TIMEOUT", 3600)
     TELEGRAM_UPLOAD_TIMEOUT = getattr(ytbotrc, "TELEGRAM_UPLOAD_TIMEOUT", 3600)
@@ -370,6 +372,24 @@ def can_use_context(user_id: int, chat_id: int, chat_type: str) -> bool:
         return user_id == OWNER_ID
 
     return False
+
+
+def auto_watch_disabled_for_chat(chat) -> bool:
+    """
+    Return True when passive link ingestion is disabled for this chat.
+
+    This only applies to automatic pasted/shared/forwarded link handling.
+    Explicit commands still work:
+    /dl, /hd, /full, /audio, /clip, /ui
+    /rdl, /rhd, /rfull, /raudio, /rui
+    """
+    if not chat:
+        return False
+
+    if getattr(chat, "type", None) not in ("group", "supergroup"):
+        return False
+
+    return int(chat.id) in AUTO_WATCH_DISABLED_CHAT_IDS
 
 def is_private_chat(update: Update) -> bool:
     return bool(update.effective_chat and update.effective_chat.type == "private")
@@ -1178,6 +1198,7 @@ async def run_mention_command(update: Update, ctx: ContextTypes.DEFAULT_TYPE) ->
                 f"*Dedupe:* {DEDUP_ENABLED} ({DEDUP_TTL_HOURS}h TTL)\\n"
                 f"*Enabled Platforms:* {', '.join(ENABLED_VIDEO_PLATFORMS)}\\n"
                 f"*Supported Domains:* {', '.join(SUPPORTED_VIDEO_DOMAINS)}",
+                f"*Auto-Watch Disabled:* `{len(AUTO_WATCH_DISABLED_CHAT_IDS)}`",
                 parse_mode=ParseMode.MARKDOWN,
             )
             return True
@@ -1616,6 +1637,7 @@ def log_startup_checks() -> None:
     log.info("Strict platform validation: %s", STRICT_PLATFORM_VALIDATION)
     log.info("Enabled video platforms: %s", ENABLED_VIDEO_PLATFORMS)
     log.info("Supported video domains: %s", SUPPORTED_VIDEO_DOMAINS)
+    log.info("Auto-watch disabled chat IDs: %s", sorted(AUTO_WATCH_DISABLED_CHAT_IDS))
 
     allowed_chat_ids = set(getattr(ytbotrc, "ALLOWED_CHAT_IDS", []))
     if allowed_chat_ids:
@@ -3571,6 +3593,11 @@ async def handle_url(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     remember_chat(update.effective_chat)
+
+    if auto_watch_disabled_for_chat(update.effective_chat):
+        if DEBUG_MODE:
+            log.info("Auto-watch disabled for chat %s; passive link ignored.", update.effective_chat.id)
+        return
 
     if await run_mention_command(update, _ctx):
         return
