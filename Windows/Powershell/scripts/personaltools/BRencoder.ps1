@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file:     brEncoder.ps1
 # author:   Mike Redd
-# version:  2.1
+# version:  2.2
 # created:  2026-02-11
 # updated:  2026-05-23
 # desc:     Encode Blu-ray .m2ts files
@@ -13,13 +13,10 @@
 #           validates metadata, verifies final MKV
 #           language/default/forced tags
 #           remuxes final MKV with real track IDs
-# changes:  v2.1 - auto-detect HDR vs SDR source via ffprobe
-#                  apply HDR-aware color metadata passthrough (HDR10)
-#                  10-bit yuv420p10le output for all encodes
-#                  upgraded to veryslow preset for maximum quality
-#                  added psychovisual x265 tuning (psy-rd, psy-rdoq, aq-mode)
-#                  CRF 16 for HDR, CRF 17 for SDR
-#                  display detected source profile in header and encode log
+# changes:  v2.2 - added -probesize 100M / -analyzeduration 300M to all ffmpeg
+#                  and ffprobe calls that open .m2ts files; fixes "unspecified
+#                  size" warnings and missing PGS subtitle streams on large
+#                  Blu-ray MPEG-TS containers
 #--------------------------------------------
 
 param()
@@ -59,7 +56,7 @@ else {
 $ErrorActionPreference = 'Stop'
 
 $ScriptName    = "Blu-ray Encoder"
-$ScriptVersion = "2.1"
+$ScriptVersion = "2.2"
 $ScriptAuthor  = "Mike Redd"
 
 # ── Config ────────────────────────────────────────────────────
@@ -96,6 +93,12 @@ $Script:MKVPropEditPath = $null
 $Script:MKVMergePath    = $null
 $Script:MetadataScanLimit = 200
 $Script:DebugMeta         = $false   # set to $true to dump sidecar JSON track shapes
+
+# ffmpeg/ffprobe probe options for large Blu-ray .m2ts containers.
+# Without these, PGS subtitle streams report "unspecified size" and may be
+# skipped. Values must be strings so they pass cleanly to ffmpeg args arrays.
+$Script:M2tsProbeSize     = '100000000'   # 100 MB
+$Script:M2tsAnalyzeDur    = '300000000'   # 300 M microseconds
 
 # ── Header ────────────────────────────────────────────────────
 function Show-Header {
@@ -252,6 +255,8 @@ function Get-SourceVideoProfile {
 
     $probeArgs = @(
         '-v', 'error',
+        '-probesize', $Script:M2tsProbeSize,
+        '-analyzeduration', $Script:M2tsAnalyzeDur,
         '-select_streams', 'v:0',
         '-show_entries', 'stream=color_transfer,color_primaries,color_space,pix_fmt',
         '-show_entries', 'stream_side_data=side_data_type',
@@ -281,6 +286,8 @@ function Get-SourceVideoProfile {
     if ($isHDR) {
         $frameArgs = @(
             '-v', 'error',
+            '-probesize', $Script:M2tsProbeSize,
+            '-analyzeduration', $Script:M2tsAnalyzeDur,
             '-read_intervals', '%+#1',
             '-select_streams', 'v:0',
             '-show_frames',
@@ -347,6 +354,8 @@ function Get-VideoDuration {
 
     $args = @(
         '-v', 'error',
+        '-probesize', $Script:M2tsProbeSize,
+        '-analyzeduration', $Script:M2tsAnalyzeDur,
         '-show_entries', 'format=duration',
         '-of', 'default=noprint_wrappers=1:nokey=1',
         $Path
@@ -1117,6 +1126,8 @@ function Create-SampleFromFinishedMkv {
     $args = @(
         '-hide_banner',
         '-y',
+        '-probesize', $Script:M2tsProbeSize,
+        '-analyzeduration', $Script:M2tsAnalyzeDur,
         '-ss', $sampleStart,
         '-i', $FinishedMkvPath,
         '-t', "$($Script:DefaultLength)",
@@ -1200,6 +1211,8 @@ function Encode-File {
     $ffArgs = @(
         '-hide_banner',
         '-y',
+        '-probesize', $Script:M2tsProbeSize,
+        '-analyzeduration', $Script:M2tsAnalyzeDur,
         '-i', $SourceFile.FullName,
         '-map', '0:v:0',
         '-map', '0:a?',
