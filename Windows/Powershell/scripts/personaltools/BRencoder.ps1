@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file:     brEncoder.ps1
 # author:   Mike Redd
-# version:  2.0
+# version:  2.1
 # created:  2026-02-11
 # updated:  2026-05-23
 # desc:     Encode Blu-ray .m2ts files
@@ -13,10 +13,13 @@
 #           validates metadata, verifies final MKV
 #           language/default/forced tags
 #           remuxes final MKV with real track IDs
-# changes:  v2.0 - fixed language tagging for audio and subtitles
-#                  expanded Get-MetaLanguage property name coverage
-#                  expanded Resolve-LanguageCode with more ISO 639-2 names
-#                  added debug dump support via $Script:DebugMeta flag
+# changes:  v2.1 - auto-detect HDR vs SDR source via ffprobe
+#                  apply HDR-aware color metadata passthrough (HDR10)
+#                  10-bit yuv420p10le output for all encodes
+#                  upgraded to veryslow preset for maximum quality
+#                  added psychovisual x265 tuning (psy-rd, psy-rdoq, aq-mode)
+#                  CRF 16 for HDR, CRF 17 for SDR
+#                  display detected source profile in header and encode log
 #--------------------------------------------
 
 param()
@@ -56,7 +59,7 @@ else {
 $ErrorActionPreference = 'Stop'
 
 $ScriptName    = "Blu-ray Encoder"
-$ScriptVersion = "2.0"
+$ScriptVersion = "2.1"
 $ScriptAuthor  = "Mike Redd"
 
 # ── Config ────────────────────────────────────────────────────
@@ -69,12 +72,23 @@ $Script:SubtitleRoot    = Join-Path $Script:RootPath 'subtitles'
 $Script:MetaRoot        = Join-Path $Script:RootPath 'meta'
 $Script:TxtRoot         = Join-Path $Script:RootPath 'txt'
 
-$Script:DefaultCRF      = 18
-$Script:DefaultPreset   = 'slow'
+# Video quality — veryslow+psy tuning for maximum fidelity
+# CRF 16 for HDR (more headroom for 10-bit HDR detail), 17 for SDR
+$Script:CRF_HDR         = 16
+$Script:CRF_SDR         = 17
+$Script:DefaultPreset   = 'veryslow'
 $Script:DefaultAudio    = 'copy'
 $Script:DefaultExt      = 'mkv'
 $Script:DefaultStart    = '00:10:00'
 $Script:DefaultLength   = 60
+
+# x265 psychovisual params — applied to all encodes
+# psy-rd=1.5   restore detail softened by rate control
+# psy-rdoq=1.0 preserve high-freq texture (grain, fine detail)
+# aq-mode=3    HEVC-aware adaptive quantisation
+# rd=4         higher rate-distortion optimisation (slow but thorough)
+# deblock=-1,-1  slightly softer deblock to avoid smearing fine edges
+$Script:X265PsyParams   = "rd=4:psy-rd=1.5:psy-rdoq=1.0:aq-mode=3:deblock=-1,-1"
 
 $Script:FFmpegPath      = $null
 $Script:FFprobePath     = $null
@@ -89,11 +103,14 @@ function Show-Header {
     $w = Get-UiBoxWidth -MaxWidth 64 -MinWidth 46
 
     Write-UiHeader -Title $ScriptName -Subtitle "v$ScriptVersion  by $ScriptAuthor" -Width $w
-    Write-UiRow "User" "$env:USERNAME@$env:COMPUTERNAME"
-    Write-UiRow "Input" $Script:InputRoot $global:UI_GRY
-    Write-UiRow "Meta" "G:\Rip\meta" $global:UI_GRY
-    Write-UiRow "Mode" "x265 / CRF $($Script:DefaultCRF) / $($Script:DefaultPreset) / $($Script:DefaultExt)" $global:UI_GRY
-    Write-UiRow "Sample" "$($Script:DefaultLength)s from finished MKV" $global:UI_GRY
+    Write-UiRow "User"    "$env:USERNAME@$env:COMPUTERNAME"
+    Write-UiRow "Input"   $Script:InputRoot $global:UI_GRY
+    Write-UiRow "Meta"    "G:\Rip\meta" $global:UI_GRY
+    Write-UiRow "Preset"  "$($Script:DefaultPreset)  •  10-bit yuv420p10le" $global:UI_GRY
+    Write-UiRow "CRF"     "HDR=$($Script:CRF_HDR)  /  SDR=$($Script:CRF_SDR)  (auto-detected)" $global:UI_GRY
+    Write-UiRow "Psy"     "rd=4  psy-rd=1.5  psy-rdoq=1.0  aq-mode=3" $global:UI_GRY
+    Write-UiRow "Audio"   "copy (lossless passthrough)" $global:UI_GRY
+    Write-UiRow "Sample"  "$($Script:DefaultLength)s from finished MKV" $global:UI_GRY
     Write-UiBlankLine
 }
 
@@ -211,6 +228,118 @@ function Show-SourceFiles {
     Write-Host "  $($global:UI_MAG)Available source files:$($global:UI_R)"
     $rows | Format-Table -AutoSize
     Pause-Script
+}
+
+function Get-SourceVideoProfile {
+    <#
+    .SYNOPSIS
+        Probes the source file and returns an object describing whether it is HDR
+        or SDR, along with all color metadata needed for a correct x265 encode.
+
+    .OUTPUTS
+        [pscustomobject] with:
+            IsHDR          [bool]   true if HDR10 or PQ/HLG transfer detected
+            CRF            [int]    recommended CRF (CRF_HDR or CRF_SDR)
+            PixFmt         [string] yuv420p10le always (10-bit for both modes)
+            ColorPrimaries [string] e.g. bt2020 or bt709
+            ColorTrc       [string] e.g. smpte2084 (PQ), arib-std-b67 (HLG), bt709
+            Colorspace     [string] e.g. bt2020nc or bt709
+            MasterDisplay  [string] HDR10 mastering display string or $null
+            MaxCLL         [string] max content light level string or $null
+            Profile        [string] human-readable label e.g. "HDR10" or "SDR"
+    #>
+    param([Parameter(Mandatory)][string]$Path)
+
+    $probeArgs = @(
+        '-v', 'error',
+        '-select_streams', 'v:0',
+        '-show_entries', 'stream=color_transfer,color_primaries,color_space,pix_fmt',
+        '-show_entries', 'stream_side_data=side_data_type',
+        '-of', 'json',
+        $Path
+    )
+
+    $probeOut  = & $Script:FFprobePath @probeArgs 2>$null
+    $probeJson = $null
+    try { $probeJson = ($probeOut | Out-String) | ConvertFrom-Json } catch {}
+
+    $stream = if ($probeJson -and $probeJson.streams) { $probeJson.streams[0] } else { $null }
+
+    $trc      = if ($stream -and $stream.color_transfer)  { [string]$stream.color_transfer }  else { '' }
+    $primaries = if ($stream -and $stream.color_primaries) { [string]$stream.color_primaries } else { '' }
+    $colorspace = if ($stream -and $stream.color_space)    { [string]$stream.color_space }    else { '' }
+
+    # PQ (smpte2084) = HDR10 / Dolby Vision base layer
+    # HLG (arib-std-b67) = HDR HLG broadcast
+    $isHDR = ($trc -match 'smpte2084|arib-std-b67|smpte428|bt2020-10|bt2020-12')
+
+    # Pull HDR10 mastering display and MaxCLL if present
+    # ffprobe exposes these via -show_frames on the first frame; use a quick 1-frame probe
+    $masterDisplay = $null
+    $maxCLL        = $null
+
+    if ($isHDR) {
+        $frameArgs = @(
+            '-v', 'error',
+            '-read_intervals', '%+#1',
+            '-select_streams', 'v:0',
+            '-show_frames',
+            '-of', 'json',
+            $Path
+        )
+        $frameOut  = & $Script:FFprobePath @frameArgs 2>$null
+        $frameJson = $null
+        try { $frameJson = ($frameOut | Out-String) | ConvertFrom-Json } catch {}
+
+        if ($frameJson -and $frameJson.frames -and $frameJson.frames.Count -gt 0) {
+            $sideData = $frameJson.frames[0].side_data_list
+            if ($sideData) {
+                $mdBlock = $sideData | Where-Object { $_.side_data_type -match 'Mastering display' } | Select-Object -First 1
+                $cllBlock = $sideData | Where-Object { $_.side_data_type -match 'Content light level' } | Select-Object -First 1
+
+                if ($mdBlock) {
+                    # Build x265 master-display string: G(x,y)B(x,y)R(x,y)WP(x,y)L(max,min)
+                    # ffprobe returns values in 0.00002 / 0.0001 nit units; convert to x265 int units
+                    $gx = [int]([double]$mdBlock.green_x   * 50000)
+                    $gy = [int]([double]$mdBlock.green_y   * 50000)
+                    $bx = [int]([double]$mdBlock.blue_x    * 50000)
+                    $by = [int]([double]$mdBlock.blue_y    * 50000)
+                    $rx = [int]([double]$mdBlock.red_x     * 50000)
+                    $ry = [int]([double]$mdBlock.red_y     * 50000)
+                    $wx = [int]([double]$mdBlock.white_point_x * 50000)
+                    $wy = [int]([double]$mdBlock.white_point_y * 50000)
+                    $lmax = [int]([double]$mdBlock.max_luminance * 10000)
+                    $lmin = [int]([double]$mdBlock.min_luminance * 10000)
+                    $masterDisplay = "G($gx,$gy)B($bx,$by)R($rx,$ry)WP($wx,$wy)L($lmax,$lmin)"
+                }
+
+                if ($cllBlock) {
+                    $maxCLL = "$([int]$cllBlock.max_content),$([int]$cllBlock.max_average)"
+                }
+            }
+        }
+    }
+
+    # Resolve final color tags — fall back to sane defaults if source tags are missing
+    $outPrimaries  = if ($primaries)   { $primaries }  elseif ($isHDR) { 'bt2020' }    else { 'bt709' }
+    $outTrc        = if ($trc)         { $trc }        elseif ($isHDR) { 'smpte2084' } else { 'bt709' }
+    $outColorspace = if ($colorspace)  { $colorspace } elseif ($isHDR) { 'bt2020nc' }  else { 'bt709' }
+
+    $profile = if ($isHDR) {
+        if ($trc -match 'arib-std-b67') { 'HLG' } else { 'HDR10' }
+    } else { 'SDR' }
+
+    return [pscustomobject]@{
+        IsHDR          = $isHDR
+        CRF            = if ($isHDR) { $Script:CRF_HDR } else { $Script:CRF_SDR }
+        PixFmt         = 'yuv420p10le'
+        ColorPrimaries = $outPrimaries
+        ColorTrc       = $outTrc
+        Colorspace     = $outColorspace
+        MasterDisplay  = $masterDisplay
+        MaxCLL         = $maxCLL
+        Profile        = $profile
+    }
 }
 
 function Get-VideoDuration {
@@ -339,24 +468,42 @@ function Write-MetaFile {
         [Parameter(Mandatory)][System.IO.FileInfo]$SourceFile,
         [Parameter(Mandatory)][string]$OutputFile,
         [Parameter(Mandatory)][double]$DurationSeconds,
-        [string]$TrackMetaPath
+        [string]$TrackMetaPath,
+        [object]$VideoProfile
     )
 
     $safeName = New-SafeName -Name $MovieName
     $metaFile = Join-Path $Script:TxtRoot "$safeName.txt"
 
+    $profileLabel   = if ($VideoProfile) { $VideoProfile.Profile }        else { 'unknown' }
+    $crf            = if ($VideoProfile) { $VideoProfile.CRF }            else { '?' }
+    $pixFmt         = if ($VideoProfile) { $VideoProfile.PixFmt }         else { '?' }
+    $colorPrimaries = if ($VideoProfile) { $VideoProfile.ColorPrimaries }  else { '?' }
+    $colorTrc       = if ($VideoProfile) { $VideoProfile.ColorTrc }        else { '?' }
+    $colorspace     = if ($VideoProfile) { $VideoProfile.Colorspace }      else { '?' }
+    $masterDisplay  = if ($VideoProfile -and $VideoProfile.MasterDisplay) { $VideoProfile.MasterDisplay } else { 'n/a' }
+    $maxCLL         = if ($VideoProfile -and $VideoProfile.MaxCLL)        { $VideoProfile.MaxCLL }        else { 'n/a' }
+
 @"
-MovieName : $MovieName
-Source    : $($SourceFile.FullName)
-Output    : $OutputFile
-Encoded   : $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
-Codec     : libx265
-CRF       : $($Script:DefaultCRF)
-Preset    : $($Script:DefaultPreset)
-Audio     : $($Script:DefaultAudio)
-Duration  : $DurationSeconds
-Sample    : $($Script:DefaultLength) sec
-TrackMeta : $TrackMetaPath
+MovieName      : $MovieName
+Source         : $($SourceFile.FullName)
+Output         : $OutputFile
+Encoded        : $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
+Codec          : libx265
+SourceProfile  : $profileLabel
+CRF            : $crf
+Preset         : $($Script:DefaultPreset)
+PixFmt         : $pixFmt
+PsyParams      : $($Script:X265PsyParams)
+ColorPrimaries : $colorPrimaries
+ColorTrc       : $colorTrc
+Colorspace     : $colorspace
+MasterDisplay  : $masterDisplay
+MaxCLL         : $maxCLL
+Audio          : $($Script:DefaultAudio)
+Duration       : $DurationSeconds
+Sample         : $($Script:DefaultLength) sec
+TrackMeta      : $TrackMetaPath
 "@ | Set-Content -Path $metaFile -Encoding UTF8
 }
 
@@ -1000,21 +1147,57 @@ function Encode-File {
         [Parameter(Mandatory)][string]$MovieName
     )
 
-    $outputFile = Get-OutputPath -MovieName $MovieName
-    $duration   = Get-VideoDuration -Path $SourceFile.FullName
+    $outputFile    = Get-OutputPath -MovieName $MovieName
+    $duration      = Get-VideoDuration -Path $SourceFile.FullName
     $trackMetaPath = ""
+
+    # ── Probe source for HDR/SDR profile ──────────────────────
+    Write-UiBlankLine
+    Write-Host "  $($global:UI_CYN)Probing source video profile...$($global:UI_R)"
+    $vp = Get-SourceVideoProfile -Path $SourceFile.FullName
+
+    $profileColor = if ($vp.IsHDR) { $global:UI_YLW } else { $global:UI_GRY }
+    Write-Host "  $($global:UI_DIM)Profile$($global:UI_R)  $($profileColor)$($vp.Profile)$($global:UI_R)"
+    Write-Host "  $($global:UI_DIM)Color  $($global:UI_R)  primaries=$($vp.ColorPrimaries)  trc=$($vp.ColorTrc)  space=$($vp.Colorspace)"
+    if ($vp.MasterDisplay) {
+        Write-Host "  $($global:UI_DIM)Master $($global:UI_R)  $($vp.MasterDisplay)"
+    }
+    if ($vp.MaxCLL) {
+        Write-Host "  $($global:UI_DIM)MaxCLL $($global:UI_R)  $($vp.MaxCLL)"
+    }
 
     Write-UiBlankLine
     Write-Host "  $($global:UI_GRN)Encoding file...$($global:UI_R)"
-    Write-Host "  $($global:UI_DIM)Input $($global:UI_R)  $($SourceFile.FullName)"
-    Write-Host "  $($global:UI_DIM)Output$($global:UI_R)  $outputFile"
-    Write-Host "  $($global:UI_DIM)Codec $($global:UI_R)  libx265"
-    Write-Host "  $($global:UI_DIM)CRF   $($global:UI_R)  $($Script:DefaultCRF)"
-    Write-Host "  $($global:UI_DIM)Preset$($global:UI_R)  $($Script:DefaultPreset)"
-    Write-Host "  $($global:UI_DIM)Audio $($global:UI_R)  $($Script:DefaultAudio)"
+    Write-Host "  $($global:UI_DIM)Input  $($global:UI_R)  $($SourceFile.FullName)"
+    Write-Host "  $($global:UI_DIM)Output $($global:UI_R)  $outputFile"
+    Write-Host "  $($global:UI_DIM)Codec  $($global:UI_R)  libx265"
+    Write-Host "  $($global:UI_DIM)CRF    $($global:UI_R)  $($vp.CRF)  ($($vp.Profile))"
+    Write-Host "  $($global:UI_DIM)Preset $($global:UI_R)  $($Script:DefaultPreset)"
+    Write-Host "  $($global:UI_DIM)PixFmt $($global:UI_R)  $($vp.PixFmt)"
+    Write-Host "  $($global:UI_DIM)Psy    $($global:UI_R)  $($Script:X265PsyParams)"
+    Write-Host "  $($global:UI_DIM)Audio  $($global:UI_R)  $($Script:DefaultAudio)"
     Write-UiBlankLine
 
-    $args = @(
+    # ── Build x265-params string ───────────────────────────────
+    $x265Params = $Script:X265PsyParams
+
+    if ($vp.IsHDR) {
+        # Embed HDR10 color volume metadata so the display knows what to do
+        $x265Params += ":colorprim=$($vp.ColorPrimaries)"
+        $x265Params += ":transfer=$($vp.ColorTrc)"
+        $x265Params += ":colormatrix=$($vp.Colorspace)"
+        $x265Params += ":hdr10=1"
+        $x265Params += ":hdr10-opt=1"
+        if ($vp.MasterDisplay) {
+            $x265Params += ":master-display=$($vp.MasterDisplay)"
+        }
+        if ($vp.MaxCLL) {
+            $x265Params += ":max-cll=$($vp.MaxCLL)"
+        }
+    }
+
+    # ── Build ffmpeg args ──────────────────────────────────────
+    $ffArgs = @(
         '-hide_banner',
         '-y',
         '-i', $SourceFile.FullName,
@@ -1023,13 +1206,19 @@ function Encode-File {
         '-map', '0:s?',
         '-c:v', 'libx265',
         '-preset', $Script:DefaultPreset,
-        '-crf', "$($Script:DefaultCRF)",
+        '-crf', "$($vp.CRF)",
+        '-pix_fmt', $vp.PixFmt,
+        '-x265-params', $x265Params,
+        # Pass color metadata at the container level too so players see it
+        '-color_primaries', $vp.ColorPrimaries,
+        '-color_trc', $vp.ColorTrc,
+        '-colorspace', $vp.Colorspace,
         '-c:a', $Script:DefaultAudio,
         '-c:s', 'copy',
         $outputFile
     )
 
-    & $Script:FFmpegPath @args
+    & $Script:FFmpegPath @ffArgs
 
     if ($LASTEXITCODE -ne 0) {
         throw "ffmpeg failed with exit code $LASTEXITCODE"
@@ -1045,12 +1234,14 @@ function Encode-File {
     Create-SampleFromFinishedMkv -FinishedMkvPath $encodedInfo.FullName -MovieName $MovieName
 
     $donePath = Move-SourceToDone -SourceFile $SourceFile
-    Write-MetaFile -MovieName $MovieName -SourceFile $SourceFile -OutputFile $encodedInfo.FullName -DurationSeconds $duration -TrackMetaPath $trackMetaPath
+    Write-MetaFile -MovieName $MovieName -SourceFile $SourceFile -OutputFile $encodedInfo.FullName `
+                   -DurationSeconds $duration -TrackMetaPath $trackMetaPath -VideoProfile $vp
 
     Write-UiBlankLine
     Write-Host "  $($global:UI_GRN)Encode complete.$($global:UI_R)"
-    Write-Host "  $($global:UI_DIM)Saved $($global:UI_R)  $($encodedInfo.FullName)"
-    Write-Host "  $($global:UI_DIM)Moved $($global:UI_R)  $donePath"
+    Write-Host "  $($global:UI_DIM)Profile$($global:UI_R)  $($vp.Profile)  •  CRF $($vp.CRF)  •  $($Script:DefaultPreset)"
+    Write-Host "  $($global:UI_DIM)Saved  $($global:UI_R)  $($encodedInfo.FullName)"
+    Write-Host "  $($global:UI_DIM)Moved  $($global:UI_R)  $donePath"
 }
 
 function Encode-SingleFile {
@@ -1152,9 +1343,12 @@ function Show-Config {
     Write-UiRow "SubtitleRoot" $Script:SubtitleRoot $global:UI_GRY
     Write-UiRow "MetaRoot"     $Script:MetaRoot $global:UI_GRY
     Write-UiRow "TxtRoot"      $Script:TxtRoot $global:UI_GRY
-    Write-UiRow "CRF"          "$($Script:DefaultCRF)" $global:UI_GRY
+    Write-UiRow "CRF (HDR)"    "$($Script:CRF_HDR)" $global:UI_GRY
+    Write-UiRow "CRF (SDR)"    "$($Script:CRF_SDR)" $global:UI_GRY
     Write-UiRow "Preset"       $Script:DefaultPreset $global:UI_GRY
-    Write-UiRow "Audio"        $Script:DefaultAudio $global:UI_GRY
+    Write-UiRow "PixFmt"       "yuv420p10le (10-bit)" $global:UI_GRY
+    Write-UiRow "PsyParams"    $Script:X265PsyParams $global:UI_GRY
+    Write-UiRow "Audio"        "$($Script:DefaultAudio) (lossless passthrough)" $global:UI_GRY
     Write-UiRow "SampleStart"  $Script:DefaultStart $global:UI_GRY
     Write-UiRow "SampleLength" "$($Script:DefaultLength) sec" $global:UI_GRY
     Write-UiRow "FFmpeg"       $Script:FFmpegPath $global:UI_GRY
