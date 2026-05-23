@@ -1,9 +1,9 @@
 #--------------------------------------------
 # file:     brEncoder.ps1
 # author:   Mike Redd
-# version:  1.9
+# version:  2.0
 # created:  2026-02-11
-# updated:  2026-05-17
+# updated:  2026-05-23
 # desc:     Encode Blu-ray .m2ts files
 #           to H.265/HEVC on Windows
 #           using ffmpeg, then create a
@@ -13,6 +13,10 @@
 #           validates metadata, verifies final MKV
 #           language/default/forced tags
 #           remuxes final MKV with real track IDs
+# changes:  v2.0 - fixed language tagging for audio and subtitles
+#                  expanded Get-MetaLanguage property name coverage
+#                  expanded Resolve-LanguageCode with more ISO 639-2 names
+#                  added debug dump support via $Script:DebugMeta flag
 #--------------------------------------------
 
 param()
@@ -52,7 +56,7 @@ else {
 $ErrorActionPreference = 'Stop'
 
 $ScriptName    = "Blu-ray Encoder"
-$ScriptVersion = "1.9"
+$ScriptVersion = "2.0"
 $ScriptAuthor  = "Mike Redd"
 
 # ── Config ────────────────────────────────────────────────────
@@ -77,6 +81,7 @@ $Script:FFprobePath     = $null
 $Script:MKVPropEditPath = $null
 $Script:MKVMergePath    = $null
 $Script:MetadataScanLimit = 200
+$Script:DebugMeta         = $false   # set to $true to dump sidecar JSON track shapes
 
 # ── Header ────────────────────────────────────────────────────
 function Show-Header {
@@ -522,17 +527,83 @@ function Resolve-LanguageCode {
     if ([string]::IsNullOrWhiteSpace($Code)) { return 'und' }
 
     $clean = $Code.Trim().ToLowerInvariant()
+
+    # Already a valid 3-letter ISO 639-2 code — pass it straight through
+    if ($clean -match '^[a-z]{3}$') { return $clean }
+
+    # Full language name → ISO 639-2/B code
     switch ($clean) {
-        'english' { return 'eng' }
-        'spanish' { return 'spa' }
-        'french'  { return 'fre' }
-        'japanese' { return 'jpn' }
-        'german' { return 'ger' }
-        'italian' { return 'ita' }
+        'english'    { return 'eng' }
+        'spanish'    { return 'spa' }
+        'french'     { return 'fre' }
+        'japanese'   { return 'jpn' }
+        'german'     { return 'ger' }
+        'italian'    { return 'ita' }
         'portuguese' { return 'por' }
-        'unknown' { return 'und' }
-        'undetermined' { return 'und' }
-        default { return $clean }
+        'chinese'    { return 'chi' }
+        'korean'     { return 'kor' }
+        'arabic'     { return 'ara' }
+        'russian'    { return 'rus' }
+        'dutch'      { return 'dut' }
+        'hindi'      { return 'hin' }
+        'swedish'    { return 'swe' }
+        'norwegian'  { return 'nor' }
+        'danish'     { return 'dan' }
+        'finnish'    { return 'fin' }
+        'polish'     { return 'pol' }
+        'czech'      { return 'cze' }
+        'hungarian'  { return 'hun' }
+        'turkish'    { return 'tur' }
+        'greek'      { return 'gre' }
+        'hebrew'     { return 'heb' }
+        'thai'       { return 'tha' }
+        'vietnamese' { return 'vie' }
+        'indonesian' { return 'ind' }
+        'malay'      { return 'may' }
+        'romanian'   { return 'rum' }
+        'ukrainian'  { return 'ukr' }
+        'croatian'   { return 'hrv' }
+        'slovak'     { return 'slo' }
+        'bulgarian'  { return 'bul' }
+        'catalan'    { return 'cat' }
+        # 2-letter ISO 639-1 codes — map to 639-2
+        'en'         { return 'eng' }
+        'es'         { return 'spa' }
+        'fr'         { return 'fre' }
+        'ja'         { return 'jpn' }
+        'de'         { return 'ger' }
+        'it'         { return 'ita' }
+        'pt'         { return 'por' }
+        'zh'         { return 'chi' }
+        'ko'         { return 'kor' }
+        'ar'         { return 'ara' }
+        'ru'         { return 'rus' }
+        'nl'         { return 'dut' }
+        'hi'         { return 'hin' }
+        'sv'         { return 'swe' }
+        'no'         { return 'nor' }
+        'da'         { return 'dan' }
+        'fi'         { return 'fin' }
+        'pl'         { return 'pol' }
+        'cs'         { return 'cze' }
+        'hu'         { return 'hun' }
+        'tr'         { return 'tur' }
+        'el'         { return 'gre' }
+        'he'         { return 'heb' }
+        'th'         { return 'tha' }
+        'vi'         { return 'vie' }
+        'id'         { return 'ind' }
+        'ms'         { return 'may' }
+        'ro'         { return 'rum' }
+        'uk'         { return 'ukr' }
+        'hr'         { return 'hrv' }
+        'sk'         { return 'slo' }
+        'bg'         { return 'bul' }
+        'ca'         { return 'cat' }
+        # Explicit unknowns
+        'unknown'       { return 'und' }
+        'undetermined'  { return 'und' }
+        default         { return $clean }
     }
 }
 
@@ -665,15 +736,33 @@ function Show-FinalMetadataVerification {
 function Get-MetaLanguage {
     param([Parameter(Mandatory)][object]$Track)
 
+    # Different ripping tools (MakeMKV, HandBrake, tsMuxer, bluray-backup, etc.)
+    # use different property names for the language field. Try all known variants
+    # before giving up and returning 'und'.
     $candidates = @(
         $Track.LanguageCode,
         $Track.Language,
         $Track.Lang,
-        $Track.LanguageName
+        $Track.LanguageName,
+        $Track.language,
+        $Track.languageCode,
+        $Track.lang,
+        $Track.languageName,
+        $Track.iso639_2,
+        $Track.iso639,
+        $Track.tag_language,
+        $Track.Language3,
+        $Track.LangCode,
+        $Track.Iso,
+        $Track.AudioLanguage,
+        $Track.SubtitleLanguage
     )
 
     foreach ($c in $candidates) {
-        $lang = Resolve-LanguageCode -Code ([string]$c)
+        if ($null -eq $c) { continue }
+        $val = [string]$c
+        if ([string]::IsNullOrWhiteSpace($val)) { continue }
+        $lang = Resolve-LanguageCode -Code $val
         if ($lang -and $lang -ne 'und') { return $lang }
     }
 
@@ -822,6 +911,22 @@ function Apply-TrackMetadata {
 
     $audioMeta = @(Resolve-TrackList -Title $title -Kind audio)
     $subMeta   = @(Resolve-TrackList -Title $title -Kind subtitle)
+
+    # Debug mode: dump the first track shape from each list so you can see exactly
+    # which property names your sidecar JSON uses. Enable via $Script:DebugMeta = $true.
+    if ($Script:DebugMeta) {
+        Write-UiBlankLine
+        Write-Host "  $($global:UI_YLW)[DEBUG] Sidecar JSON track shapes:$($global:UI_R)"
+        if ($audioMeta.Count -gt 0) {
+            Write-Host "  $($global:UI_DIM)Audio[0]:$($global:UI_R)"
+            $audioMeta[0] | ConvertTo-Json -Depth 2 | ForEach-Object { Write-Host "    $_" }
+        }
+        if ($subMeta.Count -gt 0) {
+            Write-Host "  $($global:UI_DIM)Sub[0]:$($global:UI_R)"
+            $subMeta[0] | ConvertTo-Json -Depth 2 | ForEach-Object { Write-Host "    $_" }
+        }
+        Write-UiBlankLine
+    }
 
     Write-UiBlankLine
     Write-Host "  $($global:UI_CYN)Applying track metadata...$($global:UI_R)"
