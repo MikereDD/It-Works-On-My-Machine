@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file:     ytbot.py
 # author:   Mike Redd
-# version:  6.6
+# version:  6.7
 # created:  2026-04-18
 # updated:  2026-05-18
 # desc:     Queue-based Telegram media bot
@@ -33,7 +33,7 @@ from urllib.request import urlopen
 # ── Branding ─────────────────────────────────────────────────
 
 BOT_NAME = "Raziel"
-BOT_VERSION = "6.6"
+BOT_VERSION = "6.7"
 
 import yt_dlp
 from telegram import (
@@ -390,6 +390,30 @@ def auto_watch_disabled_for_chat(chat) -> bool:
         return False
 
     return int(chat.id) in AUTO_WATCH_DISABLED_CHAT_IDS
+
+
+def message_has_native_telegram_media(message) -> bool:
+    """
+    Return True when a message already contains Telegram-native media.
+
+    Passive auto-watch should ignore source links inside captions on these
+    messages because the user already shared/uploaded media into the chat.
+
+    Explicit commands still work separately.
+    """
+    if not message:
+        return False
+
+    media_attrs = (
+        "video",
+        "animation",
+        "document",
+        "audio",
+        "voice",
+        "video_note",
+    )
+
+    return any(bool(getattr(message, attr, None)) for attr in media_attrs)
 
 def is_private_chat(update: Update) -> bool:
     return bool(update.effective_chat and update.effective_chat.type == "private")
@@ -3590,6 +3614,11 @@ async def track_chat_member(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> 
 async def handle_url(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.message
     if not message:
+        return
+
+    if message_has_native_telegram_media(message):
+        if DEBUG_MODE:
+            log.info("Telegram-native media message ignored for passive auto-watch.")
         return
 
     remember_chat(update.effective_chat)

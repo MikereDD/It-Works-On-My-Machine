@@ -93,4 +93,4 @@ This notes directory tracks:
 * [v6.5](v6.5.md) — Reply-driven download commands, Telegram-native reply workflows, automatic command cleanup, and reduced chat noise
 * [v6.6](v6.6.md) — Media-aware preflight validation, text-post filtering, temporary error cleanup, and reply-driven message deletion controls
 * [config-v1.4](config-v1.4.md) — Per-chat auto-watch overrides, explicit-command-only group behavior, and configurable link-ingestion control
-
+* [v6.7](v6.7.md) — Smarter passive media detection, Telegram-native media awareness, and caption-link repost prevention
