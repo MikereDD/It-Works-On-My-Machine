@@ -1,39 +1,81 @@
-# Eero Switch Stand
+Network Hardware Stand Collection
 
-Modular 3D printable stand system for organizing Eero switches and small networking hardware.
+# Modular 3D printable stand collection for organizing home networking hardware, Eero devices, switches, Nokia equipment, and small audio gear.
 
-## Files
+# ---
 
-- `Eero_Switchs_Stand.scad`
-  - OpenSCAD source project
+# Included Designs
 
-- `Eero_Switchs_StandTop.stl`
-  - Top section
+## Eero Switch Stand
 
-- `Eero_Switchs_StandMiddle.stl`
-  - Middle section
+# Compact modular stand designed for Eero switches and small networking hardware.
 
-- `Eero_Switchs_Stand_Bottom.stl`
-  - Bottom/base section
+### Files
 
-## Features
+# - `Eero_Switchs_Stand.scad`
+  # - OpenSCAD source project
 
-- Modular segmented design
-- Easy reprinting of individual sections
-- Compact networking hardware organization
-- OpenSCAD source included for customization
+# - `Eero_Switchs_StandTop.stl`
+  # - Top section
 
-## Printing
+# - `Eero_Switchs_StandMiddle.stl`
+  # - Middle section
 
-Recommended:
-- PLA or PETG
-- 0.2 layer height
-- 15–25% infill
-- Supports typically not required depending on orientation
+# - `Eero_Switchs_Stand_Bottom.stl`
+  # - Bottom/base section
 
-## Notes
+### Features
 
-Designed for personal home networking and hardware organization.
+# - Compact footprint
+# - Modular segmented design
+# - Easy reprinting of individual sections
+# - Clean home networking organization
+# - OpenSCAD source included for customization
 
-Part of the:
-**It-Works-On-My-Machine** 3D printing collection.
+# ---
+
+## Nokia and Audio Devices Stand
+
+# Larger modular stand designed for Nokia networking hardware and small audio devices.
+
+### Files
+
+# - `Nokia_and_Audio_devices.scad`
+  # - OpenSCAD source project
+
+# - `Nokia_and_Audio_devices_Top.stl`
+  # - Top section
+
+# - `Nokia_and_Audio_devices_Middle.stl`
+  # - Middle section
+
+# - `Nokia_and_Audio_devices_Bottom.stl`
+  # - Bottom/base section
+
+### Features
+
+# - Supports larger networking hardware
+# - Useful for Nokia equipment and audio devices
+# - Modular segmented design
+# - Easy reprinting of individual sections
+# - OpenSCAD source included for customization
+
+# ---
+
+# Printing Recommendations
+
+# Recommended settings:
+
+# - PLA or PETG
+# - 0.2 layer height
+# - 15–25% infill
+# - Supports typically not required depending on orientation
+# - Print sections individually for easier assembly and replacement
+
+# ---
+
+# Notes
+
+# Designed for personal home networking and audio equipment organization.
+
+# Part of the **It-Works-On-My-Machine** 3D printing collection.
