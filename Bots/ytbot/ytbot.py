@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file:     ytbot.py
 # author:   Mike Redd
-# version:  6.5
+# version:  6.6
 # created:  2026-04-18
 # updated:  2026-05-18
 # desc:     Queue-based Telegram media bot
@@ -33,7 +33,7 @@ from urllib.request import urlopen
 # ── Branding ─────────────────────────────────────────────────
 
 BOT_NAME = "Raziel"
-BOT_VERSION = "6.5"
+BOT_VERSION = "6.6"
 
 import yt_dlp
 from telegram import (
@@ -102,11 +102,15 @@ CAPTION_CONTEXT_MIN_MEANINGFUL_CHARS = int(getattr(ytbotrc, "CAPTION_CONTEXT_MIN
 
 FORECAST_COLLAPSE_DETAILS = getattr(ytbotrc, "FORECAST_COLLAPSE_DETAILS", True)
 FORECAST_VISIBLE_DAYS = int(getattr(ytbotrc, "FORECAST_VISIBLE_DAYS", 1))
+NOISE_MESSAGE_DELETE_SECONDS = int(getattr(ytbotrc, "NOISE_MESSAGE_DELETE_SECONDS", 12))
 
 # Validation policy:
 # True  = only allow configured ENABLED_VIDEO_PLATFORMS / EXTRA_VIDEO_DOMAINS
 # False = allow any URL and let yt-dlp decide if it can extract it
 STRICT_PLATFORM_VALIDATION = getattr(ytbotrc, "STRICT_PLATFORM_VALIDATION", False)
+MEDIA_PREFLIGHT_ENABLED = getattr(ytbotrc, "MEDIA_PREFLIGHT_ENABLED", True)
+MEDIA_PREFLIGHT_TIMEOUT = int(getattr(ytbotrc, "MEDIA_PREFLIGHT_TIMEOUT", 20))
+MEDIA_PREFLIGHT_NOISE_DELETE_SECONDS = int(getattr(ytbotrc, "MEDIA_PREFLIGHT_NOISE_DELETE_SECONDS", 8))
 
 # Local Telegram Bot API support (optional)
 LOCAL_BOT_API_URL = getattr(ytbotrc, "LOCAL_BOT_API_URL", "")
@@ -268,8 +272,8 @@ def reload_runtime_config() -> None:
     global DOWNLOAD_TIMEOUT, TELEGRAM_UPLOAD_TIMEOUT, DEBUG_MODE
     global DEDUP_ENABLED, DEDUP_TTL_HOURS, MAX_VIDEO_HEIGHT, PREFER_MP4
     global CAPTION_METADATA_MODE, CAPTION_CONTEXT_MAX_CHARS, CAPTION_SKIP_LOW_VALUE_CONTEXT, CAPTION_CONTEXT_MIN_MEANINGFUL_CHARS
-    global FORECAST_COLLAPSE_DETAILS, FORECAST_VISIBLE_DAYS
-    global STRICT_PLATFORM_VALIDATION
+    global FORECAST_COLLAPSE_DETAILS, FORECAST_VISIBLE_DAYS, NOISE_MESSAGE_DELETE_SECONDS
+    global STRICT_PLATFORM_VALIDATION, MEDIA_PREFLIGHT_ENABLED, MEDIA_PREFLIGHT_TIMEOUT, MEDIA_PREFLIGHT_NOISE_DELETE_SECONDS
     global LOCAL_BOT_API_URL, LOCAL_BOT_API_FILE_URL
     global DEFAULT_VIDEO_HEIGHT, HD_VIDEO_HEIGHT
     global ENABLED_VIDEO_PLATFORMS, EXTRA_VIDEO_DOMAINS, SUPPORTED_VIDEO_DOMAINS
@@ -294,6 +298,9 @@ def reload_runtime_config() -> None:
     CAPTION_SKIP_LOW_VALUE_CONTEXT = getattr(ytbotrc, "CAPTION_SKIP_LOW_VALUE_CONTEXT", True)
     CAPTION_CONTEXT_MIN_MEANINGFUL_CHARS = int(getattr(ytbotrc, "CAPTION_CONTEXT_MIN_MEANINGFUL_CHARS", 60))
     STRICT_PLATFORM_VALIDATION = getattr(ytbotrc, "STRICT_PLATFORM_VALIDATION", False)
+    MEDIA_PREFLIGHT_ENABLED = getattr(ytbotrc, "MEDIA_PREFLIGHT_ENABLED", True)
+    MEDIA_PREFLIGHT_TIMEOUT = int(getattr(ytbotrc, "MEDIA_PREFLIGHT_TIMEOUT", 20))
+    MEDIA_PREFLIGHT_NOISE_DELETE_SECONDS = int(getattr(ytbotrc, "MEDIA_PREFLIGHT_NOISE_DELETE_SECONDS", 8))
 
     LOCAL_BOT_API_URL = getattr(ytbotrc, "LOCAL_BOT_API_URL", "")
     LOCAL_BOT_API_FILE_URL = getattr(ytbotrc, "LOCAL_BOT_API_FILE_URL", "")
@@ -853,6 +860,30 @@ def extract_reply_target_url(message) -> str | None:
     return extract_url_from_message(reply)
 
 
+
+async def delete_message_later(message, delay: float | None = None) -> None:
+    """
+    Delete temporary/noisy bot messages after a short delay.
+    """
+    if not message:
+        return
+
+    try:
+        await asyncio.sleep(NOISE_MESSAGE_DELETE_SECONDS if delay is None else delay)
+        await message.delete()
+    except Exception:
+        pass
+
+
+async def send_temporary_reply(message, text: str, delay: float | None = None, **kwargs):
+    """
+    Send a temporary reply and schedule it for cleanup.
+    """
+    sent = await message.reply_text(text, **kwargs)
+    asyncio.create_task(delete_message_later(sent, delay))
+    return sent
+
+
 async def delete_command_message_later(message, delay: float = 2.0) -> None:
     """
     Delete short helper/command messages after Raziel has accepted the job.
@@ -890,15 +921,20 @@ async def handle_reply_download_command(
     url = extract_reply_target_url(message)
 
     if not url:
-        await message.reply_text("❌ No supported URL found in the replied message.")
+        await send_temporary_reply(message, "❌ No supported URL found in the replied message.")
         return
 
     if not is_supported_video_url(url):
-        await message.reply_text("❌ Unsupported or invalid media URL.")
+        await send_temporary_reply(message, "❌ Unsupported or invalid media URL.")
+        return
+
+    if not await media_preflight_allows_queue(message, url):
+        asyncio.create_task(delete_command_message_later(message))
         return
 
     if is_duplicate_url(url):
-        await message.reply_text("♻️ That media was already queued/downloaded recently.")
+        await send_temporary_reply(message, "♻️ That media was already queued/downloaded recently.")
+        asyncio.create_task(delete_command_message_later(message))
         return
 
     remember_chat(chat)
@@ -1058,7 +1094,7 @@ async def run_mention_command(update: Update, ctx: ContextTypes.DEFAULT_TYPE) ->
     try:
         if command == "weather":
             if not args:
-                await message.reply_text("Usage: @Raziel weather Houston")
+                await send_temporary_reply(message, "Usage: @Raziel weather Houston")
                 return True
             result = await asyncio.to_thread(get_current_weather_for_location, args)
             await message.reply_text(result, parse_mode=forecast_parse_mode(result))
@@ -1066,7 +1102,7 @@ async def run_mention_command(update: Update, ctx: ContextTypes.DEFAULT_TYPE) ->
 
         if command == "forecast":
             if not args:
-                await message.reply_text("Usage: @Raziel forecast Houston")
+                await send_temporary_reply(message, "Usage: @Raziel forecast Houston")
                 return True
             result = await asyncio.to_thread(get_5day_forecast_for_location, args)
             await message.reply_text(result, parse_mode=forecast_parse_mode(result))
@@ -1979,6 +2015,143 @@ def get_cookiefile_for_url(url: str) -> str | None:
     if is_youtube_url(url) and YOUTUBE_COOKIES_FILE.exists():
         return str(YOUTUBE_COOKIES_FILE)
     return None
+
+
+def info_has_downloadable_media(info: dict | None) -> bool:
+    """
+    Return True only when yt-dlp metadata exposes downloadable media.
+
+    This filters out valid-but-not-media URLs, especially text-only X/Twitter
+    posts, Reddit self posts, article links, etc.
+    """
+    if not info:
+        return False
+
+    # Playlists/containers can expose entries; allow if any entry has media.
+    entries = info.get("entries")
+    if entries:
+        for entry in entries:
+            if info_has_downloadable_media(entry):
+                return True
+
+    formats = info.get("formats") or []
+    if formats:
+        for fmt in formats:
+            if not isinstance(fmt, dict):
+                continue
+
+            vcodec = (fmt.get("vcodec") or "").lower()
+            acodec = (fmt.get("acodec") or "").lower()
+            url = fmt.get("url")
+
+            # A real downloadable media format should have a URL and at least
+            # an audio or video codec. "none" means that stream type is absent.
+            if url and (vcodec not in ("", "none") or acodec not in ("", "none")):
+                return True
+
+    # Some extractors expose direct media URL/extension without full formats.
+    direct_url = info.get("url")
+    ext = (info.get("ext") or "").lower()
+    if direct_url and ext in {
+        "mp4", "m4v", "mov", "webm", "mkv", "avi",
+        "mp3", "m4a", "opus", "ogg", "wav", "flac",
+    }:
+        return True
+
+    requested = info.get("requested_downloads") or []
+    if requested:
+        return True
+
+    return False
+
+
+def media_preflight_check(url: str) -> tuple[bool, str]:
+    """
+    Check whether a URL actually contains downloadable media before queueing.
+
+    This prevents noisy queue/fail behavior for text-only posts.
+    """
+    if not MEDIA_PREFLIGHT_ENABLED:
+        return True, "preflight disabled"
+
+    if not is_supported_video_url(url):
+        return False, "unsupported URL"
+
+    opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "noplaylist": True,
+        "skip_download": True,
+        "socket_timeout": MEDIA_PREFLIGHT_TIMEOUT,
+        "extract_flat": False,
+    }
+
+    cookiefile = get_cookiefile_for_url(url)
+    if cookiefile:
+        opts["cookiefile"] = cookiefile
+
+    if is_instagram_url(url):
+        opts["nocheckcertificate"] = True
+
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+
+        if info_has_downloadable_media(info):
+            return True, "media found"
+
+        return False, "no downloadable media found"
+
+    except Exception as e:
+        # If yt-dlp says no video/media was found, treat as no media and do not queue.
+        error = str(e)
+        low = error.lower()
+
+        no_media_markers = (
+            "no video could be found",
+            "no media could be found",
+            "no video found",
+            "no downloadable",
+            "unsupported url",
+            "not a video",
+            "does not contain",
+            "no formats found",
+        )
+
+        if any(marker in low for marker in no_media_markers):
+            return False, error[:240]
+
+        # For transient/network/auth failures, allow queueing so the normal
+        # downloader can produce the existing detailed failure behavior.
+        return True, f"preflight uncertain: {error[:160]}"
+
+
+async def media_preflight_allows_queue(message, url: str) -> bool:
+    """
+    Async wrapper for media preflight.
+
+    Returns True when queueing should continue.
+    Returns False after quietly notifying/cleaning low-value no-media URLs.
+    """
+    allowed, reason = await asyncio.to_thread(media_preflight_check, url)
+
+    if allowed:
+        return True
+
+    # No-media links are not worth turning into queue/failure noise.
+    # Send a small temporary notice so the user knows Raziel ignored it.
+    try:
+        await send_temporary_reply(
+            message,
+            "ℹ️ No downloadable media found in that link.",
+            delay=MEDIA_PREFLIGHT_NOISE_DELETE_SECONDS,
+        )
+    except Exception:
+        pass
+
+    return False
+
+
 
 def get_media_info(url: str) -> dict:
     if not is_supported_video_url(url):
@@ -2940,6 +3113,9 @@ async def audio_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text("❌ Unsupported video source.")
         return
 
+    if not await media_preflight_allows_queue(update.effective_message, url):
+        return
+
     if not ffmpeg_exists():
         await update.message.reply_text("ffmpeg is required for audio extraction.")
         return
@@ -3551,6 +3727,45 @@ async def raudio_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def rui_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await handle_reply_download_command(update, context, mode="video", quality="default", use_ui=True)
 
+
+async def delete_reply_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Delete a replied-to message, then delete the cleanup command itself.
+
+    Usage:
+    Reply to a Raziel/bot message with:
+    /delete
+    /del
+    /rm
+    """
+    message = update.effective_message
+    user = update.effective_user
+    chat = update.effective_chat
+
+    if not message or not user or not chat:
+        return
+
+    if not can_use_context(user.id, chat.id, chat.type):
+        return
+
+    reply = getattr(message, "reply_to_message", None)
+
+    if not reply:
+        await send_temporary_reply(message, "Reply to a Raziel message with /delete.")
+        asyncio.create_task(delete_command_message_later(message, delay=2.0))
+        return
+
+    try:
+        await reply.delete()
+    except Exception:
+        await send_temporary_reply(message, "❌ Could not delete that message.")
+        asyncio.create_task(delete_command_message_later(message, delay=2.0))
+        return
+
+    asyncio.create_task(delete_command_message_later(message, delay=0.5))
+
+
+
 def build_app():
     request = HTTPXRequest(
         connect_timeout=30,
@@ -3583,6 +3798,11 @@ def build_app():
     app.add_handler(CommandHandler("rfull", rfull_cmd))
     app.add_handler(CommandHandler("raudio", raudio_cmd))
     app.add_handler(CommandHandler("rui", rui_cmd))
+
+    # ── Manual cleanup commands ─────────────────────────────
+    app.add_handler(CommandHandler("delete", delete_reply_cmd))
+    app.add_handler(CommandHandler("del", delete_reply_cmd))
+    app.add_handler(CommandHandler("rm", delete_reply_cmd))
     app.add_handler(CommandHandler("dl", dl_cmd))
     app.add_handler(CommandHandler("hd", hd_cmd))
     app.add_handler(CommandHandler("full", full_cmd))
@@ -3657,7 +3877,7 @@ async def mention_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     try:
         if command == "weather":
             if not args:
-                await message.reply_text("Usage: @Raziel weather Houston")
+                await send_temporary_reply(message, "Usage: @Raziel weather Houston")
                 return
             result = await asyncio.to_thread(get_current_weather_for_location, args)
             await message.reply_text(result, parse_mode=forecast_parse_mode(result))
@@ -3665,7 +3885,7 @@ async def mention_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
         if command == "forecast":
             if not args:
-                await message.reply_text("Usage: @Raziel forecast Houston")
+                await send_temporary_reply(message, "Usage: @Raziel forecast Houston")
                 return
             result = await asyncio.to_thread(get_5day_forecast_for_location, args)
             await message.reply_text(result, parse_mode=forecast_parse_mode(result))

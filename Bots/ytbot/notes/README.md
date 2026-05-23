@@ -91,3 +91,4 @@ This notes directory tracks:
 * [v6.3](v6.3.md) — Meaningful source-context detection, low-value metadata filtering, and smarter expandable context handling
 * [v6.4](v6.4.md) — Collapsible forecast system, expandable weather presentation, and reduced forecast chat noise
 * [v6.5](v6.5.md) — Reply-driven download commands, Telegram-native reply workflows, automatic command cleanup, and reduced chat noise
+* [v6.6](v6.6.md) — Media-aware preflight validation, text-post filtering, temporary error cleanup, and reply-driven message deletion controls

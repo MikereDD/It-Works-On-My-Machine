@@ -1,4 +1,4 @@
-# 🎬 Raziel v6.5
+# 🎬 Raziel v6.6
 
 > A typezerø Project  
 > Built for real-world use, not perfection.
