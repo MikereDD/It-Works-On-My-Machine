@@ -90,11 +90,8 @@ module top_base_and_lip(width, depth, wall_t, lip_h) {
 // LAYER 1: BOTTOM - TP-Link Switch (101.6 x 101.6 mm pocket)
 // ============================================
 module layer1() {
-    // Center device in stand
     dev_x = (stand_width - l1_device_w) / 2;
     dev_y = (stand_depth - l1_device_d) / 2;
-    
-    // Pocket outer bounds (device + rim)
     pocket_x = dev_x - seat_wall;
     pocket_y = dev_y - seat_wall;
     pocket_w = l1_device_w + 2 * seat_wall;
@@ -102,21 +99,15 @@ module layer1() {
     
     difference() {
         union() {
-            // Base tray with walls and corner pads
             tray_base(stand_width, stand_depth, wall_thickness, floor_thickness, layer_height);
         }
-        
-        // Cut out the pocket from base floor (goes DOWN into floor)
-        // This creates the recessed area for the device
         translate([pocket_x, pocket_y, floor_thickness - seat_depth])
             cube([pocket_w, pocket_d, seat_depth + 0.1]);
     }
     
-    // Add pocket floor (device rests on this, lower than base floor)
     translate([dev_x, dev_y, floor_thickness - seat_depth])
         cube([l1_device_w, l1_device_d, seat_depth]);
     
-    // Add rim walls around pocket (rise up to base floor level)
     difference() {
         translate([pocket_x, pocket_y, floor_thickness - seat_depth])
             cube([pocket_w, pocket_d, seat_depth]);
@@ -124,13 +115,11 @@ module layer1() {
             cube([l1_device_w + 0.2, l1_device_d + 0.2, seat_depth + 0.2]);
     }
     
-    // Ventilation slots in pocket floor
     for(i = [0:2]) {
         translate([dev_x + 15 + i*30, dev_y + 10, floor_thickness - seat_depth - 0.1])
             cube([8, l1_device_d - 20, seat_depth + 0.2]);
     }
     
-    // Tapered pegs on top
     for(pos = peg_positions) {
         peg(pos[0], pos[1], layer_height);
     }
@@ -144,7 +133,6 @@ module layer2() {
     total_device_w = l2l_device_w + gap + l2r_device_w;
     start_x = (stand_width - total_device_w) / 2;
     
-    // UGREEN position (left side)
     l2l_dev_x = start_x;
     l2l_dev_y = (stand_depth - l2l_device_d) / 2;
     l2l_pocket_x = l2l_dev_x - seat_wall;
@@ -152,7 +140,6 @@ module layer2() {
     l2l_pocket_w = l2l_device_w + 2 * seat_wall;
     l2l_pocket_d = l2l_device_d + 2 * seat_wall;
     
-    // Warrky position (right side)
     l2r_dev_x = start_x + l2l_device_w + gap;
     l2r_dev_y = (stand_depth - l2r_device_d) / 2;
     l2r_pocket_x = l2r_dev_x - seat_wall;
@@ -162,24 +149,16 @@ module layer2() {
     
     difference() {
         union() {
-            // Base tray with walls and corner pads
             tray_base(stand_width, stand_depth, wall_thickness, floor_thickness, layer_height);
         }
-        
-        // Cut out UGREEN pocket
         translate([l2l_pocket_x, l2l_pocket_y, floor_thickness - seat_depth])
             cube([l2l_pocket_w, l2l_pocket_d, seat_depth + 0.1]);
-        
-        // Cut out Warrky pocket
         translate([l2r_pocket_x, l2r_pocket_y, floor_thickness - seat_depth])
             cube([l2r_pocket_w, l2r_pocket_d, seat_depth + 0.1]);
     }
     
-    // UGREEN pocket floor (exact device size, lower than base)
     translate([l2l_dev_x, l2l_dev_y, floor_thickness - seat_depth])
         cube([l2l_device_w, l2l_device_d, seat_depth]);
-    
-    // UGREEN rim
     difference() {
         translate([l2l_pocket_x, l2l_pocket_y, floor_thickness - seat_depth])
             cube([l2l_pocket_w, l2l_pocket_d, seat_depth]);
@@ -187,11 +166,8 @@ module layer2() {
             cube([l2l_device_w + 0.2, l2l_device_d + 0.2, seat_depth + 0.2]);
     }
     
-    // Warrky pocket floor
     translate([l2r_dev_x, l2r_dev_y, floor_thickness - seat_depth])
         cube([l2r_device_w, l2r_device_d, seat_depth]);
-    
-    // Warrky rim
     difference() {
         translate([l2r_pocket_x, l2r_pocket_y, floor_thickness - seat_depth])
             cube([l2r_pocket_w, l2r_pocket_d, seat_depth]);
@@ -199,12 +175,9 @@ module layer2() {
             cube([l2r_device_w + 0.2, l2r_device_d + 0.2, seat_depth + 0.2]);
     }
     
-    // Chamfered peg holes on bottom
     for(pos = peg_positions) {
         peg_hole(pos[0], pos[1], 0);
     }
-    
-    // Tapered pegs on top
     for(pos = peg_positions) {
         peg(pos[0], pos[1], layer_height);
     }
@@ -223,13 +196,18 @@ module layer3() {
             translate([base_x, base_y, floor_thickness])
                 cube([l3_device_w, l3_device_d, 3]);
         }
+        
+        // Hollow out platform center
         translate([base_x + 10, base_y + 5, floor_thickness + 3])
             cube([l3_device_w - 20, l3_device_d - 10, 5]);
+        
+        // PEG HOLES — now properly inside difference() block
+        for(pos = peg_positions) {
+            peg_hole(pos[0], pos[1], 0);
+        }
     }
     
-    for(pos = peg_positions) {
-        peg_hole(pos[0], pos[1], 0);
-    }
+    // No pegs on top (this is the top layer)
 }
 
 // ============================================
