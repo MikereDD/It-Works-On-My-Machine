@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file:     brEncoder.ps1
 # author:   Mike Redd
-# version:  2.2
+# version:  2.4
 # created:  2026-02-11
 # updated:  2026-05-23
 # desc:     Encode Blu-ray .m2ts files
@@ -13,10 +13,11 @@
 #           validates metadata, verifies final MKV
 #           language/default/forced tags
 #           remuxes final MKV with real track IDs
-# changes:  v2.2 - added -probesize 100M / -analyzeduration 300M to all ffmpeg
-#                  and ffprobe calls that open .m2ts files; fixes "unspecified
-#                  size" warnings and missing PGS subtitle streams on large
-#                  Blu-ray MPEG-TS containers
+# changes:  v2.4 - added Select-TrackMetadata: replaces silent Load-TrackMetadata
+#                  call in Apply-TrackMetadata; confirms auto-matched JSON with
+#                  user before proceeding; on miss shows numbered pick list of
+#                  all JSONs in meta\ so name mismatches can be resolved manually
+#                  without re-running bluray-backup
 #--------------------------------------------
 
 param()
@@ -56,7 +57,7 @@ else {
 $ErrorActionPreference = 'Stop'
 
 $ScriptName    = "Blu-ray Encoder"
-$ScriptVersion = "2.2"
+$ScriptVersion = "2.4"
 $ScriptAuthor  = "Mike Redd"
 
 # ── Config ────────────────────────────────────────────────────
@@ -123,6 +124,8 @@ function Show-Menu {
     Write-Host "  $($global:UI_GRN)  1)$($global:UI_R)  Encode all .m2ts files"
     Write-Host "  $($global:UI_GRN)  2)$($global:UI_R)  Encode single file"
     Write-Host "  $($global:UI_GRN)  3)$($global:UI_R)  Show source files"
+    Write-UiDivider
+    Write-Host "  $($global:UI_YLW)  5)$($global:UI_R)  Repair language tags on finished MKV"
     Write-UiDivider
     Write-Host "  $($global:UI_CYN)  4)$($global:UI_R)  Show config"
     Write-UiDivider
@@ -1038,6 +1041,310 @@ function Invoke-MKVLanguageRemux {
     Remove-Item -LiteralPath $bak -Force -ErrorAction SilentlyContinue
 }
 
+function Get-StreamLanguagesFromSource {
+    <#
+    .SYNOPSIS
+        Reads audio and subtitle language tags directly from the source .m2ts
+        (or any file) via ffprobe, then applies them to an already-encoded MKV
+        using mkvpropedit --edit track --set language.
+
+    .NOTES
+        This is the fallback path when no sidecar JSON is available.
+        mkvpropedit writes directly into the track header — the same field that
+        mkvmerge --identify shows as [language:xxx] — so the result is visible
+        immediately without a remux.
+    #>
+    param(
+        [Parameter(Mandatory)][string]$SourcePath,
+        [Parameter(Mandatory)][string]$OutputMkvPath
+    )
+
+    Write-Host "  $($global:UI_CYN)Probing source stream languages via ffprobe...$($global:UI_R)"
+
+    # Pull all stream language tags from source
+    $probeArgs = @(
+        '-v', 'error',
+        '-probesize', $Script:M2tsProbeSize,
+        '-analyzeduration', $Script:M2tsAnalyzeDur,
+        '-show_entries', 'stream=index,codec_type:stream_tags=language',
+        '-of', 'json',
+        $SourcePath
+    )
+
+    $probeOut  = & $Script:FFprobePath @probeArgs 2>$null
+    $probeJson = $null
+    try { $probeJson = ($probeOut | Out-String) | ConvertFrom-Json } catch {}
+
+    if (-not $probeJson -or -not $probeJson.streams) {
+        Write-Host "  $($global:UI_YLW)ffprobe returned no stream data from source.$($global:UI_R)"
+        return $false
+    }
+
+    # Separate into audio and subtitle streams (skip video)
+    $audioStreams = @($probeJson.streams | Where-Object { $_.codec_type -eq 'audio' })
+    $subStreams   = @($probeJson.streams | Where-Object { $_.codec_type -eq 'subtitle' })
+
+    if ($audioStreams.Count -eq 0 -and $subStreams.Count -eq 0) {
+        Write-Host "  $($global:UI_YLW)No audio or subtitle streams found in source.$($global:UI_R)"
+        return $false
+    }
+
+    # Get the MKV output track layout so we can map source stream index → MKV track ID
+    $layout = Get-OutputTrackLayout -Path $OutputMkvPath
+
+    Write-Host "  $($global:UI_DIM)Source audio streams : $($audioStreams.Count)$($global:UI_R)"
+    Write-Host "  $($global:UI_DIM)Source sub streams   : $($subStreams.Count)$($global:UI_R)"
+    Write-Host "  $($global:UI_DIM)MKV audio tracks     : $($layout.AudioCount)$($global:UI_R)"
+    Write-Host "  $($global:UI_DIM)MKV subtitle tracks  : $($layout.SubtitleCount)$($global:UI_R)"
+
+    $audioToApply = [Math]::Min($audioStreams.Count, $layout.AudioTracks.Count)
+    $subToApply   = [Math]::Min($subStreams.Count,   $layout.SubtitleTracks.Count)
+
+    # Build mkvpropedit args — one --edit + --set per track
+    # mkvpropedit track numbering is 1-based positional: track:a1, track:a2, track:s1, track:s2 ...
+    $propArgs = @($OutputMkvPath)
+    $applied  = 0
+
+    for ($i = 0; $i -lt $audioToApply; $i++) {
+        $rawLang = if ($audioStreams[$i].tags -and $audioStreams[$i].tags.language) {
+            [string]$audioStreams[$i].tags.language
+        } else { 'und' }
+        $lang = Resolve-LanguageCode -Code $rawLang
+        $trackRef = "track:a$($i + 1)"
+        $propArgs += '--edit'
+        $propArgs += $trackRef
+        $propArgs += '--set'
+        $propArgs += "language=$lang"
+        Write-Host ("    audio {0}: {1} → {2}" -f ($i + 1), $rawLang, $lang)
+        $applied++
+    }
+
+    for ($i = 0; $i -lt $subToApply; $i++) {
+        $rawLang = if ($subStreams[$i].tags -and $subStreams[$i].tags.language) {
+            [string]$subStreams[$i].tags.language
+        } else { 'und' }
+        $lang = Resolve-LanguageCode -Code $rawLang
+        $trackRef = "track:s$($i + 1)"
+        $propArgs += '--edit'
+        $propArgs += $trackRef
+        $propArgs += '--set'
+        $propArgs += "language=$lang"
+        Write-Host ("    sub   {0}: {1} → {2}" -f ($i + 1), $rawLang, $lang)
+        $applied++
+    }
+
+    if ($applied -eq 0) {
+        Write-Host "  $($global:UI_YLW)No language tags found in source streams.$($global:UI_R)"
+        return $false
+    }
+
+    Write-Host "  $($global:UI_CYN)Writing language tags via mkvpropedit...$($global:UI_R)"
+    & $Script:MKVPropEditPath @propArgs
+
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "  $($global:UI_RED)mkvpropedit failed with exit code $LASTEXITCODE$($global:UI_R)"
+        return $false
+    }
+
+    Write-Host "  $($global:UI_GRN)Language tags written to track headers.$($global:UI_R)"
+    return $true
+}
+
+function Repair-MKVLanguages {
+    <#
+    .SYNOPSIS
+        Standalone menu action: fix language tags on an already-encoded MKV
+        without re-encoding. Prompts for the finished MKV and its source .m2ts,
+        then calls Get-StreamLanguagesFromSource to patch the track headers in place.
+    #>
+
+    Show-Header
+    Write-Host "  $($global:UI_CYN)Repair Language Tags$($global:UI_R)"
+    Write-UiBlankLine
+    Write-Host "  This patches language into MKV track headers in-place using mkvpropedit."
+    Write-Host "  No re-encode. The source .m2ts is only read for its language tags."
+    Write-UiBlankLine
+
+    # Pick the MKV to fix
+    $mkvFiles = @(Get-ChildItem -Path $Script:OutputRoot -Filter '*.mkv' -File | Sort-Object Name)
+    if ($mkvFiles.Count -eq 0) {
+        Write-Host "  $($global:UI_YLW)No MKV files found in $($Script:OutputRoot)$($global:UI_R)"
+        Pause-Script; return
+    }
+
+    Write-Host "  $($global:UI_MAG)Available MKV files:$($global:UI_R)"
+    for ($i = 0; $i -lt $mkvFiles.Count; $i++) {
+        Write-Host ("    [{0}] {1}" -f ($i + 1), $mkvFiles[$i].Name)
+    }
+    Write-UiBlankLine
+
+    $sel = Read-Host "  Select MKV number"
+    $idx = 0
+    if (-not [int]::TryParse($sel.Trim(), [ref]$idx) -or $idx -lt 1 -or $idx -gt $mkvFiles.Count) {
+        Write-Host "  $($global:UI_YLW)Invalid selection.$($global:UI_R)"
+        Pause-Script; return
+    }
+    $targetMkv = $mkvFiles[$idx - 1].FullName
+
+    # Pick the source .m2ts
+    $m2tsFiles = @(Get-ChildItem -Path $Script:DoneRoot -Filter '*.m2ts' -File -Recurse | Sort-Object Name)
+    if ($m2tsFiles.Count -eq 0) {
+        # Also check InputRoot in case it hasn't been moved yet
+        $m2tsFiles = @(Get-ChildItem -Path $Script:InputRoot -Filter '*.m2ts' -File -Recurse | Sort-Object Name)
+    }
+
+    $sourcePath = $null
+    if ($m2tsFiles.Count -gt 0) {
+        Write-UiBlankLine
+        Write-Host "  $($global:UI_MAG)Available source files:$($global:UI_R)"
+        for ($i = 0; $i -lt $m2tsFiles.Count; $i++) {
+            Write-Host ("    [{0}] {1}" -f ($i + 1), $m2tsFiles[$i].Name)
+        }
+        Write-Host "    [0] Enter path manually"
+        Write-UiBlankLine
+
+        $sel2 = Read-Host "  Select source number"
+        $idx2 = 0
+        if ([int]::TryParse($sel2.Trim(), [ref]$idx2) -and $idx2 -ge 1 -and $idx2 -le $m2tsFiles.Count) {
+            $sourcePath = $m2tsFiles[$idx2 - 1].FullName
+        }
+    }
+
+    if (-not $sourcePath) {
+        $sourcePath = (Read-Host "  Enter full path to source .m2ts").Trim('"').Trim()
+    }
+
+    if (-not (Test-Path -LiteralPath $sourcePath)) {
+        Write-Host "  $($global:UI_RED)Source file not found: $sourcePath$($global:UI_R)"
+        Pause-Script; return
+    }
+
+    Write-UiBlankLine
+    Write-Host "  $($global:UI_DIM)MKV   $($global:UI_R)  $targetMkv"
+    Write-Host "  $($global:UI_DIM)Source$($global:UI_R)  $sourcePath"
+    Write-UiBlankLine
+
+    $ok = Get-StreamLanguagesFromSource -SourcePath $sourcePath -OutputMkvPath $targetMkv
+    if ($ok) {
+        Write-UiBlankLine
+        Show-FinalMetadataVerification -OutputFile $targetMkv
+    }
+
+    Pause-Script
+}
+
+function Select-TrackMetadata {
+    <#
+    .SYNOPSIS
+        Wraps Load-TrackMetadata with interactive confirmation and a manual
+        pick-list fallback so name mismatches between bluray-backup and BREncoder
+        never silently result in untagged tracks.
+
+        Flow:
+          1. Auto-match via Load-TrackMetadata (filename + full scan).
+          2. If found → show the match and ask Y/N to confirm.
+             Y → use it.  N → fall through to pick list.
+          3. If not found, or user rejected auto-match → list every JSON in
+             meta\ numbered, let user pick one, or skip to ffprobe fallback.
+    #>
+    param(
+        [Parameter(Mandatory)][System.IO.FileInfo]$SourceFile,
+        [Parameter(Mandatory)][string]$MovieName
+    )
+
+    # ── Step 1: try auto-match ────────────────────────────────
+    $autoMatch = Load-TrackMetadata -SourceFile $SourceFile -MovieName $MovieName
+
+    if ($autoMatch) {
+        $jsonName = [System.IO.Path]::GetFileName($autoMatch.Path)
+        Write-UiBlankLine
+        Write-Host "  $($global:UI_CYN)Metadata auto-matched:$($global:UI_R)"
+        Write-Host "  $($global:UI_DIM)File $($global:UI_R)  $jsonName"
+
+        # Show audio/sub language preview from the JSON
+        $title = Get-TrackMetaTitle -Meta $autoMatch.Data
+        if ($title) {
+            $audioList = @(Resolve-TrackList -Title $title -Kind audio)
+            $subList   = @(Resolve-TrackList -Title $title -Kind subtitle)
+            if ($audioList.Count -gt 0) {
+                $langs = ($audioList | ForEach-Object { Get-MetaLanguage -Track $_ }) -join ', '
+                Write-Host "  $($global:UI_DIM)Audio$($global:UI_R)  $langs"
+            }
+            if ($subList.Count -gt 0) {
+                $langs = ($subList | ForEach-Object { Get-MetaLanguage -Track $_ }) -join ', '
+                Write-Host "  $($global:UI_DIM)Subs $($global:UI_R)  $langs"
+            }
+        }
+
+        Write-UiBlankLine
+        $confirm = (Read-Host "  Use this JSON? [Y/n]").Trim().ToUpper()
+        if ($confirm -ne 'N') {
+            return $autoMatch
+        }
+
+        Write-UiBlankLine
+        Write-Host "  $($global:UI_YLW)Auto-match rejected. Showing full list...$($global:UI_R)"
+    } else {
+        Write-UiBlankLine
+        Write-Host "  $($global:UI_YLW)No auto-match found for '$MovieName'.$($global:UI_R)"
+    }
+
+    # ── Step 2: manual pick list ──────────────────────────────
+    if (-not (Test-Path -LiteralPath $Script:MetaRoot)) {
+        Write-Host "  $($global:UI_YLW)Meta folder not found: $($Script:MetaRoot)$($global:UI_R)"
+        return $null
+    }
+
+    $jsonFiles = @(
+        Get-ChildItem -LiteralPath $Script:MetaRoot -Filter '*.json' -File |
+        Sort-Object Name
+    )
+
+    if ($jsonFiles.Count -eq 0) {
+        Write-Host "  $($global:UI_YLW)No JSON files found in $($Script:MetaRoot)$($global:UI_R)"
+        return $null
+    }
+
+    Write-UiBlankLine
+    Write-Host "  $($global:UI_MAG)Available metadata files:$($global:UI_R)"
+    for ($i = 0; $i -lt $jsonFiles.Count; $i++) {
+        Write-Host ("    [{0,2}]  {1}" -f ($i + 1), $jsonFiles[$i].Name)
+    }
+    Write-Host "    [  0]  Skip — use ffprobe language fallback instead"
+    Write-UiBlankLine
+
+    $sel = (Read-Host "  Select JSON number [0]").Trim()
+    if ([string]::IsNullOrWhiteSpace($sel)) { $sel = '0' }
+
+    $idx = 0
+    if (-not [int]::TryParse($sel, [ref]$idx)) {
+        Write-Host "  $($global:UI_YLW)Invalid input — skipping JSON.$($global:UI_R)"
+        return $null
+    }
+
+    if ($idx -eq 0) {
+        Write-Host "  $($global:UI_YLW)Skipping JSON — will fall back to ffprobe.$($global:UI_R)"
+        return $null
+    }
+
+    if ($idx -lt 1 -or $idx -gt $jsonFiles.Count) {
+        Write-Host "  $($global:UI_YLW)Selection out of range — skipping JSON.$($global:UI_R)"
+        return $null
+    }
+
+    $chosen = $jsonFiles[$idx - 1]
+    try {
+        $raw  = Get-Content -LiteralPath $chosen.FullName -Raw -Encoding UTF8
+        $data = $raw | ConvertFrom-Json
+        Write-Host "  $($global:UI_GRN)Using: $($chosen.Name)$($global:UI_R)"
+        return [pscustomobject]@{ Path = $chosen.FullName; Data = $data }
+    }
+    catch {
+        Write-Host "  $($global:UI_RED)Failed to read $($chosen.Name): $($_.Exception.Message)$($global:UI_R)"
+        return $null
+    }
+}
+
 function Apply-TrackMetadata {
     param(
         [Parameter(Mandatory)][string]$OutputFile,
@@ -1045,10 +1352,13 @@ function Apply-TrackMetadata {
         [Parameter(Mandatory)][string]$MovieName
     )
 
-    $metaInfo = Load-TrackMetadata -SourceFile $SourceFile -MovieName $MovieName
+    $metaInfo = Select-TrackMetadata -SourceFile $SourceFile -MovieName $MovieName
     if (-not $metaInfo) {
         Write-UiBlankLine
-        Write-Host "  $($global:UI_YLW)No matching track metadata JSON found. Skipping label pass.$($global:UI_R)"
+        Write-Host "  $($global:UI_YLW)No sidecar JSON found — falling back to ffprobe source language tags.$($global:UI_R)"
+        Get-StreamLanguagesFromSource -SourcePath $SourceFile.FullName -OutputMkvPath $OutputFile
+        Write-UiBlankLine
+        Show-FinalMetadataVerification -OutputFile $OutputFile
         return $null
     }
 
@@ -1391,6 +1701,7 @@ while ($true) {
         '2' { Encode-SingleFile }
         '3' { Show-SourceFiles }
         '4' { Show-Config }
+        '5' { Repair-MKVLanguages }
         'Q' {
             Write-UiBlankLine
             Write-Host "  $($global:UI_CYN)Goodbye.$($global:UI_R)"

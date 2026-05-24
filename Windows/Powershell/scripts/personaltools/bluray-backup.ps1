@@ -1,9 +1,9 @@
 #--------------------------------------------
 # file:     bluray-backup.ps1
 # author:   Mike Redd
-# version:  2.0
+# version:  2.2
 # created:  2026-04-11
-# updated:  2026-05-17
+# updated:  2026-05-23
 # desc:     Blu-ray backup + decrypt wrapper
 #           for MakeMKV
 #           ToolMenu-friendly version
@@ -11,6 +11,8 @@
 #           Outputs to G:\Rip\bluray
 #           and writes track metadata JSON/TXT
 #           for BREncoder
+# changes:  v2.2 - display saved JSON filename prominently after backup so the
+#                  name is visible when launching BREncoder next
 #--------------------------------------------
 
 param()
@@ -62,7 +64,7 @@ else {
 }
 
 $ScriptName    = "Blu-ray Backup"
-$ScriptVersion = "2.0"
+$ScriptVersion = "2.2"
 $ScriptAuthor  = "Mike Redd"
 
 # ── Config ───────────────────────────────────────────────────
@@ -404,6 +406,146 @@ function Get-MainTitleFromInfo {
         Select-Object -First 1
 }
 
+# Common language quick-pick table — shown when a track needs a language assigned.
+# Key = number shown to user, Value = [code, display name]
+$Script:QuickLangs = [ordered]@{
+    '1'  = @('eng', 'English')
+    '2'  = @('spa', 'Spanish')
+    '3'  = @('fre', 'French')
+    '4'  = @('ger', 'German')
+    '5'  = @('ita', 'Italian')
+    '6'  = @('por', 'Portuguese')
+    '7'  = @('jpn', 'Japanese')
+    '8'  = @('chi', 'Chinese')
+    '9'  = @('kor', 'Korean')
+    '10' = @('ara', 'Arabic')
+    '11' = @('rus', 'Russian')
+    '12' = @('dut', 'Dutch')
+    '13' = @('hin', 'Hindi')
+}
+
+function Show-LanguagePicker {
+    <#
+    .SYNOPSIS
+        Displays a numbered language quick-pick and returns a 3-letter ISO 639-2
+        code. The user can pick a number or type a code directly. Returns 'und'
+        if they skip.
+    #>
+    param(
+        [Parameter(Mandatory)][string]$TrackLabel
+    )
+
+    Blank-Line
+    Write-Host "  Track: $TrackLabel"
+    Write-Host "  Language is missing or unknown. Pick a number or type a 3-letter code:"
+    Blank-Line
+
+    foreach ($key in $Script:QuickLangs.Keys) {
+        $entry = $Script:QuickLangs[$key]
+        Write-Host ("    {0,2})  {1,-12}  {2}" -f $key, $entry[0], $entry[1])
+    }
+
+    Write-Host "     S)  Skip (leave as 'und')"
+    Blank-Line
+
+    $input = (Read-Choice "Language [S]:")
+    if ([string]::IsNullOrWhiteSpace($input)) { return 'und' }
+
+    $input = $input.Trim()
+
+    if ($input -match '^[Ss]$') { return 'und' }
+
+    # Number pick
+    if ($Script:QuickLangs.Contains($input)) {
+        return $Script:QuickLangs[$input][0]
+    }
+
+    # Raw 3-letter code typed directly
+    if ($input -match '^[a-zA-Z]{3}$') {
+        return $input.ToLowerInvariant()
+    }
+
+    # 2-letter fallback — map to 3-letter
+    $twoToThree = @{
+        'en'='eng'; 'es'='spa'; 'fr'='fre'; 'de'='ger'; 'it'='ita'
+        'pt'='por'; 'ja'='jpn'; 'zh'='chi'; 'ko'='kor'; 'ar'='ara'
+        'ru'='rus'; 'nl'='dut'; 'hi'='hin'; 'sv'='swe'; 'no'='nor'
+        'da'='dan'; 'fi'='fin'; 'pl'='pol'; 'cs'='cze'; 'hu'='hun'
+    }
+    if ($twoToThree.ContainsKey($input.ToLowerInvariant())) {
+        return $twoToThree[$input.ToLowerInvariant()]
+    }
+
+    Write-Host "  Unrecognised input '$input' — leaving as 'und'."
+    return 'und'
+}
+
+function Resolve-TrackLanguages {
+    <#
+    .SYNOPSIS
+        Walks all audio and subtitle tracks in the parsed MakeMKV title object.
+        For any track whose LanguageCode is null, empty, or 'und', prompts the
+        user to assign a language before the JSON is saved.
+
+        Mutates the track objects in-place so Save-TrackMeta picks up the values.
+    #>
+    param([Parameter(Mandatory)][object]$Title)
+
+    $audioTracks    = @($Title.AudioTracks)
+    $subtitleTracks = @($Title.SubtitleTracks)
+
+    $needsInput = @(
+        $audioTracks    | Where-Object { [string]::IsNullOrWhiteSpace($_.LanguageCode) -or $_.LanguageCode -eq 'und' }
+        $subtitleTracks | Where-Object { [string]::IsNullOrWhiteSpace($_.LanguageCode) -or $_.LanguageCode -eq 'und' }
+    )
+
+    if ($needsInput.Count -eq 0) {
+        # All tracks already have language codes from MakeMKV — nothing to do.
+        Blank-Line
+        Write-Host "  All tracks have language codes from MakeMKV."
+        return
+    }
+
+    Blank-Line
+    Show-SectionTitle "Language Assignment" $global:UI_YLW
+    Write-Host "  $($needsInput.Count) track(s) have no language. Assign them now so BREncoder"
+    Write-Host "  can write correct language tags to the encoded MKV."
+
+    foreach ($track in $audioTracks) {
+        if (-not [string]::IsNullOrWhiteSpace($track.LanguageCode) -and $track.LanguageCode -ne 'und') { continue }
+
+        $codec = if ($track.CodecShort) { $track.CodecShort } elseif ($track.CodecLong) { $track.CodecLong } else { 'audio' }
+        $ch    = if ($track.ChannelsText) { " $($track.ChannelsText)" } else { '' }
+        $label = "Audio track $($track.TrackId) — $codec$ch"
+
+        $code = Show-LanguagePicker -TrackLabel $label
+        $track.LanguageCode = $code
+        $track.LanguageName = if ($code -ne 'und') {
+            ($Script:QuickLangs.Values | Where-Object { $_[0] -eq $code } | Select-Object -First 1)?[1] ?? $code
+        } else { 'Undetermined' }
+
+        Write-Host "  → Set to: $($track.LanguageCode)"
+    }
+
+    foreach ($track in $subtitleTracks) {
+        if (-not [string]::IsNullOrWhiteSpace($track.LanguageCode) -and $track.LanguageCode -ne 'und') { continue }
+
+        $forced = if ($track.Forced) { ' [forced]' } else { '' }
+        $label  = "Subtitle track $($track.TrackId)$forced"
+
+        $code = Show-LanguagePicker -TrackLabel $label
+        $track.LanguageCode = $code
+        $track.LanguageName = if ($code -ne 'und') {
+            ($Script:QuickLangs.Values | Where-Object { $_[0] -eq $code } | Select-Object -First 1)?[1] ?? $code
+        } else { 'Undetermined' }
+
+        Write-Host "  → Set to: $($track.LanguageCode)"
+    }
+
+    Blank-Line
+    Write-Host "  Language assignment complete."
+}
+
 function New-BRTrackMetadataSchema {
     param([Parameter(Mandatory)][object]$Meta)
 
@@ -484,7 +626,8 @@ function Save-TrackMeta {
             $flags = @()
             if ($a.Default) { $flags += "default" }
             $flagText = if ($flags.Count -gt 0) { " [" + ($flags -join ", ") + "]" } else { "" }
-            $out += ("a{0}: {1} | {2}{3}" -f $a.TrackId, $a.LanguageCode, $a.Description, $flagText)
+            $langDisplay = if ($a.LanguageName) { "$($a.LanguageCode) / $($a.LanguageName)" } else { $a.LanguageCode }
+            $out += ("a{0}: {1} | {2}{3}" -f $a.TrackId, $langDisplay, $a.Description, $flagText)
         }
         $out += ""
     }
@@ -496,7 +639,8 @@ function Save-TrackMeta {
             if ($s.Forced)  { $flags += "forced" }
             if ($s.Default) { $flags += "default" }
             $flagText = if ($flags.Count -gt 0) { " [" + ($flags -join ", ") + "]" } else { "" }
-            $out += ("s{0}: {1} | {2}{3}" -f $s.TrackId, $s.LanguageCode, $s.Description, $flagText)
+            $langDisplay = if ($s.LanguageName) { "$($s.LanguageCode) / $($s.LanguageName)" } else { $s.LanguageCode }
+            $out += ("s{0}: {1} | {2}{3}" -f $s.TrackId, $langDisplay, $s.Description, $flagText)
         }
         $out += ""
     }
@@ -610,6 +754,10 @@ function Start-Backup {
             return
         }
 
+        # Prompt for any tracks MakeMKV returned with no language code.
+        # This ensures the JSON BREncoder reads always has real language tags.
+        Resolve-TrackLanguages -Title $mainTitle
+
         $meta = [pscustomobject]@{
             MovieName   = $name
             LargestM2TS = $(if ($largest) { $largest.Name } else { "" })
@@ -621,10 +769,20 @@ function Start-Backup {
 
         Blank-Line
         Show-SectionTitle "Track Metadata Saved" $global:UI_MAG
+
+        # Show the exact JSON key name BREncoder will match against.
+        # When prompted for a movie name in BREncoder, use this name exactly.
+        $jsonFile = [System.IO.Path]::GetFileName("$metaBase.json")
+        $jsonKey  = [System.IO.Path]::GetFileNameWithoutExtension($jsonFile)
         Write-Host "  JSON : $metaBase.json"
         Write-Host "  TXT  : $metaBase.tracks.txt"
+        Blank-Line
+        Write-Host "  ┌─ Use this name in BREncoder ──────────────────────────"
+        Write-Host "  │  $jsonKey"
+        Write-Host "  └───────────────────────────────────────────────────────"
 
         if ($largest) {
+            Blank-Line
             Write-Host "  Largest .m2ts : $($largest.Name)"
         }
 
