@@ -70,7 +70,7 @@ $PersonalTools = @(
     [PSCustomObject]@{ Name="CD Track FLAC Ripper";  File="cd-tracks-flac.ps1" }
     [PSCustomObject]@{ Name="DVD Encoder";           File="dvd-ripper-encoder.ps1" }
     [PSCustomObject]@{ Name="Blu-ray Backup";        File="bluray-backup.ps1" }
-    [PSCustomObject]@{ Name="M2TS Largest Copy";     File="m2ts-largest-copy.ps1" }
+    [PSCustomObject]@{ Name="Blu-ray Track Dump";	 File="bluray-trackdump.ps1" }
     [PSCustomObject]@{ Name="Blu-ray Encoder";       File="BRencoder.ps1" }
     [PSCustomObject]@{ Name="WebRipper";             File="web-ripper.ps1" }
 )
