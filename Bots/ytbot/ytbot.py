@@ -33,7 +33,7 @@ from urllib.request import urlopen
 # ── Branding ─────────────────────────────────────────────────
 
 BOT_NAME = "Raziel"
-BOT_VERSION = "6.7"
+BOT_VERSION = "6.8"
 
 import yt_dlp
 from telegram import (
@@ -951,6 +951,7 @@ async def handle_reply_download_command(
     mode: str = "video",
     quality: str = "default",
     use_ui: bool = False,
+    include_metadata: bool = False,
 ) -> None:
     message = update.effective_message
     chat = update.effective_chat
@@ -996,6 +997,7 @@ async def handle_reply_download_command(
         source="reply-command",
         reply_to_message_id=message.reply_to_message.message_id if message.reply_to_message else None,
         quality=quality,
+        include_metadata=include_metadata,
     )
 
     async with STATE_LOCK:
@@ -1017,6 +1019,33 @@ async def handle_reply_download_command(
 
     asyncio.create_task(delete_command_message_later(message))
 
+
+
+# ── Metadata Commands ─────────────────────────────────────────
+
+async def dlmeta_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await generic_download_command(update, context, mode="video", quality="default", include_metadata=True)
+
+async def hdmeta_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await generic_download_command(update, context, mode="video", quality="hd", include_metadata=True)
+
+async def fullmeta_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await generic_download_command(update, context, mode="video", quality="full", include_metadata=True)
+
+async def audiometa_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await generic_download_command(update, context, mode="audio", include_metadata=True)
+
+async def rdlmeta_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await handle_reply_download_command(update, context, mode="video", include_metadata=True)
+
+async def rhdmeta_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await handle_reply_download_command(update, context, mode="video", quality="hd", include_metadata=True)
+
+async def rfullmeta_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await handle_reply_download_command(update, context, mode="video", quality="full", include_metadata=True)
+
+async def raudiometa_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await handle_reply_download_command(update, context, mode="audio", include_metadata=True)
 
 def get_bot_mention_names() -> set[str]:
     """
@@ -1196,6 +1225,16 @@ async def run_mention_command(update: Update, ctx: ContextTypes.DEFAULT_TYPE) ->
                 "/rfull — best/full video",
                 "/raudio — audio",
                 "/rui — quality UI",
+                "",
+                "*Metadata Commands:*",
+                "/dlmeta — video + metadata",
+                "/hdmeta — HD + metadata",
+                "/fullmeta — full quality + metadata",
+                "/audiometa — audio + metadata",
+                "/rdlmeta — reply video + metadata",
+                "/rhdmeta — reply HD + metadata",
+                "/rfullmeta — reply full + metadata",
+                "/raudiometa — reply audio + metadata",
             ]
 
             if admin_here:
@@ -1756,6 +1795,7 @@ def create_job(
     clip_start: str | None = None,
     clip_end: str | None = None,
     quality: str = "default",
+    include_metadata: bool = False,
 ) -> dict:
     return {
         "id": str(uuid.uuid4()),
@@ -1769,6 +1809,7 @@ def create_job(
         "clip_start": clip_start,
         "clip_end": clip_end,
         "quality": quality,
+        "include_metadata": include_metadata,
     }
 
 def save_queue_state() -> None:
@@ -2592,7 +2633,7 @@ async def process_job(app, job: dict) -> None:
         context_message = None
         if job.get("source") in ("ui", "dl", "audio", "clip", "raw_url"):
             caption = build_upload_caption(meta, mode, clip_start, clip_end)
-            context_message = build_expandable_context_message(meta)
+            context_message = build_expandable_context_message(meta) if job.get("include_metadata") else None
 
         await status_msg.edit_text(
             f"🎞️ {meta['title']}\n"
@@ -3116,6 +3157,7 @@ async def queue_video_command(
         source=label,
         reply_to_message_id=update.message.message_id if update.message else None,
         quality=quality,
+        include_metadata=include_metadata,
     )
     QUEUE.append(job)
     save_queue_state()
@@ -3866,6 +3908,14 @@ def build_app():
     app.add_handler(CommandHandler("hd", hd_cmd))
     app.add_handler(CommandHandler("full", full_cmd))
     app.add_handler(CommandHandler("audio", audio_cmd))
+    app.add_handler(CommandHandler("dlmeta", dlmeta_cmd))
+    app.add_handler(CommandHandler("hdmeta", hdmeta_cmd))
+    app.add_handler(CommandHandler("fullmeta", fullmeta_cmd))
+    app.add_handler(CommandHandler("audiometa", audiometa_cmd))
+    app.add_handler(CommandHandler("rdlmeta", rdlmeta_cmd))
+    app.add_handler(CommandHandler("rhdmeta", rhdmeta_cmd))
+    app.add_handler(CommandHandler("rfullmeta", rfullmeta_cmd))
+    app.add_handler(CommandHandler("raudiometa", raudiometa_cmd))
     app.add_handler(CommandHandler("clip", clip_cmd))
     app.add_handler(CommandHandler("ui", ui_cmd))
     app.add_handler(CommandHandler("queue", queue_cmd))
