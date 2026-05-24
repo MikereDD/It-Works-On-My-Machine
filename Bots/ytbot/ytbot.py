@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file:     ytbot.py
 # author:   Mike Redd
-# version:  6.8
+# version:  6.9
 # created:  2026-04-18
 # updated:  2026-05-18
 # desc:     Queue-based Telegram media bot
@@ -33,7 +33,7 @@ from urllib.request import urlopen
 # ── Branding ─────────────────────────────────────────────────
 
 BOT_NAME = "Raziel"
-BOT_VERSION = "6.8"
+BOT_VERSION = "6.9"
 
 import yt_dlp
 from telegram import (
@@ -2704,11 +2704,8 @@ async def process_job(app, job: dict) -> None:
     try:
         meta = await asyncio.to_thread(get_media_info, url)
 
-        caption = None
-        context_message = None
-        if job.get("source") in ("ui", "dl", "audio", "clip", "raw_url"):
-            caption = build_upload_caption(meta, mode, clip_start, clip_end)
-            context_message = build_expandable_context_message(meta) if job.get("include_metadata") else None
+        caption = build_upload_caption(meta, mode, clip_start, clip_end)
+        context_message = build_expandable_context_message(meta) if job.get("include_metadata") else None
 
         await status_msg.edit_text(
             f"🎞️ {meta['title']}\n"
@@ -2982,6 +2979,7 @@ async def ui_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
             "url": url,
             "user_id": update.effective_user.id,
             "chat_id": update.effective_chat.id,
+            "include_metadata": False,
         }
 
         keyboard = InlineKeyboardMarkup([
@@ -3218,6 +3216,7 @@ async def queue_video_command(
     ctx: ContextTypes.DEFAULT_TYPE,
     quality: str = "default",
     label: str = "dl",
+    include_metadata: bool = False,
 ) -> None:
     remember_chat(update.effective_chat)
 
@@ -3239,7 +3238,14 @@ async def queue_video_command(
         return
 
     if not is_supported_video_url(url):
-        await update.message.reply_text("❌ Unsupported video source.")
+        await send_temporary_reply(update.message, "❌ Unsupported video source.")
+        return
+
+    if not await media_preflight_allows_queue(update.message, url):
+        return
+
+    if is_duplicate_url(url):
+        await send_temporary_reply(update.message, "♻️ That media was already queued/downloaded recently.")
         return
 
     job = create_job(
@@ -3265,13 +3271,13 @@ async def queue_video_command(
     save_queue_state()
 
 async def dl_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    await queue_video_command(update, ctx, quality="default", label="dl")
+    await queue_video_command(update, ctx, quality="default", label="dl", include_metadata=False)
 
 async def hd_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    await queue_video_command(update, ctx, quality="hd", label="hd")
+    await queue_video_command(update, ctx, quality="hd", label="hd", include_metadata=False)
 
 async def full_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    await queue_video_command(update, ctx, quality="full", label="full")
+    await queue_video_command(update, ctx, quality="full", label="full", include_metadata=False)
 
 async def audio_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     remember_chat(update.effective_chat)
@@ -3309,7 +3315,10 @@ async def audio_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         update.effective_chat.id,
         url,
         mode="audio",
-        source="audio"
+        source="audio",
+        reply_to_message_id=update.message.message_id if update.message else None,
+        quality="default",
+        include_metadata=False,
     )
     QUEUE.append(job)
     save_queue_state()

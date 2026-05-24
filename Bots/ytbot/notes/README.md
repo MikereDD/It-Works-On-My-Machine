@@ -95,3 +95,4 @@ This notes directory tracks:
 * [config-v1.4](config-v1.4.md) — Per-chat auto-watch overrides, explicit-command-only group behavior, and configurable link-ingestion control
 * [v6.7](v6.7.md) — Smarter passive media detection, Telegram-native media awareness, and caption-link repost prevention
 * [v6.8](v6.8.md) — Metadata-on-demand commands, quiet-by-default uploads, and explicit source-context workflows
+* [v6.9](v6.9.md) — Quiet-first metadata architecture, optional verbose metadata commands, restored legacy command stability, and cleaner Telegram-native media workflows
