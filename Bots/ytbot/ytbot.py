@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file:     ytbot.py
 # author:   Mike Redd
-# version:  6.7
+# version:  6.8
 # created:  2026-04-18
 # updated:  2026-05-18
 # desc:     Queue-based Telegram media bot
@@ -1018,6 +1018,81 @@ async def handle_reply_download_command(
     save_queue_state()
 
     asyncio.create_task(delete_command_message_later(message))
+
+
+
+
+async def generic_download_command(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    mode: str = "video",
+    quality: str = "default",
+    include_metadata: bool = False,
+) -> None:
+    """
+    Generic explicit download command used by metadata variants.
+
+    Default commands stay quiet. *meta commands set include_metadata=True.
+    """
+    remember_chat(update.effective_chat)
+
+    if not update.message or not update.effective_user or not update.effective_chat:
+        return
+
+    if not can_use_context(
+        update.effective_user.id,
+        update.effective_chat.id,
+        update.effective_chat.type,
+    ):
+        await update.message.reply_text("🚫 Not allowed here.")
+        return
+
+    url = extract_url(" ".join(context.args)) if context.args else None
+    if not url:
+        command_name = (update.message.text or "").split()[0].lstrip("/") or "dlmeta"
+        await update.message.reply_text(
+            "❌ Invalid usage\n\n"
+            f"Example:\n/{command_name} https://example.com/video"
+        )
+        return
+
+    if not is_supported_video_url(url):
+        await send_temporary_reply(update.message, "❌ Unsupported video source.")
+        return
+
+    if not await media_preflight_allows_queue(update.message, url):
+        return
+
+    if is_duplicate_url(url):
+        await send_temporary_reply(update.message, "♻️ That media was already queued/downloaded recently.")
+        return
+
+    job = create_job(
+        update.effective_user.id,
+        update.effective_chat.id,
+        url,
+        mode=mode,
+        source="meta-command" if include_metadata else "command",
+        reply_to_message_id=update.message.message_id,
+        quality=quality,
+        include_metadata=include_metadata,
+    )
+
+    QUEUE.append(job)
+    save_queue_state()
+    remember_dedup_url(url, job["id"], update.effective_chat.id)
+
+    queue_msg = await update.message.reply_text(
+        "🎬 Added to queue\n\n"
+        f"🔗 {shorten_url(url)}\n"
+        f"📥 Mode: {mode}\n"
+        f"🎞️ Quality: {get_quality_label(quality)}\n"
+        f"🧾 Metadata: {'yes' if include_metadata else 'no'}\n"
+        f"📋 Queue position: {get_queue_position()}"
+    )
+
+    job["queue_message_id"] = queue_msg.message_id
+    save_queue_state()
 
 
 
@@ -3025,6 +3100,18 @@ USER_COMMAND_LIST = (
     "`@Razi3l_bot forecast <place>` — inline/mention forecast"
 )
 
+META_COMMAND_LIST = (
+    "/dlmeta       — video + metadata\n"
+    "/hdmeta       — HD + metadata\n"
+    "/fullmeta     — full quality + metadata\n"
+    "/audiometa    — audio + metadata\n"
+    "/rdlmeta      — reply video + metadata\n"
+    "/rhdmeta      — reply HD + metadata\n"
+    "/rfullmeta    — reply full + metadata\n"
+    "/raudiometa   — reply audio + metadata"
+)
+
+
 ADMIN_COMMAND_LIST = (
     "/lastusers     — recent users seen in logs\n"
     "/stats         — usage summary\n"
@@ -3096,6 +3183,9 @@ async def help_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
             "*User Commands:*",
             USER_COMMAND_LIST,
             "",
+            "*Metadata Commands:*",
+            META_COMMAND_LIST,
+            "",
             "*Admin Commands:*",
             ADMIN_COMMAND_LIST,
         ])
@@ -3103,6 +3193,9 @@ async def help_cmd(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
         lines.extend([
             "*Available Commands:*",
             USER_COMMAND_LIST,
+            "",
+            "*Metadata Commands:*",
+            META_COMMAND_LIST,
         ])
     else:
         lines.extend([
