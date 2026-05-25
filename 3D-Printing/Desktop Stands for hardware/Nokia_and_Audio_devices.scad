@@ -1,15 +1,15 @@
 // ============================================
 // STAND 2 — Nokia Modem / Z906 / Creative X4
-// 6mm walls, 44.45mm tall (1.75"), integrated pegs
+// Layer 1 & 2: 3.5" tall, Layer 3: 1.75" tall
+// Width: 9.5", Depth: 5.5", integrated pegs
 // Bambu X2D Optimized
 // ============================================
 
 $fn = 50;
 
 // --- GLOBAL PARAMETERS ---
-stand_width = 230;
-stand_depth = 140;
-layer_height = 44.45;  // 1.75 inches
+stand_width = 241.3;   // 9.5 inches
+stand_depth = 140;     // ~5.5 inches
 wall_thickness = 6;
 floor_thickness = 6;
 peg_diameter = 8;
@@ -20,6 +20,11 @@ seat_depth = 4;
 seat_wall = 2;
 peg_tolerance = 0.5;
 hole_chamfer = 1.5;
+
+// Layer heights (mm)
+layer1_height = 88.9;    // 3.5 inches
+layer2_height = 88.9;    // 3.5 inches
+layer3_height = 44.45;   // 1.75 inches
 
 // Device dimensions (mm)
 x4_device_w = 130.2;   x4_device_d = 127.0;   // Creative X4 (sits flat)
@@ -87,7 +92,8 @@ module top_base_and_lip(width, depth, wall_t, lip_h) {
 }
 
 // ============================================
-// LAYER 1: BOTTOM — Creative Labs X4 (flat, rectangular pocket)
+// LAYER 1: BOTTOM — Creative Labs X4
+// Height: 88.9mm (3.5")
 // ============================================
 module layer1() {
     dev_x = (stand_width - x4_device_w) / 2;
@@ -99,17 +105,15 @@ module layer1() {
 
     difference() {
         union() {
-            tray_base(stand_width, stand_depth, wall_thickness, floor_thickness, layer_height);
+            tray_base(stand_width, stand_depth, wall_thickness, floor_thickness, layer1_height);
         }
         translate([pocket_x, pocket_y, floor_thickness - seat_depth])
             cube([pocket_w, pocket_d, seat_depth + 0.1]);
     }
 
-    // Pocket floor
     translate([dev_x, dev_y, floor_thickness - seat_depth])
         cube([x4_device_w, x4_device_d, seat_depth]);
 
-    // Rim
     difference() {
         translate([pocket_x, pocket_y, floor_thickness - seat_depth])
             cube([pocket_w, pocket_d, seat_depth]);
@@ -117,20 +121,19 @@ module layer1() {
             cube([x4_device_w + 0.2, x4_device_d + 0.2, seat_depth + 0.2]);
     }
 
-    // Ventilation slots
     for(i = [0:2]) {
         translate([dev_x + 20 + i*35, dev_y + 15, floor_thickness - seat_depth - 0.1])
             cube([10, x4_device_d - 30, seat_depth + 0.2]);
     }
 
     for(pos = peg_positions) {
-        peg(pos[0], pos[1], layer_height);
+        peg(pos[0], pos[1], layer1_height);
     }
 }
 
 // ============================================
 // LAYER 2: MIDDLE — Logitech Z906 (trapezoid pocket)
-// Front is wider than back
+// Height: 88.9mm (3.5")
 // ============================================
 module layer2() {
     center_x = stand_width / 2;
@@ -148,8 +151,41 @@ module layer2() {
 
     difference() {
         union() {
-            tray_base(stand_width, stand_depth, wall_thickness, floor_thickness, layer_height);
+            tray_base(stand_width, stand_depth, wall_thickness, floor_thickness, layer2_height);
+
+            translate([0, 0, floor_thickness - seat_depth])
+            linear_extrude(height = seat_depth)
+            hull() {
+                translate([center_x - z906_back_w / 2, back_y])
+                    square([z906_back_w, 0.1]);
+                translate([center_x - z906_front_w / 2, front_y - 0.1])
+                    square([z906_front_w, 0.1]);
+            }
+
+            difference() {
+                translate([0, 0, floor_thickness - seat_depth])
+                linear_extrude(height = seat_depth)
+                hull() {
+                    translate([pocket_back_left, pocket_back_y])
+                        square([pocket_back_w, 0.1]);
+                    translate([pocket_front_left, pocket_front_y - 0.1])
+                        square([pocket_front_w, 0.1]);
+                }
+                translate([0, 0, floor_thickness - seat_depth - 0.1])
+                linear_extrude(height = seat_depth + 0.2)
+                hull() {
+                    translate([center_x - z906_back_w / 2, back_y])
+                        square([z906_back_w, 0.1]);
+                    translate([center_x - z906_front_w / 2, front_y - 0.1])
+                        square([z906_front_w, 0.1]);
+                }
+            }
+
+            for(pos = peg_positions) {
+                peg(pos[0], pos[1], layer2_height);
+            }
         }
+
         translate([0, 0, floor_thickness - seat_depth])
         linear_extrude(height = seat_depth + 0.1)
         hull() {
@@ -158,48 +194,16 @@ module layer2() {
             translate([pocket_front_left, pocket_front_y - 0.1])
                 square([pocket_front_w, 0.1]);
         }
-    }
 
-    // Trapezoid pocket floor
-    translate([0, 0, floor_thickness - seat_depth])
-    linear_extrude(height = seat_depth)
-    hull() {
-        translate([center_x - z906_back_w / 2, back_y])
-            square([z906_back_w, 0.1]);
-        translate([center_x - z906_front_w / 2, front_y - 0.1])
-            square([z906_front_w, 0.1]);
-    }
-
-    // Trapezoid rim
-    difference() {
-        translate([0, 0, floor_thickness - seat_depth])
-        linear_extrude(height = seat_depth)
-        hull() {
-            translate([pocket_back_left, pocket_back_y])
-                square([pocket_back_w, 0.1]);
-            translate([pocket_front_left, pocket_front_y - 0.1])
-                square([pocket_front_w, 0.1]);
+        for(pos = peg_positions) {
+            peg_hole(pos[0], pos[1], 0);
         }
-        translate([0, 0, floor_thickness - seat_depth - 0.1])
-        linear_extrude(height = seat_depth + 0.2)
-        hull() {
-            translate([center_x - z906_back_w / 2, back_y])
-                square([z906_back_w, 0.1]);
-            translate([center_x - z906_front_w / 2, front_y - 0.1])
-                square([z906_front_w, 0.1]);
-        }
-    }
-
-    for(pos = peg_positions) {
-        peg_hole(pos[0], pos[1], 0);
-    }
-    for(pos = peg_positions) {
-        peg(pos[0], pos[1], layer_height);
     }
 }
 
 // ============================================
 // LAYER 3: TOP — Nokia Modem (pill-shaped, upright)
+// Height: 44.45mm (1.75")
 // ============================================
 module layer3() {
     dev_x = (stand_width - nokia_device_w) / 2;
@@ -222,17 +226,18 @@ module layer3() {
                     circle(r = corner_radius);
             }
         }
+
         translate([dev_x + 15, dev_y + 10, floor_thickness + 3])
             cube([nokia_device_w - 30, nokia_device_d - 20, 5]);
-    }
 
-    for(pos = peg_positions) {
-        peg_hole(pos[0], pos[1], 0);
+        for(pos = peg_positions) {
+            peg_hole(pos[0], pos[1], 0);
+        }
     }
 }
 
 // ============================================
-// EXPORTS — USE ONE AT A TIME
+// EXPORTS
 // ============================================
 
 // Uncomment ONE for STL export:
@@ -242,8 +247,8 @@ module layer3() {
 
 module full_assembly() {
     layer1();
-    translate([0, 0, layer_height + peg_height]) layer2();
-    translate([0, 0, 2*(layer_height + peg_height)]) layer3();
+    translate([0, 0, layer1_height + peg_height]) layer2();
+    translate([0, 0, layer1_height + peg_height + layer2_height + peg_height]) layer3();
 }
 
 full_assembly();
