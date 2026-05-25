@@ -32,8 +32,8 @@ class TetBlockRisView @JvmOverloads constructor(
     var onVictory: ((Int) -> Unit)? = null
     var onHoldUpdate: ((Boolean) -> Unit)? = null
 
-    private val particles = mutableListOf<<Particle>()
-    private val lineClearAnimations = mutableListOf<<LineClearAnim>()
+    private val particles = mutableListOf<Particle>()
+    private val lineClearAnimations = mutableListOf<LineClearAnim>()
 
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val glowPaint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -140,14 +140,27 @@ class TetBlockRisView @JvmOverloads constructor(
         dropSpeed = game.getDropSpeed()
     }
 
+    // FIXED: Board now fits within available screen space
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
-        val minDim = min(w, h)
-        cellSize = (minDim * 0.65f) / cols
-        previewCellSize = cellSize * 0.75f
+        
+        // Estimate space taken by HUD (top) and controls (bottom)
+        val hudHeight = h * 0.14f
+        val controlsHeight = h * 0.22f
+        val availableHeight = h - hudHeight - controlsHeight - 32f // 32f for padding
+        
+        // Calculate cell size based on width AND available height
+        val cellSizeByWidth = (w * 0.82f) / cols
+        val cellSizeByHeight = availableHeight / rows
+        cellSize = min(cellSizeByWidth, cellSizeByHeight)
+        
+        previewCellSize = cellSize * 0.65f
 
+        // Center board horizontally
         boardOffsetX = (w - cols * cellSize) / 2f
-        boardOffsetY = h * 0.15f
+        
+        // Position board below HUD with small padding
+        boardOffsetY = hudHeight + 16f
 
         bgGradient = LinearGradient(
             0f, 0f, 0f, h.toFloat(),
@@ -166,8 +179,10 @@ class TetBlockRisView @JvmOverloads constructor(
 
         updateAndDrawParticles(canvas)
 
-        drawSidePanel(canvas, boardOffsetX - previewCellSize * 6.5f, boardOffsetY, "HOLD", game.holdPiece, game.hasHeldThisTurn)
-        drawSidePanel(canvas, boardOffsetX + cols * cellSize + previewCellSize * 1.5f, boardOffsetY, "NEXT", game.nextPiece, false)
+        // FIXED: Side panels positioned within visible area
+        val panelY = boardOffsetY + previewCellSize
+        drawSidePanel(canvas, boardOffsetX - previewCellSize * 5.5f, panelY, "HOLD", game.holdPiece, game.hasHeldThisTurn)
+        drawSidePanel(canvas, boardOffsetX + cols * cellSize + previewCellSize * 0.5f, panelY, "NEXT", game.nextPiece, false)
 
         drawBoardBackground(canvas)
 
@@ -428,7 +443,8 @@ class TetBlockRisView @JvmOverloads constructor(
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        return gestureDetector.onTouchEvent(event) || super.onTouchEvent(event)
+        gestureDetector.onTouchEvent(event)
+        return true
     }
 
     private data class Particle(
