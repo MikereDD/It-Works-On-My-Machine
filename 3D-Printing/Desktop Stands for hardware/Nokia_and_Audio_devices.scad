@@ -1,6 +1,6 @@
 // ============================================
 // STAND 2 — Nokia Modem / Z906 / Creative X4
-// Layer 1 & 2: 3.5" tall, Layer 3: 1.75" tall
+// Layer 1: 3.5" tall, Layer 2: 3.25" tall, Layer 3: 1.75" tall
 // Width: 9.5", Depth: 5.5", integrated pegs
 // Bambu X2D Optimized
 // ============================================
@@ -23,7 +23,7 @@ hole_chamfer = 1.5;
 
 // Layer heights (mm)
 layer1_height = 88.9;    // 3.5 inches
-layer2_height = 88.9;    // 3.5 inches
+layer2_height = 82.55;   // 3.25 inches
 layer3_height = 44.45;   // 1.75 inches
 
 // Device dimensions (mm)
@@ -133,7 +133,7 @@ module layer1() {
 
 // ============================================
 // LAYER 2: MIDDLE — Logitech Z906 (trapezoid pocket)
-// Height: 88.9mm (3.5")
+// Height: 82.55mm (3.25")
 // ============================================
 module layer2() {
     center_x = stand_width / 2;
