@@ -1,7 +1,7 @@
 " ~/.config/vim/vimrc
 " Mike Redd / typezero
 " Pi 5 Arch Vim (XDG layout)
-" Version: 3.0 - Refined
+" Version: 3.1 - Refined
 
 set nocompatible
 filetype plugin indent on
@@ -30,7 +30,8 @@ set showmode
 set ruler
 set laststatus=2
 set title
-set visualbell t_vb=         " Disable visual bell flash too
+" Disable visual bell flash too
+set visualbell t_vb=
 set autoread
 set autowrite
 set backspace=indent,eol,start
@@ -213,8 +214,9 @@ let g:vim_markdown_auto_insert_bullets = 1
 " -------------------------
 " ALE (Improved for Pi 5 - use fast tools)
 " -------------------------
+" ruff is much faster than pylint on ARM
 let g:ale_linters = {
-    \ 'python': ['ruff', 'flake8'],     " ruff is 100x faster than pylint on ARM
+    \ 'python': ['ruff', 'flake8'],
     \ 'bash': ['shellcheck'],
     \ 'sh': ['shellcheck'],
     \ 'markdown': ['markdownlint'],
@@ -287,9 +289,12 @@ nnoremap <leader>fb :Buffers<CR>
 nnoremap <leader>fh :History<CR>
 nnoremap <leader>fl :Lines<CR>
 nnoremap <leader>fc :Commits<CR>
-nnoremap <leader>f/ :BLines<CR>        " Search in current buffer
-nnoremap <leader>fm :Maps<CR>          " Search key mappings
-nnoremap <leader>fh :Helptags<CR>      " Search help
+" Search in current buffer
+nnoremap <leader>f/ :BLines<CR>
+" Search key mappings
+nnoremap <leader>fm :Maps<CR>
+" Search help
+nnoremap <leader>fH :Helptags<CR>
 
 if executable('rg')
     let $FZF_DEFAULT_COMMAND = 'rg --files --hidden --follow --glob "!.git/*" --glob "!node_modules/*" --glob "!__pycache__/*"'
@@ -313,19 +318,21 @@ nnoremap <leader>gc :Git commit<CR>
 nnoremap <leader>gp :Git push<CR>
 nnoremap <leader>gP :Git pull<CR>
 nnoremap <leader>gf :Git fetch<CR>
-nnoremap <leader>gB :GBrowse<CR>       " Open on GitHub (requires rhubarb)
+" Open on GitHub (requires rhubarb)
+nnoremap <leader>gB :GBrowse<CR>
 
 " -------------------------
 " GitGutter
 " -------------------------
-set updatetime=250                     " 100ms is aggressive for Pi; 250 is smooth enough
+" 100ms is aggressive for Pi; 250 is smooth enough
+set updatetime=250
 let g:gitgutter_sign_added = '+'
 let g:gitgutter_sign_modified = '~'
 let g:gitgutter_sign_removed = '_'
 let g:gitgutter_sign_removed_first_line = '‾'
 let g:gitgutter_sign_modified_removed = '~_'
 nnoremap <leader>gh :GitGutterLineHighlightsToggle<CR>
-nnoremap <leader>gp <Plug>(GitGutterPreviewHunk)
+nnoremap <leader>ghp <Plug>(GitGutterPreviewHunk)
 nnoremap <leader>gu <Plug>(GitGutterUndoHunk)
 nmap ]h <Plug>(GitGutterNextHunk)
 nmap [h <Plug>(GitGutterPrevHunk)
@@ -333,9 +340,11 @@ nmap [h <Plug>(GitGutterPrevHunk)
 " -------------------------
 " EasyMotion (Simplified)
 " -------------------------
-let g:EasyMotion_do_mapping = 0        " Disable default mappings
+" Disable default mappings
+let g:EasyMotion_do_mapping = 0
 let g:EasyMotion_smartcase = 1
-nmap s <Plug>(easymotion-s2)           " Just use s/S - it's what you want 99% of time
+" Just use s/S - most common jump pattern
+nmap s <Plug>(easymotion-s2)
 nmap S <Plug>(easymotion-overwin-f2)
 map <leader>j <Plug>(easymotion-j)
 map <leader>k <Plug>(easymotion-k)
@@ -343,7 +352,8 @@ map <leader>k <Plug>(easymotion-k)
 " -------------------------
 " WordMotion
 " -------------------------
-let g:wordmotion_prefix = '<Leader>'   " Use ,w ,b ,e to avoid breaking default w/b/e
+" Use ,w ,b ,e to avoid breaking default w/b/e
+let g:wordmotion_prefix = '<Leader>'
 
 " -------------------------
 " NERDTree
@@ -438,14 +448,16 @@ nnoremap N Nzzzv
 " -------------------------
 " Movement
 " -------------------------
-set scrolloff=5              " More context lines
+" More context lines
+set scrolloff=5
 set sidescrolloff=10
 
 nnoremap j gj
 nnoremap k gk
 nnoremap H ^
 nnoremap L $
-nnoremap gV `[v`]            " Select last inserted text
+" Select last inserted text
+nnoremap gV `[v`]
 
 " -------------------------
 " Splits
@@ -491,7 +503,8 @@ execute 'set backupdir=' . g:vim_backup_dir . '//'
 set swapfile
 execute 'set directory=' . g:vim_swap_dir . '//'
 execute 'set viminfo+=n' . g:vim_info_file
-set viminfo='100,<50,s10,h,rA:,rB:    " Limit viminfo size
+" Limit viminfo size
+set viminfo='100,<50,s10,h,rA:,rB:
 
 " -------------------------
 " Sessions (Obsession)
@@ -570,15 +583,18 @@ vnoremap Q :norm @q<CR>
 " System clipboard integration
 " -------------------------
 if has('clipboard')
-    set clipboard=unnamedplus    " Use system clipboard by default
+    " Use system clipboard by default
+    set clipboard=unnamedplus
 endif
 
 " -------------------------
 " Quick save/quit (buffer-aware)
 " -------------------------
-nnoremap <leader>w :update<CR>      " Only write if changed
+" Only write if changed
+nnoremap <leader>w :update<CR>
 nnoremap <leader>q :quit<CR>
-nnoremap <leader>Q :bdelete<CR>     " Close buffer, keep split
+" Close buffer, keep split
+nnoremap <leader>Q :bdelete<CR>
 nnoremap <leader>bq :bprevious <bar> bdelete #<CR>
 
 " Zoom toggle (current window vs restore)
@@ -594,8 +610,10 @@ nnoremap <leader>= gg=G<C-o><C-o>
 vnoremap = =gv
 
 " Jump to last edited position quickly
-nnoremap g. `.                       " Last edit position
-nnoremap g, `^                       " Last insert position
+" Last edit position
+nnoremap g. `.
+" Last insert position
+nnoremap g, `^
 
 " -------------------------
 " Typo Fixes
