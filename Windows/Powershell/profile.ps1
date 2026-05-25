@@ -7,6 +7,9 @@
 # desc:     Main PowerShell profile loader
 #--------------------------------------------
 
+# Redirect stderr from bash/WSL calls
+$ErrorActionPreference = "SilentlyContinue"
+
 # ── Set execution policy for this session ────────────────────
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope Process -Force
 
@@ -19,7 +22,7 @@ $ProfileDir = Join-Path $PSDir "profile.d"
 # ── Shared global paths ──────────────────────────────────────
 $global:PSRootDir     = $PSDir
 $global:PSProfileDir  = $ProfileDir
-$global:PSScriptsDir  = Join-Path $PSDir "Scripts"
+$global:PSScriptsDir  = Join-Path $PSDir "scripts"
 
 # ── Load env ─────────────────────────────────────────────────
 $envFile = Join-Path $ProfileDir "env.ps1"
@@ -79,6 +82,19 @@ if (Test-Path $coreFile) {
     }
 } else {
     Write-Host "  [profile] core.ps1 not found at $coreFile" -ForegroundColor Yellow
+}
+
+# ── Load SSH aliases ─────────────────────────────────────────
+$sshAliasFile = Join-Path $ProfileDir "ssh-aliases.ps1"
+
+if (Test-Path $sshAliasFile) {
+    try {
+        . $sshAliasFile
+    } catch {
+        Write-Host "  [profile] failed to load ssh-aliases.ps1: $($_.Exception.Message)" -ForegroundColor Yellow
+    }
+} else {
+    Write-Host "  [profile] ssh-aliases.ps1 not found at $sshAliasFile" -ForegroundColor Yellow
 }
 
 # ── Ready message ────────────────────────────────────────────
