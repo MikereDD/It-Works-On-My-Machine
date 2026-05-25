@@ -18,8 +18,6 @@ If it’s here, it probably worked once. That’s the bar.
 
 ---
 
----
-
 ## 🪟 Windows / PowerShell
 
 PowerShell scripts and utilities for Windows systems.
