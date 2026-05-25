@@ -1,18 +1,28 @@
 " ~/.config/vim/vimrc
 " Mike Redd / typezero
 " Pi 5 Arch Vim (XDG layout)
-" Version: 2.0 - Enhanced with plugins
+" Version: 3.0 - Refined
 
 set nocompatible
 filetype plugin indent on
 syntax on
 
-" Leader
 let mapleader = ","
 let maplocalleader = "\\"
 
 " -------------------------
-" Basic feel
+" Performance (Pi 5 / SD card aware)
+" -------------------------
+set lazyredraw
+set ttyfast
+set redrawtime=1500          " Cap syntax highlight time on large files
+set synmaxcol=800            " Don't syntax highlight absurdly long lines
+set maxmempattern=5000       " Limit regex memory
+set regexpengine=0           " Auto-select regex engine (usually faster)
+set eventignore-=all
+
+" -------------------------
+" Essential UI baseline
 " -------------------------
 set hidden
 set showcmd
@@ -20,13 +30,53 @@ set showmode
 set ruler
 set laststatus=2
 set title
-set visualbell
-set ttyfast
-set lazyredraw
+set visualbell t_vb=         " Disable visual bell flash too
 set autoread
 set autowrite
 set backspace=indent,eol,start
 set history=1000
+set report=0                 " Always report changed lines
+set nostartofline            " Keep cursor column on motions like Ctrl-D/U
+set signcolumn=yes           " Always show sign column (prevents jumpiness with GitGutter/ALE)
+
+" Enable true colors for proper gruvbox rendering
+if exists('+termguicolors')
+    let &t_8f = "\<Esc>[38;2;%lu;%lu;%lum"
+    let &t_8b = "\<Esc>[48;2;%lu;%lu;%lum"
+    set termguicolors
+endif
+
+" -------------------------
+" Security
+" -------------------------
+set nomodeline               " Modelines are a security risk
+
+" -------------------------
+" Short messages
+" -------------------------
+set shortmess+=I             " Skip intro screen
+set shortmess+=c             " Don't show completion menu messages
+set shortmess+=F             " Don't show file info on edit
+
+" -------------------------
+" Completion behavior
+" -------------------------
+set completeopt=menuone,longest,preview,noselect,noinsert
+set pumheight=15             " Limit popup menu height
+set wildmenu
+set wildmode=longest:full,full
+set wildignorecase
+set wildignore+=.git,.svn,.hg,*.o,*.obj,*.exe,*.dll
+set wildignore+=*.pyc,*.swp,*~,*.bak,*.jpg,*.png,*.gif
+set wildignore+=node_modules,__pycache__,venv,.venv,.eggs,*.egg-info
+
+" -------------------------
+" Formatting
+" -------------------------
+set formatoptions+=j         " Delete comment char when joining lines
+set formatoptions-=t         " Don't auto-wrap text using textwidth
+set formatoptions+=r         " Auto-insert comment leader on Enter
+set formatoptions+=q         " Allow formatting of comments with gq
 
 " -------------------------
 " Vim-Plug
@@ -34,81 +84,117 @@ set history=1000
 call plug#begin('~/.vim/plugged')
 
 " --- Core Essentials ---
-Plug 'tpope/vim-fugitive'        " Git integration
-Plug 'tpope/vim-commentary'      " Commenting (gc/gcc)
-Plug 'tpope/vim-surround'        " Surround text objects (ds/cs/ys)
-Plug 'tpope/vim-repeat'          " Enhanced . repeat
+Plug 'tpope/vim-fugitive'
+Plug 'tpope/vim-commentary'
+Plug 'tpope/vim-surround'
+Plug 'tpope/vim-repeat'
+Plug 'tpope/vim-unimpaired'        " ESSENTIAL: [q ]q [l ]l [e ]e etc.
+Plug 'tpope/vim-vinegar'           " Enhance netrw (- to open parent dir)
+Plug 'tpope/vim-endwise'           " Auto-close Ruby/Sh/Bash if/fi
+Plug 'tpope/vim-rhubarb'           " GitHub integration for :GBrowse
 Plug 'junegunn/fzf', { 'do': { -> fzf#install() } }
-Plug 'junegunn/fzf.vim'          " Fuzzy finder
-Plug 'easymotion/vim-easymotion' " Jump anywhere
-Plug 'chaoren/vim-wordmotion'    " Better w/b/e for CamelCase
+Plug 'junegunn/fzf.vim'
+Plug 'junegunn/vim-peekaboo'       " Preview registers with \" and @
+Plug 'easymotion/vim-easymotion'
+Plug 'chaoren/vim-wordmotion'
 
-" --- Navigation & Search ---
-Plug 'BurntSushi/ripgrep'        " Fast grep (requires ripgrep installed)
-Plug 'dyng/ctrlsf.vim'           " Search across project
-Plug 'preservim/tagbar'          " Tag viewer
+" --- Navigation & Text Objects ---
+Plug 'wellle/targets.vim'          " Better text objects: cin) da, etc.
+Plug 'michaeljsmith/vim-indent-object' " vii - select indent block
+Plug 'preservim/tagbar'
+
+" --- Search ---
+Plug 'dyng/ctrlsf.vim'
 
 " --- Visual & UI ---
-Plug 'itchyny/lightline.vim'     " Lightweight status line
-Plug 'morhetz/gruvbox'           " Colorscheme
-Plug 'Yggdroot/indentLine'       " Indent guides
-Plug 'ryanoasis/vim-devicons'    " Nerd Font icons
-Plug 'mhinz/vim-startify'        " Start screen (you already have)
-Plug 'preservim/nerdtree'        " File explorer (you already have)
+Plug 'itchyny/lightline.vim'
+Plug 'morhetz/gruvbox'
+Plug 'Yggdroot/indentLine'
+Plug 'ryanoasis/vim-devicons'
+Plug 'mhinz/vim-startify'
+
+" --- File Explorer ---
+Plug 'preservim/nerdtree'
+Plug 'tiagofumo/vim-nerdtree-syntax-highlight'
 
 " --- Git ---
-Plug 'airblade/vim-gitgutter'    " Git diff signs in gutter
+Plug 'airblade/vim-gitgutter'
 
-" --- Language Specific ---
-Plug 'plasticboy/vim-markdown'   " Better Markdown
-Plug 'vim-python/python-syntax'  " Enhanced Python
-Plug 'stephpy/vim-yaml'          " YAML support
-Plug 'elzr/vim-json'             " JSON support
+" --- Language Support ---
+Plug 'dense-analysis/ale'
+Plug 'plasticboy/vim-markdown'
+Plug 'vim-python/python-syntax'
+Plug 'stephpy/vim-yaml'
+Plug 'elzr/vim-json'
 
 " --- Sessions & Tmux ---
-Plug 'tpope/vim-obsession'       " Session management
-Plug 'christoomey/vim-tmux-navigator' " Tmux/Vim navigation
+Plug 'tpope/vim-obsession'
+Plug 'christoomey/vim-tmux-navigator'
 
-" --- You already had these ---
-Plug 'jreybert/vimagit'          " Magit-like interface
-Plug 'dense-analysis/ale'        " Linting engine
+" --- You already had ---
+Plug 'jreybert/vimagit'
 
 call plug#end()
 
-" -------------------------
-" Lightline Configuration (replaces airline)
-" -------------------------
-set laststatus=2
-if !exists('g:lightline')
-  let g:lightline = {
-        \ 'colorscheme': 'gruvbox',
-        \ 'active': {
-        \   'left': [ [ 'mode', 'paste' ],
-        \             [ 'gitbranch', 'readonly', 'filename', 'modified' ] ],
-        \   'right': [ [ 'lineinfo' ],
-        \              [ 'percent' ],
-        \              [ 'fileformat', 'fileencoding', 'filetype' ] ]
-        \ },
-        \ 'component_function': {
-        \   'gitbranch': 'FugitiveHead'
-        \ },
-        \ 'component_expand': {
-        \   'linter_checking': 'ale#statusline#Check',
-        \   'linter_errors': 'ale#statusline#Count',
-        \ },
-        \ 'component_type': {
-        \   'linter_checking': 'left',
-        \   'linter_errors': 'error',
-        \ }
-        \ }
-endif
+" Enable built-in matchit (ships with Vim, just needs activation)
+packadd! matchit
 
 " -------------------------
-" Gruvbox Colorscheme
+" Gruvbox
 " -------------------------
 set background=dark
 let g:gruvbox_contrast_dark = 'hard'
+let g:gruvbox_italic = 1
+let g:gruvbox_bold = 1
 colorscheme gruvbox
+
+" -------------------------
+" Lightline (with ALE integration fixed)
+" -------------------------
+let g:lightline = {
+    \ 'colorscheme': 'gruvbox',
+    \ 'active': {
+    \   'left': [['mode', 'paste'], ['gitbranch', 'readonly', 'filename', 'modified']],
+    \   'right': [['lineinfo'], ['percent'], ['linter_checking', 'linter_errors', 'linter_warnings', 'linter_ok'], ['fileformat', 'fileencoding', 'filetype']]
+    \ },
+    \ 'component_expand': {
+    \   'linter_checking': 'lightline#ale#checking',
+    \   'linter_warnings': 'lightline#ale#warnings',
+    \   'linter_errors': 'lightline#ale#errors',
+    \   'linter_ok': 'lightline#ale#ok'
+    \ },
+    \ 'component_type': {
+    \   'linter_checking': 'left',
+    \   'linter_warnings': 'warning',
+    \   'linter_errors': 'error',
+    \   'linter_ok': 'left'
+    \ },
+    \ 'component_function': {
+    \   'gitbranch': 'FugitiveHead'
+    \ }
+    \ }
+
+" Need lightline-ale for the above components, OR define manually:
+" If you don't want another plugin, use these functions instead:
+function! LinterStatus() abort
+    let l:counts = ale#statusline#Count(bufnr(''))
+    let l:all_errors = l:counts.error + l:counts.style_error
+    let l:all_non_errors = l:counts.total - l:all_errors
+    return l:counts.total == 0 ? '' : printf('E%d W%d', all_errors, all_non_errors)
+endfunction
+
+" Alternative simpler lightline config without lightline-ale:
+let g:lightline = {
+    \ 'colorscheme': 'gruvbox',
+    \ 'active': {
+    \   'left': [['mode', 'paste'], ['gitbranch', 'readonly', 'filename', 'modified']],
+    \   'right': [['lineinfo'], ['percent'], ['linter'], ['fileformat', 'fileencoding', 'filetype']]
+    \ },
+    \ 'component_function': {
+    \   'gitbranch': 'FugitiveHead',
+    \   'linter': 'LinterStatus'
+    \ }
+    \ }
 
 " -------------------------
 " Python Syntax
@@ -116,46 +202,84 @@ colorscheme gruvbox
 let g:python_highlight_all = 1
 
 " -------------------------
-" Markdown Configuration
+" Markdown
 " -------------------------
 let g:vim_markdown_folding_disabled = 1
 let g:vim_markdown_frontmatter = 1
 let g:vim_markdown_conceal = 0
+let g:vim_markdown_new_list_item_indent = 2
+let g:vim_markdown_auto_insert_bullets = 1
 
 " -------------------------
-" ALE (Linting) Configuration
+" ALE (Improved for Pi 5 - use fast tools)
 " -------------------------
 let g:ale_linters = {
-      \ 'python': ['flake8', 'pylint'],
-      \ 'bash': ['shellcheck'],
-      \ 'markdown': ['markdownlint'],
-      \ 'yaml': ['yamllint'],
-      \ 'json': ['jsonlint'],
-      \}
+    \ 'python': ['ruff', 'flake8'],     " ruff is 100x faster than pylint on ARM
+    \ 'bash': ['shellcheck'],
+    \ 'sh': ['shellcheck'],
+    \ 'markdown': ['markdownlint'],
+    \ 'yaml': ['yamllint'],
+    \ 'json': ['jsonlint', 'jq'],
+    \ 'vim': ['vint'],
+    \}
+
 let g:ale_fixers = {
-      \ 'python': ['black', 'isort'],
-      \ 'bash': ['shfmt'],
-      \}
-let g:ale_fix_on_save = 0
+    \ '*': ['remove_trailing_lines', 'trim_whitespace'],
+    \ 'python': ['ruff', 'black', 'isort'],
+    \ 'bash': ['shfmt'],
+    \ 'sh': ['shfmt'],
+    \ 'json': ['jq'],
+    \ 'markdown': ['prettier'],
+    \}
+
+let g:ale_fix_on_save = 1              " Auto-fix on save
+let g:ale_lint_on_save = 1
+let g:ale_lint_on_text_changed = 'normal'  " Not 'always' - saves CPU on Pi
+let g:ale_lint_on_insert_leave = 1
 let g:ale_sign_column_always = 1
 let g:ale_set_highlights = 1
+let g:ale_set_loclist = 0
+let g:ale_set_quickfix = 1             " Use quickfix for navigation
+
+" Completion via ALE (LSP-like without heavy LSP)
+let g:ale_completion_enabled = 1
+let g:ale_completion_autoimport = 1
+
+" Better signs
+let g:ale_sign_error = 'E'
+let g:ale_sign_warning = 'W'
+let g:ale_sign_info = 'I'
+
+" Navigation
+nmap <silent> [a <Plug>(ale_previous_wrap)
+nmap <silent> ]a <Plug>(ale_next_wrap)
+nmap <silent> [e <Plug>(ale_previous_error)
+nmap <silent> ]e <Plug>(ale_next_error)
+nnoremap <leader>af :ALEFix<CR>
+nnoremap <leader>at :ALEToggle<CR>
+nnoremap <leader>ad :ALEDetail<CR>
 
 " -------------------------
-" CtrlSF (Project Search)
+" CtrlSF
 " -------------------------
 let g:ctrlsf_auto_focus = 1
 let g:ctrlsf_auto_close = 0
 let g:ctrlsf_search_mode = 'async'
-nnoremap <leader>s :CtrlSF<CR>
+let g:ctrlsf_auto_preview = 1
+let g:ctrlsf_case_sensitive = 'smart'
+nnoremap <leader>s :CtrlSF<Space>
+vnoremap <leader>s <Plug>CtrlSFVwordExec
 
 " -------------------------
 " Tagbar
 " -------------------------
 nnoremap <leader>t :TagbarToggle<CR>
 let g:tagbar_width = 30
+let g:tagbar_autofocus = 1
+let g:tagbar_sort = 0
 
 " -------------------------
-" FZF Configuration
+" FZF (Enhanced)
 " -------------------------
 nnoremap <leader>ff :Files<CR>
 nnoremap <leader>fg :Rg<CR>
@@ -163,16 +287,22 @@ nnoremap <leader>fb :Buffers<CR>
 nnoremap <leader>fh :History<CR>
 nnoremap <leader>fl :Lines<CR>
 nnoremap <leader>fc :Commits<CR>
+nnoremap <leader>f/ :BLines<CR>        " Search in current buffer
+nnoremap <leader>fm :Maps<CR>          " Search key mappings
+nnoremap <leader>fh :Helptags<CR>      " Search help
 
-" Use ripgrep for fzf
 if executable('rg')
-  let $FZF_DEFAULT_COMMAND = 'rg --files --hidden --follow --glob "!.git/*"'
-  set grepprg=rg\ --vimgrep
-  command! -bang -nargs=* Rg call fzf#vim#grep("rg --column --line-number --no-heading --color=always --smart-case ".shellescape(<q-args>), 1, {'options': '--delimiter : --nth 4..'}, <bang>0)
+    let $FZF_DEFAULT_COMMAND = 'rg --files --hidden --follow --glob "!.git/*" --glob "!node_modules/*" --glob "!__pycache__/*"'
+    let $FZF_DEFAULT_OPTS = '--layout=reverse --info=inline --bind ctrl-a:select-all'
+    set grepprg=rg\ --vimgrep\ --smart-case
+    set grepformat=%f:%l:%c:%m
 endif
 
+let g:fzf_layout = { 'window': { 'width': 0.9, 'height': 0.8 } }
+let g:fzf_preview_window = ['right:50%', 'ctrl-/']
+
 " -------------------------
-" Git Mappings (Fugitive)
+" Git (Fugitive)
 " -------------------------
 nnoremap <leader>gs :Git<CR>
 nnoremap <leader>gd :Gdiffsplit<CR>
@@ -182,25 +312,38 @@ nnoremap <leader>gw :Gwrite<CR>
 nnoremap <leader>gc :Git commit<CR>
 nnoremap <leader>gp :Git push<CR>
 nnoremap <leader>gP :Git pull<CR>
+nnoremap <leader>gf :Git fetch<CR>
+nnoremap <leader>gB :GBrowse<CR>       " Open on GitHub (requires rhubarb)
 
 " -------------------------
 " GitGutter
 " -------------------------
-set updatetime=100
-let g:gitgutter_sign_added = '✚'
-let g:gitgutter_sign_modified = '➜'
-let g:gitgutter_sign_removed = '✘'
-let g:gitgutter_sign_removed_first_line = '✘'
-let g:gitgutter_sign_modified_removed = '➜✘'
+set updatetime=250                     " 100ms is aggressive for Pi; 250 is smooth enough
+let g:gitgutter_sign_added = '+'
+let g:gitgutter_sign_modified = '~'
+let g:gitgutter_sign_removed = '_'
+let g:gitgutter_sign_removed_first_line = '‾'
+let g:gitgutter_sign_modified_removed = '~_'
 nnoremap <leader>gh :GitGutterLineHighlightsToggle<CR>
+nnoremap <leader>gp <Plug>(GitGutterPreviewHunk)
+nnoremap <leader>gu <Plug>(GitGutterUndoHunk)
+nmap ]h <Plug>(GitGutterNextHunk)
+nmap [h <Plug>(GitGutterPrevHunk)
 
 " -------------------------
-" EasyMotion
+" EasyMotion (Simplified)
 " -------------------------
-nmap <leader>e <Plug>(easymotion-s2)
-nmap <leader>w <Plug>(easymotion-t2)
-nmap <leader>l <Plug>(easymotion-lineforward)
-nmap <leader>h <Plug>(easymotion-linebackward)
+let g:EasyMotion_do_mapping = 0        " Disable default mappings
+let g:EasyMotion_smartcase = 1
+nmap s <Plug>(easymotion-s2)           " Just use s/S - it's what you want 99% of time
+nmap S <Plug>(easymotion-overwin-f2)
+map <leader>j <Plug>(easymotion-j)
+map <leader>k <Plug>(easymotion-k)
+
+" -------------------------
+" WordMotion
+" -------------------------
+let g:wordmotion_prefix = '<Leader>'   " Use ,w ,b ,e to avoid breaking default w/b/e
 
 " -------------------------
 " NERDTree
@@ -208,31 +351,53 @@ nmap <leader>h <Plug>(easymotion-linebackward)
 nnoremap <leader>n :NERDTreeToggle<CR>
 nnoremap <leader>nf :NERDTreeFind<CR>
 let NERDTreeShowHidden = 1
-let NERDTreeIgnore = ['\.pyc$', '__pycache__$', '\.swp$', '\.git$']
+let NERDTreeIgnore = ['\.pyc$', '__pycache__$', '\.swp$', '\.git$', '\.egg-info$']
+let NERDTreeMinimalUI = 1
+let NERDTreeDirArrows = 1
+let NERDTreeAutoDeleteBuffer = 1
+
+" Close vim if NERDTree is only window left
+autocmd BufEnter * if tabpagenr('$') == 1 && winnr('$') == 1 && exists('b:NERDTree') && b:NERDTree.isTabTree() | quit | endif
 
 " -------------------------
 " Tmux Navigator
 " -------------------------
 let g:tmux_navigator_no_mappings = 0
 let g:tmux_navigator_save_on_switch = 1
+let g:tmux_navigator_disable_when_zoomed = 1
 
 " -------------------------
-" Lines
+" Targets.vim (text objects)
+" -------------------------
+" Provides cin) da, etc. - no config needed, just load
+
+" -------------------------
+" Indent Object
+" -------------------------
+" vii - select indent level
+" vai - select indent level + line above
+
+" -------------------------
+" Line Numbers
 " -------------------------
 set number
 set relativenumber
 
-" Toggle absolute line numbers
-nnoremap <leader>nu :setlocal number!<CR>
+" FIXED: Single mapping to toggle both
+function! ToggleNumbers()
+    if &relativenumber
+        setlocal norelativenumber
+    elseif &number
+        setlocal nonumber
+    else
+        setlocal number relativenumber
+    endif
+endfunction
 
-" Toggle relative line numbers
-nnoremap <leader>ru :setlocal relativenumber!<CR>
-
-" Toggle both line number modes
-nnoremap <leader>nu :setlocal number! relativenumber!<CR>
+nnoremap <leader>nu :call ToggleNumbers()<CR>
 
 " -------------------------
-" Tabs/spaces
+" Tabs/Indent
 " -------------------------
 set tabstop=8
 set shiftwidth=4
@@ -242,6 +407,7 @@ set smarttab
 set autoindent
 set smartindent
 set shiftround
+set copyindent               " Copy indent structure from previous line
 
 " -------------------------
 " Wrapping
@@ -251,6 +417,7 @@ set linebreak
 set textwidth=120
 set colorcolumn=+1
 set showbreak=>\ \ \ 
+set breakindent              " Visually indent wrapped lines
 
 " -------------------------
 " Search
@@ -260,18 +427,25 @@ set smartcase
 set incsearch
 set hlsearch
 set showmatch
-nnoremap <leader>/ :nohlsearch<CR>
+set gdefault                 " Substitute globally by default (s/foo/bar/g implied)
+
+nnoremap <leader>/ :noh<CR>
+
+" Keep search results centered
+nnoremap n nzzzv
+nnoremap N Nzzzv
 
 " -------------------------
 " Movement
 " -------------------------
-set scrolloff=3
+set scrolloff=5              " More context lines
 set sidescrolloff=10
+
 nnoremap j gj
 nnoremap k gk
 nnoremap H ^
 nnoremap L $
-vnoremap L g_
+nnoremap gV `[v`]            " Select last inserted text
 
 " -------------------------
 " Splits
@@ -279,11 +453,17 @@ vnoremap L g_
 set splitbelow
 set splitright
 
+" Quick split resizing
+nnoremap <C-Left>  :vertical resize -5<CR>
+nnoremap <C-Right> :vertical resize +5<CR>
+nnoremap <C-Up>    :resize +5<CR>
+nnoremap <C-Down>  :resize -5<CR>
+
 " -------------------------
-" Invisible chars
+" Invisible Chars
 " -------------------------
 set list
-set listchars=tab:▸\ ,trail:⌴,extends:❯,precedes:❮
+set listchars=tab:▸\ ,trail:·,extends:❯,precedes:❮,nbsp:␣
 nnoremap <leader>i :set list!<CR>
 
 " -------------------------
@@ -295,10 +475,9 @@ let g:vim_swap_dir   = g:vim_config_dir . '/swap'
 let g:vim_undo_dir   = g:vim_config_dir . '/undo'
 let g:vim_info_file  = g:vim_config_dir . '/viminfo'
 
-" Ensure dirs exist
 for dir in [g:vim_config_dir, g:vim_backup_dir, g:vim_swap_dir, g:vim_undo_dir]
     if !isdirectory(dir)
-        call mkdir(dir, 'p')
+        call mkdir(dir, 'p', 0700)
     endif
 endfor
 
@@ -307,37 +486,30 @@ endfor
 " -------------------------
 set undofile
 execute 'set undodir=' . g:vim_undo_dir . '//'
-
 set backup
 execute 'set backupdir=' . g:vim_backup_dir . '//'
+set swapfile
 execute 'set directory=' . g:vim_swap_dir . '//'
-
-" Move viminfo into XDG
 execute 'set viminfo+=n' . g:vim_info_file
+set viminfo='100,<50,s10,h,rA:,rB:    " Limit viminfo size
 
 " -------------------------
-" Obsession Session Management
+" Sessions (Obsession)
 " -------------------------
-nnoremap <leader>os :Obsession<CR>
-nnoremap <leader>oo :source Session.vim<CR>
+nnoremap <leader>os :Obsession ~/.config/vim/session/
+nnoremap <leader>oo :source ~/.config/vim/session/
 
-" -------------------------
-" Wildmenu
-" -------------------------
-set wildmenu
-set wildmode=list:longest
-set wildignore+=.git,.svn,.hg
-set wildignore+=*.o,*.obj,*.exe,*.dll
-set wildignore+=*.pyc,*.swp,*~,*.bak
-set wildignore+=*.jpg,*.png,*.gif,*.jpeg
-set wildignore+=node_modules,__pycache__,venv,.venv
+" Auto-create session dir
+if !isdirectory(expand('~/.config/vim/session'))
+    call mkdir(expand('~/.config/vim/session'), 'p', 0700)
+endif
 
 " -------------------------
 " Autocommands
 " -------------------------
 augroup line_return
     autocmd!
-    autocmd BufReadPost * if line("'\"") > 0 && line("'\"") <= line("$") | execute 'normal! g`"zvzz' | endif
+    autocmd BufReadPost * if line("'\"") > 1 && line("'\"") <= line("$") | execute 'normal! g`"zvzz' | endif
 augroup END
 
 augroup resize_splits
@@ -345,14 +517,19 @@ augroup resize_splits
     autocmd VimResized * wincmd =
 augroup END
 
-" Auto-source vimrc on save
 augroup vimrc_auto_source
     autocmd!
     autocmd BufWritePost ~/.config/vim/vimrc source %
 augroup END
 
+" Auto-create intermediate dirs when saving
+augroup auto_mkdir
+    autocmd!
+    autocmd BufWritePre * call mkdir(expand('<afile>:p:h'), 'p')
+augroup END
+
 " -------------------------
-" Highlight conflict markers
+" Conflict Markers
 " -------------------------
 match ErrorMsg '^\(<\|=\|>\)\{7\}\([^=].\+\)\?$'
 
@@ -360,48 +537,85 @@ match ErrorMsg '^\(<\|=\|>\)\{7\}\([^=].\+\)\?$'
 " Helpers
 " -------------------------
 
-" Trim trailing whitespace
-nnoremap <leader>W mz:%s/\s\+$//<CR>:let @/=''<CR>`z
+" Trim trailing whitespace (preserves cursor position better)
+function! StripTrailing()
+    let l:save = winsaveview()
+    keeppatterns %s/\s\+$//e
+    call winrestview(l:save)
+endfunction
+nnoremap <leader>W :call StripTrailing()<CR>
 
-" Save file with sudo
-cnoremap w!! w !sudo tee % >/dev/null
+" Sudo save
+cnoremap w!! execute 'write !sudo tee % >/dev/null' <bar> edit!
 
-" Edit/source vimrc
-nnoremap <leader>ev :vsplit ~/.config/vim/vimrc<CR>
+" Quick vimrc
+nnoremap <leader>ev :edit ~/.config/vim/vimrc<CR>
 nnoremap <leader>sv :source ~/.config/vim/vimrc<CR>
 
-" Turn off diff mode
-nnoremap <leader>D :diffoff!<CR>
+" Diff
+nnoremap <leader>D :diffoff!<CR>:set nowrap<CR>
+
+" Yank to end of line (makes Y consistent with D, C)
+nnoremap Y y$
+
+" Don't lose selection when shifting
+xnoremap < <gv
+xnoremap > >gv
+
+" Quick macro playback with Q (avoids ex mode which nobody uses)
+nnoremap Q @q
+vnoremap Q :norm @q<CR>
 
 " -------------------------
-" Fix common typos
+" System clipboard integration
 " -------------------------
-command! -bang W w<bang>
+if has('clipboard')
+    set clipboard=unnamedplus    " Use system clipboard by default
+endif
+
+" -------------------------
+" Quick save/quit (buffer-aware)
+" -------------------------
+nnoremap <leader>w :update<CR>      " Only write if changed
+nnoremap <leader>q :quit<CR>
+nnoremap <leader>Q :bdelete<CR>     " Close buffer, keep split
+nnoremap <leader>bq :bprevious <bar> bdelete #<CR>
+
+" Zoom toggle (current window vs restore)
+nnoremap <leader>z <C-w>o
+
+" Toggle paste mode
+nnoremap <leader>p :set paste!<CR>:set paste?<CR>
+
+" Indent whole file
+nnoremap <leader>= gg=G<C-o><C-o>
+
+" Retain selection on indent in visual mode
+vnoremap = =gv
+
+" Jump to last edited position quickly
+nnoremap g. `.                       " Last edit position
+nnoremap g, `^                       " Last insert position
+
+" -------------------------
+" Typo Fixes
+" -------------------------
+command! -bang -nargs=* W w<bang> <args>
+command! -bang -nargs=* Wq wq<bang> <args>
+command! -bang -nargs=* WQ wq<bang> <args>
 command! -bang Q q<bang>
-command! -bang Wq wq<bang>
-command! -bang WQ wq<bang>
 command! -bang Qa qa<bang>
 command! -bang QA qa<bang>
 
 " -------------------------
-" Additional Usability
+" Large File Handling
 " -------------------------
-
-" Quick save
-nnoremap <leader>w :w<CR>
-
-" Quick quit
-nnoremap <leader>q :q<CR>
-
-" Zoom in/out of window
-nnoremap <leader>z <C-w>o
-
-" Clear highlights
-nnoremap <leader>/ :noh<CR>
-
-" Toggle paste mode
-nnoremap <leader>p :set paste!<CR>
-
-" Indent whole file
-nnoremap <leader>= gg=G``
-
+augroup large_file
+    autocmd!
+    autocmd BufReadPre * if getfsize(expand("%")) > 1024*1024 |
+        \ setlocal noswapfile |
+        \ setlocal noundofile |
+        \ setlocal eventignore+=FileType |
+        \ setlocal bufhidden=unload |
+        \ endif
+augroup END
