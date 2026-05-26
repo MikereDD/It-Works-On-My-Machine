@@ -254,7 +254,7 @@ menu() {
     clear
     printf "${BLD}${CYN}"
     printf "  ╔══════════════════════════════════════════╗\n"
-    printf "  ║      Arakiel Firewall Manager  v2.1      ║\n"
+    printf "  ║      Arakiel Firewall Manager  v2.2      ║\n"
     printf "  ╚══════════════════════════════════════════╝${RST}\n"
     echo
     local ufw_status ssg_status
