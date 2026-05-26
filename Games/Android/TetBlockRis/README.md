@@ -1,8 +1,14 @@
-# 🧱 TetBlockRis v1.0
+# 🧱 TetBlockRis v1.1
 &gt; Falling blocks. Poor decisions. Retro chaos.
 
 ## 🧠 Overview
 TetBlockRis is a lightweight Tetris-style game project focused on fast gameplay, simple visuals, arcade feel, and minimal bloat. Built as part of the `Games/Android` section of the repository.
+
+
+## 📸 Gameplay Preview
+
+![TetBlockRis Gameplay](TetBlockRis-ss.jpg)
+
 
 ## 🎮 Features
 - Falling block gameplay
@@ -22,7 +28,7 @@ TetBlockRis is intentionally simple. The goal is instant gameplay, low overhead,
 Possible future versions may experiment with Godot, LibGDX, HTML5 builds, or Desktop ports.
 
 ## 📦 Version
-TetBlockRis v1.0 — Initial playable prototype release.
+TetBlockRis v1.1 — Added gameplay preview image and README polish.
 
 ## ⚠️ Notes
 - Early project
