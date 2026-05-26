@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # file:    arakiel-tmux.sh
-# version: 1.2
+# version: 1.3
 # desc:    tmux loader for arakiel bots workspace
 
 SESSION="arakiel"
@@ -41,12 +41,6 @@ tmux split-window -v -t "$SESSION:2.2"
 
 tmux select-layout -t "$SESSION:2" tiled
 
-# ┌──────────────┬──────────────┐
-# │ ytbot        │ musicbot     │
-# ├──────────────┼──────────────┤
-# │ aibot        │ logs shell   │
-# └──────────────┴──────────────┘
-
 # Pane 1 → ytbot (venv)
 tmux send-keys -t "$SESSION:2.1" \
 "cd '$BASE' && '$VENV' '$YTBOT' 2>&1 | tee -a '$LOGS/ytbot.log'" C-m
@@ -66,6 +60,20 @@ tmux send-keys -t "$SESSION:2.4" \
 # ── Window 3: scratch ───────────────────────
 tmux new-window -t "$SESSION:3" -n scratch
 tmux send-keys -t "$SESSION:3" "cd ~" C-m
+
+# ── Window 4: Hermes ───────────────────────
+tmux new-window -t "$SESSION:4" -n Hermes
+
+tmux send-keys -t "$SESSION:4" \
+"~/dev/github/llama.cpp/build/bin/llama-cli \
+-m ~/dev/github/models/Qwen2.5-Coder-3B-Q6_K.gguf \
+--jinja \
+-c 2048 \
+-t 4 \
+-n 512 \
+-sys 'You are Hermes, an expert coding assistant. Write clean, well-documented, efficient code.' \
+--color auto \
+-cnv" C-m
 
 # Start in bots window
 tmux select-window -t "$SESSION:2"
