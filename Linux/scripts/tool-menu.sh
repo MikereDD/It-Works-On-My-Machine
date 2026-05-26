@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
+#
 # file:    tool-menu.sh
-# version: 1.1
+# author:  Mike Redd
+# version: 1.2
 # desc:    Main launcher (Admin + Personal)
+#
 
 source "$HOME/scripts/lib/core.sh"
 
@@ -37,6 +40,7 @@ admin_menu() {
         ui_option "5" "Services"
         ui_option "6" "Processes"
         ui_option "7" "Wi-Fi Menu"
+        ui_option "8" "Open Ports"
         echo
         ui_option "q" "Back"
 
@@ -51,6 +55,7 @@ admin_menu() {
             5) run_script "admintools/services.sh" ;;
             6) run_script "admintools/processes.sh" ;;
             7) run_script "admintools/wifi-menu.sh" ;;
+            8) run_script "admintools/open-ports.sh" ;;
             q|Q) return ;;
             *) ui_error "Invalid option"; sleep 1 ;;
         esac
