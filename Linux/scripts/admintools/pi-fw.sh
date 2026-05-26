@@ -2,99 +2,97 @@
 #--------------------------------------------
 # file:     pi-fw.sh
 # author:   Mike Redd
-# version:  2.0
+# version:  2.1
 # desc:     UFW firewall manager for Arakiel with SSHGuard
 #--------------------------------------------
 
-set -u
+set -euo pipefail
 
-SSH_PORT="${SSH_PORT:-22}"
-LAN_NET="${LAN_NET:-192.168.4.0/24}"
+readonly SSH_PORT="${SSH_PORT:-22}"
+readonly LAN_NET="${LAN_NET:-192.168.4.0/24}"
+
+# ── helpers ──────────────────────────────────────────────────────────────────
+
+RED='\e[31m'; YEL='\e[33m'; GRN='\e[32m'; CYN='\e[36m'; RST='\e[0m'; BLD='\e[1m'
+
+info()  { echo -e "${CYN}[*]${RST} $*"; }
+ok()    { echo -e "${GRN}[+]${RST} $*"; }
+warn()  { echo -e "${YEL}[!]${RST} $*"; }
+err()   { echo -e "${RED}[x]${RST} $*" >&2; }
+die()   { err "$*"; exit 1; }
+
+pause() { read -rp $'\nPress Enter to continue...'; }
 
 require_root() {
-    if [[ "${EUID}" -ne 0 ]]; then
-        echo "[x] Run with sudo/root"
-        exit 1
-    fi
+    [[ "${EUID}" -eq 0 ]] || die "Run with sudo/root"
 }
 
-pause() {
-    read -rp "Press Enter to continue..."
+require_ufw() {
+    command -v ufw &>/dev/null || die "UFW is not installed. Run option 1 first."
 }
+
+validate_port() {
+    local p="$1"
+    [[ "$p" =~ ^[0-9]+$ ]] && (( p >= 1 && p <= 65535 )) || die "Invalid port: $p"
+}
+
+validate_cidr() {
+    [[ "$1" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}/[0-9]{1,2}$ ]] \
+        || die "Invalid CIDR: $1"
+}
+
+# ── functions ─────────────────────────────────────────────────────────────────
 
 install_ufw() {
-    echo "[*] Updating package database..."
-    pacman -Sy --noconfirm
+    if command -v ufw &>/dev/null; then
+        ok "UFW is already installed"
+        pause; return
+    fi
 
-    echo "[*] Installing UFW..."
-    pacman -S --noconfirm ufw
-
-    systemctl enable ufw
-
-    echo "[+] UFW installed and enabled"
-
+    info "Updating package database and installing UFW..."
+    pacman -Syu --noconfirm ufw
+    systemctl enable --now ufw
+    ok "UFW installed and enabled"
     pause
 }
 
 apply_base_rules() {
+    require_ufw
 
-    if ufw status | grep -q "active"; then
-        echo "[!] Firewall is already active. Reset first? (y/n)"
-        read -r answer
-
-        if [[ "$answer" == "y" ]]; then
-            ufw --force reset
-        else
-            echo "[*] Skipping base rules"
-            pause
-            return
-        fi
+    if ufw status | grep -q "Status: active"; then
+        warn "Firewall is already active."
+        read -rp "  Reset and re-apply base rules? (y/N): " answer
+        [[ "${answer,,}" == "y" ]] || { info "Skipping base rules"; pause; return; }
     fi
 
     ufw --force reset
 
     ufw default deny incoming
     ufw default allow outgoing
-
-    # SSH rate limiting
     ufw limit "${SSH_PORT}/tcp"
-
-    # Allow LAN access
     ufw allow from "$LAN_NET"
-
     ufw --force enable
 
-    echo "[*] Base rules applied"
-    echo "[*] SSH is rate-limited (${SSH_PORT}/tcp)"
-    echo "[*] LAN access allowed from ${LAN_NET}"
-
+    ok "Base rules applied"
+    info "SSH rate-limited on port ${SSH_PORT}/tcp"
+    info "LAN access allowed from ${LAN_NET}"
     pause
 }
 
-setup_sshguard() {
+_insert_sshguard_rules() {
+    local rules_file="/etc/ufw/before.rules"
 
-    echo "[*] Installing SSHGuard..."
+    [[ -f "$rules_file" ]] && cp "$rules_file" \
+        "${rules_file}.bak.$(date +%Y%m%d_%H%M%S.%N | cut -c1-21)"
 
-    pacman -S --noconfirm sshguard
-
-    echo "[*] Configuring UFW before.rules for SSHGuard..."
-
-    if [[ -f /etc/ufw/before.rules ]]; then
-        cp /etc/ufw/before.rules \
-           /etc/ufw/before.rules.bak.$(date +%Y%m%d_%H%M%S)
+    if grep -q "sshguard" "$rules_file" 2>/dev/null; then
+        info "SSHGuard rules already present in before.rules"
+        return
     fi
 
-    if ! grep -q "sshguard" /etc/ufw/before.rules 2>/dev/null; then
-
-        if [[ ! -f /etc/ufw/before.rules ]]; then
-
-            cat > /etc/ufw/before.rules << EOF
+    if [[ ! -f "$rules_file" ]]; then
+        cat > "$rules_file" << EOF
 # Rules that execute before ufw's built-in rules
-
-*nat
-:PREROUTING ACCEPT [0:0]
-:POSTROUTING ACCEPT [0:0]
-COMMIT
 
 *filter
 :ufw-before-input - [0:0]
@@ -106,240 +104,209 @@ COMMIT
 
 COMMIT
 EOF
+    else
+        # Insert chain declaration + jump rule before the first COMMIT in *filter
+        awk -v port="${SSH_PORT}" '
+            /^\*filter/ { print; found_filter=1; next }
+            found_filter && /^COMMIT/ && !inserted {
+                print ":sshguard - [0:0]"
+                print "-A ufw-before-input -p tcp --dport " port " -j sshguard"
+                inserted=1
+            }
+            { print }
+        ' "$rules_file" > "${rules_file}.tmp" && mv "${rules_file}.tmp" "$rules_file"
+    fi
+}
 
-        else
+setup_sshguard() {
+    require_ufw
 
-            sed -i \
-            '/^COMMIT$/i # SSHGuard chain\n:sshguard - [0:0]\n-A ufw-before-input -p tcp --dport '"${SSH_PORT}"' -j sshguard\n' \
-            /etc/ufw/before.rules
-
-        fi
+    if ! command -v sshguard &>/dev/null; then
+        info "Installing SSHGuard..."
+        pacman -S --noconfirm sshguard
+    else
+        info "SSHGuard already installed, reconfiguring..."
     fi
 
-    cat > /etc/sshguard/sshguard.conf << EOF
-# SSHGuard configuration
+    validate_cidr "$LAN_NET"
+    _insert_sshguard_rules
 
+    cat > /etc/sshguard/sshguard.conf << EOF
 BACKEND="/usr/lib/sshguard/sshg-fw-iptables"
 LOGREADER="LANG=C /usr/bin/journalctl -afb -p info -n1 -t sshd -o cat"
-
 THRESHOLD=20
 BLOCK_TIME=180
 DETECTION_TIME=3600
-
 WHITELIST_FILE=/etc/sshguard/whitelist
 EOF
 
-    echo "# Whitelist local network" > /etc/sshguard/whitelist
-    echo "$LAN_NET" >> /etc/sshguard/whitelist
+    mkdir -p /etc/sshguard
+    printf '# Whitelist local network\n%s\n' "$LAN_NET" > /etc/sshguard/whitelist
 
-    systemctl enable sshguard
-    systemctl start sshguard
-
+    systemctl enable --now sshguard
     ufw reload
 
-    echo "[+] SSHGuard installed and configured"
-    echo "[*] Whitelisted: $LAN_NET"
-    echo "[*] Block time: 180 seconds"
-
+    ok "SSHGuard installed and configured"
+    info "Whitelisted: $LAN_NET | Block time: 180s | Threshold: 20 pts"
     pause
 }
 
 show_status() {
-
-    echo "========== UFW STATUS =========="
-    ufw status verbose
-
+    require_ufw
     echo
-    echo "========== SSHGUARD STATUS =========="
-
-    if systemctl is-active --quiet sshguard; then
-
-        echo "SSHGuard: active"
+    echo -e "${BLD}══════════════════ UFW STATUS ══════════════════${RST}"
+    ufw status verbose
+    echo
+    echo -e "${BLD}═══════════════ SSHGUARD STATUS ════════════════${RST}"
+    if systemctl is-active --quiet sshguard 2>/dev/null; then
+        ok "SSHGuard: active"
         echo "Blocked IPs:"
-
         iptables -L sshguard -n 2>/dev/null \
-            | grep -v "Chain\|target\|pkts" \
-            | head -20
-
+            | awk 'NR>2 && NF' \
+            | head -20 \
+            || info "(none)"
     else
-        echo "SSHGuard: not active"
+        warn "SSHGuard: not active"
     fi
-
-    echo "================================="
-
+    echo -e "${BLD}══════════════════════════════════════════════════${RST}"
     pause
 }
 
 allow_port() {
+    require_ufw
+    local port proto
 
-    read -rp "Port: " PORT
-    read -rp "Protocol [tcp/udp/both]: " PROTO
+    read -rp "Port: " port
+    validate_port "$port"
 
-    case "$PROTO" in
-
-        tcp)
-            ufw allow "${PORT}/tcp"
-            ;;
-
-        udp)
-            ufw allow "${PORT}/udp"
-            ;;
-
-        both)
-            ufw allow "${PORT}/tcp"
-            ufw allow "${PORT}/udp"
-            ;;
-
-        *)
-            echo "[x] Invalid protocol"
-            ;;
+    read -rp "Protocol [tcp/udp/both]: " proto
+    case "${proto,,}" in
+        tcp)  ufw allow "${port}/tcp" ;;
+        udp)  ufw allow "${port}/udp" ;;
+        both) ufw allow "${port}/tcp"; ufw allow "${port}/udp" ;;
+        *)    die "Invalid protocol: $proto" ;;
     esac
 
-    echo "[+] Port allowed"
-
+    ok "Port ${port}/${proto} allowed"
     pause
 }
 
 show_ports() {
-
-    ss -tulpn
-
+    echo
+    echo -e "${BLD}══════════ LISTENING PORTS ══════════${RST}"
+    ss -tulpn | awk '
+        NR==1 { printf "%-8s %-6s %-40s %s\n","State","Proto","Local addr","Process"; next }
+        { printf "%-8s %-6s %-40s %s\n",$1,$2,$5,$7 }
+    '
     pause
 }
 
 reset_firewall() {
-
-    echo "[!] This will reset ALL firewall rules"
-
-    read -rp "Are you sure? (y/n): " confirm
-
-    if [[ "$confirm" == "y" ]]; then
-
+    require_ufw
+    warn "This will reset ALL firewall rules."
+    read -rp "  Are you sure? (y/N): " confirm
+    if [[ "${confirm,,}" == "y" ]]; then
+        systemctl stop sshguard 2>/dev/null || true
         ufw --force reset
-
-        echo "[*] Firewall reset. Run '2) Apply Base Rules' to re-enable"
-
+        ok "Firewall reset. Run '2) Apply Base Rules' to re-enable."
+    else
+        info "Cancelled"
     fi
-
     pause
 }
 
 disable_firewall() {
-
-    echo "[!] Disabling firewall leaves ports exposed"
-
-    read -rp "Are you sure? (y/n): " confirm
-
-    if [[ "$confirm" == "y" ]]; then
-
+    require_ufw
+    warn "Disabling the firewall leaves all ports exposed."
+    read -rp "  Are you sure? (y/N): " confirm
+    if [[ "${confirm,,}" == "y" ]]; then
         ufw disable
-        systemctl stop sshguard
-
-        echo "[*] Firewall disabled"
-
+        systemctl stop sshguard 2>/dev/null || true
+        ok "Firewall disabled"
+    else
+        info "Cancelled"
     fi
-
     pause
 }
 
 view_logs() {
-
-    echo "========== LAST 20 SSH ATTEMPTS =========="
-
-    journalctl -u sshd -n 20 --no-pager
+    echo
+    echo -e "${BLD}═══════ LAST 20 SSH ATTEMPTS ═══════${RST}"
+    if journalctl -u sshd -n 20 --no-pager 2>/dev/null; then
+        true
+    else
+        warn "No sshd journal entries found"
+    fi
 
     echo
-    echo "========== SSHGUARD BLOCKS =========="
-
-    journalctl -u sshguard -n 10 --no-pager 2>/dev/null \
-        || echo "No SSHGuard logs found"
-
+    echo -e "${BLD}══════════ SSHGUARD BLOCKS ══════════${RST}"
+    if systemctl is-active --quiet sshguard 2>/dev/null; then
+        journalctl -u sshguard -n 20 --no-pager 2>/dev/null || info "No SSHGuard logs yet"
+    else
+        warn "SSHGuard is not running"
+    fi
     pause
 }
 
+# ── menu ──────────────────────────────────────────────────────────────────────
+
 menu() {
-
     clear
-
-    echo "=========================================="
-    echo "       Arakiel Firewall Manager v2.0      "
-    echo "=========================================="
+    echo -e "${BLD}${CYN}"
+    echo "  ╔══════════════════════════════════════════╗"
+    echo "  ║      Arakiel Firewall Manager  v2.1      ║"
+    echo "  ╚══════════════════════════════════════════╝${RST}"
     echo
-    echo "1)  Install UFW"
-    echo "2)  Apply Base Rules"
-    echo "3)  Show Status (UFW + SSHGuard)"
-    echo "4)  Allow Port"
-    echo "5)  Show Listening Ports"
-    echo "6)  Reset Firewall"
-    echo "7)  Disable Firewall"
-    echo "8)  Setup SSHGuard (Brute-force protection)"
-    echo "9)  View Logs (SSH attempts + blocks)"
-    echo "q)  Quit"
+    local ufw_status ssg_status
+    ufw_status=$(ufw status 2>/dev/null | grep -oP 'Status: \K\w+' || echo "unknown")
+    ssg_status=$(systemctl is-active sshguard 2>/dev/null || echo "inactive")
+    echo -e "  UFW: ${BLD}${ufw_status}${RST}    SSHGuard: ${BLD}${ssg_status}${RST}"
+    echo
+    echo -e "  ${BLD}Install / Configure${RST}"
+    echo    "  1)  Install UFW"
+    echo    "  2)  Apply base rules"
+    echo    "  8)  Setup SSHGuard (brute-force protection)"
+    echo
+    echo -e "  ${BLD}Manage${RST}"
+    echo    "  3)  Show status (UFW + SSHGuard)"
+    echo    "  4)  Allow port"
+    echo    "  5)  Show listening ports"
+    echo    "  9)  View logs (SSH attempts + blocks)"
+    echo
+    echo -e "  ${BLD}Danger zone${RST}"
+    echo    "  6)  Reset firewall"
+    echo    "  7)  Disable firewall"
+    echo
+    echo    "  q)  Quit"
     echo
 }
 
 main() {
-
     require_root
+    validate_port "$SSH_PORT"
+    validate_cidr "$LAN_NET"
 
     while true; do
-
         menu
-
-        read -rp "Select option: " CHOICE
+        read -rp "  Select option: " CHOICE
 
         case "$CHOICE" in
-
-            1)
-                install_ufw
-                ;;
-
-            2)
-                apply_base_rules
-                ;;
-
-            3)
-                show_status
-                ;;
-
-            4)
-                allow_port
-                ;;
-
-            5)
-                show_ports
-                ;;
-
-            6)
-                reset_firewall
-                ;;
-
-            7)
-                disable_firewall
-                ;;
-
-            8)
-                setup_sshguard
-                ;;
-
-            9)
-                view_logs
-                ;;
-
+            1) install_ufw ;;
+            2) apply_base_rules ;;
+            3) show_status ;;
+            4) allow_port ;;
+            5) show_ports ;;
+            6) reset_firewall ;;
+            7) disable_firewall ;;
+            8) setup_sshguard ;;
+            9) view_logs ;;
             q|Q)
-                echo "[*] Exiting. Firewall status:"
-                ufw status | head -1
+                info "Exiting. Firewall: $(ufw status 2>/dev/null | grep -oP 'Status: \K\w+' || echo 'unknown')"
                 exit 0
                 ;;
-
-            *)
-                echo "[x] Invalid option"
-                pause
-                ;;
+            *) err "Invalid option: '$CHOICE'"; pause ;;
         esac
-
     done
 }
 
 main "$@"
-
