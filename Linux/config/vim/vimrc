@@ -1,7 +1,7 @@
 " ~/.config/vim/vimrc
 " Mike Redd / typezero
 " Pi 5 Arch Vim (XDG layout)
-" Version: 3.2 - Refined
+" Version: 3.3 - Editing intelligence, project context, and mark navigation
 
 set nocompatible
 filetype plugin indent on
@@ -131,6 +131,18 @@ Plug 'elzr/vim-json'
 " --- Sessions & Tmux ---
 Plug 'tpope/vim-obsession'
 Plug 'christoomey/vim-tmux-navigator'
+
+" --- Editing Intelligence ---
+Plug 'mbbill/undotree'             " Visual undo tree (gundo replacement)
+Plug 'tpope/vim-sleuth'            " Auto-detect tab/space width from file content
+Plug 'tpope/vim-abolish'           " crs/crm/crc coercion + :Subvert search/replace
+
+" --- Project Context ---
+Plug 'airblade/vim-rooter'         " Auto-cd to project root (.git)
+Plug 'tpope/vim-dispatch'          " Async :Make / :Dispatch via tmux
+
+" --- Navigation ---
+Plug 'kshenoy/vim-signature'       " Marks in sign column, toggle/list keymaps
 
 " --- You already had ---
 Plug 'jreybert/vimagit'
@@ -516,6 +528,38 @@ nnoremap <leader>oo :source ~/.config/vim/session/
 if !isdirectory(expand('~/.config/vim/session'))
     call mkdir(expand('~/.config/vim/session'), 'p', 0700)
 endif
+
+" -------------------------
+" Undotree
+" -------------------------
+nnoremap <leader>u :UndotreeToggle<CR>
+let g:undotree_WindowLayout = 2
+let g:undotree_SetFocusWhenToggle = 1
+
+" -------------------------
+" Rooter
+" -------------------------
+let g:rooter_silent_chdir = 1
+let g:rooter_resolve_links = 1
+
+" -------------------------
+" Dispatch
+" -------------------------
+nnoremap <leader>m :Make<CR>
+nnoremap <leader>d :Dispatch<Space>
+
+" -------------------------
+" Signature
+" -------------------------
+let g:SignatureMap = {
+    \ 'Leader': 'm',
+    \ 'PlaceNextMark': 'm,',
+    \ 'ToggleMarkAtLine': 'm.',
+    \ 'PurgeMarksAtLine': 'm-',
+    \ 'DeleteMark': 'dm',
+    \ 'ListBufferMarks': 'm/',
+    \ 'ListGlobalMarks': 'm?'
+    \ }
 
 " -------------------------
 " Autocommands
