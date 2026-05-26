@@ -2,7 +2,7 @@
 #--------------------------------------------
 # file:     pi-fw.sh
 # author:   Mike Redd
-# version:  2.1
+# version:  2.2
 # desc:     UFW firewall manager for Arakiel with SSHGuard
 #--------------------------------------------
 
@@ -131,6 +131,8 @@ setup_sshguard() {
     validate_cidr "$LAN_NET"
     _insert_sshguard_rules
 
+    mkdir -p /etc/sshguard
+
     cat > /etc/sshguard/sshguard.conf << EOF
 BACKEND="/usr/lib/sshguard/sshg-fw-iptables"
 LOGREADER="LANG=C /usr/bin/journalctl -afb -p info -n1 -t sshd -o cat"
@@ -139,8 +141,6 @@ BLOCK_TIME=180
 DETECTION_TIME=3600
 WHITELIST_FILE=/etc/sshguard/whitelist
 EOF
-
-    mkdir -p /etc/sshguard
     printf '# Whitelist local network\n%s\n' "$LAN_NET" > /etc/sshguard/whitelist
 
     systemctl enable --now sshguard
@@ -252,10 +252,10 @@ view_logs() {
 
 menu() {
     clear
-    echo -e "${BLD}${CYN}"
-    echo "  ╔══════════════════════════════════════════╗"
-    echo "  ║      Arakiel Firewall Manager  v2.1      ║"
-    echo "  ╚══════════════════════════════════════════╝${RST}"
+    printf "${BLD}${CYN}"
+    printf "  ╔══════════════════════════════════════════╗\n"
+    printf "  ║      Arakiel Firewall Manager  v2.1      ║\n"
+    printf "  ╚══════════════════════════════════════════╝${RST}\n"
     echo
     local ufw_status ssg_status
     ufw_status=$(ufw status 2>/dev/null | grep -oP 'Status: \K\w+' || echo "unknown")
