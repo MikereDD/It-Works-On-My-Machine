@@ -2,46 +2,52 @@
 #
 # File    : open-ports.sh
 # Author  : Mike Redd
-# Version : 1.1
+# Version : 1.2
 # Created : 2026-05-25
 # Updated : 2026-05-25
 # Desc    : Show open/listening ports before something starts acting possessed.
 #
 
-set -euo pipefail
+# Load shared core + UI helpers
+# core.sh also loads ui.sh when present.
+source "$HOME/scripts/lib/core.sh"
 
-RED="\e[31m"
-GREEN="\e[32m"
-CYAN="\e[36m"
-YELLOW="\e[33m"
-RESET="\e[0m"
-
-show_header() {
-    clear
-    echo -e "${CYAN}"
-    echo "┌────────────────────────────────────────────┐"
-    echo "│              OPEN PORT CHECKER             │"
-    echo "└────────────────────────────────────────────┘"
-    echo -e "${RESET}"
-}
+# Local fallbacks in case ui.sh is missing or incomplete.
+UI_CYN="${UI_CYN:-\033[1;36m}"
+UI_GRN="${UI_GRN:-\033[1;32m}"
+UI_YLW="${UI_YLW:-\033[1;33m}"
+UI_RED="${UI_RED:-\033[1;31m}"
+UI_RST="${UI_RST:-\033[0m}"
 
 need_cmd() {
     command -v "$1" >/dev/null 2>&1 || {
-        echo -e "${RED}Missing:${RESET} $1"
+        if declare -F ui_error >/dev/null 2>&1; then
+            ui_error "Missing required command: $1"
+        else
+            echo -e "${UI_RED}Missing:${UI_RST} $1"
+        fi
         exit 1
     }
 }
 
 section() {
-    echo -e "${GREEN}$1${RESET}"
-    echo "──────────────────────────────────────────────"
+    echo -e "${UI_GRN}$1${UI_RST}"
+    if declare -F ui_divider >/dev/null 2>&1; then
+        ui_divider
+    else
+        echo "──────────────────────────────────────────────"
+    fi
 }
 
-show_header
+notice() {
+    echo -e "${UI_YLW}Notice:${UI_RST} $1"
+}
+
+ui_header "OPEN PORT CHECKER"
 need_cmd ss
 
 if [[ $EUID -ne 0 ]]; then
-    echo -e "${YELLOW}Notice:${RESET} Not running as root."
+    notice "Not running as root."
     echo "Some process names may be hidden because Linux enjoys being dramatic."
     echo
 fi
@@ -73,4 +79,4 @@ else
 fi
 
 echo
-echo -e "${CYAN}Done.${RESET}"
+echo -e "${UI_CYN}Done.${UI_RST}"
