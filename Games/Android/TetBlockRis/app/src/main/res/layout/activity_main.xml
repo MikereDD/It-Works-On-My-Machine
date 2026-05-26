@@ -1,215 +1,291 @@
 <?xml version="1.0" encoding="utf-8"?>
-<FrameLayout
+<LinearLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#0a0a1a">
+    android:orientation="vertical"
+    android:background="#090912"
+    android:fitsSystemWindows="true">
 
+    <!-- ── Top HUD ── -->
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:orientation="vertical">
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
+        android:paddingTop="6dp"
+        android:paddingBottom="6dp"
+        android:background="@drawable/hud_bg_gradient">
 
-        <!-- Top HUD -->
+        <!-- SCORE -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center">
+            <TextView
+                android:id="@+id/scoreText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="0"
+                android:textColor="#00FF88"
+                android:textSize="24sp"
+                android:textStyle="bold"
+                android:fontFamily="sans-serif-medium"/>
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="SCORE"
+                android:textColor="#6600FF88"
+                android:textSize="9sp"
+                android:letterSpacing="0.15"/>
+        </LinearLayout>
+
+        <View android:layout_width="1dp" android:layout_height="32dp"
+            android:background="#22FFFFFF" android:layout_marginHorizontal="4dp"/>
+
+        <!-- BEST -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center">
+            <TextView
+                android:id="@+id/highScoreText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="0"
+                android:textColor="#FFD700"
+                android:textSize="20sp"
+                android:textStyle="bold"/>
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="BEST"
+                android:textColor="#66FFD700"
+                android:textSize="9sp"
+                android:letterSpacing="0.15"/>
+        </LinearLayout>
+
+        <View android:layout_width="1dp" android:layout_height="32dp"
+            android:background="#22FFFFFF" android:layout_marginHorizontal="4dp"/>
+
+        <!-- LEVEL -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center">
+            <TextView
+                android:id="@+id/levelText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="1"
+                android:textColor="#00BFFF"
+                android:textSize="20sp"
+                android:textStyle="bold"/>
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="LEVEL"
+                android:textColor="#6600BFFF"
+                android:textSize="9sp"
+                android:letterSpacing="0.15"/>
+        </LinearLayout>
+
+        <View android:layout_width="1dp" android:layout_height="32dp"
+            android:background="#22FFFFFF" android:layout_marginHorizontal="4dp"/>
+
+        <!-- LINES -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center">
+            <TextView
+                android:id="@+id/linesText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="0"
+                android:textColor="#FF69B4"
+                android:textSize="20sp"
+                android:textStyle="bold"/>
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="LINES"
+                android:textColor="#66FF69B4"
+                android:textSize="9sp"
+                android:letterSpacing="0.15"/>
+        </LinearLayout>
+
+        <View android:layout_width="1dp" android:layout_height="32dp"
+            android:background="#22FFFFFF" android:layout_marginHorizontal="4dp"/>
+
+        <!-- PAUSE button -->
+        <Button
+            android:id="@+id/pauseButton"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:text="⏸"
+            android:textSize="18sp"
+            android:textColor="#AAAACC"
+            android:background="@drawable/modern_button_bg"
+            android:padding="0dp"
+            android:layout_marginStart="4dp"/>
+
+    </LinearLayout>
+
+    <!-- ── Game View (takes all remaining space) ── -->
+    <com.example.tetblockris.TetBlockRisView
+        android:id="@+id/gameView"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:clickable="true"
+        android:focusable="true"/>
+
+    <!-- ── Status messages (game over / victory) ── -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center">
+        <TextView
+            android:id="@+id/gameOverText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:text="GAME OVER"
+            android:textColor="#FF4444"
+            android:textSize="28sp"
+            android:textStyle="bold"
+            android:visibility="gone"
+            android:shadowColor="#FF0000"
+            android:shadowRadius="10"
+            android:shadowDx="0"
+            android:shadowDy="0"/>
+        <TextView
+            android:id="@+id/victoryText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:text="✦ VICTORY! ✦"
+            android:textColor="#FFD700"
+            android:textSize="28sp"
+            android:textStyle="bold"
+            android:visibility="gone"
+            android:shadowColor="#FFA500"
+            android:shadowRadius="14"
+            android:shadowDx="0"
+            android:shadowDy="0"/>
+    </FrameLayout>
+
+    <!-- ── Bottom control strip ── -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:paddingTop="4dp"
+        android:paddingBottom="8dp"
+        android:paddingHorizontal="8dp"
+        android:background="#0D0D1E">
+
+        <!-- Start / Restart -->
+        <Button
+            android:id="@+id/startButton"
+            android:layout_width="180dp"
+            android:layout_height="42dp"
+            android:text="START GAME"
+            android:textColor="#FFFFFF"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.1"
+            android:background="@drawable/modern_button_bg"
+            android:elevation="4dp"
+            android:layout_marginBottom="8dp"/>
+
+        <!-- D-pad row: Hold | ← | ↓ | → | Rotate | Hard Drop -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center"
-            android:padding="12dp"
-            android:background="@drawable/hud_bg_gradient">
-
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical"
-                android:gravity="center">
-
-                <TextView
-                    android:id="@+id/scoreText"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="0"
-                    android:textColor="#00FF88"
-                    android:textSize="28sp"
-                    android:textStyle="bold"
-                    android:fontFamily="sans-serif-medium"/>
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="SCORE"
-                    android:textColor="#88FF88"
-                    android:textSize="10sp"
-                    android:letterSpacing="0.2"/>
-
-            </LinearLayout>
-
-            <View
-                android:layout_width="1dp"
-                android:layout_height="40dp"
-                android:background="#33FFFFFF"
-                android:layout_marginHorizontal="8dp"/>
-
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical"
-                android:gravity="center">
-
-                <TextView
-                    android:id="@+id/highScoreText"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="0"
-                    android:textColor="#FFD700"
-                    android:textSize="22sp"
-                    android:textStyle="bold"/>
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="BEST"
-                    android:textColor="#88FFD700"
-                    android:textSize="10sp"
-                    android:letterSpacing="0.2"/>
-
-            </LinearLayout>
-
-            <View
-                android:layout_width="1dp"
-                android:layout_height="40dp"
-                android:background="#33FFFFFF"
-                android:layout_marginHorizontal="8dp"/>
-
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical"
-                android:gravity="center">
-
-                <TextView
-                    android:id="@+id/levelText"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="1"
-                    android:textColor="#00BFFF"
-                    android:textSize="22sp"
-                    android:textStyle="bold"/>
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="LEVEL"
-                    android:textColor="#8800BFFF"
-                    android:textSize="10sp"
-                    android:letterSpacing="0.2"/>
-
-            </LinearLayout>
-
-            <View
-                android:layout_width="1dp"
-                android:layout_height="40dp"
-                android:background="#33FFFFFF"
-                android:layout_marginHorizontal="8dp"/>
-
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical"
-                android:gravity="center">
-
-                <TextView
-                    android:id="@+id/linesText"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="0"
-                    android:textColor="#FF69B4"
-                    android:textSize="22sp"
-                    android:textStyle="bold"/>
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="LINES"
-                    android:textColor="#88FF69B4"
-                    android:textSize="10sp"
-                    android:letterSpacing="0.2"/>
-
-            </LinearLayout>
-
-        </LinearLayout>
-
-        <!-- Game View - FIXED: Added clickable and focusable -->
-        <com.example.tetblockris.TetBlockRisView
-            android:id="@+id/gameView"
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1"
-            android:clickable="true"
-            android:focusable="true"/>
-
-        <!-- Bottom Controls -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:gravity="center"
-            android:padding="8dp">
-
-            <TextView
-                android:id="@+id/gameOverText"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="GAME OVER"
-                android:textColor="#FF3333"
-                android:textSize="32sp"
-                android:textStyle="bold"
-                android:visibility="gone"
-                android:shadowColor="#FF0000"
-                android:shadowRadius="8"
-                android:shadowDx="0"
-                android:shadowDy="0"/>
-
-            <TextView
-                android:id="@+id/victoryText"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="VICTORY!"
-                android:textColor="#FFD700"
-                android:textSize="36sp"
-                android:textStyle="bold"
-                android:visibility="gone"
-                android:shadowColor="#FFA500"
-                android:shadowRadius="12"
-                android:shadowDx="0"
-                android:shadowDy="0"/>
+            android:weightSum="6">
 
             <Button
-                android:id="@+id/startButton"
-                android:layout_width="200dp"
-                android:layout_height="48dp"
-                android:text="START GAME"
-                android:textColor="#FFFFFF"
-                android:textStyle="bold"
+                android:id="@+id/btnHold"
+                android:layout_width="0dp"
+                android:layout_height="52dp"
+                android:layout_weight="1"
+                android:text="HOLD"
+                android:textColor="#AAAACC"
+                android:textSize="10sp"
                 android:background="@drawable/modern_button_bg"
-                android:elevation="4dp"
-                android:layout_margin="8dp"/>
+                android:layout_margin="3dp"/>
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="← Double-tap: Hold  |  Tap: Rotate  |  Swipe: Move/Drop"
-                android:textColor="#444466"
-                android:textSize="11sp"
-                android:layout_marginTop="4dp"/>
+            <Button
+                android:id="@+id/btnLeft"
+                android:layout_width="0dp"
+                android:layout_height="52dp"
+                android:layout_weight="1"
+                android:text="◀"
+                android:textColor="#FFFFFF"
+                android:textSize="18sp"
+                android:background="@drawable/modern_button_bg"
+                android:layout_margin="3dp"/>
+
+            <Button
+                android:id="@+id/btnDown"
+                android:layout_width="0dp"
+                android:layout_height="52dp"
+                android:layout_weight="1"
+                android:text="▼"
+                android:textColor="#FFFFFF"
+                android:textSize="18sp"
+                android:background="@drawable/modern_button_bg"
+                android:layout_margin="3dp"/>
+
+            <Button
+                android:id="@+id/btnRight"
+                android:layout_width="0dp"
+                android:layout_height="52dp"
+                android:layout_weight="1"
+                android:text="▶"
+                android:textColor="#FFFFFF"
+                android:textSize="18sp"
+                android:background="@drawable/modern_button_bg"
+                android:layout_margin="3dp"/>
+
+            <Button
+                android:id="@+id/btnRotate"
+                android:layout_width="0dp"
+                android:layout_height="52dp"
+                android:layout_weight="1"
+                android:text="↻"
+                android:textColor="#00FFCC"
+                android:textSize="22sp"
+                android:background="@drawable/modern_button_bg"
+                android:layout_margin="3dp"/>
+
+            <Button
+                android:id="@+id/btnDrop"
+                android:layout_width="0dp"
+                android:layout_height="52dp"
+                android:layout_weight="1"
+                android:text="⤓"
+                android:textColor="#FF69B4"
+                android:textSize="22sp"
+                android:background="@drawable/modern_button_bg"
+                android:layout_margin="3dp"/>
 
         </LinearLayout>
-
     </LinearLayout>
 
-</FrameLayout>
+</LinearLayout>

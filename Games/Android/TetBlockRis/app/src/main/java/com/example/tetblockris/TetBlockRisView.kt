@@ -15,31 +15,41 @@ class TetBlockRisView @JvmOverloads constructor(
     context: Context, attrs: AttributeSet? = null
 ) : View(context, attrs) {
 
+    // ── Constants ────────────────────────────────────────────────────────────
     private val cols = 10
     private val rows = 20
-    private var cellSize = 0f
-    private var boardOffsetX = 0f
-    private var boardOffsetY = 0f
-    private var previewCellSize = 0f
 
+    // ── Layout values (computed in onSizeChanged) ────────────────────────────
+    private var cellSize      = 0f
+    private var boardLeft     = 0f   // board origin X
+    private var boardTop      = 0f   // board origin Y
+    private var previewSize   = 0f   // cell size used for HOLD/NEXT previews
+    private var panelWidth    = 0f   // width of a HOLD or NEXT panel
+    private var panelHeight   = 0f
+
+    // ── Game state ───────────────────────────────────────────────────────────
     private val game = TetBlockRisGame(cols, rows)
     private val handler = Handler(Looper.getMainLooper())
-    private var isRunning = false
+    var isRunning = false
+        private set
     private var dropSpeed = 500L
 
+    // ── Callbacks ────────────────────────────────────────────────────────────
     var onScoreUpdate: ((Int, Int, Int) -> Unit)? = null
     var onGameOver: ((Int) -> Unit)? = null
     var onVictory: ((Int) -> Unit)? = null
     var onHoldUpdate: ((Boolean) -> Unit)? = null
 
+    // ── Animation pools ──────────────────────────────────────────────────────
     private val particles = mutableListOf<Particle>()
-    private val lineClearAnimations = mutableListOf<LineClearAnim>()
+    private val lineClearAnims = mutableListOf<LineClearAnim>()
 
-    private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    // ── Paints ───────────────────────────────────────────────────────────────
+    private val paint     = Paint(Paint.ANTI_ALIAS_FLAG)
     private val glowPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val gridPaint = Paint().apply {
-        color = Color.argb(30, 255, 255, 255)
-        strokeWidth = 1f
+        color = Color.argb(25, 255, 255, 255)
+        strokeWidth = 0.8f
     }
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE
@@ -48,58 +58,28 @@ class TetBlockRisView @JvmOverloads constructor(
     }
 
     private var bgGradient: LinearGradient? = null
-    private val blockRect = RectF()
-    private val cornerRadius = 8f
+    private val blockRect  = RectF()
+    private val cornerRad  = 7f
 
-    private val gestureDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
-        override fun onFling(e1: MotionEvent?, e2: MotionEvent, vx: Float, vy: Float): Boolean {
-            if (!isRunning) return false
-            when {
-                vx > 300 -> game.moveRight()
-                vx < -300 -> game.moveLeft()
-                vy > 400 -> { game.hardDrop(); spawnDropParticles(); updateScore() }
+    // ── Gesture detector (swipe-down hard-drop; tap rotate as fallback) ──────
+    private val gestureDetector = GestureDetector(context,
+        object : GestureDetector.SimpleOnGestureListener() {
+            override fun onFling(e1: MotionEvent?, e2: MotionEvent, vx: Float, vy: Float): Boolean {
+                if (!isRunning) return false
+                if (vy > 600) { doHardDrop(); return true }
+                return false
             }
-            invalidate()
-            return true
-        }
+        })
 
-        override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
-            if (!isRunning) return true
-            if (e.x < width * 0.2f) {
-                game.holdPiece()
-                onHoldUpdate?.invoke(game.hasHeldThisTurn)
-            } else {
-                game.rotate()
-            }
-            invalidate()
-            return true
-        }
-
-        override fun onDoubleTap(e: MotionEvent): Boolean {
-            if (isRunning) {
-                game.holdPiece()
-                onHoldUpdate?.invoke(game.hasHeldThisTurn)
-                invalidate()
-            }
-            return true
-        }
-    })
-
+    // ── Game loop ────────────────────────────────────────────────────────────
     private val gameLoop = object : Runnable {
         override fun run() {
             if (!isRunning) return
             val result = game.tick()
-            if (result == -1) {
-                gameOver()
-                return
-            }
-            if (result == -2) {
-                victory()
-                return
-            }
-            if (result > 0) {
-                triggerLineClearAnim(result)
-                spawnClearParticles(result)
+            when {
+                result == -1 -> { gameOver(); return }
+                result == -2 -> { victory(); return }
+                result > 0   -> { triggerLineClearAnim(result); spawnClearParticles(result) }
             }
             updateScore()
             invalidate()
@@ -107,10 +87,30 @@ class TetBlockRisView @JvmOverloads constructor(
         }
     }
 
+    // ── Public control surface (called by MainActivity buttons) ──────────────
+    fun moveLeft()    { if (isRunning) { game.moveLeft();  invalidate() } }
+    fun moveRight()   { if (isRunning) { game.moveRight(); invalidate() } }
+    fun softDrop()    { if (isRunning) { game.tick();      updateScore(); invalidate() } }
+    fun doRotate()    { if (isRunning) { game.rotate();    invalidate() } }
+    fun doHardDrop()  {
+        if (!isRunning) return
+        game.hardDrop()
+        spawnDropParticles()
+        updateScore()
+        invalidate()
+    }
+    fun doHold() {
+        if (!isRunning) return
+        game.holdPiece()
+        onHoldUpdate?.invoke(game.hasHeldThisTurn)
+        invalidate()
+    }
+
+    // ── Lifecycle ────────────────────────────────────────────────────────────
     fun startGame() {
         game.reset()
         particles.clear()
-        lineClearAnimations.clear()
+        lineClearAnims.clear()
         dropSpeed = 500L
         isRunning = true
         onHoldUpdate?.invoke(false)
@@ -121,6 +121,12 @@ class TetBlockRisView @JvmOverloads constructor(
     fun pauseGame() {
         isRunning = false
         handler.removeCallbacks(gameLoop)
+    }
+
+    fun resumeGame() {
+        if (isRunning) return
+        isRunning = true
+        handler.post(gameLoop)
     }
 
     private fun gameOver() {
@@ -140,228 +146,293 @@ class TetBlockRisView @JvmOverloads constructor(
         dropSpeed = game.getDropSpeed()
     }
 
-    // FIXED: Board now fits within available screen space
+    // ── Layout ───────────────────────────────────────────────────────────────
+    /**
+     * Layout strategy:
+     *
+     *   ┌──────────────────────────────────┐
+     *   │  [HOLD panel]   [NEXT panel]     │  ← panel row, height = panelHeight + labelGap
+     *   │  ┌────────────────────────────┐  │
+     *   │  │                            │  │
+     *   │  │       10 × 20 board        │  │  ← remaining height
+     *   │  │                            │  │
+     *   │  └────────────────────────────┘  │
+     *   └──────────────────────────────────┘
+     *
+     * Both panels sit side-by-side ABOVE the board, centred horizontally.
+     * The board is centred below them, sized to fill the remaining space.
+     */
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
-        
-        // Estimate space taken by HUD (top) and controls (bottom)
-        val hudHeight = h * 0.14f
-        val controlsHeight = h * 0.22f
-        val availableHeight = h - hudHeight - controlsHeight - 32f // 32f for padding
-        
-        // Calculate cell size based on width AND available height
-        val cellSizeByWidth = (w * 0.82f) / cols
-        val cellSizeByHeight = availableHeight / rows
-        cellSize = min(cellSizeByWidth, cellSizeByHeight)
-        
-        previewCellSize = cellSize * 0.65f
 
-        // Center board horizontally
-        boardOffsetX = (w - cols * cellSize) / 2f
-        
-        // Position board below HUD with small padding
-        boardOffsetY = hudHeight + 16f
+        val pw = w.toFloat()
+        val ph = h.toFloat()
+
+        // Preview cell: ~18 % of width divided into 5 columns per panel
+        previewSize  = pw * 0.09f           // 5 preview cells → 45 % of width per panel
+        panelWidth   = previewSize * 5f
+        panelHeight  = previewSize * 5f
+        val labelGap = previewSize * 1.2f   // space for the label above the box
+        val panelRowH = panelHeight + labelGap
+        val vPad     = ph * 0.01f           // small gap between panel row and board
+
+        // Board fits in the remaining vertical space
+        val boardAvailH = ph - panelRowH - vPad
+        val cellByH = boardAvailH / rows
+        val cellByW = pw * 0.86f / cols     // 86 % of width leaves margins
+        cellSize = min(cellByH, cellByW)
+
+        // Horizontal centre
+        val boardW = cols * cellSize
+        boardLeft = (pw - boardW) / 2f
+
+        // Board starts just below the panel row
+        boardTop = panelRowH + vPad
 
         bgGradient = LinearGradient(
-            0f, 0f, 0f, h.toFloat(),
-            Color.argb(255, 15, 15, 35),
-            Color.argb(255, 5, 5, 15),
+            0f, 0f, 0f, ph,
+            Color.argb(255, 12, 12, 28),
+            Color.argb(255, 4, 4, 12),
             Shader.TileMode.CLAMP
         )
     }
 
+    // ── Drawing ──────────────────────────────────────────────────────────────
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
 
+        // Background
         paint.shader = bgGradient
         canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
         paint.shader = null
 
         updateAndDrawParticles(canvas)
 
-        // FIXED: Side panels positioned within visible area
-        val panelY = boardOffsetY + previewCellSize
-        drawSidePanel(canvas, boardOffsetX - previewCellSize * 5.5f, panelY, "HOLD", game.holdPiece, game.hasHeldThisTurn)
-        drawSidePanel(canvas, boardOffsetX + cols * cellSize + previewCellSize * 0.5f, panelY, "NEXT", game.nextPiece, false)
+        // HOLD and NEXT panels — centred above the board
+        val totalPanels   = panelWidth * 2 + previewSize * 2  // two panels + gap
+        val panelStartX   = (width - totalPanels) / 2f
+        val holdX  = panelStartX
+        val nextX  = panelStartX + panelWidth + previewSize * 2
+        val panelY = previewSize * 1.1f   // leaves room for label
+
+        drawSidePanel(canvas, holdX, panelY, "HOLD", game.holdPiece, game.hasHeldThisTurn)
+        drawSidePanel(canvas, nextX, panelY, "NEXT", game.nextPiece, false)
 
         drawBoardBackground(canvas)
+        drawGrid(canvas)
+        drawLineClearAnims(canvas)
+        drawBoardBlocks(canvas)
+        drawGhost(canvas)
+        drawCurrentPiece(canvas)
+    }
 
+    private fun drawGrid(canvas: Canvas) {
         for (i in 0..cols) {
-            val x = boardOffsetX + i * cellSize
-            canvas.drawLine(x, boardOffsetY, x, boardOffsetY + rows * cellSize, gridPaint)
+            val x = boardLeft + i * cellSize
+            canvas.drawLine(x, boardTop, x, boardTop + rows * cellSize, gridPaint)
         }
         for (i in 0..rows) {
-            val y = boardOffsetY + i * cellSize
-            canvas.drawLine(boardOffsetX, y, boardOffsetX + cols * cellSize, y, gridPaint)
+            val y = boardTop + i * cellSize
+            canvas.drawLine(boardLeft, y, boardLeft + cols * cellSize, y, gridPaint)
         }
+    }
 
-        drawLineClearAnims(canvas)
-
+    private fun drawBoardBlocks(canvas: Canvas) {
         for (y in 0 until rows) {
             for (x in 0 until cols) {
                 game.board[y][x]?.let { color ->
-                    drawModernBlock(canvas, boardOffsetX + x * cellSize, boardOffsetY + y * cellSize, cellSize, color, 1f)
+                    drawBlock(canvas,
+                        boardLeft + x * cellSize,
+                        boardTop  + y * cellSize,
+                        cellSize, color, 1f)
                 }
             }
         }
+    }
 
-        game.currentPiece?.let { piece ->
-            val ghostY = game.getGhostY()
-            for (block in piece.blocks) {
-                val bx = piece.x + block.first
-                val by = ghostY + block.second
-                if (by >= 0 && by < rows) {
-                    drawGhostBlock(canvas, boardOffsetX + bx * cellSize, boardOffsetY + by * cellSize, cellSize, piece.color)
-                }
+    private fun drawGhost(canvas: Canvas) {
+        val piece = game.currentPiece ?: return
+        val ghostY = game.getGhostY()
+        for (block in piece.blocks) {
+            val bx = piece.x + block.first
+            val by = ghostY + block.second
+            if (by >= 0 && by < rows) {
+                drawGhostBlock(canvas,
+                    boardLeft + bx * cellSize,
+                    boardTop  + by * cellSize,
+                    cellSize, piece.color)
             }
         }
+    }
 
-        game.currentPiece?.let { piece ->
-            for (block in piece.blocks) {
-                val bx = piece.x + block.first
-                val by = piece.y + block.second
-                if (by >= 0) {
-                    drawModernBlock(canvas, boardOffsetX + bx * cellSize, boardOffsetY + by * cellSize, cellSize, piece.color, 1f, true)
-                }
+    private fun drawCurrentPiece(canvas: Canvas) {
+        val piece = game.currentPiece ?: return
+        for (block in piece.blocks) {
+            val bx = piece.x + block.first
+            val by = piece.y + block.second
+            if (by >= 0) {
+                drawBlock(canvas,
+                    boardLeft + bx * cellSize,
+                    boardTop  + by * cellSize,
+                    cellSize, piece.color, 1f, withGlow = true)
             }
         }
     }
 
     private fun drawBoardBackground(canvas: Canvas) {
-        paint.color = Color.argb(40, 255, 255, 255)
-        val bgRect = RectF(
-            boardOffsetX - 4,
-            boardOffsetY - 4,
-            boardOffsetX + cols * cellSize + 4,
-            boardOffsetY + rows * cellSize + 4
-        )
-        canvas.drawRoundRect(bgRect, 12f, 12f, paint)
+        paint.color = Color.argb(45, 255, 255, 255)
+        val r = RectF(boardLeft - 4, boardTop - 4,
+            boardLeft + cols * cellSize + 4,
+            boardTop  + rows * cellSize + 4)
+        canvas.drawRoundRect(r, 14f, 14f, paint)
+
+        // Inner board tint
+        paint.color = Color.argb(20, 0, 0, 40)
+        val inner = RectF(boardLeft, boardTop,
+            boardLeft + cols * cellSize,
+            boardTop  + rows * cellSize)
+        canvas.drawRect(inner, paint)
     }
 
-    private fun drawSidePanel(canvas: Canvas, offsetX: Float, offsetY: Float, label: String, piece: TetBlockRisPiece?, dimmed: Boolean) {
-        val boxWidth = previewCellSize * 5
-        val boxHeight = previewCellSize * 5
+    // ── Side panels (HOLD / NEXT) ────────────────────────────────────────────
+    private fun drawSidePanel(
+        canvas: Canvas,
+        offsetX: Float, offsetY: Float,
+        label: String,
+        piece: TetBlockRisPiece?,
+        dimmed: Boolean
+    ) {
+        val boxW = panelWidth
+        val boxH = panelHeight
 
-        paint.color = Color.argb(60, 255, 255, 255)
-        val panelRect = RectF(offsetX, offsetY, offsetX + boxWidth, offsetY + boxHeight)
-        canvas.drawRoundRect(panelRect, 16f, 16f, paint)
+        // Panel background
+        paint.color = Color.argb(55, 255, 255, 255)
+        val panelRect = RectF(offsetX, offsetY, offsetX + boxW, offsetY + boxH)
+        canvas.drawRoundRect(panelRect, 14f, 14f, paint)
 
-        paint.color = if (dimmed) Color.argb(80, 100, 100, 100) else Color.argb(120, 200, 200, 255)
+        // Panel border
+        paint.color = if (dimmed)
+            Color.argb(60, 120, 120, 120)
+        else
+            Color.argb(110, 180, 180, 255)
         paint.style = Paint.Style.STROKE
-        paint.strokeWidth = 2f
-        canvas.drawRoundRect(panelRect, 16f, 16f, paint)
+        paint.strokeWidth = 1.5f
+        canvas.drawRoundRect(panelRect, 14f, 14f, paint)
         paint.style = Paint.Style.FILL
 
-        textPaint.textSize = previewCellSize * 0.7f
-        textPaint.color = if (dimmed) Color.argb(100, 200, 200, 200) else Color.WHITE
-        canvas.drawText(label, offsetX + boxWidth / 2, offsetY - previewCellSize * 0.4f, textPaint)
+        // Label above the box
+        textPaint.textSize = previewSize * 0.65f
+        textPaint.color = if (dimmed) Color.argb(90, 180, 180, 180) else Color.argb(200, 200, 220, 255)
+        canvas.drawText(label, offsetX + boxW / 2f, offsetY - previewSize * 0.25f, textPaint)
 
+        // Piece preview
         piece?.let { p ->
-            val pieceWidth = (p.blocks.maxOf { it.first } - p.blocks.minOf { it.first } + 1) * previewCellSize
-            val pieceHeight = (p.blocks.maxOf { it.second } - p.blocks.minOf { it.second } + 1) * previewCellSize
-            val startX = offsetX + (boxWidth - pieceWidth) / 2
-            val startY = offsetY + (boxHeight - pieceHeight) / 2
+            val minBX = p.blocks.minOf { it.first }
+            val minBY = p.blocks.minOf { it.second }
+            val maxBX = p.blocks.maxOf { it.first }
+            val maxBY = p.blocks.maxOf { it.second }
+            val pieceW = (maxBX - minBX + 1) * previewSize
+            val pieceH = (maxBY - minBY + 1) * previewSize
+            val startX = offsetX + (boxW - pieceW) / 2f - minBX * previewSize
+            val startY = offsetY + (boxH - pieceH) / 2f - minBY * previewSize
 
             for (block in p.blocks) {
-                val px = startX + block.first * previewCellSize
-                val py = startY + block.second * previewCellSize
-                val alpha = if (dimmed) 0.4f else 1f
-                drawModernBlock(canvas, px, py, previewCellSize, p.color, alpha)
+                val px = startX + block.first  * previewSize
+                val py = startY + block.second * previewSize
+                drawBlock(canvas, px, py, previewSize, p.color, if (dimmed) 0.35f else 1f)
             }
         }
     }
 
-    private fun drawModernBlock(canvas: Canvas, x: Float, y: Float, size: Float, color: Int, alpha: Float, withGlow: Boolean = false) {
-        val padding = size * 0.08f
-        val left = x + padding
-        val top = y + padding
-        val right = left + size - padding * 2
-        val bottom = top + size - padding * 2
+    // ── Block drawing ────────────────────────────────────────────────────────
+    private fun drawBlock(
+        canvas: Canvas,
+        x: Float, y: Float,
+        size: Float, color: Int,
+        alpha: Float,
+        withGlow: Boolean = false
+    ) {
+        val pad    = size * 0.07f
+        val left   = x + pad
+        val top    = y + pad
+        val right  = left + size - pad * 2
+        val bottom = top  + size - pad * 2
 
         blockRect.set(left, top, right, bottom)
 
         if (withGlow) {
             glowPaint.color = color
-            glowPaint.alpha = (40 * alpha).toInt()
-            glowPaint.maskFilter = BlurMaskFilter(size * 0.3f, BlurMaskFilter.Blur.NORMAL)
-            canvas.drawRoundRect(blockRect, cornerRadius, cornerRadius, glowPaint)
+            glowPaint.alpha = (35 * alpha).toInt()
+            glowPaint.maskFilter = BlurMaskFilter(size * 0.35f, BlurMaskFilter.Blur.NORMAL)
+            canvas.drawRoundRect(blockRect, cornerRad, cornerRad, glowPaint)
             glowPaint.maskFilter = null
         }
 
-        val blockGradient = LinearGradient(
-            left, top, right, bottom,
-            lightenColor(color, 1.3f),
-            color,
-            Shader.TileMode.CLAMP
-        )
-        paint.shader = blockGradient
-        paint.alpha = (255 * alpha).toInt()
-        canvas.drawRoundRect(blockRect, cornerRadius, cornerRadius, paint)
+        // Base fill with gradient
+        val grad = LinearGradient(left, top, right, bottom,
+            lightenColor(color, 1.35f), color, Shader.TileMode.CLAMP)
+        paint.shader = grad
+        paint.alpha  = (255 * alpha).toInt()
+        canvas.drawRoundRect(blockRect, cornerRad, cornerRad, paint)
         paint.shader = null
 
-        val highlightGradient = LinearGradient(
-            left, top, left, top + (bottom - top) * 0.5f,
-            Color.argb((100 * alpha).toInt(), 255, 255, 255),
+        // Top-left highlight
+        val hlGrad = LinearGradient(left, top, left, top + (bottom - top) * 0.5f,
+            Color.argb((110 * alpha).toInt(), 255, 255, 255),
             Color.argb(0, 255, 255, 255),
-            Shader.TileMode.CLAMP
-        )
-        paint.shader = highlightGradient
-        val highlightRect = RectF(left, top, right, top + (bottom - top) * 0.5f)
-        canvas.drawRoundRect(highlightRect, cornerRadius, cornerRadius, paint)
+            Shader.TileMode.CLAMP)
+        paint.shader = hlGrad
+        canvas.drawRoundRect(
+            RectF(left, top, right, top + (bottom - top) * 0.5f),
+            cornerRad, cornerRad, paint)
         paint.shader = null
 
-        paint.color = Color.argb((60 * alpha).toInt(), 0, 0, 0)
-        val shadowRect = RectF(left, bottom - (bottom - top) * 0.3f, right, bottom)
-        canvas.drawRoundRect(shadowRect, cornerRadius, cornerRadius, paint)
+        // Bottom shadow
+        paint.color = Color.argb((55 * alpha).toInt(), 0, 0, 0)
+        canvas.drawRoundRect(
+            RectF(left, bottom - (bottom - top) * 0.28f, right, bottom),
+            cornerRad, cornerRad, paint)
 
         paint.alpha = 255
     }
 
     private fun drawGhostBlock(canvas: Canvas, x: Float, y: Float, size: Float, color: Int) {
-        val padding = size * 0.15f
-        val left = x + padding
-        val top = y + padding
-        val right = left + size - padding * 2
-        val bottom = top + size - padding * 2
-
+        val pad = size * 0.1f
+        val rect = RectF(x + pad, y + pad, x + size - pad, y + size - pad)
         paint.color = color
-        paint.alpha = 50
+        paint.alpha = 45
         paint.style = Paint.Style.STROKE
-        paint.strokeWidth = 2f
-        canvas.drawRoundRect(RectF(left, top, right, bottom), cornerRadius, cornerRadius, paint)
+        paint.strokeWidth = 1.8f
+        canvas.drawRoundRect(rect, cornerRad, cornerRad, paint)
         paint.style = Paint.Style.FILL
         paint.alpha = 255
     }
 
+    // ── Particles ────────────────────────────────────────────────────────────
     private fun spawnDropParticles() {
         game.currentPiece?.let { piece ->
             for (block in piece.blocks) {
                 val bx = piece.x + block.first
                 val by = piece.y + block.second
-                if (by >= 0) {
-                    repeat(3) {
-                        particles.add(Particle(
-                            boardOffsetX + bx * cellSize + cellSize / 2,
-                            boardOffsetY + by * cellSize + cellSize / 2,
-                            piece.color
-                        ))
-                    }
+                if (by >= 0) repeat(3) {
+                    particles.add(Particle(
+                        boardLeft + bx * cellSize + cellSize / 2f,
+                        boardTop  + by * cellSize + cellSize / 2f,
+                        piece.color))
                 }
             }
         }
     }
 
-    private fun spawnClearParticles(linesCleared: Int) {
-        for (y in (rows - linesCleared) until rows) {
+    private fun spawnClearParticles(cleared: Int) {
+        for (y in (rows - cleared) until rows) {
             for (x in 0 until cols) {
                 game.board[y][x]?.let { color ->
                     repeat(2) {
                         particles.add(Particle(
-                            boardOffsetX + x * cellSize + cellSize / 2,
-                            boardOffsetY + y * cellSize + cellSize / 2,
-                            color,
-                            speedMultiplier = 2f
-                        ))
+                            boardLeft + x * cellSize + cellSize / 2f,
+                            boardTop  + y * cellSize + cellSize / 2f,
+                            color, speedMultiplier = 2f))
                     }
                 }
             }
@@ -369,77 +440,64 @@ class TetBlockRisView @JvmOverloads constructor(
     }
 
     private fun spawnVictoryParticles() {
-        repeat(50) {
+        repeat(60) {
             particles.add(Particle(
-                width / 2f,
-                height / 2f,
-                listOf(Color.CYAN, Color.MAGENTA, Color.YELLOW, Color.GREEN).random(),
-                speedMultiplier = 3f,
-                life = 2f
-            ))
+                width / 2f, height / 3f,
+                listOf(Color.CYAN, Color.MAGENTA, Color.YELLOW, Color.GREEN,
+                    0xFFFF6688.toInt(), 0xFF88FFCC.toInt()).random(),
+                speedMultiplier = 3.5f, life = 2f))
         }
     }
 
     private fun updateAndDrawParticles(canvas: Canvas) {
-        val iterator = particles.iterator()
-        while (iterator.hasNext()) {
-            val p = iterator.next()
+        val it = particles.iterator()
+        while (it.hasNext()) {
+            val p = it.next()
             p.update()
-            if (p.life <= 0) {
-                iterator.remove()
-                continue
-            }
+            if (p.life <= 0) { it.remove(); continue }
             paint.color = p.color
-            paint.alpha = (255 * p.life).toInt()
+            paint.alpha = (255 * p.life).toInt().coerceIn(0, 255)
             canvas.drawCircle(p.x, p.y, p.size * p.life, paint)
         }
         paint.alpha = 255
-
-        if (particles.isNotEmpty()) {
-            invalidate()
-        }
+        if (particles.isNotEmpty()) invalidate()
     }
 
+    // ── Line clear animation ──────────────────────────────────────────────────
     private fun triggerLineClearAnim(lines: Int) {
-        for (i in 0 until lines) {
-            lineClearAnimations.add(LineClearAnim(rows - 1 - i))
-        }
+        for (i in 0 until lines) lineClearAnims.add(LineClearAnim(rows - 1 - i))
         invalidate()
     }
 
     private fun drawLineClearAnims(canvas: Canvas) {
-        val iterator = lineClearAnimations.iterator()
-        while (iterator.hasNext()) {
-            val anim = iterator.next()
-            anim.progress += 0.05f
-            if (anim.progress >= 1f) {
-                iterator.remove()
-                continue
-            }
+        val it = lineClearAnims.iterator()
+        while (it.hasNext()) {
+            val anim = it.next()
+            anim.progress += 0.06f
+            if (anim.progress >= 1f) { it.remove(); continue }
 
-            val flashAlpha = (255 * (1 - anim.progress)).toInt()
-            paint.color = Color.argb(flashAlpha, 255, 255, 255)
-            val y = boardOffsetY + anim.row * cellSize
-            canvas.drawRect(boardOffsetX, y, boardOffsetX + cols * cellSize, y + cellSize, paint)
+            val flashA = (255 * (1f - anim.progress)).toInt()
+            paint.color = Color.argb(flashA, 255, 255, 255)
+            val y = boardTop + anim.row * cellSize
+            canvas.drawRect(boardLeft, y, boardLeft + cols * cellSize, y + cellSize, paint)
 
-            repeat(5) {
-                val sparkleX = boardOffsetX + Random.nextFloat() * cols * cellSize
-                val sparkleY = y + Random.nextFloat() * cellSize
-                paint.color = Color.argb(flashAlpha, 255, 255, 200)
-                canvas.drawCircle(sparkleX, sparkleY, 3f * (1 - anim.progress), paint)
+            repeat(6) {
+                val sx = boardLeft + Random.nextFloat() * cols * cellSize
+                val sy = y + Random.nextFloat() * cellSize
+                paint.color = Color.argb(flashA, 255, 255, 180)
+                canvas.drawCircle(sx, sy, 3.5f * (1f - anim.progress), paint)
             }
         }
-        if (lineClearAnimations.isNotEmpty()) {
-            invalidate()
-        }
+        if (lineClearAnims.isNotEmpty()) invalidate()
     }
 
+    // ── Helpers ──────────────────────────────────────────────────────────────
     private fun lightenColor(color: Int, factor: Float): Int {
-        val a = Color.alpha(color)
-        val r = min(255, (Color.red(color) * factor).toInt())
-        val g = min(255, (Color.green(color) * factor).toInt())
-        val b = min(255, (Color.blue(color) * factor).toInt())
-        return Color.argb(a, r, g, b)
+        return Color.argb(
+            Color.alpha(color),
+            min(255, (Color.red(color)   * factor).toInt()),
+            min(255, (Color.green(color) * factor).toInt()),
+            min(255, (Color.blue(color)  * factor).toInt()))
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -447,21 +505,23 @@ class TetBlockRisView @JvmOverloads constructor(
         return true
     }
 
+    // ── Inner classes ────────────────────────────────────────────────────────
     private data class Particle(
-        var x: Float, var y: Float, val color: Int,
-        var vx: Float = Random.nextFloat() * 6f - 3f,
-        var vy: Float = Random.nextFloat() * -8f - 2f,
+        var x: Float, var y: Float,
+        val color: Int,
+        var vx: Float = Random.nextFloat() * 7f - 3.5f,
+        var vy: Float = Random.nextFloat() * -9f - 2f,
         var life: Float = 1f,
-        var size: Float = Random.nextFloat() * 6f + 3f,
+        var size: Float = Random.nextFloat() * 7f + 3f,
         val speedMultiplier: Float = 1f
     ) {
         fun update() {
-            x += vx * speedMultiplier
-            y += vy * speedMultiplier
-            vy += 0.3f
-            life -= 0.02f
+            x  += vx * speedMultiplier
+            y  += vy * speedMultiplier
+            vy += 0.35f
+            life -= 0.022f
         }
     }
 
-    private data class LineClearAnim(var row: Int, var progress: Float = 0f)
+    private data class LineClearAnim(val row: Int, var progress: Float = 0f)
 }
