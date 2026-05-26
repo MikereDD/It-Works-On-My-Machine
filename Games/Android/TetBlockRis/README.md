@@ -46,5 +46,9 @@ If the blocks disappear: that's probably not a feature.
 - Pi scoreboard integration
 - PowerShell terminal edition
 
+## 📲 APK Download
+
+[Download TetBlockRis APK](https://github.com/MikereDD/It-Works-On-My-Machine/raw/main/Games/Android/TetBlockRis/app/build/outputs/apk/debug/TetBlockRis.apk)
+
 ## 🧠 Final
 Modern games became stores pretending to be games. TetBlockRis is just a game.
