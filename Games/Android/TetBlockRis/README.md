@@ -7,7 +7,9 @@ TetBlockRis is a lightweight Tetris-style game project focused on fast gameplay,
 
 ## 📸 Gameplay Preview
 
-![TetBlockRis Gameplay](TetBlockRis-ss.jpg)
+<p align="center">
+  <img src="TetBlockRis-ss.jpg" alt="TetBlockRis Gameplay" width="55%">
+</p>
 
 
 ## 🎮 Features
