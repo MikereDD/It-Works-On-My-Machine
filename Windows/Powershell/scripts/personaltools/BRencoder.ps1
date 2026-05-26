@@ -1,9 +1,9 @@
 #--------------------------------------------
 # file:     brEncoder.ps1
 # author:   Mike Redd
-# version:  2.4
+# version:  2.5
 # created:  2026-02-11
-# updated:  2026-05-23
+# updated:  2026-05-25
 # desc:     Encode Blu-ray .m2ts files
 #           to H.265/HEVC on Windows
 #           using ffmpeg, then create a
@@ -13,11 +13,10 @@
 #           validates metadata, verifies final MKV
 #           language/default/forced tags
 #           remuxes final MKV with real track IDs
-# changes:  v2.4 - added Select-TrackMetadata: replaces silent Load-TrackMetadata
-#                  call in Apply-TrackMetadata; confirms auto-matched JSON with
-#                  user before proceeding; on miss shows numbered pick list of
-#                  all JSONs in meta\ so name mismatches can be resolved manually
-#                  without re-running bluray-backup
+# changes:  v2.5 - add BRTrackMeta .tracks.txt support; parse audio/subtitle
+#                  language, names, forced/default flags from bluray-trackdump
+#                  text sidecars; map source metadata by final MKV track order
+#                  so non-sequential subtitle IDs like s17/s8/s9 tag correctly
 #--------------------------------------------
 
 param()
@@ -57,7 +56,7 @@ else {
 $ErrorActionPreference = 'Stop'
 
 $ScriptName    = "Blu-ray Encoder"
-$ScriptVersion = "2.4"
+$ScriptVersion = "2.5"
 $ScriptAuthor  = "Mike Redd"
 
 # ── Config ────────────────────────────────────────────────────
@@ -563,11 +562,16 @@ function Get-TrackMetaCandidates {
     $movieSafe  = New-SafeName -Name $MovieName
 
     # Direct matches first. Avoid generic Blu-ray stream aliases like 00004.json;
-    # those can collide between different discs.
+    # those can collide between different discs. Also support BRTrackMeta
+    # .tracks.txt files written by bluray-trackdump/bluray-backup.
     if ($sourceBase -notmatch '^\d{5}$') {
         $candidates.Add((Join-Path $Script:MetaRoot "$sourceBase.json"))
+        $candidates.Add((Join-Path $Script:MetaRoot "$sourceBase.tracks.txt"))
+        $candidates.Add((Join-Path $Script:TxtRoot  "$sourceBase.tracks.txt"))
     }
     $candidates.Add((Join-Path $Script:MetaRoot "$movieSafe.json"))
+    $candidates.Add((Join-Path $Script:MetaRoot "$movieSafe.tracks.txt"))
+    $candidates.Add((Join-Path $Script:TxtRoot  "$movieSafe.tracks.txt"))
 
     # If the source is a Blu-ray stream such as 00004.m2ts, also check the
     # parent backup folder name, because backup metadata is saved as Movie.json.
@@ -576,11 +580,150 @@ function Get-TrackMetaCandidates {
         if ($dir.Name -and $dir.Name -notin @('STREAM', 'BDMV')) {
             $folderSafe = New-SafeName -Name $dir.Name
             $candidates.Add((Join-Path $Script:MetaRoot "$folderSafe.json"))
+            $candidates.Add((Join-Path $Script:MetaRoot "$folderSafe.tracks.txt"))
+            $candidates.Add((Join-Path $Script:TxtRoot  "$folderSafe.tracks.txt"))
         }
         $dir = $dir.Parent
     }
 
     return @($candidates | Select-Object -Unique)
+}
+
+function New-BRTextTrackObject {
+    param(
+        [Parameter(Mandatory)][string]$TrackId,
+        [Parameter(Mandatory)][string]$LanguageCode,
+        [Parameter(Mandatory)][string]$Description,
+        [Parameter(Mandatory)][int]$Order,
+        [switch]$Forced,
+        [switch]$Default
+    )
+
+    $langCode = Resolve-LanguageCode -Code $LanguageCode
+    $langName = switch ($langCode) {
+        'eng' { 'English' }
+        'spa' { 'Spanish' }
+        'fra' { 'French' }
+        'fre' { 'French' }
+        'jpn' { 'Japanese' }
+        'ger' { 'German' }
+        default { $null }
+    }
+
+    $cleanDescription = $Description.Trim()
+    $cleanDescription = $cleanDescription -replace '\s*\([^)]*forced only[^)]*\)', ''
+    $cleanDescription = $cleanDescription -replace '\s*\[[^\]]+\]', ''
+    $cleanDescription = ($cleanDescription -replace '\s+', ' ').Trim()
+
+    if ($langName) {
+        if ($cleanDescription -match ("^PGS\s+{0}$" -f [regex]::Escape($langName))) {
+            $cleanDescription = "$langName PGS"
+        }
+        elseif ($cleanDescription -match ("^(?<codec>.+?)\s+{0}$" -f [regex]::Escape($langName))) {
+            $cleanDescription = "$langName $($Matches['codec'].Trim())"
+        }
+    }
+
+    if ($Forced -and $cleanDescription -notmatch '(?i)forced') {
+        $cleanDescription = "$cleanDescription Forced"
+    }
+
+    [pscustomobject]@{
+        TrackId      = $TrackId
+        LanguageCode = $langCode
+        Description  = $cleanDescription
+        Name         = $cleanDescription
+        TrackName    = $cleanDescription
+        Forced       = [bool]$Forced
+        Default      = [bool]$Default
+        Order        = $Order
+        SourceFormat = 'BRTrackMetaText'
+    }
+}
+
+function Convert-BRTrackTextToMetadata {
+    <#
+    .SYNOPSIS
+        Parses bluray-trackdump/bluray-backup BRTrackMeta .tracks.txt sidecars.
+
+    .NOTES
+        Important detail: source IDs such as s17/s8/s9 are Blu-ray source IDs,
+        not final MKV track IDs. For subtitle text files we preserve the order
+        shown in [Subtitles] because that reflects source stream order. Audio is
+        sorted by numeric a# because the final MKV audio layout usually follows
+        a1, a2, a3... even when the text sidecar prints the default track last.
+    #>
+    param(
+        [Parameter(Mandatory)][string]$Path
+    )
+
+    $lines = Get-Content -LiteralPath $Path -Encoding UTF8
+    $movie = [System.IO.Path]::GetFileNameWithoutExtension($Path) -replace '\.tracks$', ''
+    $audio = New-Object System.Collections.Generic.List[object]
+    $subs  = New-Object System.Collections.Generic.List[object]
+    $section = ''
+    $order = 0
+
+    foreach ($line in $lines) {
+        $trim = $line.Trim()
+        if ([string]::IsNullOrWhiteSpace($trim)) { continue }
+
+        if ($trim -match '^Movie\s*:\s*(.+)$') {
+            $movie = $Matches[1].Trim()
+            continue
+        }
+
+        if ($trim -match '^\[Audio\]')     { $section = 'audio'; continue }
+        if ($trim -match '^\[Subtitles\]') { $section = 'subtitle'; continue }
+        if ($trim -match '^\[')            { $section = ''; continue }
+
+        if ($section -notin @('audio','subtitle')) { continue }
+
+        # Example:
+        # s9: eng / English | PGS English  (forced only) [forced, default]
+        if ($trim -notmatch '^(?<id>[as]\d+)\s*:\s*(?<lang>[A-Za-z]{2,3}|und)\b.*?\|\s*(?<desc>.+)$') {
+            continue
+        }
+
+        $order++
+        $id   = $Matches['id']
+        $lang = $Matches['lang']
+        $desc = $Matches['desc'].Trim()
+        $forced = ($trim -match '\[([^\]]*,\s*)?forced(\s*,[^\]]*)?\]' -or $trim -match '\(forced only\)')
+        $default = ($trim -match '\[([^\]]*,\s*)?default(\s*,[^\]]*)?\]')
+
+        $track = New-BRTextTrackObject -TrackId $id -LanguageCode $lang -Description $desc -Order $order -Forced:$forced -Default:$default
+
+        if ($section -eq 'audio') { $audio.Add($track) }
+        else { $subs.Add($track) }
+    }
+
+    # Text sidecars sometimes list default audio last. The encoded MKV follows
+    # source audio stream order, so normalize audio to a1,a2,a3... while keeping
+    # subtitle order exactly as listed.
+    $audioSorted = @($audio | Sort-Object { [int](([string]$_.TrackId) -replace '^a','') })
+    $subsOrdered = @($subs  | Sort-Object Order)
+
+    [pscustomobject]@{
+        MovieName = $movie
+        MainTitle = [pscustomobject]@{
+            OutputName     = $movie
+            AudioTracks    = $audioSorted
+            SubtitleTracks = $subsOrdered
+        }
+    }
+}
+
+function Read-TrackMetadataFile {
+    param([Parameter(Mandatory)][string]$Path)
+
+    $name = [System.IO.Path]::GetFileName($Path)
+    if ($name -like '*.tracks.txt') {
+        return Convert-BRTrackTextToMetadata -Path $Path
+    }
+
+    $raw = Get-Content -LiteralPath $Path -Raw -Encoding UTF8
+    return ($raw | ConvertFrom-Json)
 }
 
 function Test-TrackMetadataMatch {
@@ -637,11 +780,10 @@ function Load-TrackMetadata {
     foreach ($path in $candidates) {
         if (Test-Path -LiteralPath $path) {
             try {
-                $raw = Get-Content -LiteralPath $path -Raw -Encoding UTF8
-                $json = $raw | ConvertFrom-Json
+                $data = Read-TrackMetadataFile -Path $path
                 return [pscustomobject]@{
                     Path = $path
-                    Data = $json
+                    Data = $data
                 }
             }
             catch {
@@ -656,18 +798,21 @@ function Load-TrackMetadata {
     # Fallback scan: useful when the source file is 00004.m2ts but the metadata
     # sidecar is named after the movie. This prevents the dreaded 'und' tracks.
     if (Test-Path -LiteralPath $Script:MetaRoot) {
-        $jsonFiles = Get-ChildItem -LiteralPath $Script:MetaRoot -Filter *.json -File -ErrorAction SilentlyContinue |
-                     Sort-Object LastWriteTime -Descending |
-                     Select-Object -First $Script:MetadataScanLimit
+        $metaFiles = @(
+            Get-ChildItem -LiteralPath $Script:MetaRoot -Filter *.json -File -ErrorAction SilentlyContinue
+            Get-ChildItem -LiteralPath $Script:MetaRoot -Filter *.tracks.txt -File -ErrorAction SilentlyContinue
+            if (Test-Path -LiteralPath $Script:TxtRoot) {
+                Get-ChildItem -LiteralPath $Script:TxtRoot -Filter *.tracks.txt -File -ErrorAction SilentlyContinue
+            }
+        ) | Sort-Object LastWriteTime -Descending | Select-Object -First $Script:MetadataScanLimit
 
-        foreach ($file in $jsonFiles) {
+        foreach ($file in $metaFiles) {
             try {
-                $raw = Get-Content -LiteralPath $file.FullName -Raw -Encoding UTF8
-                $json = $raw | ConvertFrom-Json
-                if (Test-TrackMetadataMatch -Meta $json -SourceFile $SourceFile -MovieName $MovieName) {
+                $data = Read-TrackMetadataFile -Path $file.FullName
+                if (Test-TrackMetadataMatch -Meta $data -SourceFile $SourceFile -MovieName $MovieName) {
                     return [pscustomobject]@{
                         Path = $file.FullName
-                        Data = $json
+                        Data = $data
                     }
                 }
             }
@@ -782,12 +927,12 @@ function Resolve-TrackList {
     )
 
     if ($Kind -eq 'audio') {
-        if ($Title.AudioTracks) { return @($Title.AudioTracks | Sort-Object TrackId) }
+        if ($Title.AudioTracks) { return @($Title.AudioTracks) }
         if ($Title.Tracks)      { return @($Title.Tracks | Where-Object { $_.Type -eq 'Audio' } | Sort-Object TrackId) }
     }
 
     if ($Kind -eq 'subtitle') {
-        if ($Title.SubtitleTracks) { return @($Title.SubtitleTracks | Sort-Object TrackId) }
+        if ($Title.SubtitleTracks) { return @($Title.SubtitleTracks) }
         if ($Title.Tracks)         { return @($Title.Tracks | Where-Object { $_.Type -eq 'Subtitles' } | Sort-Object TrackId) }
     }
 
@@ -1161,8 +1306,8 @@ function Repair-MKVLanguages {
     Show-Header
     Write-Host "  $($global:UI_CYN)Repair Language Tags$($global:UI_R)"
     Write-UiBlankLine
-    Write-Host "  This patches language into MKV track headers in-place using mkvpropedit."
-    Write-Host "  No re-encode. The source .m2ts is only read for its language tags."
+    Write-Host "  This applies sidecar metadata from JSON or .tracks.txt when available."
+    Write-Host "  No re-encode. Falls back to source ffprobe language tags if needed."
     Write-UiBlankLine
 
     # Pick the MKV to fix
@@ -1224,10 +1369,15 @@ function Repair-MKVLanguages {
     Write-Host "  $($global:UI_DIM)Source$($global:UI_R)  $sourcePath"
     Write-UiBlankLine
 
-    $ok = Get-StreamLanguagesFromSource -SourcePath $sourcePath -OutputMkvPath $targetMkv
-    if ($ok) {
+    $sourceInfo = Get-Item -LiteralPath $sourcePath
+    $movieName = [System.IO.Path]::GetFileNameWithoutExtension($targetMkv)
+
+    try {
+        Apply-TrackMetadata -OutputFile $targetMkv -SourceFile $sourceInfo -MovieName $movieName | Out-Null
+    }
+    catch {
         Write-UiBlankLine
-        Show-FinalMetadataVerification -OutputFile $targetMkv
+        Write-CoreError $_.Exception.Message
     }
 
     Pause-Script
@@ -1277,7 +1427,7 @@ function Select-TrackMetadata {
         }
 
         Write-UiBlankLine
-        $confirm = (Read-Host "  Use this JSON? [Y/n]").Trim().ToUpper()
+        $confirm = (Read-Host "  Use this metadata file? [Y/n]").Trim().ToUpper()
         if ($confirm -ne 'N') {
             return $autoMatch
         }
@@ -1295,47 +1445,49 @@ function Select-TrackMetadata {
         return $null
     }
 
-    $jsonFiles = @(
-        Get-ChildItem -LiteralPath $Script:MetaRoot -Filter '*.json' -File |
-        Sort-Object Name
-    )
+    $metadataFiles = @(
+        Get-ChildItem -LiteralPath $Script:MetaRoot -Filter '*.json' -File -ErrorAction SilentlyContinue
+        Get-ChildItem -LiteralPath $Script:MetaRoot -Filter '*.tracks.txt' -File -ErrorAction SilentlyContinue
+        if (Test-Path -LiteralPath $Script:TxtRoot) {
+            Get-ChildItem -LiteralPath $Script:TxtRoot -Filter '*.tracks.txt' -File -ErrorAction SilentlyContinue
+        }
+    ) | Sort-Object Name -Unique
 
-    if ($jsonFiles.Count -eq 0) {
-        Write-Host "  $($global:UI_YLW)No JSON files found in $($Script:MetaRoot)$($global:UI_R)"
+    if ($metadataFiles.Count -eq 0) {
+        Write-Host "  $($global:UI_YLW)No JSON or .tracks.txt files found in $($Script:MetaRoot) / $($Script:TxtRoot)$($global:UI_R)"
         return $null
     }
 
     Write-UiBlankLine
     Write-Host "  $($global:UI_MAG)Available metadata files:$($global:UI_R)"
-    for ($i = 0; $i -lt $jsonFiles.Count; $i++) {
-        Write-Host ("    [{0,2}]  {1}" -f ($i + 1), $jsonFiles[$i].Name)
+    for ($i = 0; $i -lt $metadataFiles.Count; $i++) {
+        Write-Host ("    [{0,2}]  {1}" -f ($i + 1), $metadataFiles[$i].Name)
     }
     Write-Host "    [  0]  Skip — use ffprobe language fallback instead"
     Write-UiBlankLine
 
-    $sel = (Read-Host "  Select JSON number [0]").Trim()
+    $sel = (Read-Host "  Select metadata number [0]").Trim()
     if ([string]::IsNullOrWhiteSpace($sel)) { $sel = '0' }
 
     $idx = 0
     if (-not [int]::TryParse($sel, [ref]$idx)) {
-        Write-Host "  $($global:UI_YLW)Invalid input — skipping JSON.$($global:UI_R)"
+        Write-Host "  $($global:UI_YLW)Invalid input — skipping metadata.$($global:UI_R)"
         return $null
     }
 
     if ($idx -eq 0) {
-        Write-Host "  $($global:UI_YLW)Skipping JSON — will fall back to ffprobe.$($global:UI_R)"
+        Write-Host "  $($global:UI_YLW)Skipping metadata — will fall back to ffprobe.$($global:UI_R)"
         return $null
     }
 
-    if ($idx -lt 1 -or $idx -gt $jsonFiles.Count) {
-        Write-Host "  $($global:UI_YLW)Selection out of range — skipping JSON.$($global:UI_R)"
+    if ($idx -lt 1 -or $idx -gt $metadataFiles.Count) {
+        Write-Host "  $($global:UI_YLW)Selection out of range — skipping metadata.$($global:UI_R)"
         return $null
     }
 
-    $chosen = $jsonFiles[$idx - 1]
+    $chosen = $metadataFiles[$idx - 1]
     try {
-        $raw  = Get-Content -LiteralPath $chosen.FullName -Raw -Encoding UTF8
-        $data = $raw | ConvertFrom-Json
+        $data = Read-TrackMetadataFile -Path $chosen.FullName
         Write-Host "  $($global:UI_GRN)Using: $($chosen.Name)$($global:UI_R)"
         return [pscustomobject]@{ Path = $chosen.FullName; Data = $data }
     }
@@ -1355,7 +1507,7 @@ function Apply-TrackMetadata {
     $metaInfo = Select-TrackMetadata -SourceFile $SourceFile -MovieName $MovieName
     if (-not $metaInfo) {
         Write-UiBlankLine
-        Write-Host "  $($global:UI_YLW)No sidecar JSON found — falling back to ffprobe source language tags.$($global:UI_R)"
+        Write-Host "  $($global:UI_YLW)No sidecar metadata found — falling back to ffprobe source language tags.$($global:UI_R)"
         Get-StreamLanguagesFromSource -SourcePath $SourceFile.FullName -OutputMkvPath $OutputFile
         Write-UiBlankLine
         Show-FinalMetadataVerification -OutputFile $OutputFile
