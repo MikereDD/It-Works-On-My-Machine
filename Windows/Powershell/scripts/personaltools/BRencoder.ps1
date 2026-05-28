@@ -1,9 +1,9 @@
 #--------------------------------------------
 # file:     brEncoder.ps1
 # author:   Mike Redd
-# version:  2.5
+# version:  2.5.1
 # created:  2026-02-11
-# updated:  2026-05-25
+# updated:  2026-05-27
 # desc:     Encode Blu-ray .m2ts files
 #           to H.265/HEVC on Windows
 #           using ffmpeg, then create a
@@ -17,6 +17,9 @@
 #                  language, names, forced/default flags from bluray-trackdump
 #                  text sidecars; map source metadata by final MKV track order
 #                  so non-sequential subtitle IDs like s17/s8/s9 tag correctly
+#           v2.5.1 - fix mkvmerge exit code 1 treated as fatal (warnings != error)
+#                  - Select-TrackMetadata: add -AutoAccept for unattended encode
+#                    so metadata is applied without prompting after long encodes
 #--------------------------------------------
 
 param()
@@ -56,7 +59,7 @@ else {
 $ErrorActionPreference = 'Stop'
 
 $ScriptName    = "Blu-ray Encoder"
-$ScriptVersion = "2.5"
+$ScriptVersion = "2.5.1"
 $ScriptAuthor  = "Mike Redd"
 
 # ── Config ────────────────────────────────────────────────────
@@ -451,7 +454,7 @@ function Get-SampleOutputPath {
     $safeName = New-SafeName -Name $MovieName
     $outputFile = Join-Path $Script:SampleRoot "${safeName}_sample.$($Script:DefaultExt)"
 
-    if (Test-Path $outputFile) {
+    if (Test-Path -LiteralPath $outputFile) {
         $stamp = Get-Date -Format 'yyyyMMdd_HHmmss'
         $outputFile = Join-Path $Script:SampleRoot "${safeName}_sample_$stamp.$($Script:DefaultExt)"
     }
@@ -464,12 +467,12 @@ function Move-SourceToDone {
 
     $dest = Join-Path $Script:DoneRoot $SourceFile.Name
 
-    if (Test-Path $dest) {
+    if (Test-Path -LiteralPath $dest) {
         $stamp = Get-Date -Format 'yyyyMMdd_HHmmss'
         $dest = Join-Path $Script:DoneRoot ("{0}_{1}{2}" -f $SourceFile.BaseName, $stamp, $SourceFile.Extension)
     }
 
-    Move-Item -Path $SourceFile.FullName -Destination $dest -Force
+    Move-Item -LiteralPath $SourceFile.FullName -Destination $dest -Force
     return [string]$dest
 }
 
@@ -531,7 +534,7 @@ function Wait-ForOutputFile {
     $fileInfo = $null
 
     for ($i = 0; $i -lt $RetryCount; $i++) {
-        $fileInfo = Get-Item -Path $Path -ErrorAction SilentlyContinue
+        $fileInfo = Get-Item -LiteralPath $Path -ErrorAction SilentlyContinue
         if ($fileInfo) {
             break
         }
@@ -1172,9 +1175,13 @@ function Invoke-MKVLanguageRemux {
     Write-Host "  $($global:UI_CYN)Remuxing with mkvmerge using real MKV track IDs...$($global:UI_R)"
     & $Script:MKVMergePath @muxArgs
 
-    if ($LASTEXITCODE -ne 0) {
+    # mkvmerge exit codes: 0 = success, 1 = warnings (output still created), 2+ = error
+    if ($LASTEXITCODE -ge 2) {
         if (Test-Path -LiteralPath $tmp) { Remove-Item -LiteralPath $tmp -Force }
         throw "mkvmerge metadata remux failed with exit code $LASTEXITCODE"
+    }
+    if ($LASTEXITCODE -eq 1) {
+        Write-Host "  $($global:UI_YLW)mkvmerge completed with warnings (exit 1) — continuing.$($global:UI_R)"
     }
 
     if (-not (Test-Path -LiteralPath $tmp)) {
@@ -1399,7 +1406,10 @@ function Select-TrackMetadata {
     #>
     param(
         [Parameter(Mandatory)][System.IO.FileInfo]$SourceFile,
-        [Parameter(Mandatory)][string]$MovieName
+        [Parameter(Mandatory)][string]$MovieName,
+        # When set, auto-accept the first metadata match without prompting.
+        # Used during unattended encode; interactive repair (option 5) leaves this off.
+        [switch]$AutoAccept
     )
 
     # ── Step 1: try auto-match ────────────────────────────────
@@ -1411,7 +1421,7 @@ function Select-TrackMetadata {
         Write-Host "  $($global:UI_CYN)Metadata auto-matched:$($global:UI_R)"
         Write-Host "  $($global:UI_DIM)File $($global:UI_R)  $jsonName"
 
-        # Show audio/sub language preview from the JSON
+        # Show audio/sub language preview from the sidecar
         $title = Get-TrackMetaTitle -Meta $autoMatch.Data
         if ($title) {
             $audioList = @(Resolve-TrackList -Title $title -Kind audio)
@@ -1424,6 +1434,11 @@ function Select-TrackMetadata {
                 $langs = ($subList | ForEach-Object { Get-MetaLanguage -Track $_ }) -join ', '
                 Write-Host "  $($global:UI_DIM)Subs $($global:UI_R)  $langs"
             }
+        }
+
+        if ($AutoAccept) {
+            Write-Host "  $($global:UI_GRN)Auto-accepting match (unattended encode).$($global:UI_R)"
+            return $autoMatch
         }
 
         Write-UiBlankLine
@@ -1504,7 +1519,7 @@ function Apply-TrackMetadata {
         [Parameter(Mandatory)][string]$MovieName
     )
 
-    $metaInfo = Select-TrackMetadata -SourceFile $SourceFile -MovieName $MovieName
+    $metaInfo = Select-TrackMetadata -SourceFile $SourceFile -MovieName $MovieName -AutoAccept
     if (-not $metaInfo) {
         Write-UiBlankLine
         Write-Host "  $($global:UI_YLW)No sidecar metadata found — falling back to ffprobe source language tags.$($global:UI_R)"
