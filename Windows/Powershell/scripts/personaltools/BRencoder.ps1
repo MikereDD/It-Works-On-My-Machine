@@ -17,9 +17,9 @@
 #                  language, names, forced/default flags from bluray-trackdump
 #                  text sidecars; map source metadata by final MKV track order
 #                  so non-sequential subtitle IDs like s17/s8/s9 tag correctly
-#           v2.5.1 - fix mkvmerge exit code 1 treated as fatal (warnings != error)
-#                  - Select-TrackMetadata: add -AutoAccept for unattended encode
-#                    so metadata is applied without prompting after long encodes
+#           v2.5.1 - replace mkvmerge remux approach with mkvpropedit in-place
+#                  - mkvmerge --default-track/--forced-display-flag silently broken
+#                    in MKVToolNix v54+; mkvpropedit flag-default/flag-forced work
 #--------------------------------------------
 
 param()
@@ -1108,6 +1108,20 @@ function Get-AnyTaggedLanguageCount {
 }
 
 function Invoke-MKVLanguageRemux {
+    <#
+    .SYNOPSIS
+        Writes language, track name, default, and forced flags directly into
+        the MKV track headers using mkvpropedit.
+
+    .NOTES
+        mkvpropedit edits headers in-place — no temp file or full remux needed.
+        Uses positional track references (track:a1, track:s1 ...) which are
+        stable across MKVToolNix versions, unlike the old mkvmerge --language
+        flag approach which changed syntax in v54 and silently did nothing.
+
+        mkvpropedit --set language= expects ISO 639-2/B codes (eng, fre, spa ...)
+        which is exactly what Resolve-LanguageCode already produces.
+    #>
     param(
         [Parameter(Mandatory)][string]$OutputFile,
         [Parameter(Mandatory)][object]$TrackLayout,
@@ -1115,82 +1129,78 @@ function Invoke-MKVLanguageRemux {
         [Parameter(Mandatory)][object[]]$SubMeta
     )
 
-    $dir  = Split-Path -Parent $OutputFile
-    $base = [System.IO.Path]::GetFileNameWithoutExtension($OutputFile)
-    $ext  = [System.IO.Path]::GetExtension($OutputFile)
-    $tmp  = Join-Path $dir ("{0}.metadata_tmp{1}" -f $base, $ext)
-    $bak  = Join-Path $dir ("{0}.pre_metadata_{1}{2}" -f $base, (Get-Date -Format 'yyyyMMdd_HHmmss'), $ext)
-
-    if (Test-Path -LiteralPath $tmp) {
-        Remove-Item -LiteralPath $tmp -Force
-    }
-
-    $muxArgs = @('-o', $tmp)
+    $propArgs = @($OutputFile)
+    $applied  = 0
 
     $audioToApply = [Math]::Min($TrackLayout.AudioTracks.Count, $AudioMeta.Count)
     for ($i = 0; $i -lt $audioToApply; $i++) {
-        $outTrack = $TrackLayout.AudioTracks[$i]
         $metaTrack = $AudioMeta[$i]
-        $id = [int]$outTrack.id
         $lang = Get-MetaLanguage -Track $metaTrack
         $name = Get-MetaTrackName -Track $metaTrack
+        $trackRef = "track:a$($i + 1)"
 
-        $muxArgs += '--language'
-        $muxArgs += ("{0}:{1}" -f $id, $lang)
+        $propArgs += '--edit'
+        $propArgs += $trackRef
+        $propArgs += '--set'
+        $propArgs += "language=$lang"
 
         if (-not [string]::IsNullOrWhiteSpace($name)) {
-            $muxArgs += '--track-name'
-            $muxArgs += ("{0}:{1}" -f $id, $name)
+            $propArgs += '--set'
+            $propArgs += "name=$name"
         }
 
-        $muxArgs += '--default-track'
-        $muxArgs += ("{0}:{1}" -f $id, $(if ($metaTrack.Default) { 'yes' } else { 'no' }))
+        $propArgs += '--set'
+        $propArgs += "flag-default=$(if ($metaTrack.Default) { '1' } else { '0' })"
+
+        Write-Host ("    audio {0}: lang={1}  name={2}  default={3}" -f
+            ($i + 1), $lang,
+            $(if ([string]::IsNullOrWhiteSpace($name)) { '—' } else { $name }),
+            $(if ($metaTrack.Default) { 'yes' } else { 'no' }))
+        $applied++
     }
 
     $subToApply = [Math]::Min($TrackLayout.SubtitleTracks.Count, $SubMeta.Count)
     for ($i = 0; $i -lt $subToApply; $i++) {
-        $outTrack = $TrackLayout.SubtitleTracks[$i]
         $metaTrack = $SubMeta[$i]
-        $id = [int]$outTrack.id
         $lang = Get-MetaLanguage -Track $metaTrack
         $name = Get-MetaTrackName -Track $metaTrack
+        $trackRef = "track:s$($i + 1)"
 
-        $muxArgs += '--language'
-        $muxArgs += ("{0}:{1}" -f $id, $lang)
+        $propArgs += '--edit'
+        $propArgs += $trackRef
+        $propArgs += '--set'
+        $propArgs += "language=$lang"
 
         if (-not [string]::IsNullOrWhiteSpace($name)) {
-            $muxArgs += '--track-name'
-            $muxArgs += ("{0}:{1}" -f $id, $name)
+            $propArgs += '--set'
+            $propArgs += "name=$name"
         }
 
-        $muxArgs += '--default-track'
-        $muxArgs += ("{0}:{1}" -f $id, $(if ($metaTrack.Default) { 'yes' } else { 'no' }))
+        $propArgs += '--set'
+        $propArgs += "flag-default=$(if ($metaTrack.Default) { '1' } else { '0' })"
 
-        $muxArgs += '--forced-display-flag'
-        $muxArgs += ("{0}:{1}" -f $id, $(if ($metaTrack.Forced) { 'yes' } else { 'no' }))
+        $propArgs += '--set'
+        $propArgs += "flag-forced=$(if ($metaTrack.Forced) { '1' } else { '0' })"
+
+        Write-Host ("    sub   {0}: lang={1}  name={2}  default={3}  forced={4}" -f
+            ($i + 1), $lang,
+            $(if ([string]::IsNullOrWhiteSpace($name)) { '—' } else { $name }),
+            $(if ($metaTrack.Default) { 'yes' } else { 'no' }),
+            $(if ($metaTrack.Forced)  { 'yes' } else { 'no' }))
+        $applied++
     }
 
-    $muxArgs += $OutputFile
-
-    Write-Host "  $($global:UI_CYN)Remuxing with mkvmerge using real MKV track IDs...$($global:UI_R)"
-    & $Script:MKVMergePath @muxArgs
-
-    # mkvmerge exit codes: 0 = success, 1 = warnings (output still created), 2+ = error
-    if ($LASTEXITCODE -ge 2) {
-        if (Test-Path -LiteralPath $tmp) { Remove-Item -LiteralPath $tmp -Force }
-        throw "mkvmerge metadata remux failed with exit code $LASTEXITCODE"
-    }
-    if ($LASTEXITCODE -eq 1) {
-        Write-Host "  $($global:UI_YLW)mkvmerge completed with warnings (exit 1) — continuing.$($global:UI_R)"
+    if ($applied -eq 0) {
+        Write-Host "  $($global:UI_YLW)No tracks to tag.$($global:UI_R)"
+        return
     }
 
-    if (-not (Test-Path -LiteralPath $tmp)) {
-        throw "mkvmerge metadata remux did not create temp output: $tmp"
-    }
+    Write-Host "  $($global:UI_CYN)Writing track metadata via mkvpropedit...$($global:UI_R)"
+    & $Script:MKVPropEditPath @propArgs
 
-    Move-Item -LiteralPath $OutputFile -Destination $bak -Force
-    Move-Item -LiteralPath $tmp -Destination $OutputFile -Force
-    Remove-Item -LiteralPath $bak -Force -ErrorAction SilentlyContinue
+    if ($LASTEXITCODE -ne 0) {
+        throw "mkvpropedit failed with exit code $LASTEXITCODE"
+    }
 }
 
 function Get-StreamLanguagesFromSource {
@@ -1406,10 +1416,7 @@ function Select-TrackMetadata {
     #>
     param(
         [Parameter(Mandatory)][System.IO.FileInfo]$SourceFile,
-        [Parameter(Mandatory)][string]$MovieName,
-        # When set, auto-accept the first metadata match without prompting.
-        # Used during unattended encode; interactive repair (option 5) leaves this off.
-        [switch]$AutoAccept
+        [Parameter(Mandatory)][string]$MovieName
     )
 
     # ── Step 1: try auto-match ────────────────────────────────
@@ -1421,7 +1428,7 @@ function Select-TrackMetadata {
         Write-Host "  $($global:UI_CYN)Metadata auto-matched:$($global:UI_R)"
         Write-Host "  $($global:UI_DIM)File $($global:UI_R)  $jsonName"
 
-        # Show audio/sub language preview from the sidecar
+        # Show audio/sub language preview from the JSON
         $title = Get-TrackMetaTitle -Meta $autoMatch.Data
         if ($title) {
             $audioList = @(Resolve-TrackList -Title $title -Kind audio)
@@ -1434,11 +1441,6 @@ function Select-TrackMetadata {
                 $langs = ($subList | ForEach-Object { Get-MetaLanguage -Track $_ }) -join ', '
                 Write-Host "  $($global:UI_DIM)Subs $($global:UI_R)  $langs"
             }
-        }
-
-        if ($AutoAccept) {
-            Write-Host "  $($global:UI_GRN)Auto-accepting match (unattended encode).$($global:UI_R)"
-            return $autoMatch
         }
 
         Write-UiBlankLine
@@ -1519,7 +1521,7 @@ function Apply-TrackMetadata {
         [Parameter(Mandatory)][string]$MovieName
     )
 
-    $metaInfo = Select-TrackMetadata -SourceFile $SourceFile -MovieName $MovieName -AutoAccept
+    $metaInfo = Select-TrackMetadata -SourceFile $SourceFile -MovieName $MovieName
     if (-not $metaInfo) {
         Write-UiBlankLine
         Write-Host "  $($global:UI_YLW)No sidecar metadata found — falling back to ffprobe source language tags.$($global:UI_R)"
@@ -1568,11 +1570,10 @@ function Apply-TrackMetadata {
     Write-Host "  $($global:UI_DIM)Subs  $($global:UI_R)  output=$($trackLayout.SubtitleCount) / meta=$($subMeta.Count)"
     Write-UiBlankLine
 
-    # Use mkvmerge, not mkvpropedit, for the final tagging pass.
-    # mkvmerge -J gives the real MKV track IDs in the finished file. Those IDs
-    # are the only safe IDs to use when applying --language, --track-name,
-    # default-track, and forced-display-flag. This fixes the old "everything is
-    # und" failure caused by relying on positional or ffmpeg-style indexes.
+    # Use mkvpropedit with positional track refs (track:a1, track:s1 ...).
+    # mkvmerge -J is still used to get the real audio/subtitle counts and ordering,
+    # but the actual tag writes go through mkvpropedit --edit/--set which edits
+    # headers in-place and has stable flag names across all MKVToolNix versions.
     Invoke-MKVLanguageRemux -OutputFile $OutputFile -TrackLayout $trackLayout -AudioMeta $audioMeta -SubMeta $subMeta
 
     Write-UiBlankLine
