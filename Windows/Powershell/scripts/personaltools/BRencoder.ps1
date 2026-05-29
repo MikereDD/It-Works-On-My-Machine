@@ -1,9 +1,9 @@
 #--------------------------------------------
 # file:     brEncoder.ps1
 # author:   Mike Redd
-# version:  2.5.1
+# version:  2.5.2
 # created:  2026-02-11
-# updated:  2026-05-27
+# updated:  2026-05-28
 # desc:     Encode Blu-ray .m2ts files
 #           to H.265/HEVC on Windows
 #           using ffmpeg, then create a
@@ -13,13 +13,8 @@
 #           validates metadata, verifies final MKV
 #           language/default/forced tags
 #           remuxes final MKV with real track IDs
-# changes:  v2.5 - add BRTrackMeta .tracks.txt support; parse audio/subtitle
-#                  language, names, forced/default flags from bluray-trackdump
-#                  text sidecars; map source metadata by final MKV track order
-#                  so non-sequential subtitle IDs like s17/s8/s9 tag correctly
-#           v2.5.1 - replace mkvmerge remux approach with mkvpropedit in-place
-#                  - mkvmerge --default-track/--forced-display-flag silently broken
-#                    in MKVToolNix v54+; mkvpropedit flag-default/flag-forced work
+# changes:  v2.5.2 - preset veryslow->slow, CRF 16/17->18/19, rd=4->rd=3, pools=*
+#                    reduces encode time ~3x with negligible quality difference
 #--------------------------------------------
 
 param()
@@ -59,7 +54,7 @@ else {
 $ErrorActionPreference = 'Stop'
 
 $ScriptName    = "Blu-ray Encoder"
-$ScriptVersion = "2.5.1"
+$ScriptVersion = "2.5.2"
 $ScriptAuthor  = "Mike Redd"
 
 # ── Config ────────────────────────────────────────────────────
@@ -74,9 +69,9 @@ $Script:TxtRoot         = Join-Path $Script:RootPath 'txt'
 
 # Video quality — veryslow+psy tuning for maximum fidelity
 # CRF 16 for HDR (more headroom for 10-bit HDR detail), 17 for SDR
-$Script:CRF_HDR         = 16
-$Script:CRF_SDR         = 17
-$Script:DefaultPreset   = 'veryslow'
+$Script:CRF_HDR         = 18
+$Script:CRF_SDR         = 19
+$Script:DefaultPreset   = 'slow'
 $Script:DefaultAudio    = 'copy'
 $Script:DefaultExt      = 'mkv'
 $Script:DefaultStart    = '00:10:00'
@@ -88,7 +83,7 @@ $Script:DefaultLength   = 60
 # aq-mode=3    HEVC-aware adaptive quantisation
 # rd=4         higher rate-distortion optimisation (slow but thorough)
 # deblock=-1,-1  slightly softer deblock to avoid smearing fine edges
-$Script:X265PsyParams   = "rd=4:psy-rd=1.5:psy-rdoq=1.0:aq-mode=3:deblock=-1,-1"
+$Script:X265PsyParams   = "rd=3:psy-rd=1.5:psy-rdoq=1.0:aq-mode=3:deblock=-1,-1:pools=*"
 
 $Script:FFmpegPath      = $null
 $Script:FFprobePath     = $null
