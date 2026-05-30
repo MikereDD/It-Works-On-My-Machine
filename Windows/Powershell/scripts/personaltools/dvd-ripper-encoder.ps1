@@ -123,7 +123,7 @@ function Get-HandBrakeCLIPath {
 function Ensure-Directories {
     foreach ($p in @($Script:RootPath, $Script:OutputRoot, $Script:NfoRoot)) {
         if (-not (Test-Path -LiteralPath $p)) {
-            New-Item -Path $p -ItemType Directory -Force | Out-Null
+            [System.IO.Directory]::CreateDirectory($p) | Out-Null
         }
     }
 }
@@ -186,6 +186,32 @@ function Resolve-HandBrakeInputPath {
     return [string]$resolved
 }
 
+function Get-TrackLangFromDesc {
+    # Parses a HandBrake track line tail like:
+    #   "English (AC3) (2.0 ch) (iso639-2: eng), 48000Hz, 192000bps"
+    #   "English (iso639-2: eng) (Bitmap)(VOBSUB)"
+    # and returns a friendly label such as "English (eng)".
+    param([Parameter(Mandatory)][string]$Desc)
+
+    $name = ''
+    if ($Desc -match '^\s*([^(,]+?)\s*(?:\(|,|$)') {
+        $name = $matches[1].Trim()
+    }
+
+    $code = ''
+    if ($Desc -match 'iso639-2:\s*([A-Za-z]{2,3})') {
+        $code = $matches[1].ToLowerInvariant()
+    }
+
+    $label =
+        if     ($name -and $code) { "$name ($code)" }
+        elseif ($name)            { $name }
+        elseif ($code)            { $code }
+        else                      { 'unknown' }
+
+    return @{ Name = $name; Code = $code; Label = $label }
+}
+
 function Invoke-HandBrakeScan {
     param([Parameter(Mandatory)][string]$InputPath)
 
@@ -207,6 +233,7 @@ function Invoke-HandBrakeScan {
 
     $titles       = @()
     $currentTitle = $null
+    $section      = $null   # 'audio' | 'subtitle' | $null
 
     foreach ($line in ($scanText -split "`r?`n")) {
         if ($line -match '^\+\s+title\s+(\d+):') {
@@ -215,12 +242,15 @@ function Invoke-HandBrakeScan {
             }
 
             $currentTitle = @{
-                Title       = [int]$matches[1]
-                Duration    = ''
-                Size        = ''
-                AudioTracks = 0
-                Raw         = @()
+                Title        = [int]$matches[1]
+                Duration     = ''
+                Size         = ''
+                AudioTracks  = 0
+                AudioList    = @()
+                SubtitleList = @()
+                Raw          = @()
             }
+            $section = $null
         }
 
         if ($null -ne $currentTitle) {
@@ -229,11 +259,39 @@ function Invoke-HandBrakeScan {
             if ($line -match '^\s*\+\s+duration:\s+(.+)$') {
                 $currentTitle.Duration = $matches[1].Trim()
             }
-            if ($line -match '^\s*\+\s+size:\s+(.+)$') {
+            elseif ($line -match '^\s*\+\s+size:\s+(.+)$') {
                 $currentTitle.Size = $matches[1].Trim()
             }
-            if ($line -match '^\s*\+\s+\d+,\s+.*\(.*iso639.*\)') {
-                $currentTitle.AudioTracks++
+            elseif ($line -match '^\s*\+\s+audio tracks:\s*$') {
+                $section = 'audio'
+            }
+            elseif ($line -match '^\s*\+\s+subtitle tracks:\s*$') {
+                $section = 'subtitle'
+            }
+            elseif ($line -match '^\s*\+\s+\w[\w ]*:\s*$') {
+                # any other sub-header (chapters, etc.) ends track parsing
+                $section = $null
+            }
+            elseif ($line -match '^\s*\+\s+(\d+),\s*(.+)$') {
+                $trackNum  = [int]$matches[1]
+                $trackDesc = $matches[2].Trim()
+                $lang      = Get-TrackLangFromDesc -Desc $trackDesc
+
+                if ($section -eq 'audio') {
+                    $currentTitle.AudioTracks++
+                    $currentTitle.AudioList += [pscustomobject]@{
+                        Num   = $trackNum
+                        Lang  = $lang.Label
+                        Desc  = $trackDesc
+                    }
+                }
+                elseif ($section -eq 'subtitle') {
+                    $currentTitle.SubtitleList += [pscustomobject]@{
+                        Num   = $trackNum
+                        Lang  = $lang.Label
+                        Desc  = $trackDesc
+                    }
+                }
             }
         }
     }
@@ -248,7 +306,7 @@ function Invoke-HandBrakeScan {
     }
     else {
         Write-Host "  $($global:UI_MAG)Detected titles:$($global:UI_R)"
-        $titles | Select-Object Title, Duration, Size, AudioTracks | Format-Table -AutoSize
+        $titles | Select-Object Title, Duration, Size, AudioTracks | Format-Table -AutoSize | Out-Host
     }
 
     return @{
@@ -348,7 +406,9 @@ function Encode-DvdTitle {
         [Parameter(Mandatory)][string]$Tune,
         [ValidateSet('mkv','mp4')][string]$Container = 'mkv',
         [ValidateRange(16,28)][int]$RF = 20,
-        [ValidateSet('slow','slower','veryslow')][string]$Preset = 'slower'
+        [ValidateSet('slow','slower','veryslow')][string]$Preset = 'slower',
+        [string]$AudioSelection    = 'all',   # 'all' | 'none' | '1,3'
+        [string]$SubtitleSelection = 'all'    # 'all' | 'none' | '1,2'
     )
 
     $resolvedInput = Resolve-HandBrakeInputPath -Path $InputPath
@@ -374,6 +434,8 @@ function Encode-DvdTitle {
     Write-Host ("  {0}RF     {1} {2}" -f $global:UI_DIM, $global:UI_R, $RF)
     Write-Host ("  {0}Preset {1} {2}" -f $global:UI_DIM, $global:UI_R, $Preset)
     Write-Host ("  {0}Tune   {1} {2}" -f $global:UI_DIM, $global:UI_R, $(if ($Tune) { $Tune } else { '(none)' }))
+    Write-Host ("  {0}Audio  {1} {2}" -f $global:UI_DIM, $global:UI_R, $(if ($AudioSelection -eq 'all') { 'all tracks' } elseif ($AudioSelection -eq 'none') { 'none' } else { "tracks $AudioSelection" }))
+    Write-Host ("  {0}Subs   {1} {2}" -f $global:UI_DIM, $global:UI_R, $(if ($SubtitleSelection -eq 'all') { 'all tracks' } elseif ($SubtitleSelection -eq 'none') { 'none' } else { "tracks $SubtitleSelection" }))
     Write-Host ("  {0}Using  {1} {2}" -f $global:UI_DIM, $global:UI_R, $Script:HandBrakeCLI)
     Write-UiBlankLine
 
@@ -395,12 +457,29 @@ function Encode-DvdTitle {
         '--comb-detect',
         '--decomb',
 
-        '--all-audio',
         '--aencoder',       'copy',
-        '--audio-fallback', 'eac3',
-
-        '--subtitle',       'scan'
+        '--audio-fallback', 'eac3'
     )
+
+    # Audio selection: language tags carry through from the DVD either way.
+    if ($AudioSelection -eq 'all') {
+        $encodeArgs += '--all-audio'
+    }
+    elseif ($AudioSelection -ne 'none') {
+        $encodeArgs += @('--audio', $AudioSelection)
+    }
+    # ('none' for audio is unusual but allowed — HandBrake will produce a video-only file.)
+
+    # Subtitle selection: VOBSUB bitmaps carry into MKV with their languages.
+    if ($SubtitleSelection -eq 'all') {
+        $encodeArgs += '--all-subtitles'
+    }
+    elseif ($SubtitleSelection -eq 'none') {
+        # no subtitle tracks
+    }
+    else {
+        $encodeArgs += @('--subtitle', $SubtitleSelection)
+    }
 
     if (-not [string]::IsNullOrWhiteSpace($Tune)) {
         $encodeArgs += @('--encoder-tune', $Tune)
@@ -451,7 +530,7 @@ Script   : $ScriptName v$ScriptVersion
 "@
 
     try {
-        $nfoContent | Out-File -FilePath $nfoPath -Encoding utf8 -Force
+        $nfoContent | Out-File -LiteralPath $nfoPath -Encoding utf8 -Force
         Write-Host "  $($global:UI_GRY)NFO written: $nfoPath$($global:UI_R)"
     }
     catch {
@@ -473,6 +552,53 @@ function Read-MovieNameWithYear {
     return [string]$movieName
 }
 
+function Select-Tracks {
+    # Shows the available tracks (with language) for one kind and returns a
+    # HandBrake selection string: 'all' or a comma list like '1,3'. Empty/Enter = all.
+    param(
+        [Parameter(Mandatory)][string]$Kind,        # 'audio' | 'subtitle'
+        [Parameter(Mandatory)]$Tracks               # array of {Num; Lang; Desc}
+    )
+
+    if (-not $Tracks -or $Tracks.Count -eq 0) {
+        Write-Host "  $($global:UI_YLW)No $Kind tracks detected — including all available.$($global:UI_R)"
+        return 'all'
+    }
+
+    Write-UiBlankLine
+    Write-Host "  $($global:UI_MAG)$([System.Globalization.CultureInfo]::InvariantCulture.TextInfo.ToTitleCase($Kind)) tracks:$($global:UI_R)"
+    foreach ($t in $Tracks) {
+        Write-Host ("    {0}{1}{2}  {3}" -f $global:UI_DIM, $t.Num, $global:UI_R, $t.Lang)
+    }
+
+    $valid = @($Tracks | ForEach-Object { $_.Num })
+    while ($true) {
+        $choice = (Read-Host "  Include $Kind tracks (e.g. 1,3) [all]").Trim()
+        if ([string]::IsNullOrWhiteSpace($choice) -or $choice -ieq 'all') {
+            return 'all'
+        }
+        if ($choice -ieq 'none') {
+            return 'none'
+        }
+
+        $picked = @()
+        $ok = $true
+        foreach ($p in ($choice -split '\s*,\s*')) {
+            if ($p -match '^\d+$' -and ([int]$p -in $valid)) {
+                $picked += [int]$p
+            }
+            else {
+                Write-Host "  $($global:UI_YLW)'$p' is not a listed track number — try again.$($global:UI_R)"
+                $ok = $false
+                break
+            }
+        }
+        if ($ok -and $picked.Count -gt 0) {
+            return ($picked -join ',')
+        }
+    }
+}
+
 function Invoke-EncodeFlow {
     param(
         [Parameter(Mandatory)][string]$InputPath,
@@ -480,6 +606,9 @@ function Invoke-EncodeFlow {
     )
 
     $scan = Invoke-HandBrakeScan -InputPath $InputPath
+
+    # Guard against stray pipeline output: keep the hashtable if an array slips through.
+    if ($scan -is [array]) { $scan = $scan | Where-Object { $_ -is [hashtable] } | Select-Object -Last 1 }
 
     if (-not $scan.Titles -or $scan.Titles.Count -eq 0) {
         throw "Could not find any titles to encode."
@@ -493,6 +622,11 @@ function Invoke-EncodeFlow {
     $titleChoice = Read-Host "Title to encode [$($mainTitle.Title)]"
     $selectedTitle = if ([string]::IsNullOrWhiteSpace($titleChoice)) { $mainTitle.Title } else { [int]$titleChoice }
 
+    $titleObj = $scan.Titles | Where-Object { $_.Title -eq $selectedTitle } | Select-Object -First 1
+
+    $audioSel = Select-Tracks -Kind 'audio'    -Tracks $titleObj.AudioList
+    $subSel   = Select-Tracks -Kind 'subtitle' -Tracks $titleObj.SubtitleList
+
     $tuneInfo = Get-AutoTune -MovieName $MovieName
     $tune     = $tuneInfo.Tune
 
@@ -501,13 +635,15 @@ function Invoke-EncodeFlow {
     $settings = Get-EncodeSettings
 
     Encode-DvdTitle `
-        -InputPath    $InputPath `
-        -TitleNumber  $selectedTitle `
-        -MovieName    $MovieName `
-        -Tune         $tune `
-        -Container    $settings.Container `
-        -RF           $settings.RF `
-        -Preset       $settings.Preset
+        -InputPath         $InputPath `
+        -TitleNumber       $selectedTitle `
+        -MovieName         $MovieName `
+        -Tune              $tune `
+        -Container         $settings.Container `
+        -RF                $settings.RF `
+        -Preset            $settings.Preset `
+        -AudioSelection    $audioSel `
+        -SubtitleSelection $subSel
 }
 
 # ── Menu actions ──────────────────────────────────────────────
