@@ -2,7 +2,7 @@
 #
 # file:    tool-menu.sh
 # author:  Mike Redd
-# version: 1.2
+# version: 1.3
 # desc:    Main launcher (Admin + Personal)
 #
 
@@ -36,14 +36,32 @@ admin_menu() {
     while true; do
         ui_header "ADMIN TOOLS"
 
+        ui_section "System & Storage"
         ui_option "1" "System Info"
-        ui_option "2" "Updates"
-        ui_option "3" "Network"
-        ui_option "4" "Disk"
-        ui_option "5" "Services"
-        ui_option "6" "Processes"
-        ui_option "7" "Wi-Fi Menu"
-        ui_option "8" "Open Ports"
+        ui_option "2" "Pi 5 System Info"
+        ui_option "3" "Log Viewer"
+        ui_option "4" "Disk Cleanup"
+        ui_option "5" "Backup"
+
+        ui_section "Pi Hardware"
+        ui_option "6"  "Throttle / Thermal"
+        ui_option "7"  "Power / PMIC"
+        ui_option "8"  "Fan / Cooling"
+        ui_option "9"  "EEPROM / Bootloader"
+        ui_option "10" "Overclock / PCIe"
+        ui_option "11" "NVMe Health"
+
+        ui_section "Packages"
+        ui_option "12" "Update Manager"
+        ui_option "13" "Package List Backup"
+
+        ui_section "Network & Security"
+        ui_option "14" "Net Monitor"
+        ui_option "15" "Open Ports"
+        ui_option "16" "Wi-Fi Menu"
+        ui_option "17" "VPN Menu"
+        ui_option "18" "Login Audit"
+        ui_option "19" "Firewall (UFW)"
         echo
         ui_option "q" "Back"
 
@@ -51,14 +69,25 @@ admin_menu() {
         read -rp "Select option: " choice
 
         case "$choice" in
-            1) run_script "admintools/system-info.sh" ;;
-            2) run_script "admintools/updates.sh" ;;
-            3) run_script "admintools/network.sh" ;;
-            4) run_script "admintools/disk.sh" ;;
-            5) run_script "admintools/services.sh" ;;
-            6) run_script "admintools/processes.sh" ;;
-            7) run_script "admintools/wifi-menu.sh" ;;
-            8) run_script "admintools/open-ports.sh" ;;
+            1)  run_script "admintools/system-info.sh" ;;
+            2)  run_script "admintools/rp5-systeminfo.sh" ;;
+            3)  run_script "admintools/logview.sh" ;;
+            4)  run_script "admintools/disk-cleanup.sh" ;;
+            5)  run_script "admintools/backup.sh" ;;
+            6)  run_script "admintools/pi-throttle.sh" ;;
+            7)  run_script "admintools/pi-power.sh" ;;
+            8)  run_script "admintools/pi-fan.sh" ;;
+            9)  run_script "admintools/pi-eeprom.sh" ;;
+            10) run_script "admintools/pi-overclock.sh" ;;
+            11) run_script "admintools/nvme-health.sh" ;;
+            12) run_script "admintools/update-manager.sh" ;;
+            13) run_script "admintools/pkg-backup.sh" ;;
+            14) run_script "admintools/net-monitor.sh" ;;
+            15) run_script "admintools/open-ports.sh" ;;
+            16) run_script "admintools/wifi-menu.sh" ;;
+            17) run_script "admintools/vpn-menu.sh" ;;
+            18) run_script "admintools/login-audit.sh" ;;
+            19) run_script "admintools/pi-fw.sh" ;;
             q|Q) return ;;
             *) ui_error "Invalid option"; sleep 1 ;;
         esac
