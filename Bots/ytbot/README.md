@@ -3,7 +3,7 @@
 > A typezerø Project  
 > Built for real-world use, not perfection.
 
-![Version](https://img.shields.io/badge/version-v6.5-blue)
+![Version](https://img.shields.io/badge/version-v6.9-blue)
 ![Python](https://img.shields.io/badge/python-3.10+-blue)
 ![License](https://img.shields.io/badge/license-WTFPL-lightgrey)
 
