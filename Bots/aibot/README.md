@@ -3,7 +3,7 @@
 > A typezerø Project  
 > Built for conversation, creation, and experimentation.
 
-![version](https://img.shields.io/badge/version-v1.0-blue)
+![version](https://img.shields.io/badge/version-v3.9-blue)
 ![python](https://img.shields.io/badge/python-3.10+-blue)
 ![license](https://img.shields.io/badge/license-WTFPL-lightgrey)
 
