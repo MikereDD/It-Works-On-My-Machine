@@ -3,7 +3,7 @@
 > A typezerø Project  
 > Built to work. Refined to feel right.
 
-![version](https://img.shields.io/badge/version-v3.1.3-blue)
+![version](https://img.shields.io/badge/version-v3.2-blue)
 ![python](https://img.shields.io/badge/python-3.10+-blue)
 ![license](https://img.shields.io/badge/license-WTFPL-lightgrey)
 

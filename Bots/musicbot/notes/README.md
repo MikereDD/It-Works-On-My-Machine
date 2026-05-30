@@ -41,6 +41,13 @@ Additional documentation, release notes, and development history for Sandalphon 
   - Dashboard stability improvements
   - Legacy library compatibility
 
+- [v3.2.md](v3.2.md)
+  - Metadata title cleanup
+  - Duplicate artist removal
+  - Improved title normalization
+  - Cleaner Telegram audio cards
+  - Consistent Artist - Song formatting
+
 ---
 
 ## Current Feature Areas
@@ -65,6 +72,8 @@ Additional documentation, release notes, and development history for Sandalphon 
 - Spotify metadata matching
 - Album artwork support
 - Metadata caching
+- Metadata normalization
+- Clean Artist - Song formatting
 
 ### Dashboard
 
