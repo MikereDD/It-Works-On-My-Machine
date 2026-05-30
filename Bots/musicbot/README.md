@@ -1,509 +1,157 @@
 # 🎵 Sandalphon (MusicBot)
 
-> A typezerø Project
+> A typezerø Project  
 > Built to work. Refined to feel right.
+
+![version](https://img.shields.io/badge/version-v3.1.3-blue)
+![python](https://img.shields.io/badge/python-3.10+-blue)
+![license](https://img.shields.io/badge/license-WTFPL-lightgrey)
 
 ---
 
 ## 🚀 Overview
 
-Sandalphon is a Telegram music bot that:
+Sandalphon is a Telegram music bot focused on reliable music downloads, playlist ingestion, metadata management, library organization, and long-term music collection maintenance.
 
-* downloads audio from supported sources (yt-dlp)
-* supports search + direct links
-* cleans filenames and metadata
-* uses real metadata (artist/title) via yt-dlp
-* enforces `Artist - Song` format for all audio
-* delivers Telegram-ready audio
-* supports playlists
-* supports intelligent playlist ingestion
-* supports background library ingestion workflows
-* supports persistent failure recovery and retry workflows
-* supports persistent playlist sync/update workflows
-* processes requests through a queue (stable under load)
-* caches audio for instant reuse
-* caches metadata for faster repeated requests
-* builds a **searchable local music library**
-* allows playback from stored tracks
-* cleans up chat noise after processing
-* runs on local Bot API for performance
-* supports large file delivery (Local API)
-* accepts plain text (no command required)
-* supports Spotify metadata → YouTube/yt-dlp matching
-* supports admin-only `/reload` and `/restart` controls
-* uses unified live progress/status messages
-* caches and reuses album artwork intelligently
-* exposes dashboard-ready statistics and export data
-* includes a lightweight Flask dashboard/UI layer
+### Features
+
+- Audio downloads via yt-dlp
+- Search and direct-link support
+- Metadata tagging and album artwork
+- Searchable local music library
+- Artist and album browsing
+- Playlist import and synchronization
+- Audio and metadata caching
+- Spotify metadata matching
+- Queue processing and failure recovery
+- Telegram administration controls
+- Flask web dashboard
+- Local Bot API support
+- JSON export and statistics reporting
 
 ---
 
-## 📦 Version Notes
+## 📦 Current Version
 
-### v1.0 → v1.7
+**v3.1.3**
 
-*(unchanged — same as your current file)*
+Highlights:
 
----
-
-### v1.8
-
-* embeds album art into audio files (thumbnail support)
-* writes full ID3 metadata (artist, title, album, year)
-* improves Telegram player display and media player compatibility
-* produces cleaner, more professional audio files
-
----
-
-### v1.9
-
-* adds Spotify metadata → YouTube/yt-dlp matching
-* Spotify links are used for accurate metadata
-* improves match precision using real track data
-* does not download Spotify audio directly
+- Spotify metadata matching
+- Searchable music library
+- Playlist ingestion and synchronization
+- Smart artwork caching
+- Failure recovery system
+- Flask dashboard and JSON APIs
+- Legacy library compatibility improvements
 
 ---
 
-### v2.0
+## 📚 Documentation
 
-* introduces **library mode**
-* automatically stores downloaded tracks in a searchable index
-* `/library` shows recent stored tracks
-* `/find <query>` searches your library
-* `/play <query>` plays a track from your library instantly
-* `/clearlibrary` resets the library index
-* transforms the bot into a **personal music system**
+Full documentation, release notes, dashboard information, configuration details, and development history can be found in:
 
----
-
-### v2.1
-
-* adds admin-only `/reload` command
-* adds admin-only `/restart` command
-* supports live config/state reload workflow
-* supports full process restart from inside Telegram
-* improves testing workflow when running inside tmux
-
----
-
-### v2.2
-
-* introduces unified live progress/status messages
-* replaces noisy multi-message updates with a single evolving status message
-* adds visual progress bars during processing
-* improves perceived responsiveness during downloads and tagging
-* cleans up Telegram chat flow significantly
-
-
----
-
-### v2.3
-
-* introduces smarter fuzzy library matching
-* adds typo-tolerant `/find` and `/play`
-* improves artist/title ranking logic
-* adds weighted search scoring
-* deduplicates library entries using artist/title identity
-* tracks local play counts for future ranking improvements
-
-
----
-
-### v2.4
-
-* introduces album and artist browsing
-* adds `/artists` and `/artist <artist>`
-* adds `/albums` and `/album <album or artist>`
-* groups tracks by album and artist metadata
-* improves library navigation and collection browsing
-* pushes Sandalphon further toward media-server behavior
-
-
----
-
-### v2.5
-
-* introduces smart album art caching
-* adds reusable artwork cache/index system
-* falls back to cached artwork when fresh thumbnails are unavailable
-* improves consistency of Telegram audio cards
-* reduces repeated artwork processing/download overhead
-* expands cache reporting with artwork statistics
-
-
----
-
-### v2.6
-
-* introduces playlist ingestion and batch importing
-* adds `/playlist <playlist url> [--library-only]`
-* adds `/playlists`
-* supports flat playlist scanning without immediate downloads
-* skips existing library tracks when possible
-* tracks playlist import history and statistics
-* improves large-scale library population workflows
-
-
----
-
-### v2.7
-
-* introduces smarter playlist queue ordering
-* queues uncached tracks before cached tracks during playlist imports
-* adds `--library-only` playlist ingestion mode
-* supports cache/library population without Telegram upload spam
-* improves large playlist import efficiency
-* expands queue system to support background ingest workflows
-
-
----
-
-### v2.8
-
-* introduces persistent failure recovery tracking
-* adds `/failed`
-* adds `/retryfailed`
-* adds `/clearfailed`
-* tracks failed downloads, queue errors, and oversized files
-* automatically removes successful retries from the failed queue
-* improves reliability for large playlist/library ingestion workflows
-
-
----
-
-### v2.9
-
-* introduces playlist sync/update support
-* adds `/syncplaylist <playlist url> [--library-only]`
-* tracks playlist entry fingerprints
-* sync mode queues only new playlist entries
-* playlist history now tracks sync counts
-* improves long-term playlist maintenance workflows
-
-
----
-
-### v3.0
-
-* introduces dashboard/status foundation features
-* adds `/status`
-* adds `/stats`
-* adds `/exportlibrary`
-* supports JSON library/database export snapshots
-* exposes dashboard-ready bot/cache statistics
-* reports Local Bot API status directly from Telegram
-* lays groundwork for future web dashboard integration
-
-
----
-
-### v3.1
-
-* introduces the first Flask-based web dashboard
-* adds read-only dashboard pages for:
-  * `/`
-  * `/library`
-  * `/playlists`
-  * `/failed`
-* adds JSON endpoints:
-  * `/stats.json`
-  * `/library.json`
-  * `/playlists.json`
-  * `/failed.json`
-* supports searchable web-based library browsing
-* exposes cache/library state through lightweight HTTP APIs
-* designed to evolve independently from the Telegram bot runtime
-
-
----
-
-### v3.1.2
-
-* fixes Flask dashboard startup ordering issue
-* moves Flask app initialization before route decorators
-* resolves `NameError: name 'app' is not defined`
-* stabilizes standalone dashboard runtime on Pi/Linux systems
-* confirms dashboard binding on port `8181`
-
-
----
-
-### v3.1.3
-
-* improves dashboard library compatibility with older cache entries
-* adds fallback parsing for `display`-only tracks
-* automatically derives artist/title from:
-  * `Artist - Title`
-  * filename fallback parsing
-* restores readable library rendering without rebuilding indexes
-* improves dashboard resilience against incomplete metadata
+**[notes/README.md](notes/README.md)**
 
 ---
 
 ## 🧠 Core Flow
 
-```id="flow1"
-Input → Playlist Import/Sync → Smart Queue Ordering → Queue → Progress UI → Resolve → Metadata/Spotify → Cache Metadata → Download → Failure Recovery → Cache Audio → Cache Art → Library Index → Export/Stats Layer → Tag (ID3 + Art) → Deliver
+```text
+Input
+  ↓
+Playlist Import / Sync
+  ↓
+Smart Queue Ordering
+  ↓
+Resolve Metadata
+  ↓
+Spotify Metadata Matching
+  ↓
+Cache Metadata
+  ↓
+Download Audio
+  ↓
+Failure Recovery
+  ↓
+Cache Audio
+  ↓
+Cache Artwork
+  ↓
+Library Index
+  ↓
+Tag (ID3 + Artwork)
+  ↓
+Deliver
 ```
 
 ---
 
-## 🧰 Commands
+## 🧰 Common Commands
 
-```id="cmds1"
+```text
 /music <url or search>
-/playlist <playlist url>
-/syncplaylist <playlist url>
-/playlists
-/queue
+
+/library
+/find <query>
+/play <query>
+
+/playlist <url>
+/syncplaylist <url>
+
 /status
 /stats
-/exportlibrary
-/cache
-/library
-/artists
-/artist <artist>
-/albums
-/album <album or artist>
-/find <artist or song>
-/play <artist or song>
-/clearcache
-/clearlibrary
-/failed
-/retryfailed
-/clearfailed
+
 /reload
 /restart
-/id
 /help
 ```
 
 ---
 
-## 💡 Usage
+## 🌐 Dashboard
 
-```text id="usage1"
-/music The Smiths - How Soon Is Now?
-```
+Default dashboard URL:
 
-or simply:
-
-```text id="usage2"
-The Smiths - How Soon Is Now?
-```
-
-Spotify links:
-
-```text id="usage3"
-https://open.spotify.com/track/...
-```
-
-Play from your library:
-
-```text id="usage4"
-/play The Smiths
-```
-
-Browse artists:
-
-```text id="usage6"
-/artists
-/artist Deftones
-```
-
-Browse albums:
-
-```text id="usage7"
-/albums
-/album White Pony
-```
-
-Import playlists:
-
-```text id="usage8"
-/playlist https://youtube.com/playlist?list=...
-```
-
-Library ingest only:
-
-```text id="usage9"
-/playlist https://youtube.com/playlist?list=... --library-only
-```
-
-Sync existing playlists:
-
-```text id="usage11"
-/syncplaylist https://youtube.com/playlist?list=...
-```
-
-Reload or restart the bot from Telegram:
-
-```text id="usage5"
-/reload
-/restart
-```
-
-Retry failed tracks:
-
-```text id="usage10"
-/failed
-/retryfailed
-/clearfailed
-```
-
-Dashboard/status commands:
-
-```text id="usage12"
-/status
-/stats
-/exportlibrary
-```
-
-
----
-
-## 🌐 Dashboard (v3.1)
-
-Sandalphon now includes a lightweight Flask dashboard:
-
-```text id="dash1"
-musicbot_dashboard.py (v3.1.3)
-```
-
-Default URL:
-
-```text id="dash2"
+```text
 http://<pi-ip>:8181
 ```
 
-Pages:
+Available pages:
 
-```text id="dash3"
-/                → overview dashboard
-/library         → searchable music library
-/playlists       → playlist history/sync data
-/failed          → failed queue browser
+```text
+/
+/library
+/playlists
+/failed
 ```
 
 JSON API endpoints:
 
-```text id="dash4"
+```text
 /stats.json
 /library.json
 /playlists.json
 /failed.json
 ```
 
-The dashboard is intentionally:
-* read-only
-* lightweight
-* JSON-backed
-* database-free
-* Pi-friendly
-* independent from the Telegram runtime
-
-
 ---
 
-## ⚙️ Config Notes
+## 💬 Philosophy
 
-Config file: `musicbotrc.py`
+Sandalphon is built around a simple principle:
 
-Important fields:
+> Build what is useful. Refine what feels wrong.
 
-```id="cfg1"
-BOT_TOKEN
-ALLOWED_USER_IDS
-ADMIN_USERS
-BASE_DIR
-DOWNLOAD_DIR
-LOG_FILE
-CACHE_ENABLED
-CACHE_DIR
-MAX_FILE_MB
-ART_CACHE_DIR
-EXPORT_DIR
-SPOTIFY_METADATA_ENABLED
-SPOTIFY_CLIENT_ID
-SPOTIFY_CLIENT_SECRET
-```
+Priorities:
 
----
-
-## 🔐 Access Control
-
-```id="sec1"
-ADMIN_USERS → always allowed  
-ALLOWED_USER_IDS → optional whitelist  
-empty ALLOWED_USER_IDS → public bot
-```
-
----
-
-## 🧪 Known Behavior
-
-* Spotify links → metadata matching only (no direct audio)
-* Amazon Music → fallback search
-* YouTube/SoundCloud → primary sources
-* Local Bot API removes standard Telegram limits
-* cache is query-based (exact match required)
-* metadata cache reduces repeated lookups
-* library search supports fuzzy matching and typo tolerance
-* album/artist browsing depends on available metadata quality
-* artwork cache may reuse album art across related tracks
-* plain text auto-trigger may ignore very short or generic messages
-* `/reload` and `/restart` are admin-only controls
-* queue/progress messages auto-update and self-clean when possible
-* playlist imports attempt duplicate skipping using library identity
-* uncached playlist tracks are prioritized before cache hits
-* failed queue entries persist until retried or cleared
-* playlist sync only queues previously unseen playlist entries
-* export snapshots are JSON-based and intended for future dashboard tooling
-* Flask dashboard runs independently from the Telegram bot runtime
-* dashboard can derive artist/title fields from legacy display-only entries
-
----
-
-## ⚠️ Gotchas
-
-* ffmpeg must be installed
-* yt-dlp must be in PATH
-* permissions required for NVMe paths
-* some sources may require cookies
-* first-time requests still require metadata lookup
-* library index depends on cached/downloaded files
-* `/restart` restarts the Python process; tmux/systemd should keep the session visible/manageable
-
----
-
-## 🧭 Next Up (Planned)
-
-* higher resolution artwork preference
-* artwork normalization/cropping
-* smarter album ranking refinements
-* artist popularity/play weighting
-* smarter artist/title ranking refinements
-* background prefetching
-* smarter sync conflict handling
-* live auto-refresh dashboard
-* websocket/live status support
-* clickable media rows
-* direct media playback/download routes
-* dashboard queue controls
-
----
-
-## 💬 Notes
-
-* prioritize working over perfect
-* fix what feels wrong, not what “looks incomplete”
-* avoid over-engineering
-* build, test, iterate
+- Reliability over complexity
+- Practical workflows over perfect architecture
+- Long-term maintainability
+- Real-world usability
 
 ---
 
 ## 🧾 License
 
-WTFPL — do what you want
-
----
+WTFPL — Do What The Fuck You Want To Public License
