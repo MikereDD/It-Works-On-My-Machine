@@ -1191,7 +1191,7 @@ function Invoke-MKVLanguageRemux {
     }
 
     Write-Host "  $($global:UI_CYN)Writing track metadata via mkvpropedit...$($global:UI_R)"
-    & $Script:MKVPropEditPath @propArgs
+    & $Script:MKVPropEditPath @propArgs 2>&1 | ForEach-Object { Write-Host "    $_" }
 
     if ($LASTEXITCODE -ne 0) {
         throw "mkvpropedit failed with exit code $LASTEXITCODE"
@@ -1296,7 +1296,7 @@ function Get-StreamLanguagesFromSource {
     }
 
     Write-Host "  $($global:UI_CYN)Writing language tags via mkvpropedit...$($global:UI_R)"
-    & $Script:MKVPropEditPath @propArgs
+    & $Script:MKVPropEditPath @propArgs 2>&1 | ForEach-Object { Write-Host "    $_" }
 
     if ($LASTEXITCODE -ne 0) {
         Write-Host "  $($global:UI_RED)mkvpropedit failed with exit code $LASTEXITCODE$($global:UI_R)"
@@ -1714,7 +1714,9 @@ function Encode-File {
 
     $appliedMeta = Apply-TrackMetadata -OutputFile $encodedInfo.FullName -SourceFile $SourceFile -MovieName $MovieName
     if ($appliedMeta) {
-        $trackMetaPath = $appliedMeta
+        # Guard against stray pipeline output: keep only the last value and force to string.
+        if ($appliedMeta -is [array]) { $appliedMeta = $appliedMeta[-1] }
+        $trackMetaPath = [string]$appliedMeta
     }
 
     Create-SampleFromFinishedMkv -FinishedMkvPath $encodedInfo.FullName -MovieName $MovieName
