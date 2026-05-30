@@ -74,14 +74,15 @@ personal_menu() {
         ui_option "2" "Blu-ray Track Dump"
         ui_option "3" "Blu-ray Encoder"
         ui_option "4" "DVD Ripper Encoder"
-        ui_option "5" "MiNfoCreate (NFO/HTML)"
-        ui_option "6" "IMDb Dump"
-        ui_option "7" "IMDb Thumb Grab"
+        ui_option "5" "Transcode Queue"
+        ui_option "6" "MiNfoCreate (NFO/HTML)"
+        ui_option "7" "IMDb Dump"
+        ui_option "8" "IMDb Thumb Grab"
 
         ui_section "System / Network"
-        ui_option "8"  "Infocat (Pi info)"
-        ui_option "9"  "Speedtest"
-        ui_option "10" "Weather"
+        ui_option "9"  "Infocat (Pi info)"
+        ui_option "10" "Speedtest"
+        ui_option "11" "Weather"
         echo
         ui_option "q" "Back"
 
@@ -93,12 +94,13 @@ personal_menu() {
             2)  run_script "personaltools/bluray-trackdump.sh" ;;
             3)  run_script "personaltools/brencoder.sh" ;;
             4)  run_script "personaltools/dvd-ripper-encoder.sh" ;;
-            5)  run_script "personaltools/minfocreate.sh" ;;
-            6)  run_script "personaltools/imdbdump.sh" ;;
-            7)  run_script "personaltools/imdbthumbgrab.sh" ;;
-            8)  run_script "personaltools/infocat-pi.sh" ;;
-            9)  run_script "personaltools/speedtest.sh" ;;
-            10) run_script "personaltools/weather.sh" ;;
+            5)  run_script "personaltools/transcode-queue.sh" ;;
+            6)  run_script "personaltools/minfocreate.sh" ;;
+            7)  run_script "personaltools/imdbdump.sh" ;;
+            8)  run_script "personaltools/imdbthumbgrab.sh" ;;
+            9)  run_script "personaltools/infocat-pi.sh" ;;
+            10) run_script "personaltools/speedtest.sh" ;;
+            11) run_script "personaltools/weather.sh" ;;
             q|Q) return ;;
             *) ui_error "Invalid option"; sleep 1 ;;
         esac
