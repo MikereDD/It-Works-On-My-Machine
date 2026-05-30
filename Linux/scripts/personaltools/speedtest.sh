@@ -4,7 +4,7 @@
 # version: 1.0
 # desc:    Run Ookla Speedtest CLI
 
-source "$HOME/scripts/lib/core.sh"
+source "$HOME/lib/core.sh"
 
 ui_header "SPEEDTEST"
 
