@@ -513,7 +513,7 @@ Audio          : $($Script:DefaultAudio)
 Duration       : $DurationSeconds
 Sample         : $($Script:DefaultLength) sec
 TrackMeta      : $TrackMetaPath
-"@ | Set-Content -Path $metaFile -Encoding UTF8
+"@ | Microsoft.PowerShell.Management\Set-Content -Path $metaFile -Encoding UTF8
 }
 
 function Wait-ForOutputFile {
@@ -655,7 +655,7 @@ function Convert-BRTrackTextToMetadata {
         [Parameter(Mandatory)][string]$Path
     )
 
-    $lines = Get-Content -LiteralPath $Path -Encoding UTF8
+    $lines = Microsoft.PowerShell.Management\Get-Content -LiteralPath $Path -Encoding UTF8
     $movie = [System.IO.Path]::GetFileNameWithoutExtension($Path) -replace '\.tracks$', ''
     $audio = New-Object System.Collections.Generic.List[object]
     $subs  = New-Object System.Collections.Generic.List[object]
@@ -720,7 +720,7 @@ function Read-TrackMetadataFile {
         return Convert-BRTrackTextToMetadata -Path $Path
     }
 
-    $raw = Get-Content -LiteralPath $Path -Raw -Encoding UTF8
+    $raw = Microsoft.PowerShell.Management\Get-Content -LiteralPath $Path -Raw -Encoding UTF8
     return ($raw | ConvertFrom-Json)
 }
 
