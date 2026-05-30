@@ -9,6 +9,24 @@
 # Extension-less scripts.
 infocat-pi  text eol=lf
 
+# Extension-less shell config in ~/.bash.d/ (matches at any repo depth).
+**/bash.d/* text eol=lf
+aliases     text eol=lf
+env         text eol=lf
+motd        text eol=lf
+prompt      text eol=lf
+display     text eol=lf
+
+# Vim config (extension-less vimrc + .vim files).
+vimrc       text eol=lf
+*.vim       text eol=lf
+
+# Other dotfile configs that must stay LF on Linux.
+*.conf      text eol=lf
+.xinitrc    text eol=lf
+.bashrc     text eol=lf
+.bash_profile text eol=lf
+
 # Library/config that gets sourced.
 *.ps1       text eol=crlf
 
