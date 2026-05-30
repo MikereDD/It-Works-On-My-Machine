@@ -96,7 +96,7 @@ personal_menu() {
             5)  run_script "personaltools/minfocreate.sh" ;;
             6)  run_script "personaltools/imdbdump.sh" ;;
             7)  run_script "personaltools/imdbthumbgrab.sh" ;;
-            8)  run_script "personaltools/infocat-pi" ;;
+            8)  run_script "personaltools/infocat-pi.sh" ;;
             9)  run_script "personaltools/speedtest.sh" ;;
             10) run_script "personaltools/weather.sh" ;;
             q|Q) return ;;
