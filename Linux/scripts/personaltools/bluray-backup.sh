@@ -11,15 +11,15 @@
 set -o pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# Locate brlib.sh: $BRLIB override, else ../lib (default layout), else alongside.
+# Locate brlib.sh: $BRLIB override, else ~/lib, else alongside this script.
 BRLIB="${BRLIB:-}"
 if [[ -z "$BRLIB" ]]; then
-    for cand in "$SCRIPT_DIR/../lib/brlib.sh" "$SCRIPT_DIR/brlib.sh"; do
+    for cand in "$HOME/lib/brlib.sh" "$SCRIPT_DIR/brlib.sh"; do
         [[ -f "$cand" ]] && { BRLIB="$cand"; break; }
     done
 fi
 if [[ ! -f "$BRLIB" ]]; then
-    echo "ERROR: cannot find brlib.sh (tried ../lib and ./). Set BRLIB=/path/to/brlib.sh" >&2
+    echo "ERROR: cannot find brlib.sh (looked in ~/lib and beside this script). Set BRLIB=/path/to/brlib.sh" >&2
     exit 1
 fi
 # shellcheck source=/dev/null

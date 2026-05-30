@@ -9,7 +9,7 @@
 
 # ── Load shared UI/core ───────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LIB_DIR="${LIB_DIR:-$SCRIPT_DIR/../lib}"
+LIB_DIR="${LIB_DIR:-$HOME/lib}"
 _src() { [[ -f "$1" ]] && source <(sed 's/\r$//' "$1"); }
 if ! _src "$LIB_DIR/core.sh"; then
     echo "Missing core.sh in $LIB_DIR" >&2; exit 1

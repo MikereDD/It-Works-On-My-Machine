@@ -2,7 +2,7 @@
 # file:    weather.sh
 # version: 1.1
 
-source "$HOME/scripts/lib/core.sh"
+source "$HOME/lib/core.sh"
 
 DEFAULT_LOCATION="Houston"
 
