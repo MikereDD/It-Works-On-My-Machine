@@ -6,7 +6,10 @@
 # desc:    Main launcher (Admin + Personal)
 #
 
-source "$HOME/scripts/lib/core.sh"
+source "$HOME/lib/core.sh"
+# core.sh enables errexit/nounset; relax so the menu survives a child script
+# that exits non-zero (e.g. a tool whose dependency is missing).
+set +e +u 2>/dev/null || true
 
 main_menu() {
     while true; do
@@ -66,8 +69,19 @@ personal_menu() {
     while true; do
         ui_header "PERSONAL TOOLS"
 
-        ui_option "1" "Speedtest"
-        ui_option "2" "Weather"
+        ui_section "Media / Disc"
+        ui_option "1" "Blu-ray Backup"
+        ui_option "2" "Blu-ray Track Dump"
+        ui_option "3" "Blu-ray Encoder"
+        ui_option "4" "DVD Ripper Encoder"
+        ui_option "5" "MiNfoCreate (NFO/HTML)"
+        ui_option "6" "IMDb Dump"
+        ui_option "7" "IMDb Thumb Grab"
+
+        ui_section "System / Network"
+        ui_option "8"  "Infocat (Pi info)"
+        ui_option "9"  "Speedtest"
+        ui_option "10" "Weather"
         echo
         ui_option "q" "Back"
 
@@ -75,8 +89,16 @@ personal_menu() {
         read -rp "Select option: " choice
 
         case "$choice" in
-            1) run_script "personaltools/speedtest.sh" ;;
-            2) run_script "personaltools/weather.sh" ;;
+            1)  run_script "personaltools/bluray-backup.sh" ;;
+            2)  run_script "personaltools/bluray-trackdump.sh" ;;
+            3)  run_script "personaltools/brencoder.sh" ;;
+            4)  run_script "personaltools/dvd-ripper-encoder.sh" ;;
+            5)  run_script "personaltools/minfocreate.sh" ;;
+            6)  run_script "personaltools/imdbdump.sh" ;;
+            7)  run_script "personaltools/imdbthumbgrab.sh" ;;
+            8)  run_script "personaltools/infocat-pi" ;;
+            9)  run_script "personaltools/speedtest.sh" ;;
+            10) run_script "personaltools/weather.sh" ;;
             q|Q) return ;;
             *) ui_error "Invalid option"; sleep 1 ;;
         esac
