@@ -26,7 +26,12 @@ fi
 
 # Pause helper
 pause() {
-    read -rp "Press Enter to continue..."
+    read -rp "Press Enter to continue..." _
+}
+
+# Pause with an optional custom prompt (used by newer scripts).
+pause_return() {
+    read -rp "${1:-Press Enter to return...}" _
 }
 
 # Return to menu (handled by caller loop)

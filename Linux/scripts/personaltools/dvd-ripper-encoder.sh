@@ -8,7 +8,15 @@
 #           audio/subtitle tracks (shown with their languages).
 #--------------------------------------------
 
-set -o pipefail
+# ── Load shared UI/core ───────────────────────────────────────
+LIB_DIR="${LIB_DIR:-$HOME/lib}"
+_src() { [[ -f "$1" ]] && source <(sed 's/\r$//' "$1"); }
+if ! _src "$LIB_DIR/core.sh"; then
+    echo "Missing core.sh in $LIB_DIR (set LIB_DIR=/path/to/lib)" >&2; exit 1
+fi
+# core.sh enables errexit/nounset; relax for the interactive menu loop.
+set +e +u 2>/dev/null || true
+set -o pipefail 2>/dev/null || true
 
 SCRIPT_NAME="DVD Ripper Encoder"
 SCRIPT_VERSION="3.1"
@@ -37,26 +45,13 @@ declare -A SCAN_ACOUNT
 declare -A SCAN_AUDIO     # [title] = lines of "num<TAB>label"
 declare -A SCAN_SUBS      # [title] = lines of "num<TAB>label"
 
-# ── Colors / UI helpers (replaces ui.ps1 + core.ps1) ──────────
-if [[ -t 1 ]]; then
-    UI_R=$'\e[0m';   UI_GRN=$'\e[32m'; UI_CYN=$'\e[36m'; UI_MAG=$'\e[35m'
-    UI_YLW=$'\e[33m'; UI_GRY=$'\e[90m'; UI_DIM=$'\e[2m';  UI_RED=$'\e[31m'
-else
-    UI_R=""; UI_GRN=""; UI_CYN=""; UI_MAG=""; UI_YLW=""; UI_GRY=""; UI_DIM=""; UI_RED=""
-fi
-
-ui_blank()   { printf '\n'; }
-ui_divider() { printf '  %s%s%s\n' "$UI_GRY" "------------------------------------------------------------" "$UI_R"; }
-ui_row()     { printf '  %s%-13s%s %s\n' "${3:-}" "$1" "$UI_R" "$2"; }
-core_error() { printf '  %sERROR:%s %s\n' "$UI_RED" "$UI_R" "$1" >&2; }
-pause_script() { read -rp "  Press Enter to return to menu... " _; }
-
-ui_header() {
-    local title="$1" subtitle="$2"
-    ui_blank
-    printf '  %s== %s ==%s\n' "$UI_CYN" "$title" "$UI_R"
-    printf '  %s%s%s\n' "$UI_GRY" "$subtitle" "$UI_R"
-    ui_blank
+# UI helpers come from ui.sh (sourced via core.sh): ui_blank, ui_divider,
+# ui_row, ui_section, ui_header (title + optional subtitle), pause. Aliases for
+# this script's original names so the body below is unchanged:
+core_error()   { ui_error "$1"; }
+pause_script() {
+    if declare -F pause_return >/dev/null; then pause_return "Press Enter to return to menu... "
+    else read -rp "  Press Enter to return to menu... " _; fi
 }
 
 # ── Small utilities ───────────────────────────────────────────
@@ -615,7 +610,6 @@ show_config() {
 
 # ── Header / menu ─────────────────────────────────────────────
 show_header() {
-    clear 2>/dev/null || printf '\033c'
     ui_header "$SCRIPT_NAME" "v$SCRIPT_VERSION  by $SCRIPT_AUTHOR"
     ui_row "User"     "$(id -un)@$(hostname)"
     ui_row "Defaults" "$DEFAULT_ENCODER / RF $DEFAULT_RF / $DEFAULT_PRESET / $DEFAULT_CONTAINER" "$UI_GRY"
