@@ -139,11 +139,14 @@ personal_menu() {
 run_script() {
     local script="$HOME/scripts/$1"
 
-    if [[ -x "$script" ]]; then
-        "$script"
-    else
-        ui_error "Script not found or not executable: $1"
+    if [[ ! -e "$script" ]]; then
+        ui_error "Not found: $1"
         sleep 1
+    elif [[ ! -x "$script" ]]; then
+        ui_error "Not executable (run: chmod +x): $1"
+        sleep 1
+    else
+        "$script"
     fi
 }
 
