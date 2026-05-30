@@ -2,20 +2,32 @@
 #--------------------------------------------
 # file:     rp5-systeminfo.sh
 # author:   Mike Redd
-# version:  1.0
+# version:  1.1
 # desc:     Raspberry Pi 5 System Info Script for Arch Linux
 #--------------------------------------------
 
-# Colors for better readability
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-MAGENTA='\033[0;35m'
-WHITE='\033[1;37m'
-NC='\033[0m' # No Color
-BOLD='\033[1m'
+# Load shared UI/core (provides the UI_* palette via ui.sh).
+LIB_DIR="${LIB_DIR:-$HOME/lib}"
+if [[ -f "$LIB_DIR/core.sh" ]]; then
+    # shellcheck source=/dev/null
+    source <(sed 's/\r$//' "$LIB_DIR/core.sh")
+fi
+# core.sh enables errexit/nounset; this report tolerates many non-zero exits
+# (missing tools, empty greps), so relax them. Keep pipefail off as original.
+set +e +u 2>/dev/null || true
+
+# Map this script's color names onto the shared palette (single source of
+# truth), with literal-escape fallbacks if the lib isn't present. BOLD/NC have
+# no ui.sh equivalent, so define them here.
+RED="${UI_RED:-$'\e[0;31m'}"
+GREEN="${UI_GRN:-$'\e[0;32m'}"
+YELLOW="${UI_YLW:-$'\e[1;33m'}"
+BLUE="${UI_BLU:-$'\e[0;34m'}"
+CYAN="${UI_CYN:-$'\e[0;36m'}"
+MAGENTA="${UI_MAG:-$'\e[0;35m'}"
+WHITE="${UI_WHT:-$'\e[1;37m'}"
+NC="${UI_R:-$'\e[0m'}"
+BOLD=$'\e[1m'
 
 # Function to print section headers
 print_header() {

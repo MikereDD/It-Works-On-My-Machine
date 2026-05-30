@@ -10,14 +10,11 @@
 
 # Load shared core + UI helpers.
 # core.sh also loads ui.sh when present.
-source "$HOME/scripts/lib/core.sh"
+source "$HOME/lib/core.sh"
+# core.sh enables errexit/nounset; relax for the interactive flow.
+set +e +u 2>/dev/null || true
 
-# Local fallbacks in case ui.sh is missing or incomplete.
-UI_CYN="${UI_CYN:-\033[1;36m}"
-UI_GRN="${UI_GRN:-\033[1;32m}"
-UI_YLW="${UI_YLW:-\033[1;33m}"
-UI_RED="${UI_RED:-\033[1;31m}"
-UI_RST="${UI_RST:-\033[0m}"
+# Colors and ui_* helpers come from ui.sh (via core.sh).
 
 need_cmd() {
     command -v "$1" >/dev/null 2>&1 || {
