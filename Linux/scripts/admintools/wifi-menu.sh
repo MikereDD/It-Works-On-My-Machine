@@ -4,7 +4,9 @@
 # version: 1.1
 # desc:    Wi-Fi control menu using nmcli with optional config file
 
-source "$HOME/scripts/lib/core.sh"
+source "$HOME/lib/core.sh"
+# core.sh enables errexit/nounset; relax for the interactive menu loop.
+set +e +u 2>/dev/null || true
 
 CONFIG_FILE="$HOME/.config/wifi-menu/wifirc"
 

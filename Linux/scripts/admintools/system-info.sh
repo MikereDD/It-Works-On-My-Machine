@@ -2,7 +2,9 @@
 # file:    system-info.sh
 # version: 1.1
 
-source "$HOME/scripts/lib/core.sh"
+source "$HOME/lib/core.sh"
+# core.sh enables errexit/nounset; relax for this simple report.
+set +e +u 2>/dev/null || true
 
 ui_header "SYSTEM INFO"
 

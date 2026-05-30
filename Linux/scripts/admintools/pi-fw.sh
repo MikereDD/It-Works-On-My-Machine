@@ -13,7 +13,16 @@ readonly LAN_NET="${LAN_NET:-192.168.4.0/24}"
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
-RED='\e[31m'; YEL='\e[33m'; GRN='\e[32m'; CYN='\e[36m'; RST='\e[0m'; BLD='\e[1m'
+# Load shared UI/core (provides the UI_* palette via ui.sh). pi-fw keeps its own
+# [*]/[+]/[!]/[x] log helpers and box menu; colors come from the shared palette.
+LIB_DIR="${LIB_DIR:-$HOME/lib}"
+if [[ -f "$LIB_DIR/core.sh" ]]; then
+    # shellcheck source=/dev/null
+    source <(sed 's/\r$//' "$LIB_DIR/core.sh")
+fi
+
+RED="${UI_RED:-$'\e[31m'}"; YEL="${UI_YLW:-$'\e[33m'}"; GRN="${UI_GRN:-$'\e[32m'}"
+CYN="${UI_CYN:-$'\e[36m'}"; RST="${UI_R:-$'\e[0m'}"; BLD=$'\e[1m'
 
 info()  { echo -e "${CYN}[*]${RST} $*"; }
 ok()    { echo -e "${GRN}[+]${RST} $*"; }
