@@ -3,6 +3,7 @@
 " Pi 5 Arch Vim (XDG layout)
 " Version: 3.3 - Editing intelligence, project context, and mark navigation
 
+scriptencoding utf-8
 set nocompatible
 filetype plugin indent on
 syntax on
@@ -18,7 +19,6 @@ set ttyfast
 set redrawtime=1500          " Cap syntax highlight time on large files
 set synmaxcol=800            " Don't syntax highlight absurdly long lines
 set maxmempattern=5000       " Limit regex memory
-set regexpengine=0           " Auto-select regex engine (usually faster)
 set eventignore-=all
 
 " -------------------------
@@ -109,6 +109,7 @@ Plug 'dyng/ctrlsf.vim'
 
 " --- Visual & UI ---
 Plug 'itchyny/lightline.vim'
+Plug 'maximbaz/lightline-ale'      " ALE indicators in the lightline statusline
 Plug 'morhetz/gruvbox'
 Plug 'Yggdroot/indentLine'
 Plug 'ryanoasis/vim-devicons'
@@ -184,28 +185,6 @@ let g:lightline = {
     \ },
     \ 'component_function': {
     \   'gitbranch': 'FugitiveHead'
-    \ }
-    \ }
-
-" Need lightline-ale for the above components, OR define manually:
-" If you don't want another plugin, use these functions instead:
-function! LinterStatus() abort
-    let l:counts = ale#statusline#Count(bufnr(''))
-    let l:all_errors = l:counts.error + l:counts.style_error
-    let l:all_non_errors = l:counts.total - l:all_errors
-    return l:counts.total == 0 ? '' : printf('E%d W%d', all_errors, all_non_errors)
-endfunction
-
-" Alternative simpler lightline config without lightline-ale:
-let g:lightline = {
-    \ 'colorscheme': 'gruvbox',
-    \ 'active': {
-    \   'left': [['mode', 'paste'], ['gitbranch', 'readonly', 'filename', 'modified']],
-    \   'right': [['lineinfo'], ['percent'], ['linter'], ['fileformat', 'fileencoding', 'filetype']]
-    \ },
-    \ 'component_function': {
-    \   'gitbranch': 'FugitiveHead',
-    \   'linter': 'LinterStatus'
     \ }
     \ }
 
@@ -344,8 +323,8 @@ let g:gitgutter_sign_removed = '_'
 let g:gitgutter_sign_removed_first_line = '‾'
 let g:gitgutter_sign_modified_removed = '~_'
 nnoremap <leader>gh :GitGutterLineHighlightsToggle<CR>
-nnoremap <leader>ghp <Plug>(GitGutterPreviewHunk)
-nnoremap <leader>gu <Plug>(GitGutterUndoHunk)
+nmap <leader>ghp <Plug>(GitGutterPreviewHunk)
+nmap <leader>gu <Plug>(GitGutterUndoHunk)
 nmap ]h <Plug>(GitGutterNextHunk)
 nmap [h <Plug>(GitGutterPrevHunk)
 
@@ -364,8 +343,9 @@ map <leader>k <Plug>(easymotion-k)
 " -------------------------
 " WordMotion
 " -------------------------
-" Use ,w ,b ,e to avoid breaking default w/b/e
-let g:wordmotion_prefix = '<Leader>'
+" Use <Leader><Leader> as the prefix (e.g. ,,w ,,b ,,e) so it doesn't
+" clobber <leader>w (save), <leader>b*, or the easymotion <leader>j/k maps.
+let g:wordmotion_prefix = '<Leader><Leader>'
 
 " -------------------------
 " NERDTree
@@ -379,7 +359,10 @@ let NERDTreeDirArrows = 1
 let NERDTreeAutoDeleteBuffer = 1
 
 " Close vim if NERDTree is only window left
-autocmd BufEnter * if tabpagenr('$') == 1 && winnr('$') == 1 && exists('b:NERDTree') && b:NERDTree.isTabTree() | quit | endif
+augroup nerdtree_autoclose
+    autocmd!
+    autocmd BufEnter * if tabpagenr('$') == 1 && winnr('$') == 1 && exists('b:NERDTree') && b:NERDTree.isTabTree() | quit | endif
+augroup END
 
 " -------------------------
 " Tmux Navigator
@@ -647,8 +630,8 @@ nnoremap <leader>z <C-w>o
 " Toggle paste mode
 nnoremap <leader>p :set paste!<CR>:set paste?<CR>
 
-" Indent whole file
-nnoremap <leader>= gg=G<C-o><C-o>
+" Indent whole file (preserve cursor position)
+nnoremap <leader>= mzgg=G`z
 
 " Retain selection on indent in visual mode
 vnoremap = =gv
