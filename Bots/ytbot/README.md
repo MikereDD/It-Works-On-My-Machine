@@ -1,4 +1,4 @@
-# 🎬 Raziel v6.9
+# 🎬 Raziel (VideoBot)
 
 > A typezerø Project  
 > Built for real-world use, not perfection.
