@@ -147,3 +147,14 @@ $f1                      :Nl                                                    
 
 $rst
 EOF
+
+# Pause so output stays on screen when launched from tool-menu.sh (the menu
+# clears the screen on return). Only when interactive, so piping still works.
+if [[ -t 0 && -t 1 ]]; then
+    if declare -F pause >/dev/null 2>&1; then
+        pause
+    else
+        printf '\n'
+        read -rp "Press Enter to continue... " _
+    fi
+fi
