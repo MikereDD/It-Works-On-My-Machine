@@ -6,8 +6,10 @@
 # desc:     Custom login message for SSH sessions (Unicode borders)
 #--------------------------------------------
 
-# Only show for SSH logins (not physical console)
-if [ -n "$SSH_CONNECTION" ]; then
+# Only show for SSH logins (not physical console), and only once per
+# login session — not on every new interactive shell / tmux pane.
+if [ -n "$SSH_CONNECTION" ] && [ -z "$ARAKIEL_MOTD_SHOWN" ]; then
+    export ARAKIEL_MOTD_SHOWN=1
 
     # Colors
     RED='\033[0;31m'
@@ -29,8 +31,9 @@ if [ -n "$SSH_CONNECTION" ]; then
     SESSIONS=$(who | wc -l)
     PACKAGES=$(pacman -Q 2>/dev/null | wc -l)
 
-    # UFW Status (check iptables chains)
-    if sudo iptables -L INPUT 2>/dev/null | grep -q "ufw-before-input"; then
+    # UFW Status (check iptables chains). Use sudo -n so a missing
+    # credential fails silently instead of blocking the login banner.
+    if sudo -n iptables -L INPUT 2>/dev/null | grep -q "ufw-before-input"; then
         UFW_STATUS="Active"
         UFW_ICON="${GREEN}[+]${NC}"
         UFW_COLOR=$GREEN

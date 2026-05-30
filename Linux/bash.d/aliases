@@ -27,8 +27,8 @@ alias search='pacman -Ss'       # search repo
 # ── Network ─────────────────────────────────
 alias ports='ss -tulpen'        # open/listening ports
 
-alias myip='ip -4 addr show end0 | awk "/inet / {print \$2}" | cut -d/ -f1'
-# local IPv4
+# local IPv4 (active interface, whichever it is)
+myip() { ip -4 route get 1.1.1.1 2>/dev/null | awk '{print $7; exit}'; }
 
 # ── Custom Tools ────────────────────────────
 alias arakiel='$HOME/bin/arakiel-tmux.sh'    # custom launcher
