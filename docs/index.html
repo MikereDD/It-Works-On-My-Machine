@@ -5,34 +5,30 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>It-Works-On-My-Machine</title>
 
-  <!-- CSS (cache busted) -->
-  <link rel="stylesheet" href="style.css?v=10">
+  <link rel="stylesheet" href="style.css?v=11">
 </head>
 
 <body>
-
   <main class="page">
 
     <!-- HERO -->
     <section class="hero terminal-box">
       <div class="hero-text">
-
         <div class="prompt">
           <div>┌─[SSH]─[<span class="green">typezero</span>@<span class="yellow">arakiel</span>]─[~]</div>
           <div>└─╼ <span class="cursor-target">It-Works-On-My-Machine</span></div>
         </div>
 
         <h1>It-Works-On-My-Machine</h1>
-        <h2>Scripts. Tools. Bots. Experiments.</h2>
+        <h2>Scripts. Bots. Projects.</h2>
 
         <p>
-          A personal backup repo of useful and sometimes questionable automation.
+          A collection of PowerShell, Bash, Python, Android, and 3D printing projects.
         </p>
 
         <p class="cyan">
-          Built for me. Shared because apparently GitHub exists.
+          Built for real-world use, not perfection.
         </p>
-
       </div>
 
       <pre class="ascii" aria-hidden="true">
@@ -47,21 +43,21 @@
       </pre>
     </section>
 
-    <!-- CARDS -->
-    <section class="cards">
+    <!-- PROJECT CARDS -->
+    <section class="cards" aria-label="Repository sections">
 
       <a class="card windows"
          href="https://github.com/MikereDD/It-Works-On-My-Machine/tree/main/Windows"
-         target="_blank">
+         target="_blank"
+         rel="noopener noreferrer">
         <div class="icon">▦</div>
         <h3>Windows</h3>
-        <p>PowerShell Scripts</p>
+        <p>PowerShell scripts and utilities.</p>
 
         <ul>
-          <li>Admin Tools</li>
-          <li>Personal Tools</li>
-          <li>System Utilities</li>
-          <li>Automation Scripts</li>
+          <li>Admin tools</li>
+          <li>Media utilities</li>
+          <li>Automation scripts</li>
         </ul>
 
         <span class="button">Browse windows/</span>
@@ -69,16 +65,16 @@
 
       <a class="card linux"
          href="https://github.com/MikereDD/It-Works-On-My-Machine/tree/main/Linux"
-         target="_blank">
+         target="_blank"
+         rel="noopener noreferrer">
         <div class="icon">♟</div>
         <h3>Linux</h3>
-        <p>Bash Scripts</p>
+        <p>Bash scripts for Arch and Pi systems.</p>
 
         <ul>
-          <li>System Setup</li>
-          <li>Maintenance</li>
-          <li>Automation</li>
-          <li>Server Tools</li>
+          <li>System setup</li>
+          <li>Maintenance tools</li>
+          <li>Server scripts</li>
         </ul>
 
         <span class="button">Browse linux/</span>
@@ -86,16 +82,16 @@
 
       <a class="card bots"
          href="https://github.com/MikereDD/It-Works-On-My-Machine/tree/main/Bots"
-         target="_blank">
+         target="_blank"
+         rel="noopener noreferrer">
         <div class="icon">☻</div>
         <h3>Bots</h3>
-        <p>Telegram &amp; More</p>
+        <p>Telegram bots and automation workflows.</p>
 
         <ul>
-          <li>Telegram Bots</li>
-          <li>YouTube Bot</li>
-          <li>Automation Bots</li>
-          <li>API Integrations</li>
+          <li>Raziel VideoBot</li>
+          <li>Sandalphon MusicBot</li>
+          <li>Zaphkiel AIBot</li>
         </ul>
 
         <span class="button">Browse bots/</span>
@@ -103,16 +99,16 @@
 
       <a class="card printing"
          href="https://github.com/MikereDD/It-Works-On-My-Machine/tree/main/3D-Printing"
-         target="_blank">
+         target="_blank"
+         rel="noopener noreferrer">
         <div class="icon">⌬</div>
         <h3>3D Printing</h3>
-        <p>Bambu X2D</p>
+        <p>Bambu X2D parts and OpenSCAD projects.</p>
 
         <ul>
-          <li>Print Profiles</li>
-          <li>STL Projects</li>
-          <li>Filament Notes</li>
-          <li>Useful Parts</li>
+          <li>STL projects</li>
+          <li>OpenSCAD files</li>
+          <li>Useful parts</li>
         </ul>
 
         <span class="button">Browse 3d-printing/</span>
@@ -120,16 +116,16 @@
 
       <a class="card games"
          href="https://github.com/MikereDD/It-Works-On-My-Machine/tree/main/Games"
-         target="_blank">
+         target="_blank"
+         rel="noopener noreferrer">
         <div class="icon">⌁</div>
         <h3>Games</h3>
-        <p>Terminal Games</p>
+        <p>Terminal games and small experiments.</p>
 
         <ul>
           <li>Tetris</li>
           <li>Snake</li>
           <li>Pong</li>
-          <li>More Coming...</li>
         </ul>
 
         <span class="button">Browse games/</span>
@@ -137,16 +133,16 @@
 
       <a class="card android"
          href="https://github.com/MikereDD/It-Works-On-My-Machine/tree/main/Android"
-         target="_blank">
+         target="_blank"
+         rel="noopener noreferrer">
         <div class="icon">▤</div>
         <h3>Android</h3>
-        <p>Kotlin Apps</p>
+        <p>Kotlin and media app experiments.</p>
 
         <ul>
           <li>pCloud TV</li>
-          <li>TV / Media Apps</li>
+          <li>TV / media apps</li>
           <li>Jetpack Compose</li>
-          <li>More Coming...</li>
         </ul>
 
         <span class="button">Browse android/</span>
@@ -154,7 +150,7 @@
 
     </section>
 
-    <!-- LOWER GRID -->
+    <!-- SYSTEMS + LINKS -->
     <section class="lower-grid">
 
       <section class="system-panel arakiel">
@@ -176,11 +172,9 @@
 
           <div class="info-lines">
             <p><span>OS:</span> Arch Linux (aarch64)</p>
-            <p><span>Host:</span> Raspberry Pi 5 (py5)</p>
-            <p><span>Shell:</span> bash 5.2.26</p>
-            <p><span>Uptime:</span> 12 days, 7 hours</p>
-            <p><span>Role:</span> bots / automation / server</p>
-            <p><span>Status:</span> online</p>
+            <p><span>Host:</span> Raspberry Pi 5</p>
+            <p><span>Role:</span> bots / automation / services</p>
+            <p><span>Network:</span> Ethernet-first</p>
           </div>
         </div>
 
@@ -189,11 +183,22 @@
 
       <section class="quick terminal-box">
         <h3>Quick Links</h3>
-        <a href="https://github.com/MikereDD/It-Works-On-My-Machine" target="_blank">View on GitHub</a>
-        <a href="https://github.com/MikereDD/It-Works-On-My-Machine/issues" target="_blank">Report an Issue</a>
-        <a href="https://github.com/MikereDD/It-Works-On-My-Machine/issues/new" target="_blank">Request a Feature</a>
-        <a href="https://github.com/MikereDD/It-Works-On-My-Machine/wiki" target="_blank">Check the Wiki</a>
-        <a href="https://github.com/MikereDD/It-Works-On-My-Machine/stargazers" target="_blank">Star the Repo ★</a>
+
+        <a href="https://github.com/MikereDD/It-Works-On-My-Machine"
+           target="_blank"
+           rel="noopener noreferrer">View on GitHub</a>
+
+        <a href="https://github.com/MikereDD/It-Works-On-My-Machine/tree/main/Bots"
+           target="_blank"
+           rel="noopener noreferrer">Bots</a>
+
+        <a href="https://github.com/MikereDD/It-Works-On-My-Machine/tree/main/3D-Printing"
+           target="_blank"
+           rel="noopener noreferrer">3D Printing</a>
+
+        <a href="https://github.com/MikereDD/It-Works-On-My-Machine/stargazers"
+           target="_blank"
+           rel="noopener noreferrer">Star the Repo ★</a>
       </section>
 
       <section class="system-panel netzach">
@@ -213,10 +218,8 @@
           <div class="info-lines">
             <p><span>OS:</span> Windows 11 Pro</p>
             <p><span>Host:</span> Alienware m16 R2</p>
-            <p><span>Shell:</span> PowerShell 7.6</p>
-            <p><span>Uptime:</span> 5 hours, 32 mins</p>
             <p><span>Role:</span> development / encoding / scripts</p>
-            <p><span>Status:</span> active</p>
+            <p><span>Shell:</span> PowerShell 7.6</p>
           </div>
         </div>
 
@@ -228,7 +231,7 @@
     <!-- FOOTER -->
     <footer>
       <span>&gt; Last updated: <strong id="last-updated">loading...</strong></span>
-      <span>Thanks for stopping by.</span>
+      <span>Built by Mike Redd • typezerø Projects</span>
       <span>
         Licensed under
         <a href="https://github.com/MikereDD/It-Works-On-My-Machine/blob/main/LICENSE"
@@ -236,14 +239,11 @@
            rel="noopener noreferrer">
           <strong>WTFPL</strong>
         </a>
-        | Do whatever the hell you want.
       </span>
     </footer>
 
   </main>
 
-  <!-- JS (cache busted) -->
-  <script src="script.js?v=10"></script>
-
+  <script src="script.js?v=11"></script>
 </body>
 </html>
