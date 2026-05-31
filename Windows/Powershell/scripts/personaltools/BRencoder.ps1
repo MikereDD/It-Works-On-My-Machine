@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file:     brEncoder.ps1
 # author:   Mike Redd
-# version:  2.6
+# version:  2.6.1
 # created:  2026-02-11
 # updated:  2026-05-30
 # desc:     Encode Blu-ray .m2ts files
@@ -13,9 +13,11 @@
 #           validates metadata, verifies final MKV
 #           language/default/forced tags
 #           remuxes final MKV with real track IDs
-# changes:  v2.6 - preselect sidecar metadata before encode and map audio/sub streams
-#                  by source TrackId when available, preventing language tags
-#                  from sliding onto the wrong audio/subtitle track
+# changes:  v2.6.1 - FIX: map audio/subs by per-type position (0:a:N/0:s:N) to
+#                    match the metadata tags; never use Blu-ray source IDs
+#                    (a1/s9/s17) as ffmpeg stream indexes ([int]"s9" was broken)
+#          v2.6 - preselect sidecar metadata before encode and map audio/sub
+#                 streams; (mapping logic corrected in v2.6.1)
 #          v2.5.2 - preset veryslow->slow, CRF 16/17->18/19, rd=4->rd=3, pools=*
 #                  reduces encode time ~3x with negligible quality difference
 #--------------------------------------------
@@ -1524,9 +1526,13 @@ function New-FFmpegMapArgsFromTrackMetadata {
         then tagged the finished MKV by positional order. If ffmpeg skipped or
         reordered any stream, the language tags could land on the wrong track.
 
-        When sidecar JSON exists, MakeMKV TrackId values normally match the
-        source stream indexes in the decrypted .m2ts. Mapping 0:<TrackId>? keeps
-        the encoded output order aligned with the sidecar order.
+        Blu-ray source IDs in the sidecar (a1, s8, s9, s17 ...) are NOT ffmpeg
+        stream indexes and must never be used as one. ffmpeg addresses streams
+        per type and in source order: 0:a:0, 0:a:1 ... and 0:s:0, 0:s:1 ...
+        The sidecar lists are already normalized to source order upstream
+        (audio sorted by a#, subtitles kept in listed order), so we map and tag
+        by the SAME per-type positional index. Map slot N and metadata slot N
+        therefore always refer to the same track.
     #>
     param([object]$MetaInfo)
 
@@ -1542,10 +1548,7 @@ function New-FFmpegMapArgsFromTrackMetadata {
     $audioMeta = @(Resolve-TrackList -Title $title -Kind audio)
     $subMeta   = @(Resolve-TrackList -Title $title -Kind subtitle)
 
-    $hasUsableAudioIds = ($audioMeta.Count -gt 0 -and (@($audioMeta | Where-Object { $null -ne $_.TrackId }).Count -eq $audioMeta.Count))
-    $hasUsableSubIds   = ($subMeta.Count   -gt 0 -and (@($subMeta   | Where-Object { $null -ne $_.TrackId }).Count -eq $subMeta.Count))
-
-    if (-not $hasUsableAudioIds -and -not $hasUsableSubIds) {
+    if ($audioMeta.Count -eq 0 -and $subMeta.Count -eq 0) {
         return $null
     }
 
@@ -1553,16 +1556,16 @@ function New-FFmpegMapArgsFromTrackMetadata {
         '-map', '0:v:0'
     )
 
-    foreach ($track in $audioMeta) {
-        if ($null -eq $track.TrackId) { continue }
+    # Map per-type by position: the Nth sidecar audio track -> 0:a:N, etc.
+    # '?' keeps ffmpeg from failing if a stream is genuinely absent.
+    for ($i = 0; $i -lt $audioMeta.Count; $i++) {
         $ffMapArgs += '-map'
-        $ffMapArgs += ("0:{0}?" -f [int]$track.TrackId)
+        $ffMapArgs += ("0:a:{0}?" -f $i)
     }
 
-    foreach ($track in $subMeta) {
-        if ($null -eq $track.TrackId) { continue }
+    for ($i = 0; $i -lt $subMeta.Count; $i++) {
         $ffMapArgs += '-map'
-        $ffMapArgs += ("0:{0}?" -f [int]$track.TrackId)
+        $ffMapArgs += ("0:s:{0}?" -f $i)
     }
 
     for ($i = 0; $i -lt $audioMeta.Count; $i++) {
