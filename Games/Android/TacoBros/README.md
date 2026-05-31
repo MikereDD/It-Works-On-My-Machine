@@ -57,9 +57,7 @@ Play as **Miguel**, collect tacos, stomp enemies, avoid hazards, and reach the f
 
 Latest APK:
 
-```text
-releases/Taco-Bros.apk
-```
+📦 **[Download Taco Bros APK](releases/Taco-Bros.apk)**
 
 ### Installation
 
