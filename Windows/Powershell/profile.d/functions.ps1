@@ -179,3 +179,13 @@ function gd    { git diff }
 function gpl   { git pull }
 function gpu   { git pull; git push }
 function gundo { git reset --soft HEAD~1 }
+
+# ── VLC Media Helpers ─────────────────────────────────────────
+
+function dvd {
+    & "C:\Program Files\VideoLAN\VLC\vlc.exe" "dvd://D:\"
+}
+
+function bluray {
+    & "C:\Program Files\VideoLAN\VLC\vlc.exe" "bluray://D:\"
+}
