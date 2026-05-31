@@ -1,9 +1,9 @@
 #--------------------------------------------
 # file:     brEncoder.ps1
 # author:   Mike Redd
-# version:  2.5.2
+# version:  2.6
 # created:  2026-02-11
-# updated:  2026-05-28
+# updated:  2026-05-30
 # desc:     Encode Blu-ray .m2ts files
 #           to H.265/HEVC on Windows
 #           using ffmpeg, then create a
@@ -13,8 +13,11 @@
 #           validates metadata, verifies final MKV
 #           language/default/forced tags
 #           remuxes final MKV with real track IDs
-# changes:  v2.5.2 - preset veryslow->slow, CRF 16/17->18/19, rd=4->rd=3, pools=*
-#                    reduces encode time ~3x with negligible quality difference
+# changes:  v2.6 - preselect sidecar metadata before encode and map audio/sub streams
+#                  by source TrackId when available, preventing language tags
+#                  from sliding onto the wrong audio/subtitle track
+#          v2.5.2 - preset veryslow->slow, CRF 16/17->18/19, rd=4->rd=3, pools=*
+#                  reduces encode time ~3x with negligible quality difference
 #--------------------------------------------
 
 param()
@@ -1509,14 +1512,110 @@ function Select-TrackMetadata {
     }
 }
 
+
+function New-FFmpegMapArgsFromTrackMetadata {
+    <#
+    .SYNOPSIS
+        Builds explicit ffmpeg -map and -metadata arguments from sidecar track
+        metadata before the encode starts.
+
+    .NOTES
+        The old encode mapped all audio/subtitle streams with 0:a? and 0:s?,
+        then tagged the finished MKV by positional order. If ffmpeg skipped or
+        reordered any stream, the language tags could land on the wrong track.
+
+        When sidecar JSON exists, MakeMKV TrackId values normally match the
+        source stream indexes in the decrypted .m2ts. Mapping 0:<TrackId>? keeps
+        the encoded output order aligned with the sidecar order.
+    #>
+    param([object]$MetaInfo)
+
+    if (-not $MetaInfo -or -not $MetaInfo.Data) {
+        return $null
+    }
+
+    $title = Get-TrackMetaTitle -Meta $MetaInfo.Data
+    if (-not $title) {
+        return $null
+    }
+
+    $audioMeta = @(Resolve-TrackList -Title $title -Kind audio)
+    $subMeta   = @(Resolve-TrackList -Title $title -Kind subtitle)
+
+    $hasUsableAudioIds = ($audioMeta.Count -gt 0 -and (@($audioMeta | Where-Object { $null -ne $_.TrackId }).Count -eq $audioMeta.Count))
+    $hasUsableSubIds   = ($subMeta.Count   -gt 0 -and (@($subMeta   | Where-Object { $null -ne $_.TrackId }).Count -eq $subMeta.Count))
+
+    if (-not $hasUsableAudioIds -and -not $hasUsableSubIds) {
+        return $null
+    }
+
+    $ffMapArgs = @(
+        '-map', '0:v:0'
+    )
+
+    foreach ($track in $audioMeta) {
+        if ($null -eq $track.TrackId) { continue }
+        $ffMapArgs += '-map'
+        $ffMapArgs += ("0:{0}?" -f [int]$track.TrackId)
+    }
+
+    foreach ($track in $subMeta) {
+        if ($null -eq $track.TrackId) { continue }
+        $ffMapArgs += '-map'
+        $ffMapArgs += ("0:{0}?" -f [int]$track.TrackId)
+    }
+
+    for ($i = 0; $i -lt $audioMeta.Count; $i++) {
+        $lang = Get-MetaLanguage -Track $audioMeta[$i]
+        $name = Get-MetaTrackName -Track $audioMeta[$i]
+
+        $ffMapArgs += ("-metadata:s:a:{0}" -f $i)
+        $ffMapArgs += "language=$lang"
+
+        if (-not [string]::IsNullOrWhiteSpace($name)) {
+            $ffMapArgs += ("-metadata:s:a:{0}" -f $i)
+            $ffMapArgs += "title=$name"
+        }
+    }
+
+    for ($i = 0; $i -lt $subMeta.Count; $i++) {
+        $lang = Get-MetaLanguage -Track $subMeta[$i]
+        $name = Get-MetaTrackName -Track $subMeta[$i]
+
+        $ffMapArgs += ("-metadata:s:s:{0}" -f $i)
+        $ffMapArgs += "language=$lang"
+
+        if (-not [string]::IsNullOrWhiteSpace($name)) {
+            $ffMapArgs += ("-metadata:s:s:{0}" -f $i)
+            $ffMapArgs += "title=$name"
+        }
+
+        if ($subMeta[$i].Forced) {
+            $ffMapArgs += ("-disposition:s:{0}" -f $i)
+            $ffMapArgs += 'forced'
+        }
+    }
+
+    return [pscustomobject]@{
+        Args       = $ffMapArgs
+        AudioCount = $audioMeta.Count
+        SubCount   = $subMeta.Count
+    }
+}
+
 function Apply-TrackMetadata {
     param(
         [Parameter(Mandatory)][string]$OutputFile,
         [Parameter(Mandatory)][System.IO.FileInfo]$SourceFile,
-        [Parameter(Mandatory)][string]$MovieName
+        [Parameter(Mandatory)][string]$MovieName,
+        [object]$PreselectedMetaInfo = $null
     )
 
-    $metaInfo = Select-TrackMetadata -SourceFile $SourceFile -MovieName $MovieName
+    $metaInfo = if ($PreselectedMetaInfo) {
+        $PreselectedMetaInfo
+    } else {
+        Select-TrackMetadata -SourceFile $SourceFile -MovieName $MovieName
+    }
     if (-not $metaInfo) {
         Write-UiBlankLine
         Write-Host "  $($global:UI_YLW)No sidecar metadata found — falling back to ffprobe source language tags.$($global:UI_R)"
@@ -1680,16 +1779,42 @@ function Encode-File {
         }
     }
 
+    # ── Preselect sidecar metadata before ffmpeg builds the output track order ──
+    $preselectedMeta = Select-TrackMetadata -SourceFile $SourceFile -MovieName $MovieName
+    $metadataMap = New-FFmpegMapArgsFromTrackMetadata -MetaInfo $preselectedMeta
+
+    if ($metadataMap) {
+        Write-UiBlankLine
+        Write-Host "  $($global:UI_CYN)Using sidecar-driven stream map:$($global:UI_R)"
+        Write-Host "  $($global:UI_DIM)Audio$($global:UI_R)  $($metadataMap.AudioCount) track(s)"
+        Write-Host "  $($global:UI_DIM)Subs $($global:UI_R)  $($metadataMap.SubCount) track(s)"
+    }
+    else {
+        Write-UiBlankLine
+        Write-Host "  $($global:UI_YLW)No usable sidecar TrackId map — using ffmpeg automatic audio/subtitle mapping.$($global:UI_R)"
+    }
+
     # ── Build ffmpeg args ──────────────────────────────────────
     $ffArgs = @(
         '-hide_banner',
         '-y',
         '-probesize', $Script:M2tsProbeSize,
         '-analyzeduration', $Script:M2tsAnalyzeDur,
-        '-i', $SourceFile.FullName,
-        '-map', '0:v:0',
-        '-map', '0:a?',
-        '-map', '0:s?',
+        '-i', $SourceFile.FullName
+    )
+
+    if ($metadataMap) {
+        $ffArgs += @($metadataMap.Args)
+    }
+    else {
+        $ffArgs += @(
+            '-map', '0:v:0',
+            '-map', '0:a?',
+            '-map', '0:s?'
+        )
+    }
+
+    $ffArgs += @(
         '-c:v', 'libx265',
         '-preset', $Script:DefaultPreset,
         '-crf', "$($vp.CRF)",
@@ -1712,7 +1837,7 @@ function Encode-File {
 
     $encodedInfo = Wait-ForOutputFile -Path $outputFile
 
-    $appliedMeta = Apply-TrackMetadata -OutputFile $encodedInfo.FullName -SourceFile $SourceFile -MovieName $MovieName
+    $appliedMeta = Apply-TrackMetadata -OutputFile $encodedInfo.FullName -SourceFile $SourceFile -MovieName $MovieName -PreselectedMetaInfo $preselectedMeta
     if ($appliedMeta) {
         # Guard against stray pipeline output: keep only the last value and force to string.
         if ($appliedMeta -is [array]) { $appliedMeta = $appliedMeta[-1] }
