@@ -3,8 +3,8 @@ package com.typezero.pcloudtv.data
 import android.content.Context
 
 /**
- * Persists the pCloud auth token + region in app-private storage so the user
- * only logs in once. The password is NEVER stored — only the returned token.
+ * Persists the pCloud auth token + region in app-private storage.
+ * No password is ever stored. Signing out clears the token.
  */
 class SessionStore(context: Context) {
 
