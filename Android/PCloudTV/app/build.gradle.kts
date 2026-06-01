@@ -13,6 +13,14 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "1.0"
+
+        // Ship only arm64-v8a native libs (covers modern phones + Google TV),
+        // which keeps the APK well under ~70 MB instead of ~190 MB for all ABIs.
+        // NOTE: this excludes x86_64, so it won't install on a standard emulator.
+        // For emulator testing, comment this line out and rebuild.
+        ndk {
+            abiFilters += "arm64-v8a"
+        }
     }
 
     buildTypes {
