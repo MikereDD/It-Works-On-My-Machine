@@ -59,9 +59,8 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
 
-    // Media3 / ExoPlayer for audio + video playback
-    implementation("androidx.media3:media3-exoplayer:1.2.1")
-    implementation("androidx.media3:media3-ui:1.2.1")
+    // VLC (LibVLC) engine for audio + video playback — wide codec support
+    implementation("org.videolan.android:libvlc-all:3.6.0")
 
     // Networking
     implementation("com.squareup.okhttp3:okhttp:4.12.0")

@@ -13,15 +13,22 @@ fun App(vm: AppViewModel = viewModel()) {
     val session = vm.session
 
     if (session == null) {
-        LoginScreen(
-            loggingIn = vm.loggingIn,
-            error = vm.loginError,
-            onLogin = vm::login
-        )
+        if (vm.loginInProgress) {
+            WebLoginScreen(
+                onResult = { token -> vm.completeLogin(token) },
+                onCancel = { vm.cancelLogin() }
+            )
+        } else {
+            LoginScreen(
+                error = vm.loginError,
+                busy = vm.busy,
+                onSignIn = { vm.startWebLogin() },
+                onUseToken = { vm.useToken(it) }
+            )
+        }
         return
     }
 
-    // A file currently selected for playback (null = browsing).
     var playing by remember { mutableStateOf<PItem?>(null) }
     val item = playing
 

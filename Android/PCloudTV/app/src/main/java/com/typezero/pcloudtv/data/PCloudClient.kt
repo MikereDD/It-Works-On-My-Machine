@@ -33,7 +33,11 @@ class PCloudClient {
     }
 
     /** Try both regions; return a Session for whichever accepts the credentials. */
-    suspend fun login(username: String, password: String): ApiResult<Session> =
+    suspend fun login(
+        username: String,
+        password: String,
+        code: String = ""
+    ): ApiResult<Session> =
         withContext(Dispatchers.IO) {
             var lastError = "Login failed"
             for (host in HOSTS) {
@@ -43,6 +47,14 @@ class PCloudClient {
                         .add("logout", "1")
                         .add("username", username)
                         .add("password", password)
+                        .apply {
+                            // Sent only when the account requires a 2FA / verification
+                            // code. pCloud asks for this on 2FA-enabled accounts.
+                            if (code.isNotBlank()) {
+                                add("code", code.trim())
+                                add("trustdevice", "1")
+                            }
+                        }
                         .build()
                     val req = Request.Builder()
                         .url("https://$host/userinfo")
@@ -56,13 +68,47 @@ class PCloudClient {
                             Session(authToken = json.getString("auth"), apiHost = host)
                         )
                     } else {
-                        lastError = json.optString("error", "Invalid email or password")
+                        val apiErr = json.optString("error", "Invalid email or password")
+                        // Make the 2FA case obvious to the user.
+                        lastError = if (apiErr.contains("code", ignoreCase = true)) {
+                            "This account has 2FA enabled — enter your authenticator " +
+                                "or SMS code in the 2FA field and sign in again."
+                        } else {
+                            apiErr
+                        }
                     }
                 } catch (e: Exception) {
                     lastError = e.message ?: "Network error"
                 }
             }
             ApiResult.Error(lastError)
+        }
+
+    /**
+     * Validate a pre-obtained access token (e.g. pulled from a logged-in
+     * pCloud web session) by calling userinfo on each region. Returns a
+     * Session bound to whichever host accepts it.
+     */
+    suspend fun loginWithToken(token: String): ApiResult<Session> =
+        withContext(Dispatchers.IO) {
+            for (host in HOSTS) {
+                try {
+                    val url = "https://$host/userinfo".toHttpUrl().newBuilder()
+                        .addQueryParameter("auth", token)
+                        .build()
+                    val json = http.newCall(Request.Builder().url(url).build()).execute()
+                        .use { JSONObject(it.body?.string().orEmpty()) }
+                    if (json.optInt("result", -1) == 0) {
+                        return@withContext ApiResult.Ok(Session(token, host))
+                    }
+                } catch (_: Exception) {
+                    // try the other region
+                }
+            }
+            ApiResult.Error(
+                "That token wasn't accepted on either pCloud region. " +
+                    "Make sure you copied the whole value."
+            )
         }
 
     /** List a folder. Pass folderId = 0 for the account root. */
