@@ -4,7 +4,7 @@
 
 <h1 align="center">pCloud TV</h1>
 
-<p align="center"><strong>v1.3</strong></p>
+<p align="center"><strong>v1.4</strong></p>
 
 <p align="center">
 A minimal <strong>Google TV / Android TV</strong> app (also runs on phones), built with
@@ -14,14 +14,14 @@ and stream your <strong>video and audio</strong> straight from pCloud — played
 </p>
 
 <p align="center">
-  <a href="https://github.com/MikereDD/It-Works-On-My-Machine/raw/main/Android/PCloudTV/releases/pCloudTV-v1.3.apk"><strong>Download the APK (v1.3)</strong></a>
+  <a href="https://github.com/MikereDD/It-Works-On-My-Machine/raw/main/Android/PCloudTV/releases/pCloudTV-v1.4.apk"><strong>Download the APK (v1.4)</strong></a>
 </p>
 
 ---
 
 ## Install
 
-1. Download **[pCloudTV-v1.3.apk](https://github.com/MikereDD/It-Works-On-My-Machine/raw/main/Android/PCloudTV/releases/pCloudTV-v1.3.apk)** and copy it to your phone or Android TV device.
+1. Download **[pCloudTV-v1.4.apk](https://github.com/MikereDD/It-Works-On-My-Machine/raw/main/Android/PCloudTV/releases/pCloudTV-v1.4.apk)** and copy it to your phone or Android TV device.
 2. Open it with a file manager and install. You'll see Google **Play Protect**'s "unknown developer" notice — tap **More details -> Install anyway**. That's expected for a sideloaded personal build.
 3. Launch **pCloud TV**, tap **Sign in with pCloud**, and log in (two-factor authentication is handled on pCloud's own page).
 
@@ -38,7 +38,10 @@ and stream your <strong>video and audio</strong> straight from pCloud — played
 
 ---
 
-## What's in v1.3
+## What's in v1.4
+
+- **Background audio** — music and audiobooks keep playing with the screen off (a wake-lock holds the CPU; video still keeps the screen on).
+- **Resume where you stopped** — playback position is remembered per file and picks up where you left off.
 
 - **Bulk playlist generation by path** — the **Save .m3u** dialog takes a pCloud path (with quick **/Music** and **/Audiobooks** buttons) and recursively writes an `.m3u` into every subfolder that has audio, with live progress.
 
@@ -141,6 +144,9 @@ app/src/main/java/com/typezero/pcloudtv/
 ---
 
 ## Changelog
+
+**v1.4**
+- Screen-off playback for audio (wake-lock) + per-file resume position.
 
 **v1.3**
 - Bulk generate playlists under a pCloud path (e.g. `/Music`, `/Audiobooks`), recursively, one `.m3u` per audio folder.
