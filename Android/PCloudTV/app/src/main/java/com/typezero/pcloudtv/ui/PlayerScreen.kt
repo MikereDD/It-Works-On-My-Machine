@@ -1,5 +1,8 @@
 package com.typezero.pcloudtv.ui
 
+import com.typezero.pcloudtv.data.MediaItem
+import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.RadioButtonChecked
 import androidx.compose.material.icons.filled.ClosedCaption
@@ -70,7 +73,6 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.typezero.pcloudtv.data.ApiResult
 import com.typezero.pcloudtv.data.PCloudClient
-import com.typezero.pcloudtv.data.PItem
 import com.typezero.pcloudtv.data.Session
 import kotlinx.coroutines.delay
 import org.videolan.libvlc.LibVLC
@@ -82,18 +84,35 @@ import org.videolan.libvlc.util.VLCVideoLayout
 fun PlayerScreen(
     client: PCloudClient,
     session: Session,
-    item: PItem,
+    queue: List<MediaItem>,
+    startIndex: Int = 0,
     onExit: () -> Unit
 ) {
-    var streamUrl by remember(item) { mutableStateOf<String?>(null) }
-    var error by remember(item) { mutableStateOf<String?>(null) }
+    var index by remember { mutableStateOf(startIndex.coerceIn(0, (queue.size - 1).coerceAtLeast(0))) }
+    val current = queue.getOrNull(index)
+
+    var streamUrl by remember(index) { mutableStateOf<String?>(null) }
+    var error by remember(index) { mutableStateOf<String?>(null) }
 
     BackHandler { onExit() }
 
-    LaunchedEffect(item) {
-        when (val r = client.getStreamUrl(session, item.fileId!!)) {
-            is ApiResult.Ok -> streamUrl = r.value
-            is ApiResult.Error -> error = r.message
+    LaunchedEffect(index) {
+        streamUrl = null
+        error = null
+        val item = current
+        if (item == null) {
+            error = "Nothing to play"
+            return@LaunchedEffect
+        }
+        if (item.directUrl != null) {
+            streamUrl = item.directUrl
+        } else if (item.fileId != null) {
+            when (val r = client.getStreamUrl(session, item.fileId)) {
+                is ApiResult.Ok -> streamUrl = r.value
+                is ApiResult.Error -> error = r.message
+            }
+        } else {
+            error = "Bad queue item"
         }
     }
 
@@ -102,22 +121,39 @@ fun PlayerScreen(
         contentAlignment = Alignment.Center
     ) {
         val url = streamUrl
+        val title = current?.title ?: ""
         when {
             error != null -> Text(
-                "Could not play \"${item.name}\": $error",
+                "Could not play \"$title\": $error",
                 color = MaterialTheme.colorScheme.error,
                 modifier = Modifier.padding(40.dp)
             )
 
             url == null -> CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
 
-            else -> VlcPlayer(url = url, title = item.name, onEnded = onExit)
+            else -> VlcPlayer(
+                url = url,
+                title = title,
+                hasPrev = index > 0,
+                hasNext = index < queue.size - 1,
+                onPrev = { if (index > 0) index-- },
+                onNext = { if (index < queue.size - 1) index++ },
+                onEnded = { if (index < queue.size - 1) index++ else onExit() }
+            )
         }
     }
 }
 
 @Composable
-private fun VlcPlayer(url: String, title: String, onEnded: () -> Unit) {
+private fun VlcPlayer(
+    url: String,
+    title: String,
+    hasPrev: Boolean,
+    hasNext: Boolean,
+    onPrev: () -> Unit,
+    onNext: () -> Unit,
+    onEnded: () -> Unit
+) {
     val context = LocalContext.current
 
     val libVlc = remember {
@@ -236,6 +272,25 @@ private fun VlcPlayer(url: String, title: String, onEnded: () -> Unit) {
         onDispose { player.setEventListener(null) }
     }
 
+    // Load (or swap to) the current URL whenever it changes — this is what makes
+    // a playlist queue work: advancing the index hands a new URL in here.
+    LaunchedEffect(url) {
+        tracksChosen = false
+        currentAudio = -1
+        currentSub = -1
+        audioOptions = emptyList()
+        subOptions = emptyList()
+        positionMs = 0L
+        durationMs = 0L
+        val media = Media(libVlc, Uri.parse(url)).apply {
+            setHWDecoderEnabled(true, false)
+        }
+        player.media = media
+        media.release()
+        player.play()
+        isPlaying = true
+    }
+
     // Release everything when leaving.
     DisposableEffect(Unit) {
         onDispose {
@@ -302,6 +357,12 @@ private fun VlcPlayer(url: String, title: String, onEnded: () -> Unit) {
                     Key.DirectionDown -> {
                         reveal(); true
                     }
+                    Key.MediaNext -> {
+                        if (hasNext) onNext(); true
+                    }
+                    Key.MediaPrevious -> {
+                        if (hasPrev) onPrev(); true
+                    }
                     else -> false
                 }
             }
@@ -314,12 +375,6 @@ private fun VlcPlayer(url: String, title: String, onEnded: () -> Unit) {
             factory = { ctx ->
                 VLCVideoLayout(ctx).also { layout ->
                     player.attachViews(layout, null, false, false)
-                    val media = Media(libVlc, Uri.parse(url)).apply {
-                        setHWDecoderEnabled(true, false)
-                    }
-                    player.media = media
-                    media.release()
-                    player.play()
                 }
             }
         )
@@ -334,6 +389,10 @@ private fun VlcPlayer(url: String, title: String, onEnded: () -> Unit) {
                 isPlaying = isPlaying,
                 positionMs = positionMs,
                 durationMs = durationMs,
+                hasPrev = hasPrev,
+                hasNext = hasNext,
+                onPrev = onPrev,
+                onNext = onNext,
                 onTogglePlay = { togglePlay() },
                 onSeekBack = { seekBy(-10_000) },
                 onSeekForward = { seekBy(10_000) },
@@ -382,6 +441,10 @@ private fun Controls(
     isPlaying: Boolean,
     positionMs: Long,
     durationMs: Long,
+    hasPrev: Boolean,
+    hasNext: Boolean,
+    onPrev: () -> Unit,
+    onNext: () -> Unit,
     onTogglePlay: () -> Unit,
     onSeekBack: () -> Unit,
     onSeekForward: () -> Unit,
@@ -429,6 +492,16 @@ private fun Controls(
                 horizontalArrangement = Arrangement.Center,
                 modifier = Modifier.fillMaxWidth()
             ) {
+                if (hasPrev || hasNext) {
+                    IconButton(onClick = onPrev, enabled = hasPrev) {
+                        Icon(
+                            Icons.Filled.SkipPrevious, contentDescription = "Previous",
+                            tint = if (hasPrev) Color.White else Color(0x55FFFFFF),
+                            modifier = Modifier.size(34.dp)
+                        )
+                    }
+                    Spacer(Modifier.width(16.dp))
+                }
                 IconButton(onClick = onSeekBack) {
                     Icon(
                         Icons.Filled.Replay10, contentDescription = "Back 10s",
@@ -457,6 +530,16 @@ private fun Controls(
                         Icons.Filled.Forward10, contentDescription = "Forward 10s",
                         tint = Color.White, modifier = Modifier.size(38.dp)
                     )
+                }
+                if (hasPrev || hasNext) {
+                    Spacer(Modifier.width(16.dp))
+                    IconButton(onClick = onNext, enabled = hasNext) {
+                        Icon(
+                            Icons.Filled.SkipNext, contentDescription = "Next",
+                            tint = if (hasNext) Color.White else Color(0x55FFFFFF),
+                            modifier = Modifier.size(34.dp)
+                        )
+                    }
                 }
             }
 

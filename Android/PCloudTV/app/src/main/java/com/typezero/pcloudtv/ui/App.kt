@@ -6,7 +6,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.typezero.pcloudtv.data.PItem
+import com.typezero.pcloudtv.data.MediaItem
 
 @Composable
 fun App(vm: AppViewModel = viewModel()) {
@@ -29,21 +29,21 @@ fun App(vm: AppViewModel = viewModel()) {
         return
     }
 
-    var playing by remember { mutableStateOf<PItem?>(null) }
-    val item = playing
+    var queue by remember { mutableStateOf<List<MediaItem>?>(null) }
+    val q = queue
 
-    if (item != null) {
+    if (q != null) {
         PlayerScreen(
             client = vm.client,
             session = session,
-            item = item,
-            onExit = { playing = null }
+            queue = q,
+            onExit = { queue = null }
         )
     } else {
         BrowseScreen(
             client = vm.client,
             session = session,
-            onPlay = { playing = it },
+            onPlayQueue = { queue = it },
             onLogout = vm::logout
         )
     }

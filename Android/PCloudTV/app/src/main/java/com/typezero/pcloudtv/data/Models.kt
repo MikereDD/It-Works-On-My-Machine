@@ -12,8 +12,19 @@ data class PItem(
 ) {
     val isVideo: Boolean get() = category == 2 || contentType.startsWith("video/")
     val isAudio: Boolean get() = category == 3 || contentType.startsWith("audio/")
+    val isPlaylist: Boolean get() =
+        name.endsWith(".m3u", true) || name.endsWith(".m3u8", true)
     val isPlayable: Boolean get() = isVideo || isAudio
+    /** Things the user can tap to start playback (files or playlists). */
+    val isOpenable: Boolean get() = isPlayable || isPlaylist
 }
+
+/** One item in the player's queue: a pCloud file (resolve on demand) or a direct URL. */
+data class MediaItem(
+    val title: String,
+    val fileId: Long?,      // resolve via getfilelink when about to play
+    val directUrl: String?  // already an absolute URL (e.g. http entry in a playlist)
+)
 
 /** Result of authenticating against pCloud. */
 data class Session(

@@ -4,7 +4,7 @@
 
 <h1 align="center">pCloud TV</h1>
 
-<p align="center"><strong>v1.0</strong></p>
+<p align="center"><strong>v1.1</strong></p>
 
 <p align="center">
 A minimal <strong>Google TV / Android TV</strong> app (also runs on phones), built with
@@ -14,14 +14,14 @@ and stream your <strong>video and audio</strong> straight from pCloud — played
 </p>
 
 <p align="center">
-  <a href="https://github.com/MikereDD/It-Works-On-My-Machine/raw/main/Android/PCloudTV/releases/pCloudTV-v1.0.apk"><strong>Download the APK (v1.0)</strong></a>
+  <a href="https://github.com/MikereDD/It-Works-On-My-Machine/raw/main/Android/PCloudTV/releases/pCloudTV-v1.1.apk"><strong>Download the APK (v1.1)</strong></a>
 </p>
 
 ---
 
 ## Install
 
-1. Download **[pCloudTV-v1.0.apk](https://github.com/MikereDD/It-Works-On-My-Machine/raw/main/Android/PCloudTV/releases/pCloudTV-v1.0.apk)** and copy it to your phone or Android TV device.
+1. Download **[pCloudTV-v1.1.apk](https://github.com/MikereDD/It-Works-On-My-Machine/raw/main/Android/PCloudTV/releases/pCloudTV-v1.1.apk)** and copy it to your phone or Android TV device.
 2. Open it with a file manager and install. You'll see Google **Play Protect**'s "unknown developer" notice — tap **More details -> Install anyway**. That's expected for a sideloaded personal build.
 3. Launch **pCloud TV**, tap **Sign in with pCloud**, and log in (two-factor authentication is handled on pCloud's own page).
 
@@ -38,7 +38,9 @@ and stream your <strong>video and audio</strong> straight from pCloud — played
 
 ---
 
-## What's in v1.0
+## What's in v1.1
+
+- **Playlist support** — open `.m3u` / `.m3u8` files to play their tracks as a queue, with auto-advance, skip previous/next, and HLS manifests handed straight to VLC.
 
 - Sign in through pCloud's own web login (**two-factor authentication supported**); token stored until sign-out.
 - Browse folders on TV (D-pad) or phone (touch), with file-type icons and sizes.
@@ -131,6 +133,16 @@ app/src/main/java/com/typezero/pcloudtv/
 - Stream URLs from `getfilelink` are bound to the requesting device's IP, so the app resolves them immediately before playback on the same device.
 - Token storage is plain app-private prefs. For encryption, wrap `SessionStore` with `EncryptedSharedPreferences` (`androidx.security:security-crypto`).
 - pCloud also offers `getvideolink` / `gethlslink` for transcoded/adaptive streaming if you ever need it — `PCloudClient` is where to add it.
+
+---
+
+## Changelog
+
+**v1.1**
+- Play `.m3u` / `.m3u8` playlists as a queue (auto-advance, skip prev/next; HLS `.m3u8` streamed directly).
+
+**v1.0**
+- Initial release: pCloud web login (2FA), folder browsing, VLC playback, English audio/subtitle auto-select + manual track picker, adaptive phone/TV UI, rotation that keeps your place, screen-stays-awake.
 
 ---
 
