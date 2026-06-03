@@ -269,6 +269,95 @@ class PCloudClient {
     }
 
     /**
+     * Recursively collect every folder under [rootFolderId] that directly
+     * contains playable files (one recursive listfolder call).
+     */
+    suspend fun collectAudioFolders(
+        session: Session,
+        rootFolderId: Long
+    ): ApiResult<List<AudioFolder>> = withContext(Dispatchers.IO) {
+        val url = "https://${session.apiHost}/listfolder".toHttpUrl().newBuilder()
+            .addQueryParameter("auth", session.authToken)
+            .addQueryParameter("folderid", rootFolderId.toString())
+            .addQueryParameter("recursive", "1")
+            .build()
+        scanAudioFolders(url)
+    }
+
+    /**
+     * Same, but addressed by a pCloud path such as "/Music" or "/Audiobooks".
+     */
+    suspend fun collectAudioFoldersByPath(
+        session: Session,
+        path: String
+    ): ApiResult<List<AudioFolder>> = withContext(Dispatchers.IO) {
+        val clean = ("/" + path.trim().trim('/')).ifBlank { "/" }
+        val url = "https://${session.apiHost}/listfolder".toHttpUrl().newBuilder()
+            .addQueryParameter("auth", session.authToken)
+            .addQueryParameter("path", clean)
+            .addQueryParameter("recursive", "1")
+            .build()
+        scanAudioFolders(url)
+    }
+
+    private fun scanAudioFolders(url: okhttp3.HttpUrl): ApiResult<List<AudioFolder>> {
+        return try {
+            val json = http.newCall(Request.Builder().url(url).build()).execute()
+                .use { JSONObject(it.body?.string().orEmpty()) }
+            if (json.optInt("result", -1) != 0) {
+                val code = json.optInt("result")
+                val msg = when (code) {
+                    2005 -> "That folder path wasn't found."
+                    else -> json.optString("error", "Could not scan folder (code $code)")
+                }
+                return ApiResult.Error(msg)
+            }
+
+            val out = mutableListOf<AudioFolder>()
+
+            fun parseItem(o: JSONObject): PItem {
+                val isFolder = o.optBoolean("isfolder", false)
+                return PItem(
+                    name = o.optString("name"),
+                    isFolder = isFolder,
+                    folderId = if (isFolder) o.optLong("folderid") else null,
+                    fileId = if (!isFolder) o.optLong("fileid") else null,
+                    contentType = o.optString("contenttype", ""),
+                    category = o.optInt("category", 0),
+                    size = o.optLong("size", 0L)
+                )
+            }
+
+            fun walk(meta: JSONObject) {
+                val fid = meta.optLong("folderid")
+                val fname = meta.optString("name")
+                val contents = meta.optJSONArray("contents") ?: return
+                val files = mutableListOf<PItem>()
+                for (i in 0 until contents.length()) {
+                    val item = parseItem(contents.getJSONObject(i))
+                    if (!item.isFolder && item.isPlayable) files.add(item)
+                }
+                if (files.isNotEmpty()) {
+                    out.add(AudioFolder(fid, fname, files.sortedBy { naturalKey(it.name) }))
+                }
+                for (i in 0 until contents.length()) {
+                    val o = contents.getJSONObject(i)
+                    if (o.optBoolean("isfolder", false)) walk(o)
+                }
+            }
+
+            walk(json.getJSONObject("metadata"))
+            ApiResult.Ok(out)
+        } catch (e: Exception) {
+            ApiResult.Error(e.message ?: "Network error")
+        }
+    }
+
+    /** Natural sort key so "2" comes before "10". */
+    private fun naturalKey(name: String): String =
+        Regex("\\d+").replace(name) { it.value.padStart(10, '0') }.lowercase()
+
+    /**
      * Generate a simple .m3u from the given files and upload it into [folderId].
      * Entries are bare filenames (resolved against the same folder on playback),
      * so the generated playlist always matches what's actually there.

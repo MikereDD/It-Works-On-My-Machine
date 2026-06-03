@@ -26,6 +26,13 @@ data class MediaItem(
     val directUrl: String?  // already an absolute URL (e.g. http entry in a playlist)
 )
 
+/** A folder that contains playable files, used by the recursive playlist generator. */
+data class AudioFolder(
+    val folderId: Long,
+    val name: String,
+    val files: List<PItem>
+)
+
 /** Result of authenticating against pCloud. */
 data class Session(
     val authToken: String,

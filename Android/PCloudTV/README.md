@@ -4,7 +4,7 @@
 
 <h1 align="center">pCloud TV</h1>
 
-<p align="center"><strong>v1.2</strong></p>
+<p align="center"><strong>v1.3</strong></p>
 
 <p align="center">
 A minimal <strong>Google TV / Android TV</strong> app (also runs on phones), built with
@@ -14,14 +14,14 @@ and stream your <strong>video and audio</strong> straight from pCloud — played
 </p>
 
 <p align="center">
-  <a href="https://github.com/MikereDD/It-Works-On-My-Machine/raw/main/Android/PCloudTV/releases/pCloudTV-v1.2.apk"><strong>Download the APK (v1.2)</strong></a>
+  <a href="https://github.com/MikereDD/It-Works-On-My-Machine/raw/main/Android/PCloudTV/releases/pCloudTV-v1.3.apk"><strong>Download the APK (v1.3)</strong></a>
 </p>
 
 ---
 
 ## Install
 
-1. Download **[pCloudTV-v1.2.apk](https://github.com/MikereDD/It-Works-On-My-Machine/raw/main/Android/PCloudTV/releases/pCloudTV-v1.2.apk)** and copy it to your phone or Android TV device.
+1. Download **[pCloudTV-v1.3.apk](https://github.com/MikereDD/It-Works-On-My-Machine/raw/main/Android/PCloudTV/releases/pCloudTV-v1.3.apk)** and copy it to your phone or Android TV device.
 2. Open it with a file manager and install. You'll see Google **Play Protect**'s "unknown developer" notice — tap **More details -> Install anyway**. That's expected for a sideloaded personal build.
 3. Launch **pCloud TV**, tap **Sign in with pCloud**, and log in (two-factor authentication is handled on pCloud's own page).
 
@@ -38,7 +38,9 @@ and stream your <strong>video and audio</strong> straight from pCloud — played
 
 ---
 
-## What's in v1.2
+## What's in v1.3
+
+- **Bulk playlist generation by path** — the **Save .m3u** dialog takes a pCloud path (with quick **/Music** and **/Audiobooks** buttons) and recursively writes an `.m3u` into every subfolder that has audio, with live progress.
 
 - **Create playlists** — a **Save .m3u** button writes an `.m3u` of the current folder's audio/video files straight into that pCloud folder, ready to play back.
 
@@ -139,6 +141,9 @@ app/src/main/java/com/typezero/pcloudtv/
 ---
 
 ## Changelog
+
+**v1.3**
+- Bulk generate playlists under a pCloud path (e.g. `/Music`, `/Audiobooks`), recursively, one `.m3u` per audio folder.
 
 **v1.2**
 - Generate playlists: **Save .m3u** builds an `.m3u` for a folder's files and uploads it into that folder.
