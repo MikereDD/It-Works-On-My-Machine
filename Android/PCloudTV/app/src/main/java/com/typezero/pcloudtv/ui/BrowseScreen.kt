@@ -1,5 +1,7 @@
 package com.typezero.pcloudtv.ui
 
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material.icons.filled.PlaylistAdd
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.height
@@ -22,6 +24,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
@@ -85,6 +88,47 @@ fun BrowseScreen(
     var saving by remember { mutableStateOf(false) }
     var saveMessage by remember { mutableStateOf<String?>(null) }
     var reloadKey by remember { mutableStateOf(0) }
+    var genDone by remember { mutableStateOf(0) }
+    var genTotal by remember { mutableStateOf(0) }
+    var genName by remember { mutableStateOf("") }
+    var showGenDialog by remember { mutableStateOf(false) }
+    var genPath by remember { mutableStateOf("/") }
+
+    // Recursively generate a playlist in every audio folder under [path].
+    fun generateUnder(path: String) {
+        showGenDialog = false
+        if (saving) return
+        saving = true
+        saveMessage = null
+        genDone = 0; genTotal = 0; genName = ""
+        scope.launch {
+            val scan = client.collectAudioFoldersByPath(session, path)
+            when (scan) {
+                is ApiResult.Ok -> {
+                    val folders = scan.value
+                    genTotal = folders.size
+                    var ok = 0
+                    for ((i, fol) in folders.withIndex()) {
+                        genName = fol.name
+                        genDone = i + 1
+                        val pname = (fol.name.ifBlank { "Playlist" }) + ".m3u"
+                        if (client.savePlaylist(session, fol.folderId, pname, fol.files) is ApiResult.Ok) ok++
+                    }
+                    saving = false
+                    saveMessage = if (folders.isEmpty()) {
+                        "No folders with audio found under \"$path\"."
+                    } else {
+                        "Saved $ok playlist(s) across ${folders.size} folder(s)."
+                    }
+                    reloadKey++
+                }
+                is ApiResult.Error -> {
+                    saving = false
+                    saveMessage = "Couldn't scan: ${scan.message}"
+                }
+            }
+        }
+    }
 
     LaunchedEffect(current.first, reloadKey) {
         loading = true
@@ -150,32 +194,16 @@ fun BrowseScreen(
                     }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    val playable = items.filter { it.isPlayable }
-                    if (playable.isNotEmpty()) {
+                    if (items.isNotEmpty()) {
                         HeaderButton(
                             icon = Icons.Filled.PlaylistAdd,
                             label = if (compact) null else "Save .m3u",
                             onClick = {
                                 if (!saving) {
-                                    saving = true
-                                    saveMessage = null
-                                    val baseName = current.second.ifBlank { "Playlist" }
-                                    val fileName = "$baseName.m3u"
-                                    scope.launch {
-                                        when (val r = client.savePlaylist(
-                                            session, current.first, fileName, playable
-                                        )) {
-                                            is ApiResult.Ok -> {
-                                                saving = false
-                                                saveMessage = "Saved \"$fileName\" (${playable.size} tracks)"
-                                                reloadKey++
-                                            }
-                                            is ApiResult.Error -> {
-                                                saving = false
-                                                saveMessage = "Couldn't save: ${r.message}"
-                                            }
-                                        }
-                                    }
+                                    // Default the path to the folder you're in.
+                                    genPath = "/" + stack.drop(1).joinToString("/") { it.second }
+                                    if (genPath.isBlank()) genPath = "/"
+                                    showGenDialog = true
                                 }
                             }
                         )
@@ -256,10 +284,16 @@ fun BrowseScreen(
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     CircularProgressIndicator(color = Brand.Accent)
                     Spacer(Modifier.height(12.dp))
-                    Text(
-                        if (saving) "Saving playlist…" else "Loading playlist…",
-                        color = Brand.TextHi, fontSize = 14.sp
-                    )
+                    val label = when {
+                        resolving -> "Loading playlist…"
+                        genTotal > 0 -> "Generating playlists… $genDone / $genTotal"
+                        else -> "Scanning folders…"
+                    }
+                    Text(label, color = Brand.TextHi, fontSize = 14.sp)
+                    if (saving && genName.isNotBlank()) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(genName, color = Brand.TextLow, fontSize = 12.sp, maxLines = 1)
+                    }
                 }
             }
         }
@@ -283,6 +317,95 @@ fun BrowseScreen(
                     modifier = Modifier.padding(32.dp))
             }
         }
+
+        if (showGenDialog) {
+            GeneratePlaylistsDialog(
+                path = genPath,
+                onPathChange = { genPath = it },
+                onQuick = { genPath = it },
+                onGenerate = { generateUnder(genPath) },
+                onCancel = { showGenDialog = false }
+            )
+        }
+    }
+}
+
+@Composable
+private fun GeneratePlaylistsDialog(
+    path: String,
+    onPathChange: (String) -> Unit,
+    onQuick: (String) -> Unit,
+    onGenerate: () -> Unit,
+    onCancel: () -> Unit
+) {
+    Box(
+        Modifier.fillMaxSize().background(Color(0xCC000000)).clickable(onClick = onCancel),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth().widthIn(max = 480.dp)
+                .padding(28.dp)
+                .clip(RoundedCornerShape(20.dp))
+                .background(Brand.Surface)
+                .border(1.dp, Brand.Stroke, RoundedCornerShape(20.dp))
+                .padding(22.dp)
+        ) {
+            Text("Generate playlists", color = Brand.TextHi, fontSize = 18.sp,
+                fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "Writes an .m3u into every folder with audio under this pCloud path " +
+                    "(including subfolders).",
+                color = Brand.TextLow, fontSize = 12.sp
+            )
+            Spacer(Modifier.height(14.dp))
+            OutlinedTextField(
+                value = path,
+                onValueChange = onPathChange,
+                singleLine = true,
+                label = { Text("pCloud path") },
+                shape = RoundedCornerShape(12.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Brand.Accent,
+                    unfocusedBorderColor = Brand.Stroke,
+                    focusedLabelColor = Brand.Accent,
+                    cursorColor = Brand.Accent
+                ),
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(Modifier.height(10.dp))
+            Row {
+                QuickChip("/Music") { onQuick("/Music") }
+                Spacer(Modifier.width(8.dp))
+                QuickChip("/Audiobooks") { onQuick("/Audiobooks") }
+            }
+            Spacer(Modifier.height(18.dp))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                HeaderButton(icon = null, label = "Cancel", onClick = onCancel)
+                Spacer(Modifier.width(10.dp))
+                HeaderButton(icon = Icons.Filled.PlaylistAdd, label = "Generate",
+                    primary = true, onClick = onGenerate)
+            }
+        }
+    }
+}
+
+@Composable
+private fun QuickChip(text: String, onClick: () -> Unit) {
+    var focused by remember { mutableStateOf(false) }
+    val interaction = remember { MutableInteractionSource() }
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(20.dp))
+            .background(if (focused) Brand.SurfaceFocused else Brand.BgElevated)
+            .border(1.dp, if (focused) Brand.Accent else Brand.Stroke, RoundedCornerShape(20.dp))
+            .onFocusChanged { focused = it.isFocused }
+            .focusable(interactionSource = interaction)
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 8.dp)
+    ) {
+        Text(text, color = Brand.TextHi, fontSize = 13.sp)
     }
 }
 
@@ -367,28 +490,32 @@ private fun ItemCard(
 
 @Composable
 private fun HeaderButton(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    icon: androidx.compose.ui.graphics.vector.ImageVector?,
     label: String?,
+    primary: Boolean = false,
     onClick: () -> Unit
 ) {
     var focused by remember { mutableStateOf(false) }
     val interaction = remember { MutableInteractionSource() }
+    val active = focused || primary
     Row(
         modifier = Modifier
             .clip(RoundedCornerShape(12.dp))
-            .background(if (focused) Brand.Accent else Brand.Surface)
-            .border(1.dp, if (focused) Brand.Accent else Brand.Stroke, RoundedCornerShape(12.dp))
+            .background(if (active) Brand.Accent else Brand.Surface)
+            .border(1.dp, if (active) Brand.Accent else Brand.Stroke, RoundedCornerShape(12.dp))
             .onFocusChanged { focused = it.isFocused }
             .focusable(interactionSource = interaction)
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
             .padding(horizontal = if (label == null) 12.dp else 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        val tint = if (focused) MaterialTheme.colorScheme.onPrimary else Brand.TextMid
-        Icon(icon, contentDescription = label ?: "Save playlist", tint = tint,
-            modifier = Modifier.size(18.dp))
+        val tint = if (active) MaterialTheme.colorScheme.onPrimary else Brand.TextMid
+        if (icon != null) {
+            Icon(icon, contentDescription = label ?: "Save playlist", tint = tint,
+                modifier = Modifier.size(18.dp))
+            if (label != null) Spacer(Modifier.width(8.dp))
+        }
         if (label != null) {
-            Spacer(Modifier.width(8.dp))
             Text(label, color = tint, fontSize = 14.sp)
         }
     }
