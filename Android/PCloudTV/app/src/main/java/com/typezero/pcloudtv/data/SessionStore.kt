@@ -11,6 +11,20 @@ class SessionStore(context: Context) {
     private val prefs =
         context.getSharedPreferences("pcloud_session", Context.MODE_PRIVATE)
 
+    // Resume positions live in their own store so signing out doesn't wipe them.
+    private val posPrefs =
+        context.getSharedPreferences("pcloud_positions", Context.MODE_PRIVATE)
+
+    fun savePosition(fileId: Long, positionMs: Long) {
+        posPrefs.edit().putLong("pos_$fileId", positionMs).apply()
+    }
+
+    fun getPosition(fileId: Long): Long = posPrefs.getLong("pos_$fileId", 0L)
+
+    fun clearPosition(fileId: Long) {
+        posPrefs.edit().remove("pos_$fileId").apply()
+    }
+
     fun save(session: Session) {
         prefs.edit()
             .putString(KEY_TOKEN, session.authToken)

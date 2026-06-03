@@ -134,6 +134,7 @@ fun PlayerScreen(
             else -> VlcPlayer(
                 url = url,
                 title = title,
+                mediaKey = current?.fileId,
                 hasPrev = index > 0,
                 hasNext = index < queue.size - 1,
                 onPrev = { if (index > 0) index-- },
@@ -148,6 +149,7 @@ fun PlayerScreen(
 private fun VlcPlayer(
     url: String,
     title: String,
+    mediaKey: Long?,
     hasPrev: Boolean,
     hasNext: Boolean,
     onPrev: () -> Unit,
@@ -155,6 +157,7 @@ private fun VlcPlayer(
     onEnded: () -> Unit
 ) {
     val context = LocalContext.current
+    val store = remember { com.typezero.pcloudtv.data.SessionStore(context) }
 
     val libVlc = remember {
         LibVLC(
@@ -177,6 +180,30 @@ private fun VlcPlayer(
     var positionMs by remember { mutableStateOf(0L) }
     var durationMs by remember { mutableStateOf(0L) }
     var interactionTick by remember { mutableStateOf(0) }
+    var hasVideo by remember { mutableStateOf(false) }
+    var resumed by remember { mutableStateOf(false) }
+    var lastSavedAt by remember { mutableStateOf(0L) }
+
+    // Persist resume position for the current file (audio or video on pCloud).
+    fun persistPosition() {
+        val key = mediaKey ?: return
+        val pos = positionMs
+        val dur = durationMs
+        when {
+            dur > 0 && pos > dur - 10_000 -> store.clearPosition(key)  // basically finished
+            pos > 3_000 -> store.savePosition(key, pos)
+            else -> store.clearPosition(key)
+        }
+    }
+
+    // Seek to the saved position once, shortly after playback starts.
+    fun resumeIfNeeded() {
+        if (resumed) return
+        resumed = true
+        val key = mediaKey ?: return
+        val saved = store.getPosition(key)
+        if (saved > 3_000) player.time = saved
+    }
 
     // Track picker state. Each entry is (id, label).
     var showTracks by remember { mutableStateOf(false) }
@@ -256,17 +283,32 @@ private fun VlcPlayer(
             when (e.type) {
                 MediaPlayer.Event.Playing -> {
                     isPlaying = true
+                    hasVideo = player.videoTracksCount > 0
+                    resumeIfNeeded()
                     selectEnglishTracks()
                 }
-                MediaPlayer.Event.Paused -> isPlaying = false
+                MediaPlayer.Event.Paused -> {
+                    isPlaying = false
+                    persistPosition()
+                }
                 MediaPlayer.Event.TimeChanged -> {
                     positionMs = e.timeChanged
-                    // Tracks are reliably enumerated a moment after start.
+                    if (!resumed) resumeIfNeeded()
                     if (!tracksChosen) selectEnglishTracks()
+                    if (!hasVideo) hasVideo = player.videoTracksCount > 0
+                    // Throttle resume-position saves to ~once every 5s.
+                    val now = System.currentTimeMillis()
+                    if (now - lastSavedAt > 5_000) {
+                        lastSavedAt = now
+                        persistPosition()
+                    }
                 }
                 MediaPlayer.Event.LengthChanged -> durationMs = e.lengthChanged
                 MediaPlayer.Event.ESAdded -> selectEnglishTracks()
-                MediaPlayer.Event.EndReached -> onEnded()
+                MediaPlayer.Event.EndReached -> {
+                    mediaKey?.let { store.clearPosition(it) }  // finished → start fresh next time
+                    onEnded()
+                }
             }
         }
         onDispose { player.setEventListener(null) }
@@ -276,6 +318,8 @@ private fun VlcPlayer(
     // a playlist queue work: advancing the index hands a new URL in here.
     LaunchedEffect(url) {
         tracksChosen = false
+        resumed = false
+        hasVideo = false
         currentAudio = -1
         currentSub = -1
         audioOptions = emptyList()
@@ -291,9 +335,10 @@ private fun VlcPlayer(
         isPlaying = true
     }
 
-    // Release everything when leaving.
+    // Release everything when leaving — and save the resume position first.
     DisposableEffect(Unit) {
         onDispose {
+            persistPosition()
             player.stop()
             player.detachViews()
             player.release()
@@ -301,17 +346,30 @@ private fun VlcPlayer(
         }
     }
 
-    // Keep the screen awake while playing so the device doesn't sleep mid-video.
-    // Cleared automatically when paused or when leaving the player.
+    // Playback power management:
+    //  - Hold a PARTIAL wake lock while playing so AUDIO keeps going with the
+    //    screen off (music / audiobooks).
+    //  - Only force the screen to stay on when there's VIDEO to watch.
     val activity = context as? android.app.Activity
-    DisposableEffect(isPlaying) {
+    val wakeLock = remember {
+        val pm = context.getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager
+        pm.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "pcloudtv:playback")
+    }
+    DisposableEffect(isPlaying, hasVideo) {
         val window = activity?.window
         if (isPlaying) {
-            window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            if (!wakeLock.isHeld) wakeLock.acquire()
+            if (hasVideo) {
+                window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            } else {
+                window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            }
         } else {
+            if (wakeLock.isHeld) wakeLock.release()
             window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
         onDispose {
+            if (wakeLock.isHeld) wakeLock.release()
             window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
     }
