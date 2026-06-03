@@ -1,5 +1,8 @@
 package com.typezero.pcloudtv.ui
 
+import kotlinx.coroutines.launch
+import androidx.compose.foundation.layout.height
+import androidx.compose.material.icons.filled.QueueMusic
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
@@ -62,7 +65,7 @@ import com.typezero.pcloudtv.ui.theme.Brand
 fun BrowseScreen(
     client: PCloudClient,
     session: Session,
-    onPlay: (PItem) -> Unit,
+    onPlayQueue: (List<com.typezero.pcloudtv.data.MediaItem>) -> Unit,
     onLogout: () -> Unit
 ) {
     val stack = remember { mutableStateListOf(0L to "pCloud") }
@@ -71,6 +74,11 @@ fun BrowseScreen(
     var items by remember { mutableStateOf<List<PItem>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
+
+    // Playlist resolution overlay state.
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var resolving by remember { mutableStateOf(false) }
+    var resolveError by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(current.first) {
         loading = true
@@ -169,13 +177,58 @@ fun BrowseScreen(
                                 onClick = {
                                     when {
                                         pItem.isFolder -> stack.add(pItem.folderId!! to pItem.name)
-                                        pItem.isPlayable -> onPlay(pItem)
+                                        pItem.isPlaylist -> {
+                                            resolveError = null
+                                            resolving = true
+                                            scope.launch {
+                                                when (val r = client.resolvePlaylist(session, pItem, items)) {
+                                                    is ApiResult.Ok -> {
+                                                        resolving = false
+                                                        onPlayQueue(r.value)
+                                                    }
+                                                    is ApiResult.Error -> {
+                                                        resolving = false
+                                                        resolveError = r.message
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        pItem.isPlayable -> onPlayQueue(
+                                            listOf(
+                                                com.typezero.pcloudtv.data.MediaItem(
+                                                    pItem.name, pItem.fileId, null
+                                                )
+                                            )
+                                        )
                                     }
                                 }
                             )
                         }
                     }
                 }
+            }
+        }
+
+        if (resolving) {
+            Box(
+                Modifier.fillMaxSize().background(Color(0xAA000000)),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator(color = Brand.Accent)
+                    Spacer(Modifier.height(12.dp))
+                    Text("Loading playlist…", color = Brand.TextHi, fontSize = 14.sp)
+                }
+            }
+        }
+        resolveError?.let { msg ->
+            Box(
+                Modifier.fillMaxSize().background(Color(0xAA000000))
+                    .clickable { resolveError = null },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(msg, color = Brand.TextHi, fontSize = 14.sp,
+                    modifier = Modifier.padding(32.dp))
             }
         }
     }
@@ -194,15 +247,17 @@ private fun ItemCard(
 
     val accent = when {
         item.isFolder -> Brand.Folder
+        item.isPlaylist -> Brand.Glow
         item.isVideo -> Brand.Video
         else -> Brand.Audio
     }
     val icon = when {
         item.isFolder -> Icons.Filled.Folder
+        item.isPlaylist -> Icons.Filled.QueueMusic
         item.isVideo -> Icons.Filled.Movie
         else -> Icons.Filled.MusicNote
     }
-    val subtitle = if (item.isFolder) "Folder" else humanSize(item.size)
+    val subtitle = when { item.isFolder -> "Folder"; item.isPlaylist -> "Playlist"; else -> humanSize(item.size) }
 
     Row(
         modifier = modifier

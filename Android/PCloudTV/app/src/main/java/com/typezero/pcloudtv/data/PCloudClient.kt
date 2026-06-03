@@ -190,4 +190,78 @@ class PCloudClient {
                 ApiResult.Error(e.message ?: "Network error")
             }
         }
+
+    /**
+     * Resolve an .m3u / .m3u8 playlist into a playable queue.
+     *
+     * - If the file is an HLS manifest (contains #EXT-X- tags), it's handed to
+     *   the player as a single direct URL (VLC plays HLS natively).
+     * - Otherwise each entry is matched: absolute http(s) URLs are used as-is;
+     *   bare filenames are matched (by name) against files in the same folder.
+     *   Entries that can't be matched in this folder are skipped.
+     *
+     * @param folderItems the contents of the folder the playlist lives in,
+     *        used to resolve relative filename entries.
+     */
+    suspend fun resolvePlaylist(
+        session: Session,
+        playlist: PItem,
+        folderItems: List<PItem>
+    ): ApiResult<List<MediaItem>> = withContext(Dispatchers.IO) {
+        val linkRes = getStreamUrl(session, playlist.fileId ?: return@withContext ApiResult.Error("Bad playlist file"))
+        val m3uUrl = when (linkRes) {
+            is ApiResult.Ok -> linkRes.value
+            is ApiResult.Error -> return@withContext ApiResult.Error(linkRes.message)
+        }
+
+        val text = try {
+            http.newCall(Request.Builder().url(m3uUrl).build()).execute()
+                .use { it.body?.string().orEmpty() }
+        } catch (e: Exception) {
+            return@withContext ApiResult.Error(e.message ?: "Could not read playlist")
+        }
+
+        val lines = text.lines()
+
+        // HLS manifest -> let VLC handle the whole thing as one stream.
+        if (lines.any { it.trimStart().startsWith("#EXT-X-", ignoreCase = true) }) {
+            return@withContext ApiResult.Ok(listOf(MediaItem(playlist.name, null, m3uUrl)))
+        }
+
+        val byName = folderItems
+            .filter { !it.isFolder && it.fileId != null }
+            .associateBy { it.name.lowercase() }
+
+        val out = mutableListOf<MediaItem>()
+        var pendingTitle: String? = null
+        for (raw in lines) {
+            val line = raw.trim()
+            if (line.isEmpty()) continue
+            if (line.startsWith("#")) {
+                if (line.startsWith("#EXTINF", ignoreCase = true)) {
+                    pendingTitle = line.substringAfter(",", "").trim().ifBlank { null }
+                }
+                continue
+            }
+            if (line.startsWith("http://", true) || line.startsWith("https://", true)) {
+                out += MediaItem(
+                    pendingTitle ?: line.substringAfterLast('/').ifBlank { line },
+                    null, line
+                )
+            } else {
+                val base = line.replace('\\', '/').substringAfterLast('/').lowercase()
+                val match = byName[base]
+                if (match?.fileId != null) {
+                    out += MediaItem(pendingTitle ?: match.name, match.fileId, null)
+                }
+            }
+            pendingTitle = null
+        }
+
+        if (out.isEmpty()) {
+            ApiResult.Error("No playable entries in this playlist were found in this folder.")
+        } else {
+            ApiResult.Ok(out)
+        }
+    }
 }
