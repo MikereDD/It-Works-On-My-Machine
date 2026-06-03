@@ -1,5 +1,6 @@
 package com.typezero.pcloudtv.ui
 
+import androidx.compose.material.icons.filled.PlaylistAdd
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.height
 import androidx.compose.material.icons.filled.QueueMusic
@@ -80,7 +81,12 @@ fun BrowseScreen(
     var resolving by remember { mutableStateOf(false) }
     var resolveError by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(current.first) {
+    // Save-playlist state + a key to force a folder re-list after saving.
+    var saving by remember { mutableStateOf(false) }
+    var saveMessage by remember { mutableStateOf<String?>(null) }
+    var reloadKey by remember { mutableStateOf(0) }
+
+    LaunchedEffect(current.first, reloadKey) {
         loading = true
         error = null
         when (val r = client.listFolder(session, current.first)) {
@@ -143,7 +149,40 @@ fun BrowseScreen(
                         )
                     }
                 }
-                LogoutButton(onLogout)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    val playable = items.filter { it.isPlayable }
+                    if (playable.isNotEmpty()) {
+                        HeaderButton(
+                            icon = Icons.Filled.PlaylistAdd,
+                            label = if (compact) null else "Save .m3u",
+                            onClick = {
+                                if (!saving) {
+                                    saving = true
+                                    saveMessage = null
+                                    val baseName = current.second.ifBlank { "Playlist" }
+                                    val fileName = "$baseName.m3u"
+                                    scope.launch {
+                                        when (val r = client.savePlaylist(
+                                            session, current.first, fileName, playable
+                                        )) {
+                                            is ApiResult.Ok -> {
+                                                saving = false
+                                                saveMessage = "Saved \"$fileName\" (${playable.size} tracks)"
+                                                reloadKey++
+                                            }
+                                            is ApiResult.Error -> {
+                                                saving = false
+                                                saveMessage = "Couldn't save: ${r.message}"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        )
+                        Spacer(Modifier.width(10.dp))
+                    }
+                    LogoutButton(onLogout)
+                }
             }
 
             when {
@@ -209,7 +248,7 @@ fun BrowseScreen(
             }
         }
 
-        if (resolving) {
+        if (resolving || saving) {
             Box(
                 Modifier.fillMaxSize().background(Color(0xAA000000)),
                 contentAlignment = Alignment.Center
@@ -217,7 +256,10 @@ fun BrowseScreen(
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     CircularProgressIndicator(color = Brand.Accent)
                     Spacer(Modifier.height(12.dp))
-                    Text("Loading playlist…", color = Brand.TextHi, fontSize = 14.sp)
+                    Text(
+                        if (saving) "Saving playlist…" else "Loading playlist…",
+                        color = Brand.TextHi, fontSize = 14.sp
+                    )
                 }
             }
         }
@@ -225,6 +267,16 @@ fun BrowseScreen(
             Box(
                 Modifier.fillMaxSize().background(Color(0xAA000000))
                     .clickable { resolveError = null },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(msg, color = Brand.TextHi, fontSize = 14.sp,
+                    modifier = Modifier.padding(32.dp))
+            }
+        }
+        saveMessage?.let { msg ->
+            Box(
+                Modifier.fillMaxSize().background(Color(0xAA000000))
+                    .clickable { saveMessage = null },
                 contentAlignment = Alignment.Center
             ) {
                 Text(msg, color = Brand.TextHi, fontSize = 14.sp,
@@ -309,6 +361,35 @@ private fun ItemCard(
                 tint = if (focused) accent else Brand.TextLow,
                 modifier = Modifier.size(24.dp)
             )
+        }
+    }
+}
+
+@Composable
+private fun HeaderButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String?,
+    onClick: () -> Unit
+) {
+    var focused by remember { mutableStateOf(false) }
+    val interaction = remember { MutableInteractionSource() }
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(if (focused) Brand.Accent else Brand.Surface)
+            .border(1.dp, if (focused) Brand.Accent else Brand.Stroke, RoundedCornerShape(12.dp))
+            .onFocusChanged { focused = it.isFocused }
+            .focusable(interactionSource = interaction)
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .padding(horizontal = if (label == null) 12.dp else 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        val tint = if (focused) MaterialTheme.colorScheme.onPrimary else Brand.TextMid
+        Icon(icon, contentDescription = label ?: "Save playlist", tint = tint,
+            modifier = Modifier.size(18.dp))
+        if (label != null) {
+            Spacer(Modifier.width(8.dp))
+            Text(label, color = tint, fontSize = 14.sp)
         }
     }
 }
