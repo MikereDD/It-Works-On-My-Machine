@@ -4,8 +4,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.FormBody
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
@@ -262,6 +265,54 @@ class PCloudClient {
             ApiResult.Error("No playable entries in this playlist were found in this folder.")
         } else {
             ApiResult.Ok(out)
+        }
+    }
+
+    /**
+     * Generate a simple .m3u from the given files and upload it into [folderId].
+     * Entries are bare filenames (resolved against the same folder on playback),
+     * so the generated playlist always matches what's actually there.
+     */
+    suspend fun savePlaylist(
+        session: Session,
+        folderId: Long,
+        fileName: String,
+        files: List<PItem>
+    ): ApiResult<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val content = buildString {
+                append("#EXTM3U\n")
+                for (f in files) {
+                    val title = f.name.substringBeforeLast('.', f.name)
+                    append("#EXTINF:-1,").append(title).append('\n')
+                    append(f.name).append('\n')
+                }
+            }
+            val url = "https://${session.apiHost}/uploadfile".toHttpUrl().newBuilder()
+                .addQueryParameter("auth", session.authToken)
+                .addQueryParameter("folderid", folderId.toString())
+                .addQueryParameter("nopartial", "1")
+                .build()
+            val part = RequestBody.create(
+                "audio/x-mpegurl".toMediaTypeOrNull(), content
+            )
+            val body = MultipartBody.Builder()
+                .setType(MultipartBody.FORM)
+                .addFormDataPart("file", fileName, part)
+                .build()
+            val req = Request.Builder().url(url).post(body).build()
+            val json = http.newCall(req).execute().use { resp ->
+                JSONObject(resp.body?.string().orEmpty())
+            }
+            if (json.optInt("result", -1) == 0) {
+                ApiResult.Ok(Unit)
+            } else {
+                ApiResult.Error(
+                    json.optString("error", "Upload failed (code ${json.optInt("result")})")
+                )
+            }
+        } catch (e: Exception) {
+            ApiResult.Error(e.message ?: "Network error")
         }
     }
 }
