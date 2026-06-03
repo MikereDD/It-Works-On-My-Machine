@@ -34,7 +34,6 @@
 #>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)]
     [string]$MusicRoot,
 
     [switch]$Clean,
@@ -49,6 +48,22 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+# When launched with no -MusicRoot (e.g. from tool-menu), prompt interactively.
+$interactive = $false
+if ([string]::IsNullOrWhiteSpace($MusicRoot)) {
+    $interactive = $true
+    $MusicRoot = (Read-Host "Music / audiobook root (e.g. P:\Music)").Trim().Trim('"')
+    if (-not $Clean) {
+        $ans = (Read-Host "Delete & rebuild existing playlists first? (y/N)").Trim()
+        if ($ans -match '^(y|yes)$') { $Clean = $true }
+    }
+}
+
+if ([string]::IsNullOrWhiteSpace($MusicRoot)) {
+    Write-Error "No music root supplied."
+    return
+}
 
 if (-not (Test-Path -LiteralPath $MusicRoot -PathType Container)) {
     Write-Error "MusicRoot not found: $MusicRoot"
@@ -127,3 +142,8 @@ if ($Clean) {
 Write-Host ("  Folders w/o audio : {0}" -f $skipped)
 Write-Host ("  Tracks listed     : {0}" -f $trackTotal)
 Write-Host ""
+
+# Keep the summary on screen when run from the tool menu.
+if ($interactive) {
+    Read-Host "Press Enter to return..." | Out-Null
+}
