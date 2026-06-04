@@ -1,5 +1,9 @@
 package com.typezero.pcloudtv.ui
 
+import androidx.compose.material.icons.filled.RadioButtonUnchecked
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material.icons.filled.PlaylistAdd
@@ -130,6 +134,36 @@ fun BrowseScreen(
         }
     }
 
+    // Click-to-build playlist state.
+    var selecting by remember { mutableStateOf(false) }
+    val selectedIds = remember { mutableStateListOf<Long>() }
+    var showNameDialog by remember { mutableStateOf(false) }
+    var playlistName by remember { mutableStateOf("") }
+
+    fun toggleSelect(fileId: Long) {
+        if (selectedIds.contains(fileId)) selectedIds.remove(fileId) else selectedIds.add(fileId)
+    }
+
+    fun saveSelected(name: String) {
+        showNameDialog = false
+        val byId = items.associateBy { it.fileId }
+        val files = selectedIds.mapNotNull { byId[it] }.filter { !it.isFolder && it.fileId != null }
+        if (files.isEmpty()) { selecting = false; selectedIds.clear(); return }
+        saving = true; saveMessage = null; genDone = 0; genTotal = 0; genName = ""
+        scope.launch {
+            val pname = (name.ifBlank { "Playlist" }).removeSuffix(".m3u") + ".m3u"
+            val res = client.savePlaylist(session, current.first, pname, files)
+            saving = false
+            saveMessage = when (res) {
+                is ApiResult.Ok -> "Saved \"$pname\" (${files.size} tracks)"
+                is ApiResult.Error -> "Couldn't save: ${res.message}"
+            }
+            selecting = false
+            selectedIds.clear()
+            reloadKey++
+        }
+    }
+
     LaunchedEffect(current.first, reloadKey) {
         loading = true
         error = null
@@ -194,22 +228,51 @@ fun BrowseScreen(
                     }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (items.isNotEmpty()) {
+                    if (selecting) {
+                        Text("${selectedIds.size} selected", color = Brand.TextMid, fontSize = 14.sp)
+                        Spacer(Modifier.width(10.dp))
                         HeaderButton(
                             icon = Icons.Filled.PlaylistAdd,
-                            label = if (compact) null else "Save .m3u",
+                            label = if (compact) null else "Save",
+                            primary = selectedIds.isNotEmpty(),
                             onClick = {
-                                if (!saving) {
-                                    // Default the path to the folder you're in.
-                                    genPath = "/" + stack.drop(1).joinToString("/") { it.second }
-                                    if (genPath.isBlank()) genPath = "/"
-                                    showGenDialog = true
+                                if (selectedIds.isNotEmpty()) {
+                                    playlistName = current.second
+                                    showNameDialog = true
                                 }
                             }
                         )
-                        Spacer(Modifier.width(10.dp))
+                        Spacer(Modifier.width(8.dp))
+                        HeaderButton(
+                            icon = Icons.Filled.Close,
+                            label = null,
+                            onClick = { selecting = false; selectedIds.clear() }
+                        )
+                    } else {
+                        if (items.any { !it.isFolder && it.isPlayable }) {
+                            HeaderButton(
+                                icon = Icons.Filled.Checklist,
+                                label = if (compact) null else "Select",
+                                onClick = { selecting = true; selectedIds.clear() }
+                            )
+                            Spacer(Modifier.width(8.dp))
+                        }
+                        if (items.isNotEmpty()) {
+                            HeaderButton(
+                                icon = Icons.Filled.PlaylistAdd,
+                                label = if (compact) null else "Save .m3u",
+                                onClick = {
+                                    if (!saving) {
+                                        genPath = "/" + stack.drop(1).joinToString("/") { it.second }
+                                        if (genPath.isBlank()) genPath = "/"
+                                        showGenDialog = true
+                                    }
+                                }
+                            )
+                            Spacer(Modifier.width(10.dp))
+                        }
+                        LogoutButton(onLogout)
                     }
-                    LogoutButton(onLogout)
                 }
             }
 
@@ -238,35 +301,43 @@ fun BrowseScreen(
                             ItemCard(
                                 item = pItem,
                                 compact = compact,
+                                selecting = selecting,
+                                selected = pItem.fileId != null && selectedIds.contains(pItem.fileId),
                                 modifier = rowMax.then(
                                     if (index == 0) Modifier.focusRequester(firstRow) else Modifier
                                 ),
                                 onClick = {
-                                    when {
-                                        pItem.isFolder -> stack.add(pItem.folderId!! to pItem.name)
-                                        pItem.isPlaylist -> {
-                                            resolveError = null
-                                            resolving = true
-                                            scope.launch {
-                                                when (val r = client.resolvePlaylist(session, pItem, items)) {
-                                                    is ApiResult.Ok -> {
-                                                        resolving = false
-                                                        onPlayQueue(r.value)
-                                                    }
-                                                    is ApiResult.Error -> {
-                                                        resolving = false
-                                                        resolveError = r.message
+                                    if (selecting) {
+                                        if (!pItem.isFolder && pItem.isPlayable && pItem.fileId != null) {
+                                            toggleSelect(pItem.fileId)
+                                        }
+                                    } else {
+                                        when {
+                                            pItem.isFolder -> stack.add(pItem.folderId!! to pItem.name)
+                                            pItem.isPlaylist -> {
+                                                resolveError = null
+                                                resolving = true
+                                                scope.launch {
+                                                    when (val r = client.resolvePlaylist(session, pItem, items)) {
+                                                        is ApiResult.Ok -> {
+                                                            resolving = false
+                                                            onPlayQueue(r.value)
+                                                        }
+                                                        is ApiResult.Error -> {
+                                                            resolving = false
+                                                            resolveError = r.message
+                                                        }
                                                     }
                                                 }
                                             }
-                                        }
-                                        pItem.isPlayable -> onPlayQueue(
-                                            listOf(
-                                                com.typezero.pcloudtv.data.MediaItem(
-                                                    pItem.name, pItem.fileId, null
+                                            pItem.isPlayable -> onPlayQueue(
+                                                listOf(
+                                                    com.typezero.pcloudtv.data.MediaItem(
+                                                        pItem.name, pItem.fileId, null
+                                                    )
                                                 )
                                             )
-                                        )
+                                        }
                                     }
                                 }
                             )
@@ -326,6 +397,68 @@ fun BrowseScreen(
                 onGenerate = { generateUnder(genPath) },
                 onCancel = { showGenDialog = false }
             )
+        }
+
+        if (showNameDialog) {
+            NamePlaylistDialog(
+                name = playlistName,
+                count = selectedIds.size,
+                onNameChange = { playlistName = it },
+                onSave = { saveSelected(playlistName) },
+                onCancel = { showNameDialog = false }
+            )
+        }
+    }
+}
+
+@Composable
+private fun NamePlaylistDialog(
+    name: String,
+    count: Int,
+    onNameChange: (String) -> Unit,
+    onSave: () -> Unit,
+    onCancel: () -> Unit
+) {
+    Box(
+        Modifier.fillMaxSize().background(Color(0xCC000000)).clickable(onClick = onCancel),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth().widthIn(max = 480.dp)
+                .padding(28.dp)
+                .clip(RoundedCornerShape(20.dp))
+                .background(Brand.Surface)
+                .border(1.dp, Brand.Stroke, RoundedCornerShape(20.dp))
+                .padding(22.dp)
+        ) {
+            Text("Name your playlist", color = Brand.TextHi, fontSize = 18.sp,
+                fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(6.dp))
+            Text("$count track(s) selected. Saved as an .m3u in this folder.",
+                color = Brand.TextLow, fontSize = 12.sp)
+            Spacer(Modifier.height(14.dp))
+            OutlinedTextField(
+                value = name,
+                onValueChange = onNameChange,
+                singleLine = true,
+                label = { Text("Playlist name") },
+                shape = RoundedCornerShape(12.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Brand.Accent,
+                    unfocusedBorderColor = Brand.Stroke,
+                    focusedLabelColor = Brand.Accent,
+                    cursorColor = Brand.Accent
+                ),
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(Modifier.height(18.dp))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                HeaderButton(icon = null, label = "Cancel", onClick = onCancel)
+                Spacer(Modifier.width(10.dp))
+                HeaderButton(icon = Icons.Filled.PlaylistAdd, label = "Save",
+                    primary = true, onClick = onSave)
+            }
         }
     }
 }
@@ -413,6 +546,8 @@ private fun QuickChip(text: String, onClick: () -> Unit) {
 private fun ItemCard(
     item: PItem,
     compact: Boolean,
+    selecting: Boolean = false,
+    selected: Boolean = false,
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
@@ -477,7 +612,14 @@ private fun ItemCard(
             )
             Text(subtitle, color = Brand.TextLow, fontSize = 12.sp, maxLines = 1)
         }
-        if (item.isFolder) {
+        if (selecting && !item.isFolder && item.isPlayable) {
+            Icon(
+                if (selected) Icons.Filled.CheckCircle else Icons.Filled.RadioButtonUnchecked,
+                contentDescription = if (selected) "Selected" else "Not selected",
+                tint = if (selected) Brand.Accent else Brand.TextLow,
+                modifier = Modifier.size(24.dp)
+            )
+        } else if (item.isFolder) {
             Icon(
                 Icons.Filled.ChevronRight,
                 contentDescription = null,
