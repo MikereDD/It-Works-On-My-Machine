@@ -16,10 +16,6 @@
 # changes:  v2.6.1 - FIX: map audio/subs by per-type position (0:a:N/0:s:N) to
 #                    match the metadata tags; never use Blu-ray source IDs
 #                    (a1/s9/s17) as ffmpeg stream indexes ([int]"s9" was broken)
-#          v2.6 - preselect sidecar metadata before encode and map audio/sub
-#                 streams; (mapping logic corrected in v2.6.1)
-#          v2.5.2 - preset veryslow->slow, CRF 16/17->18/19, rd=4->rd=3, pools=*
-#                  reduces encode time ~3x with negligible quality difference
 #--------------------------------------------
 
 param()
@@ -1107,6 +1103,59 @@ function Get-AnyTaggedLanguageCount {
     return $count
 }
 
+function Get-SourceStreamLanguageMap {
+    <#
+    .SYNOPSIS
+        Probes the source file with ffprobe and returns the raw per-stream
+        language tag for every audio and subtitle stream, in the SAME order
+        ffmpeg muxes them (0:a:0, 0:a:1 ... and 0:s:0, 0:s:1 ...).
+
+    .NOTES
+        This is the order-safe key for language tagging. The encode mapped
+        streams straight off this file with 0:a:N?/0:s:N?, so ffprobe's
+        enumeration here lines up one-for-one with the finished MKV's track
+        order — unlike the sidecar list, which is ordered by MakeMKV's track
+        index and can disagree with ffmpeg's m2ts stream order.
+
+        Returns 'und' for streams that carry no language tag so the caller can
+        decide whether to fall back to the sidecar for those slots only.
+        On any failure returns empty arrays, which makes the caller degrade
+        cleanly to sidecar-only (the previous behaviour).
+    #>
+    param([Parameter(Mandatory)][string]$SourcePath)
+
+    $empty = [pscustomobject]@{ Audio = @(); Sub = @() }
+
+    if ([string]::IsNullOrWhiteSpace($SourcePath) -or -not (Test-Path -LiteralPath $SourcePath)) {
+        return $empty
+    }
+
+    $probeArgs = @(
+        '-v', 'error',
+        '-probesize', $Script:M2tsProbeSize,
+        '-analyzeduration', $Script:M2tsAnalyzeDur,
+        '-show_entries', 'stream=index,codec_type:stream_tags=language',
+        '-of', 'json',
+        $SourcePath
+    )
+
+    $probeOut  = & $Script:FFprobePath @probeArgs 2>$null
+    $probeJson = $null
+    try { $probeJson = ($probeOut | Out-String) | ConvertFrom-Json } catch {}
+
+    if (-not $probeJson -or -not $probeJson.streams) { return $empty }
+
+    # ffprobe emits streams in container index order; Where-Object preserves it.
+    $audio = @($probeJson.streams |
+        Where-Object { $_.codec_type -eq 'audio' } |
+        ForEach-Object { if ($_.tags -and $_.tags.language) { [string]$_.tags.language } else { 'und' } })
+    $sub = @($probeJson.streams |
+        Where-Object { $_.codec_type -eq 'subtitle' } |
+        ForEach-Object { if ($_.tags -and $_.tags.language) { [string]$_.tags.language } else { 'und' } })
+
+    return [pscustomobject]@{ Audio = $audio; Sub = $sub }
+}
+
 function Invoke-MKVLanguageRemux {
     <#
     .SYNOPSIS
@@ -1126,17 +1175,44 @@ function Invoke-MKVLanguageRemux {
         [Parameter(Mandatory)][string]$OutputFile,
         [Parameter(Mandatory)][object]$TrackLayout,
         [Parameter(Mandatory)][object[]]$AudioMeta,
-        [Parameter(Mandatory)][object[]]$SubMeta
+        [Parameter(Mandatory)][object[]]$SubMeta,
+        [string]$SourcePath
     )
+
+    # ── Order-safe language source ─────────────────────────────────────────
+    # Languages come from the source file's own stream tags (read in the exact
+    # order ffmpeg muxed them) and only fall back to the sidecar for slots the
+    # source leaves as 'und'. The sidecar still drives name / default / forced
+    # by position; those remain ordinal, so the residual mismatch risk is now
+    # limited to cosmetic name/flag drift, not the language itself.
+    $srcMap   = Get-SourceStreamLanguageMap -SourcePath $SourcePath
+    $srcAudio = @($srcMap.Audio)
+    $srcSub   = @($srcMap.Sub)
+
+    if ($srcAudio.Count -gt 0 -or $srcSub.Count -gt 0) {
+        Write-Host ("  $($global:UI_DIM)Source lang tags : audio=$($srcAudio.Count)  subs=$($srcSub.Count) (primary)$($global:UI_R)")
+    } else {
+        Write-Host "  $($global:UI_DIM)Source lang tags : none — using sidecar languages$($global:UI_R)"
+    }
 
     $propArgs = @($OutputFile)
     $applied  = 0
 
-    $audioToApply = [Math]::Min($TrackLayout.AudioTracks.Count, $AudioMeta.Count)
+    # Apply to every output audio track we have any info for (source tag or
+    # sidecar entry), bounded by the real number of output tracks.
+    $audioInfo    = [Math]::Max($srcAudio.Count, $AudioMeta.Count)
+    $audioToApply = [Math]::Min($TrackLayout.AudioTracks.Count, $audioInfo)
     for ($i = 0; $i -lt $audioToApply; $i++) {
-        $metaTrack = $AudioMeta[$i]
-        $lang = Get-MetaLanguage -Track $metaTrack
-        $name = Get-MetaTrackName -Track $metaTrack
+        $metaTrack = if ($i -lt $AudioMeta.Count) { $AudioMeta[$i] } else { $null }
+
+        $srcLang  = if ($i -lt $srcAudio.Count) { Resolve-LanguageCode -Code $srcAudio[$i] } else { 'und' }
+        $metaLang = if ($metaTrack) { Get-MetaLanguage -Track $metaTrack } else { 'und' }
+
+        if     ($srcLang  -ne 'und') { $lang = $srcLang;  $langFrom = 'source'  }
+        elseif ($metaLang -ne 'und') { $lang = $metaLang; $langFrom = 'sidecar' }
+        else                         { $lang = 'und';     $langFrom = 'unknown' }
+
+        $name = if ($metaTrack) { Get-MetaTrackName -Track $metaTrack } else { $null }
         $trackRef = "track:a$($i + 1)"
 
         $propArgs += '--edit'
@@ -1149,21 +1225,31 @@ function Invoke-MKVLanguageRemux {
             $propArgs += "name=$name"
         }
 
-        $propArgs += '--set'
-        $propArgs += "flag-default=$(if ($metaTrack.Default) { '1' } else { '0' })"
+        if ($metaTrack) {
+            $propArgs += '--set'
+            $propArgs += "flag-default=$(if ($metaTrack.Default) { '1' } else { '0' })"
+        }
 
-        Write-Host ("    audio {0}: lang={1}  name={2}  default={3}" -f
-            ($i + 1), $lang,
+        Write-Host ("    audio {0}: lang={1} ({2})  name={3}  default={4}" -f
+            ($i + 1), $lang, $langFrom,
             $(if ([string]::IsNullOrWhiteSpace($name)) { '—' } else { $name }),
-            $(if ($metaTrack.Default) { 'yes' } else { 'no' }))
+            $(if ($metaTrack -and $metaTrack.Default) { 'yes' } else { 'no' }))
         $applied++
     }
 
-    $subToApply = [Math]::Min($TrackLayout.SubtitleTracks.Count, $SubMeta.Count)
+    $subInfo    = [Math]::Max($srcSub.Count, $SubMeta.Count)
+    $subToApply = [Math]::Min($TrackLayout.SubtitleTracks.Count, $subInfo)
     for ($i = 0; $i -lt $subToApply; $i++) {
-        $metaTrack = $SubMeta[$i]
-        $lang = Get-MetaLanguage -Track $metaTrack
-        $name = Get-MetaTrackName -Track $metaTrack
+        $metaTrack = if ($i -lt $SubMeta.Count) { $SubMeta[$i] } else { $null }
+
+        $srcLang  = if ($i -lt $srcSub.Count) { Resolve-LanguageCode -Code $srcSub[$i] } else { 'und' }
+        $metaLang = if ($metaTrack) { Get-MetaLanguage -Track $metaTrack } else { 'und' }
+
+        if     ($srcLang  -ne 'und') { $lang = $srcLang;  $langFrom = 'source'  }
+        elseif ($metaLang -ne 'und') { $lang = $metaLang; $langFrom = 'sidecar' }
+        else                         { $lang = 'und';     $langFrom = 'unknown' }
+
+        $name = if ($metaTrack) { Get-MetaTrackName -Track $metaTrack } else { $null }
         $trackRef = "track:s$($i + 1)"
 
         $propArgs += '--edit'
@@ -1176,17 +1262,18 @@ function Invoke-MKVLanguageRemux {
             $propArgs += "name=$name"
         }
 
-        $propArgs += '--set'
-        $propArgs += "flag-default=$(if ($metaTrack.Default) { '1' } else { '0' })"
+        if ($metaTrack) {
+            $propArgs += '--set'
+            $propArgs += "flag-default=$(if ($metaTrack.Default) { '1' } else { '0' })"
+            $propArgs += '--set'
+            $propArgs += "flag-forced=$(if ($metaTrack.Forced) { '1' } else { '0' })"
+        }
 
-        $propArgs += '--set'
-        $propArgs += "flag-forced=$(if ($metaTrack.Forced) { '1' } else { '0' })"
-
-        Write-Host ("    sub   {0}: lang={1}  name={2}  default={3}  forced={4}" -f
-            ($i + 1), $lang,
+        Write-Host ("    sub   {0}: lang={1} ({2})  name={3}  default={4}  forced={5}" -f
+            ($i + 1), $lang, $langFrom,
             $(if ([string]::IsNullOrWhiteSpace($name)) { '—' } else { $name }),
-            $(if ($metaTrack.Default) { 'yes' } else { 'no' }),
-            $(if ($metaTrack.Forced)  { 'yes' } else { 'no' }))
+            $(if ($metaTrack -and $metaTrack.Default) { 'yes' } else { 'no' }),
+            $(if ($metaTrack -and $metaTrack.Forced)  { 'yes' } else { 'no' }))
         $applied++
     }
 
@@ -1317,7 +1404,9 @@ function Repair-MKVLanguages {
     .SYNOPSIS
         Standalone menu action: fix language tags on an already-encoded MKV
         without re-encoding. Prompts for the finished MKV and its source .m2ts,
-        then calls Get-StreamLanguagesFromSource to patch the track headers in place.
+        then calls Apply-TrackMetadata, which tags via the source-first
+        Invoke-MKVLanguageRemux when a sidecar is found and falls back to
+        Get-StreamLanguagesFromSource (source ffprobe only) when none is.
     #>
 
     Show-Header
@@ -1522,19 +1611,27 @@ function New-FFmpegMapArgsFromTrackMetadata {
         metadata before the encode starts.
 
     .NOTES
-        The old encode mapped all audio/subtitle streams with 0:a? and 0:s?,
-        then tagged the finished MKV by positional order. If ffmpeg skipped or
-        reordered any stream, the language tags could land on the wrong track.
+        Languages are taken from the source file's own stream tags (read via
+        ffprobe in the same 0:a:N / 0:s:N order ffmpeg maps them) and only fall
+        back to the sidecar for slots the source leaves as 'und'. This matches
+        the post-encode mkvpropedit pass, so both stages agree.
 
         Blu-ray source IDs in the sidecar (a1, s8, s9, s17 ...) are NOT ffmpeg
         stream indexes and must never be used as one. ffmpeg addresses streams
         per type and in source order: 0:a:0, 0:a:1 ... and 0:s:0, 0:s:1 ...
-        The sidecar lists are already normalized to source order upstream
-        (audio sorted by a#, subtitles kept in listed order), so we map and tag
-        by the SAME per-type positional index. Map slot N and metadata slot N
-        therefore always refer to the same track.
+        We map per-type by position and tag the same per-type index, but the
+        language VALUE for each slot now comes from the source stream at that
+        index rather than the sidecar's listed order — which is what previously
+        let subtitle languages land on the wrong track.
+
+        Track count is still driven by the sidecar (selection behaviour is
+        unchanged); only the language value sourcing differs. name/forced are
+        still taken from the sidecar by position.
     #>
-    param([object]$MetaInfo)
+    param(
+        [object]$MetaInfo,
+        [string]$SourcePath
+    )
 
     if (-not $MetaInfo -or -not $MetaInfo.Data) {
         return $null
@@ -1551,6 +1648,11 @@ function New-FFmpegMapArgsFromTrackMetadata {
     if ($audioMeta.Count -eq 0 -and $subMeta.Count -eq 0) {
         return $null
     }
+
+    # Source-first language values, aligned to the same 0:a:N / 0:s:N order.
+    $srcMap   = Get-SourceStreamLanguageMap -SourcePath $SourcePath
+    $srcAudio = @($srcMap.Audio)
+    $srcSub   = @($srcMap.Sub)
 
     $ffMapArgs = @(
         '-map', '0:v:0'
@@ -1569,7 +1671,9 @@ function New-FFmpegMapArgsFromTrackMetadata {
     }
 
     for ($i = 0; $i -lt $audioMeta.Count; $i++) {
-        $lang = Get-MetaLanguage -Track $audioMeta[$i]
+        $srcLang  = if ($i -lt $srcAudio.Count) { Resolve-LanguageCode -Code $srcAudio[$i] } else { 'und' }
+        $metaLang = Get-MetaLanguage -Track $audioMeta[$i]
+        $lang = if ($srcLang -ne 'und') { $srcLang } elseif ($metaLang -ne 'und') { $metaLang } else { 'und' }
         $name = Get-MetaTrackName -Track $audioMeta[$i]
 
         $ffMapArgs += ("-metadata:s:a:{0}" -f $i)
@@ -1582,7 +1686,9 @@ function New-FFmpegMapArgsFromTrackMetadata {
     }
 
     for ($i = 0; $i -lt $subMeta.Count; $i++) {
-        $lang = Get-MetaLanguage -Track $subMeta[$i]
+        $srcLang  = if ($i -lt $srcSub.Count) { Resolve-LanguageCode -Code $srcSub[$i] } else { 'und' }
+        $metaLang = Get-MetaLanguage -Track $subMeta[$i]
+        $lang = if ($srcLang -ne 'und') { $srcLang } elseif ($metaLang -ne 'und') { $metaLang } else { 'und' }
         $name = Get-MetaTrackName -Track $subMeta[$i]
 
         $ffMapArgs += ("-metadata:s:s:{0}" -f $i)
@@ -1671,7 +1777,7 @@ function Apply-TrackMetadata {
     # mkvmerge -J is still used to get the real audio/subtitle counts and ordering,
     # but the actual tag writes go through mkvpropedit --edit/--set which edits
     # headers in-place and has stable flag names across all MKVToolNix versions.
-    Invoke-MKVLanguageRemux -OutputFile $OutputFile -TrackLayout $trackLayout -AudioMeta $audioMeta -SubMeta $subMeta
+    Invoke-MKVLanguageRemux -OutputFile $OutputFile -TrackLayout $trackLayout -AudioMeta $audioMeta -SubMeta $subMeta -SourcePath $SourceFile.FullName
 
     Write-UiBlankLine
     Write-Host "  $($global:UI_GRN)Track metadata applied.$($global:UI_R)"
@@ -1784,7 +1890,7 @@ function Encode-File {
 
     # ── Preselect sidecar metadata before ffmpeg builds the output track order ──
     $preselectedMeta = Select-TrackMetadata -SourceFile $SourceFile -MovieName $MovieName
-    $metadataMap = New-FFmpegMapArgsFromTrackMetadata -MetaInfo $preselectedMeta
+    $metadataMap = New-FFmpegMapArgsFromTrackMetadata -MetaInfo $preselectedMeta -SourcePath $SourceFile.FullName
 
     if ($metadataMap) {
         Write-UiBlankLine
