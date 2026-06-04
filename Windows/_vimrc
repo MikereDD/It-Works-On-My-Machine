@@ -1,0 +1,13 @@
+" _vimrc  ->  C:\Users\<you>\_vimrc   (Windows)
+" Loader for the main Vim config.
+" Mirrors the Linux setup:  ~/.vimrc  ->  source ~/.config/vim/vimrc
+" Windows Vim reads ~/_vimrc on startup; this just sources the real config.
+
+let s:main = expand('~/config/vim/vimrc')
+if filereadable(s:main)
+  execute 'source ' . fnameescape(s:main)
+else
+  echohl WarningMsg
+  echom 'Main vimrc not found at ' . s:main . ' - put your config there.'
+  echohl None
+endif
