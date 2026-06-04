@@ -8,6 +8,7 @@ A personal archive of scripts, projects, and experiments.
 
 - [**Windows/**](./Windows) — PowerShell scripts
 - [**Linux/**](./Linux) — Bash scripts
+- [**Android/**](./Android) — native Kotlin / Android Studio projects
 - [**Bots/**](./Bots) — automation scripts (Telegram, API-based, etc.)
 - [**Games/**](./Games) — Android, Windows, Linux, and terminal games
 - [**Apps/**](./Apps) — Android, TV, and desktop apps
