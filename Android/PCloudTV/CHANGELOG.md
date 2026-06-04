@@ -5,6 +5,13 @@ All notable changes to **pCloud TV**. Newest first.
 
 ---
 
+## v1.5 — Polish
+
+- Buffering spinner shown while a stream is loading or stalled.
+- Playlist **track position** indicator ("TRACK N / M") in the player.
+
+---
+
 ## v1.4 — Background audio & resume
 
 - **Background audio**: music and audiobooks now keep playing with the **screen off**. A partial wake-lock keeps the CPU awake so audio doesn't stop; video still keeps the screen on so you can watch.

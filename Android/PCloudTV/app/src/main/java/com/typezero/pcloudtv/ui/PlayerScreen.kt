@@ -135,6 +135,8 @@ fun PlayerScreen(
                 url = url,
                 title = title,
                 mediaKey = current?.fileId,
+                queuePos = index + 1,
+                queueCount = queue.size,
                 hasPrev = index > 0,
                 hasNext = index < queue.size - 1,
                 onPrev = { if (index > 0) index-- },
@@ -150,6 +152,8 @@ private fun VlcPlayer(
     url: String,
     title: String,
     mediaKey: Long?,
+    queuePos: Int,
+    queueCount: Int,
     hasPrev: Boolean,
     hasNext: Boolean,
     onPrev: () -> Unit,
@@ -183,6 +187,7 @@ private fun VlcPlayer(
     var hasVideo by remember { mutableStateOf(false) }
     var resumed by remember { mutableStateOf(false) }
     var lastSavedAt by remember { mutableStateOf(0L) }
+    var buffering by remember { mutableStateOf(true) }
 
     // Persist resume position for the current file (audio or video on pCloud).
     fun persistPosition() {
@@ -283,9 +288,14 @@ private fun VlcPlayer(
             when (e.type) {
                 MediaPlayer.Event.Playing -> {
                     isPlaying = true
+                    buffering = false
                     hasVideo = player.videoTracksCount > 0
                     resumeIfNeeded()
                     selectEnglishTracks()
+                }
+                MediaPlayer.Event.Buffering -> {
+                    // e.buffering is 0..100; treat <100 as still buffering.
+                    buffering = e.buffering < 100f
                 }
                 MediaPlayer.Event.Paused -> {
                     isPlaying = false
@@ -320,6 +330,7 @@ private fun VlcPlayer(
         tracksChosen = false
         resumed = false
         hasVideo = false
+        buffering = true
         currentAudio = -1
         currentSub = -1
         audioOptions = emptyList()
@@ -437,6 +448,13 @@ private fun VlcPlayer(
             }
         )
 
+        // Buffering spinner while the stream is loading/stalled.
+        if (buffering) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = Brand.Accent)
+            }
+        }
+
         AnimatedVisibility(
             visible = controlsVisible && !showTracks,
             enter = fadeIn(),
@@ -444,6 +462,8 @@ private fun VlcPlayer(
         ) {
             Controls(
                 title = title,
+                queuePos = queuePos,
+                queueCount = queueCount,
                 isPlaying = isPlaying,
                 positionMs = positionMs,
                 durationMs = durationMs,
@@ -496,6 +516,8 @@ private fun VlcPlayer(
 @Composable
 private fun Controls(
     title: String,
+    queuePos: Int,
+    queueCount: Int,
     isPlaying: Boolean,
     positionMs: Long,
     durationMs: Long,
@@ -511,14 +533,24 @@ private fun Controls(
 ) {
     Box(modifier = Modifier.fillMaxSize().background(Brand.controlScrim)) {
 
-        Text(
-            title,
-            color = Color.White,
-            fontSize = 18.sp,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
-            modifier = Modifier.align(Alignment.TopStart).padding(24.dp)
-        )
+        Column(modifier = Modifier.align(Alignment.TopStart).padding(24.dp)) {
+            if (queueCount > 1) {
+                Text(
+                    "TRACK $queuePos / $queueCount",
+                    color = Brand.Accent,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(Modifier.height(2.dp))
+            }
+            Text(
+                title,
+                color = Color.White,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1
+            )
+        }
 
         // Audio / subtitle track selector.
         Box(
