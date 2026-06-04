@@ -357,6 +357,109 @@ class PCloudClient {
     private fun naturalKey(name: String): String =
         Regex("\\d+").replace(name) { it.value.padStart(10, '0') }.lowercase()
 
+    // ---- Public shared links (no auth token required) ----
+
+    /** Extract the link code from a full pCloud share URL, or accept a bare code. */
+    private fun extractPublinkCode(input: String): String {
+        val m = Regex("code=([^&\\s]+)").find(input)
+        if (m != null) return m.groupValues[1]
+        // Bare code (no URL): take the last path-ish token.
+        return input.substringAfterLast('/').substringAfterLast('=').trim()
+    }
+
+    /**
+     * Open a pCloud public share link (file or folder) WITHOUT an account, via
+     * showpublink. Tries both regions. Returns the tree for browsing/playback.
+     */
+    suspend fun openPublink(input: String): ApiResult<Publink> = withContext(Dispatchers.IO) {
+        val code = extractPublinkCode(input)
+        if (code.isBlank()) return@withContext ApiResult.Error("Couldn't read a link code.")
+
+        var lastMsg = "Couldn't open this link. It may be invalid or expired."
+        for (host in listOf("api.pcloud.com", "eapi.pcloud.com")) {
+            try {
+                val url = "https://$host/showpublink".toHttpUrl().newBuilder()
+                    .addQueryParameter("code", code)
+                    .build()
+                val json = http.newCall(Request.Builder().url(url).build()).execute()
+                    .use { JSONObject(it.body?.string().orEmpty()) }
+                val result = json.optInt("result", -1)
+                if (result == 0) {
+                    val meta = json.getJSONObject("metadata")
+                    val children = HashMap<Long, MutableList<PItem>>()
+
+                    fun parse(o: JSONObject): PItem {
+                        val isFolder = o.optBoolean("isfolder", false)
+                        return PItem(
+                            name = o.optString("name"),
+                            isFolder = isFolder,
+                            folderId = if (isFolder) o.optLong("folderid") else null,
+                            fileId = if (!isFolder) o.optLong("fileid") else null,
+                            contentType = o.optString("contenttype", ""),
+                            category = o.optInt("category", 0),
+                            size = o.optLong("size", 0L)
+                        )
+                    }
+
+                    fun walk(o: JSONObject) {
+                        if (!o.optBoolean("isfolder", false)) return
+                        val fid = o.optLong("folderid")
+                        val contents = o.optJSONArray("contents") ?: return
+                        val kids = ArrayList<PItem>()
+                        for (i in 0 until contents.length()) {
+                            kids.add(parse(contents.getJSONObject(i)))
+                        }
+                        children[fid] = kids.sortedWith(
+                            compareByDescending<PItem> { it.isFolder }.thenBy { naturalKey(it.name) }
+                        ).toMutableList()
+                        for (i in 0 until contents.length()) {
+                            val c = contents.getJSONObject(i)
+                            if (c.optBoolean("isfolder", false)) walk(c)
+                        }
+                    }
+
+                    val root = parse(meta)
+                    if (meta.optBoolean("isfolder", false)) walk(meta)
+                    return@withContext ApiResult.Ok(Publink(code, host, root, children))
+                } else if (result == 2009 || result == 1017) {
+                    lastMsg = "That share link wasn't found."
+                } else if (result == 2284 || result == 2261) {
+                    return@withContext ApiResult.Error("This link is password-protected and can't be opened here.")
+                }
+            } catch (_: Exception) {
+                // try the other region
+            }
+        }
+        ApiResult.Error(lastMsg)
+    }
+
+    /** Stream URL for a file inside (or being) a public link — no auth token. */
+    suspend fun getPublinkStreamUrl(
+        apiHost: String,
+        code: String,
+        fileId: Long
+    ): ApiResult<String> = withContext(Dispatchers.IO) {
+        try {
+            val url = "https://$apiHost/getpublinkdownload".toHttpUrl().newBuilder()
+                .addQueryParameter("code", code)
+                .addQueryParameter("fileid", fileId.toString())
+                .build()
+            val json = http.newCall(Request.Builder().url(url).build()).execute()
+                .use { JSONObject(it.body?.string().orEmpty()) }
+            if (json.optInt("result", -1) != 0) {
+                return@withContext ApiResult.Error(
+                    json.optString("error", "Couldn't get stream (code ${json.optInt("result")})")
+                )
+            }
+            val hosts = json.getJSONArray("hosts")
+            val path = json.getString("path")
+            if (hosts.length() == 0) return@withContext ApiResult.Error("No hosts returned")
+            ApiResult.Ok("https://${hosts.getString(0)}$path")
+        } catch (e: Exception) {
+            ApiResult.Error(e.message ?: "Network error")
+        }
+    }
+
     /**
      * Generate a simple .m3u from the given files and upload it into [folderId].
      * Entries are bare filenames (resolved against the same folder on playback),

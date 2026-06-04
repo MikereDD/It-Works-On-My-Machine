@@ -72,8 +72,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.typezero.pcloudtv.data.ApiResult
-import com.typezero.pcloudtv.data.PCloudClient
-import com.typezero.pcloudtv.data.Session
 import kotlinx.coroutines.delay
 import org.videolan.libvlc.LibVLC
 import org.videolan.libvlc.Media
@@ -82,9 +80,8 @@ import org.videolan.libvlc.util.VLCVideoLayout
 
 @Composable
 fun PlayerScreen(
-    client: PCloudClient,
-    session: Session,
     queue: List<MediaItem>,
+    resolveUrl: suspend (MediaItem) -> ApiResult<String>,
     startIndex: Int = 0,
     onExit: () -> Unit
 ) {
@@ -104,15 +101,9 @@ fun PlayerScreen(
             error = "Nothing to play"
             return@LaunchedEffect
         }
-        if (item.directUrl != null) {
-            streamUrl = item.directUrl
-        } else if (item.fileId != null) {
-            when (val r = client.getStreamUrl(session, item.fileId)) {
-                is ApiResult.Ok -> streamUrl = r.value
-                is ApiResult.Error -> error = r.message
-            }
-        } else {
-            error = "Bad queue item"
+        when (val r = resolveUrl(item)) {
+            is ApiResult.Ok -> streamUrl = r.value
+            is ApiResult.Error -> error = r.message
         }
     }
 

@@ -49,9 +49,11 @@ fun LoginScreen(
     error: String?,
     busy: Boolean,
     onSignIn: () -> Unit,
-    onUseToken: (String) -> Unit
+    onUseToken: (String) -> Unit,
+    onOpenLink: (String) -> Unit
 ) {
     var token by remember { mutableStateOf("") }
+    var link by remember { mutableStateOf("") }
 
     BoxWithConstraints(
         modifier = Modifier.fillMaxSize().background(Brand.pageGradient)
@@ -143,6 +145,42 @@ fun LoginScreen(
                 "Tap \"Sign in with pCloud\" to open pCloud's login page — two-factor " +
                     "authentication is handled there. Only the returned access token is " +
                     "stored on this device.",
+                color = Brand.TextLow,
+                fontSize = 12.sp,
+                modifier = block
+            )
+
+            Spacer(Modifier.height(10.dp))
+            Text("— or open a shared link —", color = Brand.TextLow, fontSize = 12.sp)
+
+            OutlinedTextField(
+                value = link,
+                onValueChange = { link = it },
+                label = { Text("pCloud share link") },
+                singleLine = true,
+                shape = RoundedCornerShape(12.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Brand.Glow,
+                    unfocusedBorderColor = Brand.Stroke,
+                    focusedLabelColor = Brand.Glow,
+                    cursorColor = Brand.Glow
+                ),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
+                keyboardActions = KeyboardActions(onGo = { onOpenLink(link) }),
+                modifier = block
+            )
+
+            PillButton(
+                text = "Open shared link",
+                primary = false,
+                enabled = !busy,
+                modifier = block,
+                onClick = { onOpenLink(link) }
+            )
+
+            Text(
+                "No account needed for a shared link — anything someone has shared " +
+                    "publicly (a file or a whole folder) will play here.",
                 color = Brand.TextLow,
                 fontSize = 12.sp,
                 modifier = block

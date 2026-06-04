@@ -5,6 +5,13 @@ All notable changes to **pCloud TV**. Newest first.
 
 ---
 
+## v1.6 — Shared links (no account)
+
+- Open pCloud **public share links** (file or folder) with no account, from the sign-in screen.
+- Uses pCloud's unauthenticated `showpublink` / `getpublinkdownload`; read-only, only what was shared is reachable.
+
+---
+
 ## v1.5 — Polish
 
 - Buffering spinner shown while a stream is loading or stalled.
