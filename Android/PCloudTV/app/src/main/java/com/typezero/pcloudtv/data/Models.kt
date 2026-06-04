@@ -33,6 +33,18 @@ data class AudioFolder(
     val files: List<PItem>
 )
 
+/**
+ * A resolved pCloud public share link (no account needed).
+ * [children] maps a folderId to its contents so a shared folder tree can be
+ * browsed entirely from the single showpublink response.
+ */
+data class Publink(
+    val code: String,
+    val apiHost: String,
+    val root: PItem,
+    val children: Map<Long, List<PItem>>
+)
+
 /** Result of authenticating against pCloud. */
 data class Session(
     val authToken: String,

@@ -6,11 +6,39 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.typezero.pcloudtv.data.ApiResult
 import com.typezero.pcloudtv.data.MediaItem
 
 @Composable
 fun App(vm: AppViewModel = viewModel()) {
     val session = vm.session
+    val publicLink = vm.publicLink
+
+    // ---- Public shared-link mode (no account) ----
+    if (publicLink != null) {
+        var pubQueue by remember { mutableStateOf<List<MediaItem>?>(null) }
+        val q = pubQueue
+        if (q != null) {
+            PlayerScreen(
+                queue = q,
+                resolveUrl = { item ->
+                    item.directUrl?.let { ApiResult.Ok(it) }
+                        ?: item.fileId?.let {
+                            vm.client.getPublinkStreamUrl(publicLink.apiHost, publicLink.code, it)
+                        }
+                        ?: ApiResult.Error("Bad item")
+                },
+                onExit = { pubQueue = null }
+            )
+        } else {
+            PublicBrowseScreen(
+                link = publicLink,
+                onPlayQueue = { pubQueue = it },
+                onClose = { vm.closePublicLink() }
+            )
+        }
+        return
+    }
 
     if (session == null) {
         if (vm.loginInProgress) {
@@ -23,7 +51,8 @@ fun App(vm: AppViewModel = viewModel()) {
                 error = vm.loginError,
                 busy = vm.busy,
                 onSignIn = { vm.startWebLogin() },
-                onUseToken = { vm.useToken(it) }
+                onUseToken = { vm.useToken(it) },
+                onOpenLink = { vm.openPublicLink(it) }
             )
         }
         return
@@ -31,12 +60,14 @@ fun App(vm: AppViewModel = viewModel()) {
 
     var queue by remember { mutableStateOf<List<MediaItem>?>(null) }
     val q = queue
-
     if (q != null) {
         PlayerScreen(
-            client = vm.client,
-            session = session,
             queue = q,
+            resolveUrl = { item ->
+                item.directUrl?.let { ApiResult.Ok(it) }
+                    ?: item.fileId?.let { vm.client.getStreamUrl(session, it) }
+                    ?: ApiResult.Error("Bad item")
+            },
             onExit = { queue = null }
         )
     } else {

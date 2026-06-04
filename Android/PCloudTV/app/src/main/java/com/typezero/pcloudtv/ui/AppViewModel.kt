@@ -9,6 +9,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.typezero.pcloudtv.data.ApiResult
 import com.typezero.pcloudtv.data.PCloudClient
+import com.typezero.pcloudtv.data.Publink
 import com.typezero.pcloudtv.data.SessionStore
 import kotlinx.coroutines.launch
 
@@ -73,5 +74,30 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         // Clear the WebView session so the next sign-in is fresh.
         CookieManager.getInstance().removeAllCookies(null)
         session = null
+    }
+
+    // ---- Public shared links (no account needed) ----
+
+    var publicLink by mutableStateOf<Publink?>(null)
+        private set
+
+    fun openPublicLink(input: String) {
+        if (input.isBlank()) {
+            loginError = "Paste a pCloud share link first."
+            return
+        }
+        loginError = null
+        busy = true
+        viewModelScope.launch {
+            when (val r = client.openPublink(input.trim())) {
+                is ApiResult.Ok -> publicLink = r.value
+                is ApiResult.Error -> loginError = r.message
+            }
+            busy = false
+        }
+    }
+
+    fun closePublicLink() {
+        publicLink = null
     }
 }
