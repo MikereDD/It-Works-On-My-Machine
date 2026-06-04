@@ -11,8 +11,8 @@ android {
         applicationId = "com.typezero.pcloudtv"
         minSdk = 26
         targetSdk = 34
-        versionCode = 7
-        versionName = "1.6"
+        versionCode = 8
+        versionName = "1.7"
 
         // Ship only arm64-v8a native libs (covers modern phones + Google TV),
         // which keeps the APK well under ~70 MB instead of ~190 MB for all ABIs.

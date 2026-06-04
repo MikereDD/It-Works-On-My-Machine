@@ -5,6 +5,12 @@ All notable changes to **pCloud TV**. Newest first.
 
 ---
 
+## v1.7 — Build playlists by tapping
+
+- **Select** mode: tap tracks in a folder to check them, name the playlist, and save it as an `.m3u` (saved in tap order, into that folder).
+
+---
+
 ## v1.6 — Shared links (no account)
 
 - Open pCloud **public share links** (file or folder) with no account, from the sign-in screen.
