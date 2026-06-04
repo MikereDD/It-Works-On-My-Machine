@@ -6,13 +6,12 @@ A personal archive of scripts, projects, and experiments.
 
 ## 📁 Directories
 
-- [**Windows/**](./Windows) — PowerShell scripts
-- [**Linux/**](./Linux) — Bash scripts
-- [**Android/**](./Android) — native Kotlin / Android Studio projects
-- [**Bots/**](./Bots) — automation scripts (Telegram, API-based, etc.)
-- [**Games/**](./Games) — Android, Windows, Linux, and terminal games
-- [**Apps/**](./Apps) — Android, TV, and desktop apps
-- [**3D-Printing/**](./3D-Printing) — OpenSCAD projects, STL files, prototypes
+* [Windows/](https://github.com/MikereDD/It-Works-On-My-Machine/blob/main/Windows) — PowerShell scripts
+* [Linux/](https://github.com/MikereDD/It-Works-On-My-Machine/blob/main/Linux) — Bash scripts
+* [Android/](https://github.com/MikereDD/It-Works-On-My-Machine/blob/main/Android) — native Kotlin / Android Studio projects
+* [Bots/](https://github.com/MikereDD/It-Works-On-My-Machine/blob/main/Bots) — automation scripts (Telegram, API-based, etc.)
+* [Games/](https://github.com/MikereDD/It-Works-On-My-Machine/blob/main/Games) — Android, Windows, Linux, and terminal games
+* [3D-Printing/](https://github.com/MikereDD/It-Works-On-My-Machine/blob/main/3D-Printing) — OpenSCAD projects, STL files, prototypes
 
 Each side is independent. No attempt is made to keep them in sync.
 
