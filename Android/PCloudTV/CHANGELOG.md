@@ -5,6 +5,12 @@ All notable changes to **pCloud TV**. Newest first.
 
 ---
 
+## v1.9 — Reliable queue playback
+
+- Fixed playlists stopping after the first track: the player stays mounted for the whole queue and swaps media in place, so auto-advance works on-screen and in the background.
+
+---
+
 ## v1.8 — Background audio & clean regenerate
 
 - **Background audio**: music continues when you leave the app, via a media foreground service. Video stops on leave (by design).
