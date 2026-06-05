@@ -1,11 +1,29 @@
 #--------------------------------------------
 # file:     tool-menu.ps1
 # author:   Mike Redd
-# version:  3.1
+# version:  3.3
 # created:  2026-03-30
-# updated:  2026-05-17
+# updated:  2026-06-04
 # desc:     Unified script launcher (Admin + Personal + Games)
 #--------------------------------------------
+
+# ── Resolve base directories ──────────────────────────────────
+# This file lives in <scripts>\menu\, so the scripts root is ALWAYS the
+# parent of our own folder. Derive it from $PSScriptRoot so tool discovery
+# never depends on a profile-provided / forwarded $PSScriptsDir being right.
+# (A wrong-but-set $PSScriptsDir was making every tool resolve to a missing
+# path, so picking one returned "Invalid option".)
+if ($PSScriptRoot) {
+    $ScriptsRoot = Split-Path $PSScriptRoot -Parent                # ...\scripts
+} elseif ($PSScriptsDir) {
+    $ScriptsRoot = $PSScriptsDir
+} else {
+    $ScriptsRoot = 'C:\Users\miker\PS\scripts'                     # last-resort fallback
+}
+
+# ui.ps1 / core.ps1 come from the profile dir. Keep the profile value if set,
+# otherwise fall back to the PS root (the parent of scripts).
+if (-not $PSProfileDir) { $PSProfileDir = Split-Path $ScriptsRoot -Parent }   # ...\PS
 
 # ── Load custom UI ────────────────────────────────────────────
 $uiPath = Join-Path $PSProfileDir "ui.ps1"
@@ -38,13 +56,13 @@ if (Test-Path $corePath) {
 }
 
 $ScriptName    = "Tool Menu"
-$ScriptVersion = "3.1"
+$ScriptVersion = "3.3"
 $ScriptAuthor  = "Mike Redd"
 
 # ── Base script paths ─────────────────────────────────────────
-$AdminPath    = Join-Path $PSScriptsDir "admintools"
-$PersonalPath = Join-Path $PSScriptsDir "personaltools"
-$GamesPath    = Join-Path $PSScriptsDir "games"
+$AdminPath    = Join-Path $ScriptsRoot "admintools"
+$PersonalPath = Join-Path $ScriptsRoot "personaltools"
+$GamesPath    = Join-Path $ScriptsRoot "games"
 
 # ── Tool Definitions ──────────────────────────────────────────
 $AdminTools = @(
@@ -73,7 +91,6 @@ $PersonalTools = @(
     [PSCustomObject]@{ Name="Blu-ray Track Dump";	 File="bluray-trackdump.ps1" }
     [PSCustomObject]@{ Name="Blu-ray Encoder";       File="BRencoder.ps1" }
     [PSCustomObject]@{ Name="WebRipper";             File="web-ripper.ps1" }
-    [PSCustomObject]@{ Name="Playlist Generator";    File="generate-playlists.ps1" }
 )
 
 $GameTools = @(
@@ -170,7 +187,18 @@ function Start-ToolScript {
             throw "Could not find pwsh or powershell.exe to launch: $ScriptPath"
         }
 
-        & $pwshCmd.Source -NoProfile -ExecutionPolicy Bypass -File $ScriptPath
+        # -NoProfile keeps the child session clean/fast, but it also means the
+        # child never runs $PROFILE -- so it would have no $PSProfileDir /
+        # $PSScriptsDir and would fail to load ui.ps1 / core.ps1. Forward those
+        # paths into the child session explicitly so it can bootstrap itself.
+        # Using -Command with `& '<path>'` still gives the child a correct
+        # $PSScriptRoot, same as -File would.
+        $pp = "$PSProfileDir" -replace "'", "''"
+        $ps = "$ScriptsRoot"  -replace "'", "''"
+        $sp = "$ScriptPath"   -replace "'", "''"
+        $bootstrap = "`$PSProfileDir = '$pp'; `$PSScriptsDir = '$ps'; & '$sp'"
+
+        & $pwshCmd.Source -NoProfile -ExecutionPolicy Bypass -Command $bootstrap
     } catch {
         Write-CoreError "Launch failed: $($_.Exception.Message)"
         Pause-Core "Press Enter to return..."
