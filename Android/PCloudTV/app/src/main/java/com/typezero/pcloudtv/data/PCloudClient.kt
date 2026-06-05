@@ -299,6 +299,32 @@ class PCloudClient {
         }
     }
 
+    /** Create [path] if it doesn't exist; returns its folderid. */
+    suspend fun ensureFolder(session: Session, path: String): ApiResult<Long> =
+        withContext(Dispatchers.IO) {
+            try {
+                val url = "https://${session.apiHost}/createfolderifnotexists".toHttpUrl().newBuilder()
+                    .addQueryParameter("auth", session.authToken)
+                    .addQueryParameter("path", path)
+                    .build()
+                val json = http.newCall(Request.Builder().url(url).build()).execute()
+                    .use { JSONObject(it.body?.string().orEmpty()) }
+                if (json.optInt("result", -1) == 0) {
+                    val fid = json.optJSONObject("metadata")?.optLong("folderid")
+                    if (fid != null) ApiResult.Ok(fid)
+                    else ApiResult.Error("No folder id returned")
+                } else {
+                    val code = json.optInt("result")
+                    ApiResult.Error(
+                        if (code == 2002) "Parent folder of \"$path\" doesn't exist."
+                        else json.optString("error", "Couldn't create folder (code $code)")
+                    )
+                }
+            } catch (e: Exception) {
+                ApiResult.Error(e.message ?: "Network error")
+            }
+        }
+
     /**
      * Save a playlist whose entries are ABSOLUTE pCloud paths (cross-folder).
      * [entries] is a list of (title, absolutePath).

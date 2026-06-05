@@ -5,6 +5,12 @@ All notable changes to **pCloud TV**. Newest first.
 
 ---
 
+## v2.0 — Playlists folder
+
+- Playlists built from a song selection now save to a dedicated **`/Music/playlist`** folder (auto-created), instead of the current folder. Entries use absolute paths so they play from anywhere.
+
+---
+
 ## v1.9 — Reliable queue playback
 
 - Fixed playlists stopping after the first track: the player stays mounted for the whole queue and swaps media in place, so auto-advance works on-screen and in the background.

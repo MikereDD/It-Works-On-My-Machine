@@ -69,6 +69,9 @@ import com.typezero.pcloudtv.data.PItem
 import com.typezero.pcloudtv.data.Session
 import com.typezero.pcloudtv.ui.theme.Brand
 
+/** Built playlists (from a song selection) are saved here. */
+private const val PLAYLIST_DIR = "/Music/playlist"
+
 @Composable
 fun BrowseScreen(
     client: PCloudClient,
@@ -181,11 +184,20 @@ fun BrowseScreen(
         saving = true; saveMessage = null; genDone = 0; genTotal = 0; genName = ""
         scope.launch {
             val pname = (name.ifBlank { "Playlist" }).removeSuffix(".m3u") + ".m3u"
-            val res = client.savePlaylistAbsolute(session, current.first, pname, entries)
-            saving = false
-            saveMessage = when (res) {
-                is ApiResult.Ok -> "Saved \"$pname\" (${entries.size} tracks)"
-                is ApiResult.Error -> "Couldn't save: ${res.message}"
+            // Built playlists always live in a dedicated /Music/playlist folder.
+            when (val folder = client.ensureFolder(session, PLAYLIST_DIR)) {
+                is ApiResult.Ok -> {
+                    val res = client.savePlaylistAbsolute(session, folder.value, pname, entries)
+                    saving = false
+                    saveMessage = when (res) {
+                        is ApiResult.Ok -> "Saved \"$pname\" to $PLAYLIST_DIR (${entries.size} tracks)"
+                        is ApiResult.Error -> "Couldn't save: ${res.message}"
+                    }
+                }
+                is ApiResult.Error -> {
+                    saving = false
+                    saveMessage = "Couldn't open $PLAYLIST_DIR: ${folder.message}"
+                }
             }
             selecting = false
             selectedItems.clear()
@@ -470,7 +482,7 @@ private fun NamePlaylistDialog(
             Text("Name your playlist", color = Brand.TextHi, fontSize = 18.sp,
                 fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(6.dp))
-            Text("$count track(s) selected. Saved as an .m3u in this folder.",
+            Text("$count track(s) selected. Saved as an .m3u in $PLAYLIST_DIR.",
                 color = Brand.TextLow, fontSize = 12.sp)
             Spacer(Modifier.height(14.dp))
             OutlinedTextField(
