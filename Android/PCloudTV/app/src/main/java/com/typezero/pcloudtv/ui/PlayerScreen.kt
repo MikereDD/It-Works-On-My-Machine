@@ -85,74 +85,48 @@ fun PlayerScreen(
     startIndex: Int = 0,
     onExit: () -> Unit
 ) {
-    var index by remember { mutableStateOf(startIndex.coerceIn(0, (queue.size - 1).coerceAtLeast(0))) }
-    val current = queue.getOrNull(index)
-
-    var streamUrl by remember(index) { mutableStateOf<String?>(null) }
-    var error by remember(index) { mutableStateOf<String?>(null) }
-
     BackHandler { onExit() }
-
-    LaunchedEffect(index) {
-        streamUrl = null
-        error = null
-        val item = current
-        if (item == null) {
-            error = "Nothing to play"
-            return@LaunchedEffect
+    if (queue.isEmpty()) {
+        Box(
+            modifier = Modifier.fillMaxSize().background(Color.Black),
+            contentAlignment = Alignment.Center
+        ) {
+            Text("Nothing to play", color = Color.White)
         }
-        when (val r = resolveUrl(item)) {
-            is ApiResult.Ok -> streamUrl = r.value
-            is ApiResult.Error -> error = r.message
-        }
+        return
     }
-
-    Box(
-        modifier = Modifier.fillMaxSize().background(Color.Black),
-        contentAlignment = Alignment.Center
-    ) {
-        val url = streamUrl
-        val title = current?.title ?: ""
-        when {
-            error != null -> Text(
-                "Could not play \"$title\": $error",
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(40.dp)
-            )
-
-            url == null -> CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-
-            else -> VlcPlayer(
-                url = url,
-                title = title,
-                mediaKey = current?.fileId,
-                queuePos = index + 1,
-                queueCount = queue.size,
-                hasPrev = index > 0,
-                hasNext = index < queue.size - 1,
-                onPrev = { if (index > 0) index-- },
-                onNext = { if (index < queue.size - 1) index++ },
-                onEnded = { if (index < queue.size - 1) index++ else onExit() }
-            )
-        }
-    }
+    // The player instance is kept mounted for the whole queue; advancing the
+    // index just swaps the media so playback never tears down between tracks.
+    VlcPlayer(
+        queue = queue,
+        resolveUrl = resolveUrl,
+        startIndex = startIndex.coerceIn(0, queue.size - 1),
+        onExit = onExit
+    )
 }
 
 @Composable
 private fun VlcPlayer(
-    url: String,
-    title: String,
-    mediaKey: Long?,
-    queuePos: Int,
-    queueCount: Int,
-    hasPrev: Boolean,
-    hasNext: Boolean,
-    onPrev: () -> Unit,
-    onNext: () -> Unit,
-    onEnded: () -> Unit
+    queue: List<com.typezero.pcloudtv.data.MediaItem>,
+    resolveUrl: suspend (com.typezero.pcloudtv.data.MediaItem) -> ApiResult<String>,
+    startIndex: Int,
+    onExit: () -> Unit
 ) {
     val context = LocalContext.current
     val store = remember { com.typezero.pcloudtv.data.SessionStore(context) }
+
+    var index by remember { mutableStateOf(startIndex) }
+    val current = queue.getOrNull(index)
+    val title = current?.title ?: ""
+    val queuePos = index + 1
+    val queueCount = queue.size
+    val hasPrev = index > 0
+    val hasNext = index < queue.size - 1
+    fun onPrev() { if (index > 0) index-- }
+    fun onNext() { if (index < queue.size - 1) index++ }
+    fun onEnded() { if (index < queue.size - 1) index++ else onExit() }
+
+    var loadError by remember { mutableStateOf<String?>(null) }
 
     val libVlc = remember {
         LibVLC(
@@ -180,9 +154,13 @@ private fun VlcPlayer(
     var lastSavedAt by remember { mutableStateOf(0L) }
     var buffering by remember { mutableStateOf(true) }
 
+    // The event listener below is registered once, so anything it needs about the
+    // CURRENT track must be read live (index is state-backed, so this is current).
+    fun currentKey(): Long? = queue.getOrNull(index)?.fileId
+
     // Persist resume position for the current file (audio or video on pCloud).
     fun persistPosition() {
-        val key = mediaKey ?: return
+        val key = currentKey() ?: return
         val pos = positionMs
         val dur = durationMs
         when {
@@ -196,7 +174,7 @@ private fun VlcPlayer(
     fun resumeIfNeeded() {
         if (resumed) return
         resumed = true
-        val key = mediaKey ?: return
+        val key = currentKey() ?: return
         val saved = store.getPosition(key)
         if (saved > 3_000) player.time = saved
     }
@@ -307,7 +285,7 @@ private fun VlcPlayer(
                 MediaPlayer.Event.LengthChanged -> durationMs = e.lengthChanged
                 MediaPlayer.Event.ESAdded -> selectEnglishTracks()
                 MediaPlayer.Event.EndReached -> {
-                    mediaKey?.let { store.clearPosition(it) }  // finished → start fresh next time
+                    currentKey()?.let { store.clearPosition(it) }  // finished → start fresh next time
                     onEnded()
                 }
             }
@@ -315,9 +293,11 @@ private fun VlcPlayer(
         onDispose { player.setEventListener(null) }
     }
 
-    // Load (or swap to) the current URL whenever it changes — this is what makes
-    // a playlist queue work: advancing the index hands a new URL in here.
-    LaunchedEffect(url) {
+    // Resolve the current track's URL and swap it onto the persistent player
+    // whenever the index changes. This is what makes a queue work: advancing the
+    // index swaps media on the SAME player — no teardown, so background audio and
+    // the foreground service survive track changes.
+    LaunchedEffect(index) {
         tracksChosen = false
         resumed = false
         hasVideo = false
@@ -328,13 +308,24 @@ private fun VlcPlayer(
         subOptions = emptyList()
         positionMs = 0L
         durationMs = 0L
-        val media = Media(libVlc, Uri.parse(url)).apply {
-            setHWDecoderEnabled(true, false)
+        loadError = null
+        val item = queue.getOrNull(index)
+        if (item == null) {
+            loadError = "Nothing to play"
+            return@LaunchedEffect
         }
-        player.media = media
-        media.release()
-        player.play()
-        isPlaying = true
+        when (val r = resolveUrl(item)) {
+            is ApiResult.Ok -> {
+                val media = Media(libVlc, Uri.parse(r.value)).apply {
+                    setHWDecoderEnabled(true, false)
+                }
+                player.media = media
+                media.release()
+                player.play()
+                isPlaying = true
+            }
+            is ApiResult.Error -> loadError = r.message
+        }
     }
 
     // Release everything when leaving — and save the resume position first.
@@ -446,7 +437,15 @@ private fun VlcPlayer(
         )
 
         // Buffering spinner while the stream is loading/stalled.
-        if (buffering) {
+        if (loadError != null) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(
+                    "Couldn't play \"$title\": $loadError",
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(40.dp)
+                )
+            }
+        } else if (buffering) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = Brand.Accent)
             }
@@ -466,8 +465,8 @@ private fun VlcPlayer(
                 durationMs = durationMs,
                 hasPrev = hasPrev,
                 hasNext = hasNext,
-                onPrev = onPrev,
-                onNext = onNext,
+                onPrev = { onPrev() },
+                onNext = { onNext() },
                 onTogglePlay = { togglePlay() },
                 onSeekBack = { seekBy(-10_000) },
                 onSeekForward = { seekBy(10_000) },

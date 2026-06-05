@@ -4,7 +4,7 @@
 
 <h1 align="center">pCloud TV</h1>
 
-<p align="center"><strong>v1.8</strong></p>
+<p align="center"><strong>v1.9</strong></p>
 
 <p align="center">
 A minimal <strong>Google TV / Android TV</strong> app (also runs on phones), built with
@@ -14,14 +14,14 @@ and stream your <strong>video and audio</strong> straight from pCloud — played
 </p>
 
 <p align="center">
-  <a href="https://github.com/MikereDD/It-Works-On-My-Machine/raw/main/Android/PCloudTV/releases/pCloudTV-v1.8.apk"><strong>Download the APK (v1.8)</strong></a>
+  <a href="https://github.com/MikereDD/It-Works-On-My-Machine/raw/main/Android/PCloudTV/releases/pCloudTV-v1.9.apk"><strong>Download the APK (v1.9)</strong></a>
 </p>
 
 ---
 
 ## Install
 
-1. Download **[pCloudTV-v1.8.apk](https://github.com/MikereDD/It-Works-On-My-Machine/raw/main/Android/PCloudTV/releases/pCloudTV-v1.8.apk)** and copy it to your phone or Android TV device.
+1. Download **[pCloudTV-v1.9.apk](https://github.com/MikereDD/It-Works-On-My-Machine/raw/main/Android/PCloudTV/releases/pCloudTV-v1.9.apk)** and copy it to your phone or Android TV device.
 2. Open it with a file manager and install. You'll see Google **Play Protect**'s "unknown developer" notice — tap **More details -> Install anyway**. That's expected for a sideloaded personal build.
 3. Launch **pCloud TV**, tap **Sign in with pCloud**, and log in (two-factor authentication is handled on pCloud's own page).
 
@@ -38,7 +38,9 @@ and stream your <strong>video and audio</strong> straight from pCloud — played
 
 ---
 
-## What's in v1.8
+## What's in v1.9
+
+- **Reliable queue playback.** Playlists now advance through every track without tearing down the player, so auto-advance keeps working — including while playing in the background.
 
 - **Background audio.** Music keeps playing when you leave the app (a media foreground service); video still stops when you leave, as expected.
 - **Clean regenerate.** The Save .m3u dialog can delete every existing `.m3u`/`.m3u8` under a path first, then write one fresh playlist per folder.
