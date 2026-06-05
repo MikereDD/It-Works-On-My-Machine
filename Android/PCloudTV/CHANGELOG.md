@@ -5,6 +5,13 @@ All notable changes to **pCloud TV**. Newest first.
 
 ---
 
+## v1.8 — Background audio & clean regenerate
+
+- **Background audio**: music continues when you leave the app, via a media foreground service. Video stops on leave (by design).
+- **Clean regenerate**: the playlist generator can wipe all existing `.m3u`/`.m3u8` under a path before writing one per folder.
+
+---
+
 ## v1.7 — Build playlists by tapping
 
 - **Select** mode: tap tracks in a folder to check them, name the playlist, and save it as an `.m3u` (saved in tap order, into that folder).

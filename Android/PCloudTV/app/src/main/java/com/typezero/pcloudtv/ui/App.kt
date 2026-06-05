@@ -64,9 +64,12 @@ fun App(vm: AppViewModel = viewModel()) {
         PlayerScreen(
             queue = q,
             resolveUrl = { item ->
-                item.directUrl?.let { ApiResult.Ok(it) }
-                    ?: item.fileId?.let { vm.client.getStreamUrl(session, it) }
-                    ?: ApiResult.Error("Bad item")
+                when {
+                    item.directUrl != null -> ApiResult.Ok(item.directUrl)
+                    item.path != null -> vm.client.getStreamUrlByPath(session, item.path)
+                    item.fileId != null -> vm.client.getStreamUrl(session, item.fileId)
+                    else -> ApiResult.Error("Bad item")
+                }
             },
             onExit = { queue = null }
         )

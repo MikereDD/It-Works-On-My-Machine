@@ -194,6 +194,31 @@ class PCloudClient {
             }
         }
 
+    /** Stream URL by absolute pCloud path (used by cross-folder playlists). */
+    suspend fun getStreamUrlByPath(session: Session, filePath: String): ApiResult<String> =
+        withContext(Dispatchers.IO) {
+            try {
+                val url = "https://${session.apiHost}/getfilelink".toHttpUrl().newBuilder()
+                    .addQueryParameter("auth", session.authToken)
+                    .addQueryParameter("path", filePath)
+                    .addQueryParameter("forcedownload", "0")
+                    .build()
+                val json = http.newCall(Request.Builder().url(url).build()).execute()
+                    .use { JSONObject(it.body?.string().orEmpty()) }
+                if (json.optInt("result", -1) != 0) {
+                    return@withContext ApiResult.Error(
+                        json.optString("error", "Couldn't open \"$filePath\"")
+                    )
+                }
+                val hosts = json.getJSONArray("hosts")
+                val p = json.getString("path")
+                if (hosts.length() == 0) return@withContext ApiResult.Error("No hosts returned")
+                ApiResult.Ok("https://${hosts.getString(0)}$p")
+            } catch (e: Exception) {
+                ApiResult.Error(e.message ?: "Network error")
+            }
+        }
+
     /**
      * Resolve an .m3u / .m3u8 playlist into a playable queue.
      *
@@ -251,6 +276,12 @@ class PCloudClient {
                     pendingTitle ?: line.substringAfterLast('/').ifBlank { line },
                     null, line
                 )
+            } else if (line.startsWith("/")) {
+                // Absolute pCloud path (cross-folder playlist) — resolve at play time.
+                out += MediaItem(
+                    pendingTitle ?: line.substringAfterLast('/'),
+                    fileId = null, directUrl = null, path = line
+                )
             } else {
                 val base = line.replace('\\', '/').substringAfterLast('/').lowercase()
                 val match = byName[base]
@@ -262,9 +293,47 @@ class PCloudClient {
         }
 
         if (out.isEmpty()) {
-            ApiResult.Error("No playable entries in this playlist were found in this folder.")
+            ApiResult.Error("No playable entries in this playlist were found.")
         } else {
             ApiResult.Ok(out)
+        }
+    }
+
+    /**
+     * Save a playlist whose entries are ABSOLUTE pCloud paths (cross-folder).
+     * [entries] is a list of (title, absolutePath).
+     */
+    suspend fun savePlaylistAbsolute(
+        session: Session,
+        folderId: Long,
+        fileName: String,
+        entries: List<Pair<String, String>>
+    ): ApiResult<Unit> = withContext(Dispatchers.IO) {
+        if (entries.isEmpty()) return@withContext ApiResult.Error("No tracks selected")
+        try {
+            val content = buildString {
+                append("#EXTM3U\n")
+                for ((title, path) in entries) {
+                    append("#EXTINF:-1,").append(title).append('\n')
+                    append(path).append('\n')
+                }
+            }
+            val url = "https://${session.apiHost}/uploadfile".toHttpUrl().newBuilder()
+                .addQueryParameter("auth", session.authToken)
+                .addQueryParameter("folderid", folderId.toString())
+                .addQueryParameter("nopartial", "1")
+                .build()
+            val part = RequestBody.create("audio/x-mpegurl".toMediaTypeOrNull(), content)
+            val body = MultipartBody.Builder()
+                .setType(MultipartBody.FORM)
+                .addFormDataPart("file", fileName, part)
+                .build()
+            val json = http.newCall(Request.Builder().url(url).post(body).build()).execute()
+                .use { JSONObject(it.body?.string().orEmpty()) }
+            if (json.optInt("result", -1) == 0) ApiResult.Ok(Unit)
+            else ApiResult.Error(json.optString("error", "Upload failed (code ${json.optInt("result")})"))
+        } catch (e: Exception) {
+            ApiResult.Error(e.message ?: "Network error")
         }
     }
 
@@ -352,6 +421,68 @@ class PCloudClient {
             ApiResult.Error(e.message ?: "Network error")
         }
     }
+
+    /** Every existing .m3u/.m3u8 file under a pCloud path (for clean regeneration). */
+    suspend fun collectPlaylistsByPath(
+        session: Session,
+        path: String
+    ): ApiResult<List<PItem>> = withContext(Dispatchers.IO) {
+        val clean = ("/" + path.trim().trim('/')).ifBlank { "/" }
+        val url = "https://${session.apiHost}/listfolder".toHttpUrl().newBuilder()
+            .addQueryParameter("auth", session.authToken)
+            .addQueryParameter("path", clean)
+            .addQueryParameter("recursive", "1")
+            .build()
+        try {
+            val json = http.newCall(Request.Builder().url(url).build()).execute()
+                .use { JSONObject(it.body?.string().orEmpty()) }
+            if (json.optInt("result", -1) != 0) {
+                val code = json.optInt("result")
+                return@withContext ApiResult.Error(
+                    if (code == 2005) "That folder path wasn't found."
+                    else json.optString("error", "Could not scan folder (code $code)")
+                )
+            }
+            val out = mutableListOf<PItem>()
+            fun walk(meta: JSONObject) {
+                val contents = meta.optJSONArray("contents") ?: return
+                for (i in 0 until contents.length()) {
+                    val o = contents.getJSONObject(i)
+                    if (o.optBoolean("isfolder", false)) {
+                        walk(o)
+                    } else {
+                        val name = o.optString("name")
+                        if (name.endsWith(".m3u", true) || name.endsWith(".m3u8", true)) {
+                            out.add(PItem(name = name, isFolder = false,
+                                folderId = null, fileId = o.optLong("fileid"),
+                                contentType = "", category = 0, size = o.optLong("size", 0L)))
+                        }
+                    }
+                }
+            }
+            walk(json.getJSONObject("metadata"))
+            ApiResult.Ok(out)
+        } catch (e: Exception) {
+            ApiResult.Error(e.message ?: "Network error")
+        }
+    }
+
+    /** Delete a file by id. */
+    suspend fun deleteFile(session: Session, fileId: Long): ApiResult<Unit> =
+        withContext(Dispatchers.IO) {
+            try {
+                val url = "https://${session.apiHost}/deletefile".toHttpUrl().newBuilder()
+                    .addQueryParameter("auth", session.authToken)
+                    .addQueryParameter("fileid", fileId.toString())
+                    .build()
+                val json = http.newCall(Request.Builder().url(url).build()).execute()
+                    .use { JSONObject(it.body?.string().orEmpty()) }
+                if (json.optInt("result", -1) == 0) ApiResult.Ok(Unit)
+                else ApiResult.Error(json.optString("error", "Delete failed"))
+            } catch (e: Exception) {
+                ApiResult.Error(e.message ?: "Network error")
+            }
+        }
 
     /** Natural sort key so "2" comes before "10". */
     private fun naturalKey(name: String): String =

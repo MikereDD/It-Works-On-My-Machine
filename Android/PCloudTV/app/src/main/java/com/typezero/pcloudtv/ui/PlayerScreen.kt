@@ -363,16 +363,22 @@ private fun VlcPlayer(
             if (!wakeLock.isHeld) wakeLock.acquire()
             if (hasVideo) {
                 window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                // Video: don't keep the process alive in the background.
+                com.typezero.pcloudtv.playback.PlaybackService.stop(context)
             } else {
                 window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                // Audio: keep playing when the app is left/backgrounded.
+                com.typezero.pcloudtv.playback.PlaybackService.start(context, title)
             }
         } else {
             if (wakeLock.isHeld) wakeLock.release()
             window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            com.typezero.pcloudtv.playback.PlaybackService.stop(context)
         }
         onDispose {
             if (wakeLock.isHeld) wakeLock.release()
             window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            com.typezero.pcloudtv.playback.PlaybackService.stop(context)
         }
     }
 
