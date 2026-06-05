@@ -97,15 +97,31 @@ fun BrowseScreen(
     var genName by remember { mutableStateOf("") }
     var showGenDialog by remember { mutableStateOf(false) }
     var genPath by remember { mutableStateOf("/") }
+    var genReplace by remember { mutableStateOf(true) }
 
     // Recursively generate a playlist in every audio folder under [path].
-    fun generateUnder(path: String) {
+    fun generateUnder(path: String, replaceExisting: Boolean) {
         showGenDialog = false
         if (saving) return
         saving = true
         saveMessage = null
         genDone = 0; genTotal = 0; genName = ""
         scope.launch {
+            // Optionally wipe every existing .m3u/.m3u8 under the path first.
+            var removed = 0
+            if (replaceExisting) {
+                genName = "Removing old playlists…"
+                when (val pls = client.collectPlaylistsByPath(session, path)) {
+                    is ApiResult.Ok -> {
+                        for (pl in pls.value) {
+                            pl.fileId?.let {
+                                if (client.deleteFile(session, it) is ApiResult.Ok) removed++
+                            }
+                        }
+                    }
+                    is ApiResult.Error -> { /* non-fatal: continue to generate */ }
+                }
+            }
             val scan = client.collectAudioFoldersByPath(session, path)
             when (scan) {
                 is ApiResult.Ok -> {
@@ -119,10 +135,11 @@ fun BrowseScreen(
                         if (client.savePlaylist(session, fol.folderId, pname, fol.files) is ApiResult.Ok) ok++
                     }
                     saving = false
+                    val cleaned = if (replaceExisting) "Removed $removed old, " else ""
                     saveMessage = if (folders.isEmpty()) {
-                        "No folders with audio found under \"$path\"."
+                        "${cleaned}no folders with audio found under \"$path\"."
                     } else {
-                        "Saved $ok playlist(s) across ${folders.size} folder(s)."
+                        "${cleaned}saved $ok playlist(s) across ${folders.size} folder(s)."
                     }
                     reloadKey++
                 }
@@ -134,32 +151,44 @@ fun BrowseScreen(
         }
     }
 
-    // Click-to-build playlist state.
+    // Click-to-build playlist state (works across folders).
     var selecting by remember { mutableStateOf(false) }
-    val selectedIds = remember { mutableStateListOf<Long>() }
+    val selectedItems = remember { mutableStateListOf<com.typezero.pcloudtv.data.MediaItem>() }
     var showNameDialog by remember { mutableStateOf(false) }
     var playlistName by remember { mutableStateOf("") }
 
-    fun toggleSelect(fileId: Long) {
-        if (selectedIds.contains(fileId)) selectedIds.remove(fileId) else selectedIds.add(fileId)
+    fun currentPathPrefix(): String {
+        // Build the absolute pCloud path of the folder you're currently in.
+        val p = "/" + stack.drop(1).joinToString("/") { it.second }
+        return if (p == "/") "" else p
+    }
+
+    fun toggleSelect(file: PItem) {
+        val id = file.fileId ?: return
+        val existing = selectedItems.indexOfFirst { it.fileId == id }
+        if (existing >= 0) {
+            selectedItems.removeAt(existing)
+        } else {
+            val path = currentPathPrefix() + "/" + file.name
+            selectedItems.add(com.typezero.pcloudtv.data.MediaItem(file.name, id, null, path))
+        }
     }
 
     fun saveSelected(name: String) {
         showNameDialog = false
-        val byId = items.associateBy { it.fileId }
-        val files = selectedIds.mapNotNull { byId[it] }.filter { !it.isFolder && it.fileId != null }
-        if (files.isEmpty()) { selecting = false; selectedIds.clear(); return }
+        val entries = selectedItems.mapNotNull { mi -> mi.path?.let { mi.title to it } }
+        if (entries.isEmpty()) { selecting = false; selectedItems.clear(); return }
         saving = true; saveMessage = null; genDone = 0; genTotal = 0; genName = ""
         scope.launch {
             val pname = (name.ifBlank { "Playlist" }).removeSuffix(".m3u") + ".m3u"
-            val res = client.savePlaylist(session, current.first, pname, files)
+            val res = client.savePlaylistAbsolute(session, current.first, pname, entries)
             saving = false
             saveMessage = when (res) {
-                is ApiResult.Ok -> "Saved \"$pname\" (${files.size} tracks)"
+                is ApiResult.Ok -> "Saved \"$pname\" (${entries.size} tracks)"
                 is ApiResult.Error -> "Couldn't save: ${res.message}"
             }
             selecting = false
-            selectedIds.clear()
+            selectedItems.clear()
             reloadKey++
         }
     }
@@ -229,14 +258,14 @@ fun BrowseScreen(
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (selecting) {
-                        Text("${selectedIds.size} selected", color = Brand.TextMid, fontSize = 14.sp)
+                        Text("${selectedItems.size} selected", color = Brand.TextMid, fontSize = 14.sp)
                         Spacer(Modifier.width(10.dp))
                         HeaderButton(
                             icon = Icons.Filled.PlaylistAdd,
                             label = if (compact) null else "Save",
-                            primary = selectedIds.isNotEmpty(),
+                            primary = selectedItems.isNotEmpty(),
                             onClick = {
-                                if (selectedIds.isNotEmpty()) {
+                                if (selectedItems.isNotEmpty()) {
                                     playlistName = current.second
                                     showNameDialog = true
                                 }
@@ -246,14 +275,14 @@ fun BrowseScreen(
                         HeaderButton(
                             icon = Icons.Filled.Close,
                             label = null,
-                            onClick = { selecting = false; selectedIds.clear() }
+                            onClick = { selecting = false; selectedItems.clear() }
                         )
                     } else {
-                        if (items.any { !it.isFolder && it.isPlayable }) {
+                        if (items.isNotEmpty()) {
                             HeaderButton(
                                 icon = Icons.Filled.Checklist,
                                 label = if (compact) null else "Select",
-                                onClick = { selecting = true; selectedIds.clear() }
+                                onClick = { selecting = true; selectedItems.clear() }
                             )
                             Spacer(Modifier.width(8.dp))
                         }
@@ -302,14 +331,18 @@ fun BrowseScreen(
                                 item = pItem,
                                 compact = compact,
                                 selecting = selecting,
-                                selected = pItem.fileId != null && selectedIds.contains(pItem.fileId),
+                                selected = pItem.fileId != null && selectedItems.any { it.fileId == pItem.fileId },
                                 modifier = rowMax.then(
                                     if (index == 0) Modifier.focusRequester(firstRow) else Modifier
                                 ),
                                 onClick = {
                                     if (selecting) {
-                                        if (!pItem.isFolder && pItem.isPlayable && pItem.fileId != null) {
-                                            toggleSelect(pItem.fileId)
+                                        when {
+                                            // Keep navigating folders while collecting tracks.
+                                            pItem.isFolder ->
+                                                stack.add(pItem.folderId!! to pItem.name)
+                                            !pItem.isPlaylist && pItem.isPlayable && pItem.fileId != null ->
+                                                toggleSelect(pItem)
                                         }
                                     } else {
                                         when {
@@ -392,9 +425,11 @@ fun BrowseScreen(
         if (showGenDialog) {
             GeneratePlaylistsDialog(
                 path = genPath,
+                replaceExisting = genReplace,
                 onPathChange = { genPath = it },
+                onReplaceChange = { genReplace = it },
                 onQuick = { genPath = it },
-                onGenerate = { generateUnder(genPath) },
+                onGenerate = { generateUnder(genPath, genReplace) },
                 onCancel = { showGenDialog = false }
             )
         }
@@ -402,7 +437,7 @@ fun BrowseScreen(
         if (showNameDialog) {
             NamePlaylistDialog(
                 name = playlistName,
-                count = selectedIds.size,
+                count = selectedItems.size,
                 onNameChange = { playlistName = it },
                 onSave = { saveSelected(playlistName) },
                 onCancel = { showNameDialog = false }
@@ -466,7 +501,9 @@ private fun NamePlaylistDialog(
 @Composable
 private fun GeneratePlaylistsDialog(
     path: String,
+    replaceExisting: Boolean,
     onPathChange: (String) -> Unit,
+    onReplaceChange: (Boolean) -> Unit,
     onQuick: (String) -> Unit,
     onGenerate: () -> Unit,
     onCancel: () -> Unit
@@ -513,7 +550,27 @@ private fun GeneratePlaylistsDialog(
                 Spacer(Modifier.width(8.dp))
                 QuickChip("/Audiobooks") { onQuick("/Audiobooks") }
             }
-            Spacer(Modifier.height(18.dp))
+            Spacer(Modifier.height(14.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
+                    .clickable { onReplaceChange(!replaceExisting) }
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    if (replaceExisting) Icons.Filled.CheckCircle else Icons.Filled.RadioButtonUnchecked,
+                    contentDescription = null,
+                    tint = if (replaceExisting) Brand.Accent else Brand.TextLow,
+                    modifier = Modifier.size(22.dp)
+                )
+                Spacer(Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Replace existing", color = Brand.TextHi, fontSize = 14.sp)
+                    Text("Delete all .m3u / .m3u8 first, then write one per folder",
+                        color = Brand.TextLow, fontSize = 11.sp)
+                }
+            }
+            Spacer(Modifier.height(14.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 HeaderButton(icon = null, label = "Cancel", onClick = onCancel)
                 Spacer(Modifier.width(10.dp))

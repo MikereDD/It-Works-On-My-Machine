@@ -23,7 +23,8 @@ data class PItem(
 data class MediaItem(
     val title: String,
     val fileId: Long?,      // resolve via getfilelink when about to play
-    val directUrl: String?  // already an absolute URL (e.g. http entry in a playlist)
+    val directUrl: String?, // already an absolute URL (e.g. http entry in a playlist)
+    val path: String? = null // absolute pCloud path (cross-folder playlist entry)
 )
 
 /** A folder that contains playable files, used by the recursive playlist generator. */
