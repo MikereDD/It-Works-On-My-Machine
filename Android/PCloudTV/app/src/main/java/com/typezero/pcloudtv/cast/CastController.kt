@@ -42,21 +42,41 @@ class CastController(context: Context) {
         private set
     var deviceName by mutableStateOf<String?>(null)
         private set
+    var playerState by mutableStateOf(MediaStatus.PLAYER_STATE_UNKNOWN)
+        private set
+    var positionMs by mutableStateOf(0L)
+        private set
+    var durationMs by mutableStateOf(0L)
+        private set
+
+    /** True when the remote is paused with media still loaded — a plain play() will resume. */
+    val canResume: Boolean get() = playerState == MediaStatus.PLAYER_STATE_PAUSED
 
     /** Invoked when the remote player finishes the current item. */
     var onEnded: (() -> Unit)? = null
 
+    /** Invoked when the remote player drops out with an error (e.g. the stream URL
+     *  expired). The host should re-resolve a fresh URL and reload at the last position. */
+    var onNeedsReload: (() -> Unit)? = null
+
     private val session: CastSession? get() = castContext?.sessionManager?.currentCastSession
     private val remote: RemoteMediaClient? get() = session?.remoteMediaClient
+
+    private val progressListener = RemoteMediaClient.ProgressListener { progress, duration ->
+        if (progress >= 0) positionMs = progress
+        if (duration > 0) durationMs = duration
+    }
 
     private val remoteCallback = object : RemoteMediaClient.Callback() {
         override fun onStatusUpdated() {
             val r = remote ?: return
             isRemotePlaying = r.isPlaying
-            if (r.playerState == MediaStatus.PLAYER_STATE_IDLE &&
-                r.idleReason == MediaStatus.IDLE_REASON_FINISHED
-            ) {
-                onEnded?.invoke()
+            playerState = r.playerState
+            if (r.playerState == MediaStatus.PLAYER_STATE_IDLE) {
+                when (r.idleReason) {
+                    MediaStatus.IDLE_REASON_FINISHED -> onEnded?.invoke()
+                    MediaStatus.IDLE_REASON_ERROR -> onNeedsReload?.invoke()
+                }
             }
         }
     }
@@ -77,13 +97,18 @@ class CastController(context: Context) {
         deviceName = try { s.castDevice?.friendlyName } catch (t: Throwable) { null }
         isCasting = true
         s.remoteMediaClient?.registerCallback(remoteCallback)
+        try { s.remoteMediaClient?.addProgressListener(progressListener, 1000) } catch (_: Throwable) {}
     }
 
     private fun detach() {
         try { session?.remoteMediaClient?.unregisterCallback(remoteCallback) } catch (_: Throwable) {}
+        try { session?.remoteMediaClient?.removeProgressListener(progressListener) } catch (_: Throwable) {}
         isCasting = false
         isRemotePlaying = false
         deviceName = null
+        playerState = MediaStatus.PLAYER_STATE_UNKNOWN
+        positionMs = 0L
+        durationMs = 0L
     }
 
     fun start() {
@@ -99,6 +124,7 @@ class CastController(context: Context) {
             castContext?.sessionManager
                 ?.removeSessionManagerListener(sessionListener, CastSession::class.java)
             session?.remoteMediaClient?.unregisterCallback(remoteCallback)
+            session?.remoteMediaClient?.removeProgressListener(progressListener)
         } catch (_: Throwable) {}
     }
 

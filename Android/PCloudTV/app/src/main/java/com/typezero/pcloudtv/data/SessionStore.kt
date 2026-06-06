@@ -25,6 +25,19 @@ class SessionStore(context: Context) {
         posPrefs.edit().remove("pos_$fileId").apply()
     }
 
+    // --- Per-playlist progress: which track in the playlist was playing. The
+    // within-track position is handled by the per-file position store above, so a
+    // playlist resumes at the right track AND the right spot in that track. ---
+    fun savePlaylistIndex(playlistKey: String, index: Int) {
+        posPrefs.edit().putInt("plidx_$playlistKey", index).apply()
+    }
+
+    fun getPlaylistIndex(playlistKey: String): Int = posPrefs.getInt("plidx_$playlistKey", 0)
+
+    fun clearPlaylistIndex(playlistKey: String) {
+        posPrefs.edit().remove("plidx_$playlistKey").apply()
+    }
+
     fun save(session: Session) {
         prefs.edit()
             .putString(KEY_TOKEN, session.authToken)

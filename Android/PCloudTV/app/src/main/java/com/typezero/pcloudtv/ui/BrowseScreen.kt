@@ -81,7 +81,7 @@ private const val PLAYLIST_DIR = "/Music/playlists"
 fun BrowseScreen(
     client: PCloudClient,
     session: Session,
-    onPlayQueue: (List<com.typezero.pcloudtv.data.MediaItem>) -> Unit,
+    onPlayQueue: (List<com.typezero.pcloudtv.data.MediaItem>, String?) -> Unit,
     onLogout: () -> Unit
 ) {
     val stack = remember { mutableStateListOf(0L to "pCloud") }
@@ -364,7 +364,7 @@ fun BrowseScreen(
                                                     when (val r = client.resolvePlaylist(session, pItem, items)) {
                                                         is ApiResult.Ok -> {
                                                             resolving = false
-                                                            onPlayQueue(r.value)
+                                                            onPlayQueue(r.value, "pl:${pItem.fileId}")
                                                         }
                                                         is ApiResult.Error -> {
                                                             resolving = false
@@ -378,7 +378,8 @@ fun BrowseScreen(
                                                     com.typezero.pcloudtv.data.MediaItem(
                                                         pItem.name, pItem.fileId, null
                                                     )
-                                                )
+                                                ),
+                                                null
                                             )
                                         }
                                     }

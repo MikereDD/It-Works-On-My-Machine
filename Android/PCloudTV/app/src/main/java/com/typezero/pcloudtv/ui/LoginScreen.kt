@@ -3,7 +3,6 @@ package com.typezero.pcloudtv.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -29,6 +28,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -38,6 +38,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
@@ -54,6 +56,10 @@ fun LoginScreen(
 ) {
     var token by remember { mutableStateOf("") }
     var link by remember { mutableStateOf("") }
+    val signInFocus = remember { FocusRequester() }
+
+    // Give the remote a starting point on Android TV / Google TV (no touch).
+    LaunchedEffect(Unit) { runCatching { signInFocus.requestFocus() } }
 
     BoxWithConstraints(
         modifier = Modifier.fillMaxSize().background(Brand.pageGradient)
@@ -108,7 +114,7 @@ fun LoginScreen(
                 text = "Sign in with pCloud",
                 primary = true,
                 enabled = !busy,
-                modifier = block,
+                modifier = block.focusRequester(signInFocus),
                 onClick = onSignIn
             )
 
@@ -216,7 +222,6 @@ private fun PillButton(
             .background(bg)
             .border(1.5.dp, borderColor, RoundedCornerShape(26.dp))
             .onFocusChanged { focused = it.isFocused }
-            .focusable(enabled = enabled, interactionSource = interaction)
             .clickable(enabled = enabled, interactionSource = interaction,
                 indication = null, onClick = onClick),
         contentAlignment = Alignment.Center

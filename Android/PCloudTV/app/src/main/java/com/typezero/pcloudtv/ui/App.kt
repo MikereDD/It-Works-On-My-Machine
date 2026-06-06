@@ -59,6 +59,7 @@ fun App(vm: AppViewModel = viewModel()) {
     }
 
     var queue by remember { mutableStateOf<List<MediaItem>?>(null) }
+    var playlistKey by remember { mutableStateOf<String?>(null) }
     val q = queue
     if (q != null) {
         PlayerScreen(
@@ -71,13 +72,14 @@ fun App(vm: AppViewModel = viewModel()) {
                     else -> ApiResult.Error("Bad item")
                 }
             },
-            onExit = { queue = null }
+            playlistKey = playlistKey,
+            onExit = { queue = null; playlistKey = null }
         )
     } else {
         BrowseScreen(
             client = vm.client,
             session = session,
-            onPlayQueue = { queue = it },
+            onPlayQueue = { items, key -> queue = items; playlistKey = key },
             onLogout = vm::logout
         )
     }
