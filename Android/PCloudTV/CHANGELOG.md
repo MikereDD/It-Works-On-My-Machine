@@ -5,6 +5,12 @@ All notable changes to **pCloud TV**. Newest first.
 
 ---
 
+## v2.1 — Protect the playlists folder
+
+- The clean/regenerate step (Replace existing) now skips `/Music/playlists` entirely, so curated playlists built from a song selection are never deleted by a bulk regenerate.
+
+---
+
 ## v2.0 — Playlists folder
 
 - Playlists built from a song selection now save to a dedicated **`/Music/playlist`** folder (auto-created), instead of the current folder. Entries use absolute paths so they play from anywhere.

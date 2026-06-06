@@ -448,12 +448,18 @@ class PCloudClient {
         }
     }
 
-    /** Every existing .m3u/.m3u8 file under a pCloud path (for clean regeneration). */
+    /**
+     * Every existing .m3u/.m3u8 file under a pCloud path (for clean regeneration).
+     * Any folder whose absolute path equals [excludePath] is skipped entirely, so
+     * curated playlists living there are never deleted.
+     */
     suspend fun collectPlaylistsByPath(
         session: Session,
-        path: String
+        path: String,
+        excludePath: String? = null
     ): ApiResult<List<PItem>> = withContext(Dispatchers.IO) {
         val clean = ("/" + path.trim().trim('/')).ifBlank { "/" }
+        val exclude = excludePath?.let { "/" + it.trim().trim('/') }?.lowercase()
         val url = "https://${session.apiHost}/listfolder".toHttpUrl().newBuilder()
             .addQueryParameter("auth", session.authToken)
             .addQueryParameter("path", clean)
@@ -470,12 +476,15 @@ class PCloudClient {
                 )
             }
             val out = mutableListOf<PItem>()
-            fun walk(meta: JSONObject) {
+            fun walk(meta: JSONObject, folderPath: String) {
+                // Never descend into (or collect from) the protected folder.
+                if (exclude != null && folderPath.lowercase() == exclude) return
                 val contents = meta.optJSONArray("contents") ?: return
                 for (i in 0 until contents.length()) {
                     val o = contents.getJSONObject(i)
                     if (o.optBoolean("isfolder", false)) {
-                        walk(o)
+                        val name = o.optString("name")
+                        walk(o, folderPath.trimEnd('/') + "/" + name)
                     } else {
                         val name = o.optString("name")
                         if (name.endsWith(".m3u", true) || name.endsWith(".m3u8", true)) {
@@ -486,7 +495,7 @@ class PCloudClient {
                     }
                 }
             }
-            walk(json.getJSONObject("metadata"))
+            walk(json.getJSONObject("metadata"), clean)
             ApiResult.Ok(out)
         } catch (e: Exception) {
             ApiResult.Error(e.message ?: "Network error")

@@ -114,7 +114,7 @@ fun BrowseScreen(
             var removed = 0
             if (replaceExisting) {
                 genName = "Removing old playlists…"
-                when (val pls = client.collectPlaylistsByPath(session, path)) {
+                when (val pls = client.collectPlaylistsByPath(session, path, excludePath = PLAYLIST_DIR)) {
                     is ApiResult.Ok -> {
                         for (pl in pls.value) {
                             pl.fileId?.let {
