@@ -34,11 +34,15 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Movie
+import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.InsertDriveFile
 import androidx.compose.material.icons.rounded.CloudQueue
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -61,6 +65,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.typezero.pcloudtv.data.ApiResult
@@ -158,6 +163,7 @@ fun BrowseScreen(
     var selecting by remember { mutableStateOf(false) }
     val selectedItems = remember { mutableStateListOf<com.typezero.pcloudtv.data.MediaItem>() }
     var showNameDialog by remember { mutableStateOf(false) }
+    var showAbout by remember { mutableStateOf(false) }
     var playlistName by remember { mutableStateOf("") }
 
     fun currentPathPrefix(): String {
@@ -225,99 +231,87 @@ fun BrowseScreen(
         val compact = maxWidth < 600.dp
         val hPad = if (compact) 18.dp else 56.dp
         val vPad = if (compact) 18.dp else 40.dp
-        val titleSize = if (compact) 24.sp else 34.sp
         val rowMax = if (compact) Modifier.fillMaxWidth() else Modifier.width(760.dp)
 
         Column(modifier = Modifier.fillMaxSize().padding(horizontal = hPad, vertical = vPad)) {
 
-            // Header
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(bottom = if (compact) 14.dp else 22.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(if (compact) 38.dp else 46.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(Brand.Accent.copy(alpha = 0.16f)),
-                        contentAlignment = Alignment.Center
+            // Header — stacked on narrow/portrait screens so the title and the
+            // action buttons never fight for space; single row when there's room.
+            val breadcrumb = stack.joinToString("  ›  ") { it.second }
+            if (compact) {
+                Column(modifier = Modifier.fillMaxWidth().padding(bottom = 14.dp)) {
+                    HeaderTitle(
+                        compact = true,
+                        name = current.second,
+                        breadcrumb = breadcrumb,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.End
                     ) {
-                        Icon(
-                            Icons.Rounded.CloudQueue,
-                            contentDescription = null,
-                            tint = Brand.Accent,
-                            modifier = Modifier.size(if (compact) 22.dp else 26.dp)
-                        )
-                    }
-                    Spacer(Modifier.width(14.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            current.second,
-                            fontSize = titleSize,
-                            fontWeight = FontWeight.Bold,
-                            color = Brand.TextHi,
-                            maxLines = 1
-                        )
-                        Text(
-                            stack.joinToString("  ›  ") { it.second },
-                            fontSize = 12.sp,
-                            color = Brand.TextLow,
-                            maxLines = 1
-                        )
-                    }
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (selecting) {
-                        Text("${selectedItems.size} selected", color = Brand.TextMid, fontSize = 14.sp)
-                        Spacer(Modifier.width(10.dp))
-                        HeaderButton(
-                            icon = Icons.Filled.PlaylistAdd,
-                            label = if (compact) null else "Save",
-                            primary = selectedItems.isNotEmpty(),
-                            onClick = {
+                        HeaderActions(
+                            compact = true,
+                            selecting = selecting,
+                            selectedCount = selectedItems.size,
+                            itemsNotEmpty = items.isNotEmpty(),
+                            onStartSelect = { selecting = true; selectedItems.clear() },
+                            onCancelSelect = { selecting = false; selectedItems.clear() },
+                            onSaveSelected = {
                                 if (selectedItems.isNotEmpty()) {
                                     playlistName = current.second
                                     showNameDialog = true
                                 }
-                            }
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        HeaderButton(
-                            icon = Icons.Filled.Close,
-                            label = null,
-                            onClick = { selecting = false; selectedItems.clear() }
-                        )
-                    } else {
-                        if (items.isNotEmpty()) {
-                            HeaderButton(
-                                icon = Icons.Filled.Checklist,
-                                label = if (compact) null else "Select",
-                                onClick = { selecting = true; selectedItems.clear() }
-                            )
-                            Spacer(Modifier.width(8.dp))
-                        }
-                        if (items.isNotEmpty()) {
-                            HeaderButton(
-                                icon = Icons.Filled.PlaylistAdd,
-                                label = if (compact) null else "Save .m3u",
-                                onClick = {
-                                    if (!saving) {
-                                        genPath = "/" + stack.drop(1).joinToString("/") { it.second }
-                                        if (genPath.isBlank()) genPath = "/"
-                                        showGenDialog = true
-                                    }
+                            },
+                            onGenerate = {
+                                if (!saving) {
+                                    genPath = "/" + stack.drop(1).joinToString("/") { it.second }
+                                    if (genPath.isBlank()) genPath = "/"
+                                    showGenDialog = true
                                 }
-                            )
-                            Spacer(Modifier.width(10.dp))
-                        }
-                        com.typezero.pcloudtv.cast.CastButton(
-                            modifier = Modifier.size(40.dp)
+                            },
+                            onAbout = { showAbout = true },
+                            onLogout = onLogout
                         )
-                        Spacer(Modifier.width(10.dp))
-                        LogoutButton(onLogout)
                     }
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 22.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    HeaderTitle(
+                        compact = false,
+                        name = current.second,
+                        breadcrumb = breadcrumb,
+                        modifier = Modifier.weight(1f)
+                    )
+                    HeaderActions(
+                        compact = false,
+                        selecting = selecting,
+                        selectedCount = selectedItems.size,
+                        itemsNotEmpty = items.isNotEmpty(),
+                        onStartSelect = { selecting = true; selectedItems.clear() },
+                        onCancelSelect = { selecting = false; selectedItems.clear() },
+                        onSaveSelected = {
+                            if (selectedItems.isNotEmpty()) {
+                                playlistName = current.second
+                                showNameDialog = true
+                            }
+                        },
+                        onGenerate = {
+                            if (!saving) {
+                                genPath = "/" + stack.drop(1).joinToString("/") { it.second }
+                                if (genPath.isBlank()) genPath = "/"
+                                showGenDialog = true
+                            }
+                        },
+                        onAbout = { showAbout = true },
+                        onLogout = onLogout
+                    )
                 }
             }
 
@@ -458,6 +452,78 @@ fun BrowseScreen(
                 onSave = { saveSelected(playlistName) },
                 onCancel = { showNameDialog = false }
             )
+        }
+
+        if (showAbout) {
+            AboutDialog(onClose = { showAbout = false })
+        }
+    }
+}
+
+@Composable
+private fun AboutDialog(onClose: () -> Unit) {
+    val context = LocalContext.current
+    val version = com.typezero.pcloudtv.BuildConfig.VERSION_NAME
+    val code = com.typezero.pcloudtv.BuildConfig.VERSION_CODE
+    val changelogUrl =
+        "https://github.com/MikereDD/It-Works-On-My-Machine/blob/main/Android/PCloudTV/CHANGELOG.md"
+
+    fun open(url: String) {
+        runCatching {
+            context.startActivity(
+                android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))
+            )
+        }
+    }
+
+    Box(
+        Modifier.fillMaxSize().background(Color(0xCC000000)).clickable(onClick = onClose),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth().widthIn(max = 460.dp)
+                .padding(28.dp)
+                .clip(RoundedCornerShape(20.dp))
+                .background(Brand.Surface)
+                .border(1.dp, Brand.Stroke, RoundedCornerShape(20.dp))
+                .padding(24.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Brand.Accent.copy(alpha = 0.16f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Rounded.CloudQueue, null, tint = Brand.Accent,
+                        modifier = Modifier.size(24.dp))
+                }
+                Spacer(Modifier.width(14.dp))
+                Column {
+                    Text("pCloud TV", color = Brand.TextHi, fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold)
+                    Text("Version $version ($code)", color = Brand.TextMid, fontSize = 13.sp)
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+            Text(
+                "Stream your pCloud video and audio to Google TV, Android TV, or your phone " +
+                    "— played through the VLC engine.",
+                color = Brand.TextLow, fontSize = 13.sp
+            )
+            Spacer(Modifier.height(20.dp))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                HeaderButton(icon = null, label = "Close", onClick = onClose)
+                Spacer(Modifier.width(10.dp))
+                HeaderButton(
+                    icon = Icons.Filled.QueueMusic,
+                    label = "View changelog",
+                    primary = true,
+                    onClick = { open(changelogUrl) }
+                )
+            }
         }
     }
 }
@@ -632,13 +698,17 @@ private fun ItemCard(
         item.isFolder -> Brand.Folder
         item.isPlaylist -> Brand.Glow
         item.isVideo -> Brand.Video
-        else -> Brand.Audio
+        item.isAudio -> Brand.Audio
+        item.isImage -> Brand.Accent
+        else -> Brand.TextMid
     }
     val icon = when {
         item.isFolder -> Icons.Filled.Folder
         item.isPlaylist -> Icons.Filled.QueueMusic
         item.isVideo -> Icons.Filled.Movie
-        else -> Icons.Filled.MusicNote
+        item.isAudio -> Icons.Filled.MusicNote
+        item.isImage -> Icons.Filled.Image
+        else -> Icons.Filled.InsertDriveFile
     }
     val subtitle = when { item.isFolder -> "Folder"; item.isPlaylist -> "Playlist"; else -> humanSize(item.size) }
 
@@ -699,6 +769,100 @@ private fun ItemCard(
                 tint = if (focused) accent else Brand.TextLow,
                 modifier = Modifier.size(24.dp)
             )
+        }
+    }
+}
+
+@Composable
+private fun HeaderTitle(
+    compact: Boolean,
+    name: String,
+    breadcrumb: String,
+    modifier: Modifier = Modifier
+) {
+    Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            modifier = Modifier
+                .size(if (compact) 38.dp else 46.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(Brand.Accent.copy(alpha = 0.16f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                Icons.Rounded.CloudQueue,
+                contentDescription = null,
+                tint = Brand.Accent,
+                modifier = Modifier.size(if (compact) 22.dp else 26.dp)
+            )
+        }
+        Spacer(Modifier.width(14.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                name,
+                fontSize = if (compact) 22.sp else 26.sp,
+                fontWeight = FontWeight.Bold,
+                color = Brand.TextHi,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                breadcrumb,
+                fontSize = 12.sp,
+                color = Brand.TextLow,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+@Composable
+private fun HeaderActions(
+    compact: Boolean,
+    selecting: Boolean,
+    selectedCount: Int,
+    itemsNotEmpty: Boolean,
+    onStartSelect: () -> Unit,
+    onCancelSelect: () -> Unit,
+    onSaveSelected: () -> Unit,
+    onGenerate: () -> Unit,
+    onAbout: () -> Unit,
+    onLogout: () -> Unit
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        if (selecting) {
+            Text("$selectedCount selected", color = Brand.TextMid, fontSize = 14.sp)
+            Spacer(Modifier.width(10.dp))
+            HeaderButton(
+                icon = Icons.Filled.PlaylistAdd,
+                label = if (compact) null else "Save",
+                primary = selectedCount > 0,
+                onClick = onSaveSelected
+            )
+            Spacer(Modifier.width(8.dp))
+            HeaderButton(icon = Icons.Filled.Close, label = null, onClick = onCancelSelect)
+        } else {
+            if (itemsNotEmpty) {
+                HeaderButton(
+                    icon = Icons.Filled.Checklist,
+                    label = if (compact) null else "Select",
+                    onClick = onStartSelect
+                )
+                Spacer(Modifier.width(8.dp))
+                HeaderButton(
+                    icon = Icons.Filled.PlaylistAdd,
+                    label = if (compact) null else "Save .m3u",
+                    onClick = onGenerate
+                )
+                Spacer(Modifier.width(10.dp))
+            }
+            com.typezero.pcloudtv.cast.CastButton(modifier = Modifier.size(40.dp))
+            Spacer(Modifier.width(10.dp))
+            HeaderButton(icon = Icons.Outlined.Info, label = null, onClick = onAbout)
+            Spacer(Modifier.width(10.dp))
+            LogoutButton(onLogout)
         }
     }
 }

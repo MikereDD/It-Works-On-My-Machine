@@ -5,6 +5,15 @@ All notable changes to **pCloud TV**. Newest first.
 
 ---
 
+## v2.4 — About dialog & header polish
+
+- Added an **About** dialog (info button in the header) showing the installed app version and a link to the changelog on GitHub.
+- Polished the header: on narrow/portrait screens the title and action buttons now stack into two rows instead of overlapping; wide screens keep the single-row layout.
+- Long folder names in the header now truncate cleanly instead of overlapping.
+- Files now show the correct type icon (image, video, audio, document) instead of a music note for everything.
+
+---
+
 ## v2.3.1 — Cast crash fix
 
 - Fixed a crash when opening the Cast device picker. The app theme is now AppCompat-derived so the picker dialog can inflate; the app's appearance is unchanged.
