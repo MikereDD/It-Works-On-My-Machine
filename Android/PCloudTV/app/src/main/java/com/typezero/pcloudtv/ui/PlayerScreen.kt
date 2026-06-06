@@ -105,6 +105,22 @@ fun PlayerScreen(
     )
 }
 
+private fun guessContentType(name: String): String {
+    val n = name.lowercase()
+    return when {
+        n.endsWith(".mp3") -> "audio/mpeg"
+        n.endsWith(".m4a") || n.endsWith(".aac") || n.endsWith(".m4b") -> "audio/mp4"
+        n.endsWith(".flac") -> "audio/flac"
+        n.endsWith(".ogg") || n.endsWith(".oga") -> "audio/ogg"
+        n.endsWith(".opus") -> "audio/opus"
+        n.endsWith(".wav") -> "audio/wav"
+        n.endsWith(".m4v") || n.endsWith(".mp4") -> "video/mp4"
+        n.endsWith(".webm") -> "video/webm"
+        n.endsWith(".mkv") -> "video/x-matroska"
+        else -> "video/mp4"
+    }
+}
+
 @Composable
 private fun VlcPlayer(
     queue: List<com.typezero.pcloudtv.data.MediaItem>,
@@ -202,17 +218,26 @@ private fun VlcPlayer(
         currentSub = player.spuTrack
     }
 
+    val cast = com.typezero.pcloudtv.cast.rememberCastController()
+    var resolvedUrl by remember { mutableStateOf<String?>(null) }
+
     fun reveal() {
         controlsVisible = true
         interactionTick++
     }
 
     fun togglePlay() {
+        if (cast.isCasting) {
+            if (cast.isRemotePlaying) cast.pause() else cast.play()
+            reveal()
+            return
+        }
         if (player.isPlaying) player.pause() else player.play()
         reveal()
     }
 
     fun seekBy(deltaMs: Long) {
+        if (cast.isCasting) { reveal(); return }  // seek handled on the TV's own controls
         val len = durationMs
         val target = (positionMs + deltaMs).coerceAtLeast(0L)
             .let { if (len > 0) it.coerceAtMost(len) else it }
@@ -309,24 +334,42 @@ private fun VlcPlayer(
         positionMs = 0L
         durationMs = 0L
         loadError = null
+        resolvedUrl = null
         val item = queue.getOrNull(index)
         if (item == null) {
             loadError = "Nothing to play"
             return@LaunchedEffect
         }
         when (val r = resolveUrl(item)) {
-            is ApiResult.Ok -> {
-                val media = Media(libVlc, Uri.parse(r.value)).apply {
-                    setHWDecoderEnabled(true, false)
-                }
-                player.media = media
-                media.release()
-                player.play()
-                isPlaying = true
-            }
+            is ApiResult.Ok -> resolvedUrl = r.value
             is ApiResult.Error -> loadError = r.message
         }
     }
+
+    // Route the resolved URL to the active sink: the Chromecast if a Cast session
+    // is up, otherwise the local VLC player. Re-runs if casting starts/stops, so
+    // playback hands off cleanly in either direction.
+    LaunchedEffect(resolvedUrl, cast.isCasting) {
+        val url = resolvedUrl ?: return@LaunchedEffect
+        if (cast.isCasting) {
+            runCatching { if (player.isPlaying) player.pause() }
+            buffering = false
+            isPlaying = true
+            val startMs = currentKey()?.let { store.getPosition(it) } ?: 0L
+            cast.loadUrl(url, title, guessContentType(title), startMs)
+        } else {
+            val media = Media(libVlc, Uri.parse(url)).apply {
+                setHWDecoderEnabled(true, false)
+            }
+            player.media = media
+            media.release()
+            player.play()
+            isPlaying = true
+        }
+    }
+
+    // When the Chromecast finishes an item, advance the queue (same as local end).
+    LaunchedEffect(cast) { cast.onEnded = { onEnded() } }
 
     // Release everything when leaving — and save the resume position first.
     DisposableEffect(Unit) {
@@ -348,9 +391,9 @@ private fun VlcPlayer(
         val pm = context.getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager
         pm.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "pcloudtv:playback")
     }
-    DisposableEffect(isPlaying, hasVideo) {
+    DisposableEffect(isPlaying, hasVideo, cast.isCasting) {
         val window = activity?.window
-        if (isPlaying) {
+        if (isPlaying && !cast.isCasting) {
             if (!wakeLock.isHeld) wakeLock.acquire()
             if (hasVideo) {
                 window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -362,6 +405,7 @@ private fun VlcPlayer(
                 com.typezero.pcloudtv.playback.PlaybackService.start(context, title)
             }
         } else {
+            // Paused, or casting (the Chromecast is doing the playing).
             if (wakeLock.isHeld) wakeLock.release()
             window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             com.typezero.pcloudtv.playback.PlaybackService.stop(context)
@@ -445,9 +489,32 @@ private fun VlcPlayer(
                     modifier = Modifier.padding(40.dp)
                 )
             }
+        } else if (cast.isCasting) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(
+                    "Casting to ${cast.deviceName ?: "your TV"}",
+                    color = Brand.TextHi,
+                    fontSize = 16.sp,
+                    modifier = Modifier.padding(40.dp)
+                )
+            }
         } else if (buffering) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = Brand.Accent)
+            }
+        }
+
+        // Cast device-picker button (only if Cast is available on this device).
+        if (cast.isAvailable) {
+            androidx.compose.animation.AnimatedVisibility(
+                visible = controlsVisible && !showTracks,
+                enter = fadeIn(),
+                exit = fadeOut(),
+                modifier = Modifier.align(Alignment.TopEnd)
+            ) {
+                com.typezero.pcloudtv.cast.CastButton(
+                    modifier = Modifier.padding(20.dp).size(40.dp)
+                )
             }
         }
 
@@ -460,7 +527,7 @@ private fun VlcPlayer(
                 title = title,
                 queuePos = queuePos,
                 queueCount = queueCount,
-                isPlaying = isPlaying,
+                isPlaying = if (cast.isCasting) cast.isRemotePlaying else isPlaying,
                 positionMs = positionMs,
                 durationMs = durationMs,
                 hasPrev = hasPrev,

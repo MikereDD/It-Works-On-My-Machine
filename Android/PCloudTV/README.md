@@ -4,7 +4,7 @@
 
 <h1 align="center">pCloud TV</h1>
 
-<p align="center"><strong>v2.1</strong></p>
+<p align="center"><strong>v2.2</strong></p>
 
 <p align="center">
 A minimal <strong>Google TV / Android TV</strong> app (also runs on phones), built with
@@ -14,14 +14,14 @@ and stream your <strong>video and audio</strong> straight from pCloud — played
 </p>
 
 <p align="center">
-  <a href="https://github.com/MikereDD/It-Works-On-My-Machine/raw/main/Android/PCloudTV/releases/pCloudTV-v2.1.apk"><strong>Download the APK (v2.1)</strong></a>
+  <a href="https://github.com/MikereDD/It-Works-On-My-Machine/raw/main/Android/PCloudTV/releases/pCloudTV-v2.2.apk"><strong>Download the APK (v2.2)</strong></a>
 </p>
 
 ---
 
 ## Install
 
-1. Download **[pCloudTV-v2.1.apk](https://github.com/MikereDD/It-Works-On-My-Machine/raw/main/Android/PCloudTV/releases/pCloudTV-v2.1.apk)** and copy it to your phone or Android TV device.
+1. Download **[pCloudTV-v2.2.apk](https://github.com/MikereDD/It-Works-On-My-Machine/raw/main/Android/PCloudTV/releases/pCloudTV-v2.2.apk)** and copy it to your phone or Android TV device.
 2. Open it with a file manager and install. You'll see Google **Play Protect**'s "unknown developer" notice — tap **More details -> Install anyway**. That's expected for a sideloaded personal build.
 3. Launch **pCloud TV**, tap **Sign in with pCloud**, and log in (two-factor authentication is handled on pCloud's own page).
 
@@ -38,40 +38,18 @@ and stream your <strong>video and audio</strong> straight from pCloud — played
 
 ---
 
-## What's in v2.1
-
-- **`/Music/playlists` is protected.** The bulk “Replace existing” clean step never deletes anything inside `/Music/playlists`, so your hand-built playlists survive a full `/Music` regenerate.
-
-- **Playlists from a song selection** now save to a dedicated **`/Music/playlists`** folder (created automatically). Build a list by tapping tracks across folders, name it, and it lands there.
-
-- **Reliable queue playback.** Playlists now advance through every track without tearing down the player, so auto-advance keeps working — including while playing in the background.
-
-- **Background audio.** Music keeps playing when you leave the app (a media foreground service); video still stops when you leave, as expected.
-- **Clean regenerate.** The Save .m3u dialog can delete every existing `.m3u`/`.m3u8` under a path first, then write one fresh playlist per folder.
-
-- **Build playlists by tapping.** A **Select** mode lets you check tracks in a folder and save them as a named `.m3u` (in tap order).
-
-- **Shared links — no account needed.** Paste a pCloud public share link (file or folder) on the sign-in screen and play it directly. Folder links are browsable; nothing else in the account is exposed.
-
-- **Polish**: a buffering spinner while streams load or stall, and a **track “N / M”** indicator in the player when you're in a playlist.
-
-- **Background audio** — music and audiobooks keep playing with the screen off (a wake-lock holds the CPU; video still keeps the screen on).
-- **Resume where you stopped** — playback position is remembered per file and picks up where you left off.
-
-- **Bulk playlist generation by path** — the **Save .m3u** dialog takes a pCloud path (with quick **/Music** and **/Audiobooks** buttons) and recursively writes an `.m3u` into every subfolder that has audio, with live progress.
-
-- **Create playlists** — a **Save .m3u** button writes an `.m3u` of the current folder's audio/video files straight into that pCloud folder, ready to play back.
-
-- **Playlist support** — open `.m3u` / `.m3u8` files to play their tracks as a queue, with auto-advance, skip previous/next, and HLS manifests handed straight to VLC.
+## Features
 
 - Sign in through pCloud's own web login (**two-factor authentication supported**); token stored until sign-out.
 - Browse folders on TV (D-pad) or phone (touch), with file-type icons and sizes.
-- **VLC playback** with wide codec support.
-- Auto-hiding player controls: play/pause, +/-10s seek, scrub bar.
-- Auto-selects **English audio + English subtitles** (subtitles off when no English track), with a manual **Tracks** picker to override audio/subtitle per file — by touch on mobile and by remote on TV (**Up / Menu** to open).
-- Polished, adaptive dark UI that scales between phone and TV.
-- Free rotation on phones; rotating keeps your place (and keeps video playing).
-- Keeps the screen awake during playback so the device won't sleep mid-video.
+- **VLC playback** with wide codec support; auto-hiding controls (play/pause, +/-10s, scrub bar).
+- Auto-selects **English audio + subtitles** with a manual **Tracks** picker; resume where you stopped.
+- **Background audio** — music/audiobooks keep playing with the screen off or when you leave the app; video stops on leave.
+- **Playlists** — play `.m3u`/`.m3u8` as a queue (auto-advance, skip, HLS), build one by tapping tracks across folders (saved to `/Music/playlists`), or bulk-generate one per folder under a path.
+- **Shared links** — open a pCloud public link (file or folder) with no account.
+- **Chromecast** — cast to a Chromecast / Google TV (audio + MP4/H.264; MKV/HEVC not supported by the stock receiver).
+
+See the **[changelog](./CHANGELOG.md)** for the full, version-by-version release history.
 
 ---
 
@@ -155,25 +133,6 @@ app/src/main/java/com/typezero/pcloudtv/
 - Stream URLs from `getfilelink` are bound to the requesting device's IP, so the app resolves them immediately before playback on the same device.
 - Token storage is plain app-private prefs. For encryption, wrap `SessionStore` with `EncryptedSharedPreferences` (`androidx.security:security-crypto`).
 - pCloud also offers `getvideolink` / `gethlslink` for transcoded/adaptive streaming if you ever need it — `PCloudClient` is where to add it.
-
----
-
-## Changelog
-
-**v1.4**
-- Screen-off playback for audio (wake-lock) + per-file resume position.
-
-**v1.3**
-- Bulk generate playlists under a pCloud path (e.g. `/Music`, `/Audiobooks`), recursively, one `.m3u` per audio folder.
-
-**v1.2**
-- Generate playlists: **Save .m3u** builds an `.m3u` for a folder's files and uploads it into that folder.
-
-**v1.1**
-- Play `.m3u` / `.m3u8` playlists as a queue (auto-advance, skip prev/next; HLS `.m3u8` streamed directly).
-
-**v1.0**
-- Initial release: pCloud web login (2FA), folder browsing, VLC playback, English audio/subtitle auto-select + manual track picker, adaptive phone/TV UI, rotation that keeps your place, screen-stays-awake.
 
 ---
 

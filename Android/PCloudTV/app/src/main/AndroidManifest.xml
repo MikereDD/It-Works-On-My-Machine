@@ -50,5 +50,9 @@
             android:name=".playback.PlaybackService"
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
+
+        <meta-data
+            android:name="com.google.android.gms.cast.framework.OPTIONS_PROVIDER_CLASS_NAME"
+            android:value="com.typezero.pcloudtv.cast.CastOptionsProvider" />
     </application>
 </manifest>

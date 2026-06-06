@@ -5,6 +5,14 @@ All notable changes to **pCloud TV**. Newest first.
 
 ---
 
+## v2.2 — Chromecast
+
+- Cast playback to a Chromecast / Google TV via the Cast button in the player (Google Default Media Receiver).
+- Works for audio (MP3/AAC/FLAC/Opus) and MP4/H.264 video; MKV/HEVC isn't supported by the stock receiver.
+- Fully isolated: when no Cast session is active, local LibVLC playback is byte-for-byte unchanged.
+
+---
+
 ## v2.1 — Protect the playlists folder
 
 - The clean/regenerate step (Replace existing) now skips `/Music/playlists` entirely, so curated playlists built from a song selection are never deleted by a bulk regenerate.
@@ -13,7 +21,7 @@ All notable changes to **pCloud TV**. Newest first.
 
 ## v2.0 — Playlists folder
 
-- Playlists built from a song selection now save to a dedicated **`/Music/playlist`** folder (auto-created), instead of the current folder. Entries use absolute paths so they play from anywhere.
+- Playlists built from a song selection now save to a dedicated **`/Music/playlists`** folder (auto-created), instead of the current folder. Entries use absolute paths so they play from anywhere.
 
 ---
 
