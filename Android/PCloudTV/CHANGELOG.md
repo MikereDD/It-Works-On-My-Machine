@@ -5,6 +5,12 @@ All notable changes to **pCloud TV**. Newest first.
 
 ---
 
+## v2.5 — 32-bit ARM support
+
+- The APK now bundles both 64-bit (arm64-v8a) and 32-bit (armeabi-v7a) ARM libraries, so it installs on the Chromecast with Google TV and other 32-bit ARM devices. Previous builds were 64-bit only and silently failed to install on those.
+
+---
+
 ## v2.4 — About dialog & header polish
 
 - Added an **About** dialog (info button in the header) showing the installed app version and a link to the changelog on GitHub.
