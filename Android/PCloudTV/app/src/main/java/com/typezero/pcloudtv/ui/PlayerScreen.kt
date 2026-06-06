@@ -19,6 +19,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.clickable
+import android.media.MediaMetadata
+import android.media.session.MediaSession
+import android.media.session.PlaybackState
 import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
@@ -55,6 +58,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -73,6 +78,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.typezero.pcloudtv.data.ApiResult
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import org.videolan.libvlc.LibVLC
 import org.videolan.libvlc.Media
 import org.videolan.libvlc.MediaPlayer
@@ -83,6 +89,7 @@ fun PlayerScreen(
     queue: List<MediaItem>,
     resolveUrl: suspend (MediaItem) -> ApiResult<String>,
     startIndex: Int = 0,
+    playlistKey: String? = null,
     onExit: () -> Unit
 ) {
     BackHandler { onExit() }
@@ -101,6 +108,7 @@ fun PlayerScreen(
         queue = queue,
         resolveUrl = resolveUrl,
         startIndex = startIndex.coerceIn(0, queue.size - 1),
+        playlistKey = playlistKey,
         onExit = onExit
     )
 }
@@ -126,12 +134,20 @@ private fun VlcPlayer(
     queue: List<com.typezero.pcloudtv.data.MediaItem>,
     resolveUrl: suspend (com.typezero.pcloudtv.data.MediaItem) -> ApiResult<String>,
     startIndex: Int,
+    playlistKey: String? = null,
     onExit: () -> Unit
 ) {
     val context = LocalContext.current
     val store = remember { com.typezero.pcloudtv.data.SessionStore(context) }
 
-    var index by remember { mutableStateOf(startIndex) }
+    // For a playlist, resume at the track we left off on; otherwise honor startIndex.
+    var index by remember {
+        mutableStateOf(
+            if (playlistKey != null)
+                store.getPlaylistIndex(playlistKey).coerceIn(0, queue.size - 1)
+            else startIndex
+        )
+    }
     val current = queue.getOrNull(index)
     val title = current?.title ?: ""
     val queuePos = index + 1
@@ -140,7 +156,13 @@ private fun VlcPlayer(
     val hasNext = index < queue.size - 1
     fun onPrev() { if (index > 0) index-- }
     fun onNext() { if (index < queue.size - 1) index++ }
-    fun onEnded() { if (index < queue.size - 1) index++ else onExit() }
+    fun onEnded() {
+        if (index < queue.size - 1) index++
+        else {
+            playlistKey?.let { store.clearPlaylistIndex(it) }  // finished the playlist → start fresh next time
+            onExit()
+        }
+    }
 
     var loadError by remember { mutableStateOf<String?>(null) }
 
@@ -220,6 +242,28 @@ private fun VlcPlayer(
 
     val cast = com.typezero.pcloudtv.cast.rememberCastController()
     var resolvedUrl by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    var lastCastReloadAt by remember { mutableStateOf(0L) }
+
+    // Re-resolve a fresh pCloud URL and reload it on the cast device at the last
+    // known position. pCloud stream URLs are time-limited, so after a pause the old
+    // URL can be stale — a plain play() then fails. This recovers seamlessly.
+    fun castReload() {
+        val now = System.currentTimeMillis()
+        if (now - lastCastReloadAt < 4_000) return  // debounce
+        lastCastReloadAt = now
+        val item = queue.getOrNull(index) ?: return
+        val resumeAt = when {
+            cast.positionMs > 3_000 -> cast.positionMs
+            else -> currentKey()?.let { store.getPosition(it) } ?: 0L
+        }
+        scope.launch {
+            when (val r = resolveUrl(item)) {
+                is ApiResult.Ok -> cast.loadUrl(r.value, title, guessContentType(title), resumeAt)
+                is ApiResult.Error -> loadError = r.message
+            }
+        }
+    }
 
     fun reveal() {
         controlsVisible = true
@@ -228,7 +272,11 @@ private fun VlcPlayer(
 
     fun togglePlay() {
         if (cast.isCasting) {
-            if (cast.isRemotePlaying) cast.pause() else cast.play()
+            when {
+                cast.isRemotePlaying -> cast.pause()
+                cast.canResume -> cast.play()           // still paused with media → simple resume
+                else -> castReload()                    // media dropped/expired → reload fresh
+            }
             reveal()
             return
         }
@@ -244,6 +292,63 @@ private fun VlcPlayer(
         player.time = target
         positionMs = target
         reveal()
+    }
+
+    // --- Headset / Bluetooth media-button support ---
+    // A MediaSession lets earbud and Bluetooth transport buttons (play/pause,
+    // next, previous) drive playback even with the screen off. The callback is
+    // created once, so it calls through these always-current lambdas.
+    val onToggle = rememberUpdatedState<() -> Unit> { togglePlay() }
+    val onNextBtn = rememberUpdatedState<() -> Unit> { onNext(); reveal() }
+    val onPrevBtn = rememberUpdatedState<() -> Unit> { onPrev(); reveal() }
+    var mediaSession by remember { mutableStateOf<MediaSession?>(null) }
+
+    DisposableEffect(Unit) {
+        val session = MediaSession(context, "pCloudTV").apply {
+            setCallback(object : MediaSession.Callback() {
+                override fun onPlay() { onToggle.value() }
+                override fun onPause() { onToggle.value() }
+                override fun onSkipToNext() { onNextBtn.value() }
+                override fun onSkipToPrevious() { onPrevBtn.value() }
+                override fun onSeekTo(pos: Long) { seekBy(pos - positionMs) }
+            })
+            isActive = true
+        }
+        mediaSession = session
+        onDispose {
+            session.isActive = false
+            session.release()
+            mediaSession = null
+        }
+    }
+
+    // Keep the session's state/metadata in sync so the system routes buttons here
+    // and shows the right title + play/pause on the lock screen / headset.
+    LaunchedEffect(isPlaying, positionMs, durationMs, title, cast.isCasting, cast.isRemotePlaying) {
+        val s = mediaSession ?: return@LaunchedEffect
+        val playing = if (cast.isCasting) cast.isRemotePlaying else isPlaying
+        s.setPlaybackState(
+            PlaybackState.Builder()
+                .setActions(
+                    PlaybackState.ACTION_PLAY or PlaybackState.ACTION_PAUSE or
+                        PlaybackState.ACTION_PLAY_PAUSE or
+                        PlaybackState.ACTION_SKIP_TO_NEXT or
+                        PlaybackState.ACTION_SKIP_TO_PREVIOUS or
+                        PlaybackState.ACTION_SEEK_TO
+                )
+                .setState(
+                    if (playing) PlaybackState.STATE_PLAYING else PlaybackState.STATE_PAUSED,
+                    positionMs,
+                    1f
+                )
+                .build()
+        )
+        s.setMetadata(
+            MediaMetadata.Builder()
+                .putString(MediaMetadata.METADATA_KEY_TITLE, title)
+                .putLong(MediaMetadata.METADATA_KEY_DURATION, if (durationMs > 0) durationMs else 0L)
+                .build()
+        )
     }
 
     // Prefer English audio + English subtitles when the file has multiple tracks.
@@ -327,6 +432,9 @@ private fun VlcPlayer(
         resumed = false
         hasVideo = false
         buffering = true
+        // Remember which track of the playlist we're on (within-track position is
+        // saved separately per file), so reopening the playlist resumes here.
+        playlistKey?.let { store.savePlaylistIndex(it, index) }
         currentAudio = -1
         currentSub = -1
         audioOptions = emptyList()
@@ -369,7 +477,26 @@ private fun VlcPlayer(
     }
 
     // When the Chromecast finishes an item, advance the queue (same as local end).
-    LaunchedEffect(cast) { cast.onEnded = { onEnded() } }
+    // If it drops out with an error (e.g. a stale stream URL), reload a fresh one.
+    LaunchedEffect(cast) {
+        cast.onEnded = { onEnded() }
+        cast.onNeedsReload = { castReload() }
+    }
+
+    // While casting, VLC's events don't fire, so mirror the remote position into our
+    // state and persist it periodically — this is what lets video/music resume where
+    // it left off even when playback happened on the TV.
+    LaunchedEffect(cast.isCasting) {
+        if (!cast.isCasting) return@LaunchedEffect
+        while (true) {
+            if (cast.positionMs > 0) {
+                positionMs = cast.positionMs
+                if (cast.durationMs > 0) durationMs = cast.durationMs
+                persistPosition()
+            }
+            delay(5_000)
+        }
+    }
 
     // Release everything when leaving — and save the resume position first.
     DisposableEffect(Unit) {

@@ -25,6 +25,13 @@ import androidx.compose.ui.viewinterop.AndroidView
  * (pCloud has disabled new OAuth app registration, so the official flow isn't
  * currently available).
  */
+private const val COOKIE_ACCEPT_JS =
+    "(function(){try{var els=document.querySelectorAll('button,a,[role=button],span,div');" +
+        "for(var i=0;i<els.length;i++){var t=(els[i].innerText||els[i].textContent||'')" +
+        ".trim().toLowerCase();" +
+        "if(t==='i accept'||t==='accept'||t==='accept all'||t==='i agree'||t==='got it'||t==='ok'){" +
+        "els[i].click();return;}}}catch(e){}})();"
+
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun WebLoginScreen(
@@ -39,6 +46,9 @@ fun WebLoginScreen(
             WebView(ctx).apply {
                 settings.javaScriptEnabled = true
                 settings.domStorageEnabled = true
+                // Let the D-pad drive the page on Android TV (no touchscreen).
+                isFocusable = true
+                isFocusableInTouchMode = true
                 CookieManager.getInstance().setAcceptCookie(true)
                 CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
 
@@ -68,6 +78,12 @@ fun WebLoginScreen(
 
                     // Fallback: scan localStorage for a token-looking value.
                     override fun onPageFinished(view: WebView, url: String?) {
+                        // Auto-accept the cookie banner so TV users don't have to
+                        // click it with a remote (it loads late, so retry a few times).
+                        view.evaluateJavascript(COOKIE_ACCEPT_JS, null)
+                        main.postDelayed({ view.evaluateJavascript(COOKIE_ACCEPT_JS, null) }, 800)
+                        main.postDelayed({ view.evaluateJavascript(COOKIE_ACCEPT_JS, null) }, 2000)
+
                         if (done) return
                         view.evaluateJavascript(
                             "(function(){try{var ks=Object.keys(localStorage);" +
@@ -80,6 +96,7 @@ fun WebLoginScreen(
                 }
 
                 loadUrl("https://my.pcloud.com/")
+                requestFocus()
             }
         }
     )
