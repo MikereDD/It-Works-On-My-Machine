@@ -5,6 +5,12 @@ All notable changes to **pCloud TV**. Newest first.
 
 ---
 
+## v2.3.1 — Cast crash fix
+
+- Fixed a crash when opening the Cast device picker. The app theme is now AppCompat-derived so the picker dialog can inflate; the app's appearance is unchanged.
+
+---
+
 ## v2.3 — Cast discoverability
 
 - Cast now initializes at app startup, so device discovery begins immediately and the Cast button appears as soon as a Chromecast / Google TV is found.
