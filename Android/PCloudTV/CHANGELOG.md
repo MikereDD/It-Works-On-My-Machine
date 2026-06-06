@@ -5,6 +5,13 @@ All notable changes to **pCloud TV**. Newest first.
 
 ---
 
+## v2.3 — Cast discoverability
+
+- Cast now initializes at app startup, so device discovery begins immediately and the Cast button appears as soon as a Chromecast / Google TV is found.
+- Added a persistent Cast button to the browse header (not just the player), so it's easy to find once signed in.
+
+---
+
 ## v2.2 — Chromecast
 
 - Cast playback to a Chromecast / Google TV via the Cast button in the player (Google Default Media Receiver).

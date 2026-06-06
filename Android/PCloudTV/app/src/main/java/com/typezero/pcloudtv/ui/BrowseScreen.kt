@@ -312,6 +312,10 @@ fun BrowseScreen(
                             )
                             Spacer(Modifier.width(10.dp))
                         }
+                        com.typezero.pcloudtv.cast.CastButton(
+                            modifier = Modifier.size(40.dp)
+                        )
+                        Spacer(Modifier.width(10.dp))
                         LogoutButton(onLogout)
                     }
                 }

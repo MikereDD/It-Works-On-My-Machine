@@ -14,6 +14,11 @@ import com.typezero.pcloudtv.ui.theme.PCloudTVTheme
 class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Initialize Cast early so device discovery starts and the Cast button
+        // populates as soon as a Chromecast / Google TV is on the network.
+        runCatching {
+            com.google.android.gms.cast.framework.CastContext.getSharedInstance(applicationContext)
+        }
         setContent {
             PCloudTVTheme {
                 Surface(
