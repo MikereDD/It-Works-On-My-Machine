@@ -36,6 +36,11 @@ and stream your <strong>video and audio</strong> straight from pCloud — played
 | <img src="./screenshots/screenshot-1.jpg" width="100%"> | <img src="./screenshots/screenshot-2.jpg" width="100%"> |
 | <img src="./screenshots/screenshot-3.jpg" width="100%"> | <img src="./screenshots/screenshot-4.jpg" width="100%"> |
 
+<p align="center">
+  <img src="./screenshots/screenshot-5.jpg" width="49%">
+</p>
+
+
 ---
 
 ## Features
