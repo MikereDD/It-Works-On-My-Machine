@@ -11,15 +11,16 @@ android {
         applicationId = "com.typezero.pcloudtv"
         minSdk = 26
         targetSdk = 34
-        versionCode = 16
-        versionName = "2.4"
+        versionCode = 17
+        versionName = "2.5"
 
-        // Ship only arm64-v8a native libs (covers modern phones + Google TV),
-        // which keeps the APK well under ~70 MB instead of ~190 MB for all ABIs.
-        // NOTE: this excludes x86_64, so it won't install on a standard emulator.
-        // For emulator testing, comment this line out and rebuild.
+        // Ship 64-bit and 32-bit ARM native libs. arm64-v8a covers modern phones
+        // and most Android TVs; armeabi-v7a is REQUIRED for Chromecast with Google
+        // TV (4K and HD) and other 32-bit ARM TV devices — without it the APK fails
+        // to install on those with "no matching ABI".
+        // (x86_64 is omitted, so a standard emulator still needs this commented out.)
         ndk {
-            abiFilters += "arm64-v8a"
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
         }
     }
 

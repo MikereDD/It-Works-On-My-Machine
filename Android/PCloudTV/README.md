@@ -4,7 +4,7 @@
 
 <h1 align="center">pCloud TV</h1>
 
-<p align="center"><strong>v2.4</strong></p>
+<p align="center"><strong>v2.5</strong></p>
 
 <p align="center">
 A minimal <strong>Google TV / Android TV</strong> app (also runs on phones), built with
@@ -14,14 +14,14 @@ and stream your <strong>video and audio</strong> straight from pCloud — played
 </p>
 
 <p align="center">
-  <a href="https://github.com/MikereDD/It-Works-On-My-Machine/raw/main/Android/PCloudTV/releases/pCloudTV-v2.4.apk"><strong>Download the APK (v2.4)</strong></a>
+  <a href="https://github.com/MikereDD/It-Works-On-My-Machine/raw/main/Android/PCloudTV/releases/pCloudTV-v2.5.apk"><strong>Download the APK (v2.5)</strong></a>
 </p>
 
 ---
 
 ## Install
 
-1. Download **[pCloudTV-v2.4.apk](https://github.com/MikereDD/It-Works-On-My-Machine/raw/main/Android/PCloudTV/releases/pCloudTV-v2.4.apk)** and copy it to your phone or Android TV device.
+1. Download **[pCloudTV-v2.5.apk](https://github.com/MikereDD/It-Works-On-My-Machine/raw/main/Android/PCloudTV/releases/pCloudTV-v2.5.apk)** and copy it to your phone or Android TV device.
 2. Open it with a file manager and install. You'll see Google **Play Protect**'s "unknown developer" notice — tap **More details -> Install anyway**. That's expected for a sideloaded personal build.
 3. Launch **pCloud TV**, tap **Sign in with pCloud**, and log in (two-factor authentication is handled on pCloud's own page).
 
@@ -84,7 +84,7 @@ The token is kept until you **Sign out** (which also clears the WebView session)
 2. Let Gradle **sync** (first sync downloads Gradle 8.4 + dependencies, including the LibVLC native libraries — give it a few minutes).
 3. **Build -> Generate App Bundles or APKs -> Build APK(s)** -> output at `app/build/outputs/apk/debug/app-debug.apk`.
 
-> **APK size:** the build ships **arm64-v8a** native libs only (set in `app/build.gradle.kts` → `defaultConfig` → `ndk { abiFilters += "arm64-v8a" }`), which keeps it around **~58 MB**. arm64 covers modern phones and Google TV. If you need to run it on an **x86_64 emulator**, comment out that `abiFilters` line and rebuild (the all-ABI APK is ~190 MB).
+> **APK size:** the build ships **arm64-v8a + armeabi-v7a** native libs (set in `app/build.gradle.kts` → `defaultConfig` → `ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }`), so it installs on modern phones, Android TVs, **and 32-bit ARM devices like the Chromecast with Google TV**. This makes the APK roughly **~110 MB**. To trim it for a single known device, drop the ABI you don't need. If you need an **x86_64 emulator**, comment out the `abiFilters` block and rebuild.
 
 ### Toolchain
 
