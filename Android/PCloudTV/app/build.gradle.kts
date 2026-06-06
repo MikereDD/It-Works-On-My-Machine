@@ -11,8 +11,8 @@ android {
         applicationId = "com.typezero.pcloudtv"
         minSdk = 26
         targetSdk = 34
-        versionCode = 12
-        versionName = "2.1"
+        versionCode = 13
+        versionName = "2.2"
 
         // Ship only arm64-v8a native libs (covers modern phones + Google TV),
         // which keeps the APK well under ~70 MB instead of ~190 MB for all ABIs.
@@ -75,6 +75,12 @@ dependencies {
 
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+
+    // Google Cast (Chromecast) — phone casts the resolved stream URL to the TV.
+    // Only used when a Cast session is active; local LibVLC playback is unaffected.
+    implementation("com.google.android.gms:play-services-cast-framework:21.4.0")
+    implementation("androidx.mediarouter:mediarouter:1.6.0")
+    implementation("androidx.appcompat:appcompat:1.6.1")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

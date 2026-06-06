@@ -70,7 +70,7 @@ import com.typezero.pcloudtv.data.Session
 import com.typezero.pcloudtv.ui.theme.Brand
 
 /** Built playlists (from a song selection) are saved here. */
-private const val PLAYLIST_DIR = "/Music/playlist"
+private const val PLAYLIST_DIR = "/Music/playlists"
 
 @Composable
 fun BrowseScreen(
@@ -184,7 +184,7 @@ fun BrowseScreen(
         saving = true; saveMessage = null; genDone = 0; genTotal = 0; genName = ""
         scope.launch {
             val pname = (name.ifBlank { "Playlist" }).removeSuffix(".m3u") + ".m3u"
-            // Built playlists always live in a dedicated /Music/playlist folder.
+            // Built playlists always live in a dedicated /Music/playlists folder.
             when (val folder = client.ensureFolder(session, PLAYLIST_DIR)) {
                 is ApiResult.Ok -> {
                     val res = client.savePlaylistAbsolute(session, folder.value, pname, entries)
