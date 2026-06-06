@@ -12,6 +12,7 @@ data class PItem(
 ) {
     val isVideo: Boolean get() = category == 2 || contentType.startsWith("video/")
     val isAudio: Boolean get() = category == 3 || contentType.startsWith("audio/")
+    val isImage: Boolean get() = category == 1 || contentType.startsWith("image/")
     val isPlaylist: Boolean get() =
         name.endsWith(".m3u", true) || name.endsWith(".m3u8", true)
     val isPlayable: Boolean get() = isVideo || isAudio
