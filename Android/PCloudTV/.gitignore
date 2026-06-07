@@ -8,3 +8,5 @@
 .externalNativeBuild
 .cxx
 /app/build
+/releases/
+Android/PCloudTV/releases/
