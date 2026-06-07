@@ -28,6 +28,13 @@ data class MediaItem(
     val path: String? = null // absolute pCloud path (cross-folder playlist entry)
 )
 
+/** The most recently played queue, surfaced as "Continue" on the browse screen. */
+data class LastPlayed(
+    val title: String,
+    val playlistKey: String?,
+    val queue: List<MediaItem>
+)
+
 /** A folder that contains playable files, used by the recursive playlist generator. */
 data class AudioFolder(
     val folderId: Long,

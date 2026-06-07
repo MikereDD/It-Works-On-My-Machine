@@ -435,6 +435,7 @@ private fun VlcPlayer(
         // Remember which track of the playlist we're on (within-track position is
         // saved separately per file), so reopening the playlist resumes here.
         playlistKey?.let { store.savePlaylistIndex(it, index) }
+        store.saveLastPlayed(queue.getOrNull(index)?.title ?: "", playlistKey, queue)
         currentAudio = -1
         currentSub = -1
         audioOptions = emptyList()

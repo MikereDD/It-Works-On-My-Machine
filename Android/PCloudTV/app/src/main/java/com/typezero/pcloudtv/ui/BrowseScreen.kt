@@ -41,6 +41,7 @@ import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Movie
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.InsertDriveFile
 import androidx.compose.material.icons.rounded.CloudQueue
@@ -86,6 +87,11 @@ fun BrowseScreen(
 ) {
     val stack = remember { mutableStateListOf(0L to "pCloud") }
     val current = stack.last()
+
+    // "Continue" — the most recent queue, loaded fresh each time we enter the browser.
+    val browseContext = LocalContext.current
+    val browseStore = remember { com.typezero.pcloudtv.data.SessionStore(browseContext) }
+    val lastPlayed = remember { browseStore.getLastPlayed() }
 
     var items by remember { mutableStateOf<List<PItem>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
@@ -336,6 +342,16 @@ fun BrowseScreen(
                         modifier = Modifier.fillMaxSize(),
                         verticalArrangement = Arrangement.spacedBy(if (compact) 10.dp else 12.dp)
                     ) {
+                        if (stack.size == 1 && !selecting && lastPlayed != null) {
+                            item {
+                                ContinueCard(
+                                    title = lastPlayed.title,
+                                    compact = compact,
+                                    modifier = rowMax,
+                                    onClick = { onPlayQueue(lastPlayed.queue, lastPlayed.playlistKey) }
+                                )
+                            }
+                        }
                         itemsIndexed(items) { index, pItem ->
                             ItemCard(
                                 item = pItem,
@@ -679,6 +695,59 @@ private fun QuickChip(text: String, onClick: () -> Unit) {
             .padding(horizontal = 14.dp, vertical = 8.dp)
     ) {
         Text(text, color = Brand.TextHi, fontSize = 13.sp)
+    }
+}
+
+@Composable
+private fun ContinueCard(
+    title: String,
+    compact: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    val interaction = remember { MutableInteractionSource() }
+    var focused by remember { mutableStateOf(false) }
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(16.dp))
+            .background(if (focused) Brand.SurfaceFocused else Brand.Surface)
+            .border(
+                1.5.dp,
+                if (focused) Brand.Accent else Brand.Stroke,
+                RoundedCornerShape(16.dp)
+            )
+            .onFocusChanged { focused = it.isFocused }
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(if (compact) 44.dp else 52.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(Brand.Accent.copy(alpha = 0.18f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                Icons.Filled.PlayArrow,
+                contentDescription = null,
+                tint = Brand.Accent,
+                modifier = Modifier.size(if (compact) 24.dp else 28.dp)
+            )
+        }
+        Spacer(Modifier.width(14.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text("Continue", color = Brand.Accent, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Text(
+                title,
+                color = Brand.TextHi,
+                fontSize = if (compact) 16.sp else 18.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
     }
 }
 
