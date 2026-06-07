@@ -220,6 +220,37 @@ class PCloudClient {
         }
 
     /**
+     * A time-limited link to a thumbnail for a file (images and videos only —
+     * pCloud generates these server-side). Used to show poster thumbnails in
+     * the browser. Returns Error for anything without a thumbnail.
+     */
+    suspend fun getThumbLink(
+        session: Session,
+        fileId: Long,
+        size: String = "128x128"
+    ): ApiResult<String> = withContext(Dispatchers.IO) {
+        try {
+            val url = "https://${session.apiHost}/getthumblink".toHttpUrl().newBuilder()
+                .addQueryParameter("auth", session.authToken)
+                .addQueryParameter("fileid", fileId.toString())
+                .addQueryParameter("size", size)
+                .addQueryParameter("crop", "1")
+                .build()
+            val json = http.newCall(Request.Builder().url(url).build()).execute()
+                .use { JSONObject(it.body?.string().orEmpty()) }
+            if (json.optInt("result", -1) != 0) {
+                return@withContext ApiResult.Error(json.optString("error", "No thumbnail"))
+            }
+            val hosts = json.getJSONArray("hosts")
+            val path = json.getString("path")
+            if (hosts.length() == 0) return@withContext ApiResult.Error("No thumbnail host")
+            ApiResult.Ok("https://${hosts.getString(0)}$path")
+        } catch (e: Exception) {
+            ApiResult.Error(e.message ?: "Thumbnail error")
+        }
+    }
+
+    /**
      * Resolve an .m3u / .m3u8 playlist into a playable queue.
      *
      * - If the file is an HLS manifest (contains #EXT-X- tags), it's handed to

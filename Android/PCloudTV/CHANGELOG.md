@@ -5,6 +5,24 @@ All notable changes to **pCloud TV**. Newest first.
 
 ---
 
+## v2.9 — TV experience
+
+- Recently played is now a horizontal poster row with thumbnails and focus scale/glow animations (leanback-style home, built on the existing Compose UI).
+
+---
+
+## v2.8.2 — Thumbnails
+
+- The folder browser now shows pCloud thumbnails for image and video files, falling back to the type icon when a thumbnail isn't available.
+
+---
+
+## v2.8.1 — Recently played
+
+- Recently-played history on the home screen: a Continue card plus a "Recently played" list, each resuming where you left off.
+
+---
+
 ## v2.8 — Library & discovery
 
 - Search box in every folder: filter the current folder's items by name as you type.

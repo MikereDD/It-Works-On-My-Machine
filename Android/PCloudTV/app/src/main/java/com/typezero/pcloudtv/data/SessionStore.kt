@@ -92,6 +92,86 @@ class SessionStore(context: Context) {
         posPrefs.edit().remove("last_played").apply()
     }
 
+    // --- Recently played (a short, newest-first, de-duped history) ---
+    private fun entryToJson(title: String, playlistKey: String?, queue: List<MediaItem>): JSONObject {
+        val arr = JSONArray()
+        queue.forEach { m ->
+            arr.put(JSONObject().apply {
+                put("t", m.title)
+                m.fileId?.let { put("id", it) }
+                m.directUrl?.let { put("url", it) }
+                m.path?.let { put("p", it) }
+            })
+        }
+        return JSONObject().apply {
+            put("title", title)
+            if (playlistKey != null) put("key", playlistKey)
+            put("queue", arr)
+        }
+    }
+
+    private fun jsonToEntry(obj: JSONObject): LastPlayed? = try {
+        val arr = obj.getJSONArray("queue")
+        val q = ArrayList<MediaItem>(arr.length())
+        for (i in 0 until arr.length()) {
+            val o = arr.getJSONObject(i)
+            q.add(
+                MediaItem(
+                    title = o.optString("t", ""),
+                    fileId = if (o.has("id")) o.getLong("id") else null,
+                    directUrl = if (o.has("url")) o.getString("url") else null,
+                    path = if (o.has("p")) o.getString("p") else null
+                )
+            )
+        }
+        if (q.isEmpty()) null
+        else LastPlayed(
+            title = obj.optString("title", q.first().title),
+            playlistKey = if (obj.has("key")) obj.getString("key") else null,
+            queue = q
+        )
+    } catch (e: Exception) {
+        null
+    }
+
+    fun addRecent(title: String, playlistKey: String?, queue: List<MediaItem>) {
+        if (queue.isEmpty() || title.isBlank()) return
+        val out = JSONArray()
+        out.put(entryToJson(title, playlistKey, queue))
+        val prev = posPrefs.getString("recents", null)
+        if (prev != null) {
+            runCatching {
+                val arr = JSONArray(prev)
+                var count = 1
+                for (i in 0 until arr.length()) {
+                    if (count >= 12) break
+                    val o = arr.getJSONObject(i)
+                    val sameTitle = o.optString("title", "") == title
+                    val sameKey = (if (o.has("key")) o.getString("key") else null) == playlistKey
+                    if (sameTitle && sameKey) continue
+                    out.put(o)
+                    count++
+                }
+            }
+        }
+        posPrefs.edit().putString("recents", out.toString()).apply()
+    }
+
+    fun getRecents(limit: Int = 12): List<LastPlayed> {
+        val s = posPrefs.getString("recents", null) ?: return emptyList()
+        return try {
+            val arr = JSONArray(s)
+            val list = ArrayList<LastPlayed>()
+            for (i in 0 until arr.length()) {
+                if (list.size >= limit) break
+                jsonToEntry(arr.getJSONObject(i))?.let { list.add(it) }
+            }
+            list
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
     fun save(session: Session) {
         prefs.edit()
             .putString(KEY_TOKEN, session.authToken)

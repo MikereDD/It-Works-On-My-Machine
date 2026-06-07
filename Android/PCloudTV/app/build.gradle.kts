@@ -11,8 +11,8 @@ android {
         applicationId = "com.typezero.pcloudtv"
         minSdk = 26
         targetSdk = 34
-        versionCode = 28
-        versionName = "2.8"
+        versionCode = 31
+        versionName = "2.9"
 
         // Ship 64-bit and 32-bit ARM native libs. arm64-v8a covers modern phones
         // and most Android TVs; armeabi-v7a is REQUIRED for Chromecast with Google
@@ -74,6 +74,9 @@ dependencies {
 
     // Networking
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
+    // Async image loading for folder/poster thumbnails (v2.8.2)
+    implementation("io.coil-kt:coil-compose:2.6.0")
 
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")

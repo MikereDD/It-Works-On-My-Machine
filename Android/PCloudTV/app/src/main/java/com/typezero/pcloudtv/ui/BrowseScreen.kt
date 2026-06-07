@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -72,6 +73,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.typezero.pcloudtv.data.ApiResult
 import com.typezero.pcloudtv.data.PCloudClient
+import coil.compose.AsyncImage
+import androidx.compose.ui.layout.ContentScale
 import com.typezero.pcloudtv.data.PItem
 import com.typezero.pcloudtv.data.Session
 import com.typezero.pcloudtv.ui.theme.Brand
@@ -92,7 +95,7 @@ fun BrowseScreen(
     // "Continue" — the most recent queue, loaded fresh each time we enter the browser.
     val browseContext = LocalContext.current
     val browseStore = remember { com.typezero.pcloudtv.data.SessionStore(browseContext) }
-    val lastPlayed = remember { browseStore.getLastPlayed() }
+    val recents = remember { browseStore.getRecents() }
 
     var items by remember { mutableStateOf<List<PItem>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
@@ -359,14 +362,44 @@ fun BrowseScreen(
                                 )
                             }
                         }
-                        if (query.isBlank() && stack.size == 1 && !selecting && lastPlayed != null) {
+                        if (query.isBlank() && stack.size == 1 && !selecting && recents.isNotEmpty()) {
                             item {
                                 ContinueCard(
-                                    title = lastPlayed.title,
+                                    title = recents.first().title,
                                     compact = compact,
                                     modifier = rowMax,
-                                    onClick = { onPlayQueue(lastPlayed.queue, lastPlayed.playlistKey) }
+                                    onClick = {
+                                        val r = recents.first()
+                                        onPlayQueue(r.queue, r.playlistKey)
+                                    }
                                 )
+                            }
+                            if (recents.size > 1) {
+                                item {
+                                    Text(
+                                        "Recently played",
+                                        color = Brand.TextMid, fontSize = 13.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        modifier = Modifier.padding(top = 6.dp, bottom = 2.dp)
+                                    )
+                                }
+                                item {
+                                    LazyRow(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                    ) {
+                                        val row = recents.drop(1)
+                                        itemsIndexed(row) { _, r ->
+                                            RecentPosterCard(
+                                                entry = r,
+                                                compact = compact,
+                                                client = client,
+                                                session = session,
+                                                onClick = { onPlayQueue(r.queue, r.playlistKey) }
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
                         if (visible.isEmpty() && query.isNotBlank()) {
@@ -382,6 +415,8 @@ fun BrowseScreen(
                             ItemCard(
                                 item = pItem,
                                 compact = compact,
+                                client = client,
+                                session = session,
                                 selecting = selecting,
                                 selected = pItem.fileId != null && selectedItems.any { it.fileId == pItem.fileId },
                                 modifier = rowMax.then(
@@ -725,6 +760,87 @@ private fun QuickChip(text: String, onClick: () -> Unit) {
 }
 
 @Composable
+private fun RecentPosterCard(
+    entry: com.typezero.pcloudtv.data.LastPlayed,
+    compact: Boolean,
+    client: PCloudClient,
+    session: Session,
+    onClick: () -> Unit
+) {
+    var focused by remember { mutableStateOf(false) }
+    val interaction = remember { MutableInteractionSource() }
+    val scale by animateFloatAsState(if (focused) 1.06f else 1f, label = "posterScale")
+
+    val fileId = entry.queue.firstOrNull()?.fileId
+    var thumbUrl by remember(fileId) { mutableStateOf<String?>(null) }
+    if (fileId != null) {
+        LaunchedEffect(fileId) {
+            when (val r = client.getThumbLink(session, fileId, "320x180")) {
+                is ApiResult.Ok -> thumbUrl = r.value
+                is ApiResult.Error -> {}
+            }
+        }
+    }
+
+    val posterW = if (compact) 150.dp else 184.dp
+    val posterH = if (compact) 88.dp else 104.dp
+    Column(
+        modifier = Modifier
+            .width(posterW)
+            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .onFocusChanged { focused = it.isFocused }
+            .focusable(interactionSource = interaction)
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+    ) {
+        Box(
+            modifier = Modifier
+                .width(posterW)
+                .height(posterH)
+                .shadow(
+                    elevation = if (focused) 16.dp else 0.dp,
+                    shape = RoundedCornerShape(14.dp),
+                    ambientColor = Brand.Accent,
+                    spotColor = Brand.Accent
+                )
+                .clip(RoundedCornerShape(14.dp))
+                .background(Brand.Surface)
+                .border(
+                    width = if (focused) 2.dp else 1.dp,
+                    color = if (focused) Brand.Accent else Brand.Stroke,
+                    shape = RoundedCornerShape(14.dp)
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                Icons.Filled.PlayArrow,
+                contentDescription = null,
+                tint = Brand.Accent.copy(alpha = 0.7f),
+                modifier = Modifier.size(34.dp)
+            )
+            if (thumbUrl != null) {
+                AsyncImage(
+                    model = thumbUrl,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .matchParentSize()
+                        .clip(RoundedCornerShape(14.dp))
+                )
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            entry.title,
+            color = if (focused) Brand.TextHi else Brand.TextMid,
+            fontSize = 12.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.width(posterW)
+        )
+    }
+}
+
+@Composable
 private fun SearchField(
     query: String,
     onQueryChange: (String) -> Unit,
@@ -763,6 +879,7 @@ private fun ContinueCard(
     title: String,
     compact: Boolean,
     modifier: Modifier = Modifier,
+    label: String? = "Continue",
     onClick: () -> Unit
 ) {
     val interaction = remember { MutableInteractionSource() }
@@ -797,7 +914,9 @@ private fun ContinueCard(
         }
         Spacer(Modifier.width(14.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text("Continue", color = Brand.Accent, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            if (label != null) {
+                Text(label, color = Brand.Accent, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            }
             Text(
                 title,
                 color = Brand.TextHi,
@@ -815,6 +934,8 @@ private fun ContinueCard(
 private fun ItemCard(
     item: PItem,
     compact: Boolean,
+    client: PCloudClient,
+    session: Session,
     selecting: Boolean = false,
     selected: Boolean = false,
     modifier: Modifier = Modifier,
@@ -823,6 +944,18 @@ private fun ItemCard(
     var focused by remember { mutableStateOf(false) }
     val interaction = remember { MutableInteractionSource() }
     val scale by animateFloatAsState(if (focused) 1.025f else 1f, label = "cardScale")
+
+    // pCloud generates thumbnails for images and videos. Resolve lazily; if it
+    // fails or isn't available, the type icon stays as the fallback.
+    var thumbUrl by remember(item.fileId) { mutableStateOf<String?>(null) }
+    if (item.fileId != null && (item.isVideo || item.isImage)) {
+        LaunchedEffect(item.fileId) {
+            when (val r = client.getThumbLink(session, item.fileId, "128x128")) {
+                is ApiResult.Ok -> thumbUrl = r.value
+                is ApiResult.Error -> {}
+            }
+        }
+    }
 
     val accent = when {
         item.isFolder -> Brand.Folder
@@ -873,6 +1006,16 @@ private fun ItemCard(
         ) {
             Icon(icon, contentDescription = null, tint = accent,
                 modifier = Modifier.size(if (compact) 22.dp else 26.dp))
+            if (thumbUrl != null) {
+                AsyncImage(
+                    model = thumbUrl,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .matchParentSize()
+                        .clip(RoundedCornerShape(12.dp))
+                )
+            }
         }
         Spacer(Modifier.width(14.dp))
         Column(modifier = Modifier.weight(1f)) {
