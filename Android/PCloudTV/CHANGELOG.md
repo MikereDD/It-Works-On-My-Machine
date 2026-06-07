@@ -5,6 +5,14 @@ All notable changes to **pCloud TV**. Newest first.
 
 ---
 
+## v2.6 — Playback stops when it should
+
+- Playback now stops when you leave or background the app (Home, screen off, app switch) instead of playing on. Casting is exempt — the TV keeps playing.
+- Auto-pause when a phone call comes in or another app takes over audio (audio focus).
+- Note: this turns off silent background (screen-off) audio. A toggle can be added if you want both.
+
+---
+
 ## v2.5.3 — Continue + short shared links
 
 - Added a "Continue" card at the top of the library that resumes the last thing you played — the right track of a playlist and the spot within it.

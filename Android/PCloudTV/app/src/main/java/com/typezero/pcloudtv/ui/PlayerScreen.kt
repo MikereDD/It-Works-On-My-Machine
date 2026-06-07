@@ -20,6 +20,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.clickable
 import android.media.MediaMetadata
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
 import android.net.Uri
@@ -543,6 +546,51 @@ private fun VlcPlayer(
             window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             com.typezero.pcloudtv.playback.PlaybackService.stop(context)
         }
+    }
+
+    // Stop the sound when you leave: pause as soon as the app is backgrounded
+    // (Home, screen off, app switch). Casting is exempt — the TV keeps playing.
+    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val obs = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP && !cast.isCasting) {
+                runCatching { if (player.isPlaying) player.pause() }
+                isPlaying = false
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(obs)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(obs) }
+    }
+
+    // Audio focus: pause when a phone call or another media app takes over.
+    val audioManager = remember {
+        context.getSystemService(android.content.Context.AUDIO_SERVICE) as AudioManager
+    }
+    val focusRequest = remember {
+        AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                    .build()
+            )
+            .setOnAudioFocusChangeListener { change ->
+                if (change == AudioManager.AUDIOFOCUS_LOSS ||
+                    change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT
+                ) {
+                    runCatching { if (player.isPlaying) player.pause() }
+                    isPlaying = false
+                }
+            }
+            .build()
+    }
+    DisposableEffect(isPlaying, cast.isCasting) {
+        if (isPlaying && !cast.isCasting) {
+            runCatching { audioManager.requestAudioFocus(focusRequest) }
+        } else {
+            runCatching { audioManager.abandonAudioFocusRequest(focusRequest) }
+        }
+        onDispose { runCatching { audioManager.abandonAudioFocusRequest(focusRequest) } }
     }
 
     // Auto-hide controls after inactivity (only while playing).
