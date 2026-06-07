@@ -5,13 +5,20 @@ All notable changes to **pCloud TV**. Newest first.
 
 ---
 
+## v2.5.2 — TV sign-in navigable with a remote
+
+- TV sign-in: the sign-in screen is now fully navigable with a D-pad — it gets initial focus on open and each button is a single focus stop, so the pCloud login, access-token field, and shared-link field are all reachable with a remote.
+- The pCloud web login now shows a D-pad-driven pointer on Android TV / Google TV: move it with the arrow keys and press OK to click, so you can fill in the email/password fields (the on-screen keyboard opens when you click a field). This works around the fact that pCloud's web page can't be navigated by a remote on its own.
+- The bulk playlist generator's Audiobooks shortcut now points to /Books/Audiobooks.
+
+---
+
 ## v2.5.1 — Cast resume, resume memory & headset controls
 
 - Casting: pausing and then resuming a movie no longer fails. The app re-resolves a fresh pCloud stream URL and reloads at the same spot when the old one has expired, and auto-recovers if the receiver drops out.
 - Resume memory for video: playback position is remembered per file and now also while casting, so you pick up where you left off on the TV.
 - Resume memory for music: each playlist remembers the track you were on (and the position within it), so reopening a playlist resumes at the right song and spot. Finishing a playlist resets it.
 - Earbud / Bluetooth controls: play/pause, skip forward and skip backward from a headset now control playback (via a MediaSession), including with the screen off; the track title and play state show on the lock screen.
-- TV sign-in: the sign-in screen is now fully navigable with a D-pad — it gets initial focus on open and each button is a single focus stop, so the pCloud login, access-token field, and shared-link field are all reachable with a remote.
 
 ---
 

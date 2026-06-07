@@ -380,7 +380,7 @@ class PCloudClient {
     }
 
     /**
-     * Same, but addressed by a pCloud path such as "/Music" or "/Audiobooks".
+     * Same, but addressed by a pCloud path such as "/Music" or "/Books/Audiobooks".
      */
     suspend fun collectAudioFoldersByPath(
         session: Session,
