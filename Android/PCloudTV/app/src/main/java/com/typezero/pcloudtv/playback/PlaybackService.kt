@@ -6,15 +6,20 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.media.session.MediaSession
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 
 /**
- * A minimal foreground service whose only job is to keep the app's process
- * alive while AUDIO is playing, so playback continues when the user leaves the
- * app. It does not own the player — the existing VLC MediaPlayer keeps running;
- * this just prevents the system from killing the process in the background.
+ * Minimal foreground service that keeps the process alive while AUDIO plays in
+ * the background. It does not own the player — the VLC MediaPlayer keeps running;
+ * this just prevents the system from killing the process.
+ *
+ * Deliberately plain: a basic ongoing notification (the v2.6 known-good build).
+ * A richer MediaStyle notification was tried in v2.7 but destabilized audio
+ * playback, so it was removed. The token param is accepted for call-site
+ * compatibility but unused.
  */
 class PlaybackService : Service() {
 
@@ -23,7 +28,12 @@ class PlaybackService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val title = intent?.getStringExtra(EXTRA_TITLE) ?: "Playing audio"
         ensureChannel(this)
-        startForeground(NOTIF_ID, buildNotification(title))
+        try {
+            startForeground(NOTIF_ID, buildNotification(title))
+        } catch (e: Throwable) {
+            // Never let a foreground-service failure crash playback.
+            runCatching { stopSelf() }
+        }
         return START_STICKY
     }
 
@@ -56,7 +66,8 @@ class PlaybackService : Service() {
             }
         }
 
-        fun start(ctx: Context, title: String) {
+        fun start(ctx: Context, title: String, token: MediaSession.Token? = null) {
+            // token currently unused — kept so the player call site stays valid.
             val i = Intent(ctx, PlaybackService::class.java).putExtra(EXTRA_TITLE, title)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 ctx.startForegroundService(i)

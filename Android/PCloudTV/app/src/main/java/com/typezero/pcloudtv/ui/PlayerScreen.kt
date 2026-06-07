@@ -146,7 +146,7 @@ private fun VlcPlayer(
     // For a playlist, resume at the track we left off on; otherwise honor startIndex.
     var index by remember {
         mutableStateOf(
-            if (playlistKey != null)
+            if (playlistKey != null && queue.isNotEmpty())
                 store.getPlaylistIndex(playlistKey).coerceIn(0, queue.size - 1)
             else startIndex
         )
@@ -354,8 +354,12 @@ private fun VlcPlayer(
         )
     }
 
-    // Prefer English audio + English subtitles when the file has multiple tracks.
+    // Prefer English audio + English subtitles when the file has multiple tracks,
+    // UNLESS the user has manually chosen a track this session — then that choice
+    // sticks across tracks (e.g. binge a series in Spanish, or keep subs off).
     var tracksChosen by remember { mutableStateOf(false) }
+    var prefAudioName by remember { mutableStateOf<String?>(null) }
+    var prefSubName by remember { mutableStateOf<String?>(null) } // null=auto, "OFF"=subs off, else a track name
     fun selectEnglishTracks() {
         if (tracksChosen) return
         fun isEnglish(name: String?): Boolean {
@@ -363,17 +367,28 @@ private fun VlcPlayer(
             return n.contains("eng") || n.contains("english") ||
                 Regex("\\b(en|eng)\\b").containsMatchIn(n)
         }
-        // Audio: switch to the first English track if one exists; else leave default.
-        player.audioTracks?.firstOrNull { isEnglish(it.name) }?.let {
-            player.audioTrack = it.id
+        // Audio: honor a manual choice (by track name) if set; else first English.
+        val tracks = player.audioTracks
+        val pa = prefAudioName
+        if (pa != null && tracks != null) {
+            val match = tracks.firstOrNull { it.name == pa }
+                ?: tracks.firstOrNull { (it.name ?: "").contains(pa, ignoreCase = true) }
+            if (match != null) player.audioTrack = match.id
+            else tracks.firstOrNull { isEnglish(it.name) }?.let { player.audioTrack = it.id }
+        } else {
+            tracks?.firstOrNull { isEnglish(it.name) }?.let { player.audioTrack = it.id }
         }
-        // Subtitles: enable the first English track if one exists; otherwise turn
-        // subtitles OFF so VLC can't fall back to a non-English track (e.g. Spanish).
+        // Subtitles: honor a manual choice (a name, or "OFF"); else first English, else off.
         val subs = player.spuTracks
         if (subs != null && subs.isNotEmpty()) {
-            val eng = subs.firstOrNull { isEnglish(it.name) }
-            // spuTrack id -1 disables subtitles in LibVLC.
-            player.spuTrack = eng?.id ?: -1
+            val ps = prefSubName
+            player.spuTrack = when {
+                ps == "OFF" -> -1
+                ps != null -> (subs.firstOrNull { it.name == ps }
+                    ?: subs.firstOrNull { (it.name ?: "").contains(ps, ignoreCase = true) })?.id
+                    ?: (subs.firstOrNull { isEnglish(it.name) }?.id ?: -1)
+                else -> subs.firstOrNull { isEnglish(it.name) }?.id ?: -1
+            }
         }
         // Mark done once tracks are actually available (lists non-null & populated).
         if ((player.audioTracks?.isNotEmpty() == true) ||
@@ -532,7 +547,7 @@ private fun VlcPlayer(
                 com.typezero.pcloudtv.playback.PlaybackService.stop(context)
             } else {
                 window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-                // Audio: keep playing when the app is left/backgrounded.
+                // Audio: keep the process alive so playback continues in the background.
                 com.typezero.pcloudtv.playback.PlaybackService.start(context, title)
             }
         } else {
@@ -548,12 +563,13 @@ private fun VlcPlayer(
         }
     }
 
-    // Stop the sound when you leave: pause as soon as the app is backgrounded
-    // (Home, screen off, app switch). Casting is exempt — the TV keeps playing.
+    // Leaving the app: VIDEO stops, but AUDIO keeps playing in the background
+    // (the foreground service keeps the process alive). Casting is exempt — the
+    // TV keeps playing either way.
     val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner) {
+    DisposableEffect(lifecycleOwner, hasVideo) {
         val obs = androidx.lifecycle.LifecycleEventObserver { _, event ->
-            if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP && !cast.isCasting) {
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP && !cast.isCasting && hasVideo) {
                 runCatching { if (player.isPlaying) player.pause() }
                 isPlaying = false
             }
@@ -741,10 +757,13 @@ private fun VlcPlayer(
                 onPickAudio = { id ->
                     player.audioTrack = id
                     currentAudio = id
+                    prefAudioName = audioOptions.firstOrNull { it.first == id }?.second
                 },
                 onPickSub = { id ->
                     player.spuTrack = id
                     currentSub = id
+                    prefSubName = if (id == -1) "OFF"
+                    else subOptions.firstOrNull { it.first == id }?.second
                 },
                 onClose = { showTracks = false; reveal() }
             )
