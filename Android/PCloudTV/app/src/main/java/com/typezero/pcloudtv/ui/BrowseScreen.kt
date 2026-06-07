@@ -631,7 +631,7 @@ private fun GeneratePlaylistsDialog(
             Row {
                 QuickChip("/Music") { onQuick("/Music") }
                 Spacer(Modifier.width(8.dp))
-                QuickChip("/Audiobooks") { onQuick("/Audiobooks") }
+                QuickChip("/Books/Audiobooks") { onQuick("/Books/Audiobooks") }
             }
             Spacer(Modifier.height(14.dp))
             Row(
