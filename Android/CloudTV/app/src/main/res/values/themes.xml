@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Parent must be AppCompat-derived so View-based dialogs (e.g. the Cast
+      device picker / MediaRouteChooserDialog) can inflate. Compose draws its own
+      UI via PCloudTVTheme, so this XML theme only affects window chrome and any
+      framework dialogs.
+    -->
+    <style name="Theme.PCloudTV" parent="Theme.AppCompat.NoActionBar">
+        <item name="android:windowBackground">@color/bg</item>
+        <item name="android:colorBackground">@color/bg</item>
+        <item name="android:statusBarColor">@color/bg</item>
+        <item name="android:navigationBarColor">@color/bg</item>
+    </style>
+</resources>
