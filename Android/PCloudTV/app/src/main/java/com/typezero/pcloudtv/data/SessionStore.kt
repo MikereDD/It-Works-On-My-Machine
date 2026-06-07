@@ -1,6 +1,8 @@
 package com.typezero.pcloudtv.data
 
 import android.content.Context
+import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * Persists the pCloud auth token + region in app-private storage.
@@ -36,6 +38,58 @@ class SessionStore(context: Context) {
 
     fun clearPlaylistIndex(playlistKey: String) {
         posPrefs.edit().remove("plidx_$playlistKey").apply()
+    }
+
+    // --- Last played: the most recent queue, so the browser can offer "Continue". ---
+    fun saveLastPlayed(title: String, playlistKey: String?, queue: List<MediaItem>) {
+        if (queue.isEmpty()) return
+        val arr = JSONArray()
+        queue.forEach { m ->
+            arr.put(JSONObject().apply {
+                put("t", m.title)
+                m.fileId?.let { put("id", it) }
+                m.directUrl?.let { put("url", it) }
+                m.path?.let { put("p", it) }
+            })
+        }
+        val obj = JSONObject().apply {
+            put("title", title)
+            if (playlistKey != null) put("key", playlistKey)
+            put("queue", arr)
+        }
+        posPrefs.edit().putString("last_played", obj.toString()).apply()
+    }
+
+    fun getLastPlayed(): LastPlayed? {
+        val s = posPrefs.getString("last_played", null) ?: return null
+        return try {
+            val obj = JSONObject(s)
+            val arr = obj.getJSONArray("queue")
+            val q = ArrayList<MediaItem>(arr.length())
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                q.add(
+                    MediaItem(
+                        title = o.optString("t", ""),
+                        fileId = if (o.has("id")) o.getLong("id") else null,
+                        directUrl = if (o.has("url")) o.getString("url") else null,
+                        path = if (o.has("p")) o.getString("p") else null
+                    )
+                )
+            }
+            if (q.isEmpty()) null
+            else LastPlayed(
+                title = obj.optString("title", q.first().title),
+                playlistKey = if (obj.has("key")) obj.getString("key") else null,
+                queue = q
+            )
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    fun clearLastPlayed() {
+        posPrefs.edit().remove("last_played").apply()
     }
 
     fun save(session: Session) {

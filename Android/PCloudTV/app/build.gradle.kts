@@ -11,8 +11,8 @@ android {
         applicationId = "com.typezero.pcloudtv"
         minSdk = 26
         targetSdk = 34
-        versionCode = 19
-        versionName = "2.5.2"
+        versionCode = 20
+        versionName = "2.5.3"
 
         // Ship 64-bit and 32-bit ARM native libs. arm64-v8a covers modern phones
         // and most Android TVs; armeabi-v7a is REQUIRED for Chromecast with Google

@@ -5,6 +5,13 @@ All notable changes to **pCloud TV**. Newest first.
 
 ---
 
+## v2.5.3 — Continue + short shared links
+
+- Added a "Continue" card at the top of the library that resumes the last thing you played — the right track of a playlist and the spot within it.
+- Shared links: short/redirect links (e.g. tinyurl) now resolve to the real pCloud link, so you can type a short URL instead of a long one (handy on a TV).
+
+---
+
 ## v2.5.2 — TV sign-in navigable with a remote
 
 - TV sign-in: the sign-in screen is now fully navigable with a D-pad — it gets initial focus on open and each button is a single focus stop, so the pCloud login, access-token field, and shared-link field are all reachable with a remote.

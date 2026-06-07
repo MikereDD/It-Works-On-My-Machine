@@ -534,11 +534,28 @@ class PCloudClient {
     }
 
     /**
+     * Follow redirects to the final URL. Short links (tinyurl, bit.ly, pc.cd, …)
+     * don't contain the pCloud code themselves — they redirect to the real link,
+     * which is much easier to type on a TV than a full pCloud URL.
+     */
+    private fun resolveFinalUrl(input: String): String = try {
+        http.newCall(Request.Builder().url(input).build()).execute()
+            .use { it.request.url.toString() }
+    } catch (e: Exception) {
+        input
+    }
+
+    /**
      * Open a pCloud public share link (file or folder) WITHOUT an account, via
      * showpublink. Tries both regions. Returns the tree for browsing/playback.
      */
     suspend fun openPublink(input: String): ApiResult<Publink> = withContext(Dispatchers.IO) {
-        val code = extractPublinkCode(input)
+        var src = input.trim()
+        // A short/redirect link has no pCloud "code=" — resolve it to the real URL first.
+        if (src.startsWith("http", ignoreCase = true) && !src.contains("code=", ignoreCase = true)) {
+            src = resolveFinalUrl(src)
+        }
+        val code = extractPublinkCode(src)
         if (code.isBlank()) return@withContext ApiResult.Error("Couldn't read a link code.")
 
         var lastMsg = "Couldn't open this link. It may be invalid or expired."
