@@ -5,6 +5,12 @@ All notable changes to **pCloud TV**. Newest first.
 
 ---
 
+## v2.8 — Library & discovery
+
+- Search box in every folder: filter the current folder's items by name as you type.
+
+---
+
 ## v2.7 — Track switching
 
 - Audio/subtitle choice now sticks: pick a track manually (a language, or subtitles off) and it carries to the next track in a playlist instead of resetting to English each time.

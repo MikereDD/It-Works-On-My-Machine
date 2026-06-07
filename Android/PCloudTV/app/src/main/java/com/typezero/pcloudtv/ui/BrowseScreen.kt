@@ -43,6 +43,7 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.InsertDriveFile
 import androidx.compose.material.icons.rounded.CloudQueue
 import androidx.compose.material3.CircularProgressIndicator
@@ -171,6 +172,7 @@ fun BrowseScreen(
     var showNameDialog by remember { mutableStateOf(false) }
     var showAbout by remember { mutableStateOf(false) }
     var playlistName by remember { mutableStateOf("") }
+    var query by remember { mutableStateOf("") }
 
     fun currentPathPrefix(): String {
         // Build the absolute pCloud path of the folder you're currently in.
@@ -220,6 +222,7 @@ fun BrowseScreen(
     LaunchedEffect(current.first, reloadKey) {
         loading = true
         error = null
+        query = ""
         when (val r = client.listFolder(session, current.first)) {
             is ApiResult.Ok -> items = r.value
             is ApiResult.Error -> error = r.message
@@ -337,12 +340,26 @@ fun BrowseScreen(
                 }
 
                 else -> {
+                    val visible = remember(items, query) {
+                        val q = query.trim()
+                        if (q.isBlank()) items
+                        else items.filter { it.name.contains(q, ignoreCase = true) }
+                    }
                     LaunchedEffect(items) { runCatching { firstRow.requestFocus() } }
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
                         verticalArrangement = Arrangement.spacedBy(if (compact) 10.dp else 12.dp)
                     ) {
-                        if (stack.size == 1 && !selecting && lastPlayed != null) {
+                        if (!selecting) {
+                            item {
+                                SearchField(
+                                    query = query,
+                                    onQueryChange = { query = it },
+                                    modifier = rowMax
+                                )
+                            }
+                        }
+                        if (query.isBlank() && stack.size == 1 && !selecting && lastPlayed != null) {
                             item {
                                 ContinueCard(
                                     title = lastPlayed.title,
@@ -352,7 +369,16 @@ fun BrowseScreen(
                                 )
                             }
                         }
-                        itemsIndexed(items) { index, pItem ->
+                        if (visible.isEmpty() && query.isNotBlank()) {
+                            item {
+                                Text(
+                                    "No matches for \u201C${query.trim()}\u201D",
+                                    color = Brand.TextLow, fontSize = 14.sp,
+                                    modifier = Modifier.padding(vertical = 24.dp)
+                                )
+                            }
+                        }
+                        itemsIndexed(visible) { index, pItem ->
                             ItemCard(
                                 item = pItem,
                                 compact = compact,
@@ -696,6 +722,40 @@ private fun QuickChip(text: String, onClick: () -> Unit) {
     ) {
         Text(text, color = Brand.TextHi, fontSize = 13.sp)
     }
+}
+
+@Composable
+private fun SearchField(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    OutlinedTextField(
+        value = query,
+        onValueChange = onQueryChange,
+        singleLine = true,
+        placeholder = { Text("Search this folder", color = Brand.TextLow) },
+        leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, tint = Brand.TextMid) },
+        trailingIcon = {
+            if (query.isNotEmpty()) {
+                Icon(
+                    Icons.Filled.Close,
+                    contentDescription = "Clear search",
+                    tint = Brand.TextMid,
+                    modifier = Modifier.clickable { onQueryChange("") }
+                )
+            }
+        },
+        shape = RoundedCornerShape(12.dp),
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = Brand.Accent,
+            unfocusedBorderColor = Brand.Stroke,
+            cursorColor = Brand.Accent,
+            focusedTextColor = Brand.TextHi,
+            unfocusedTextColor = Brand.TextHi
+        ),
+        modifier = modifier.fillMaxWidth()
+    )
 }
 
 @Composable
