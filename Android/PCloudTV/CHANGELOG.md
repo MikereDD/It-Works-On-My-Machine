@@ -5,6 +5,13 @@ All notable changes to **pCloud TV**. Newest first.
 
 ---
 
+## v2.9.2 — Back to the list, polished
+
+- Reverted the v2.9.1 leanback poster rows: the home is the clean vertical list again.
+- Polish: tighter cards, stronger focus glow + press feedback, file type/size in the subtitle, and a tappable breadcrumb (tap any parent in the path to jump there).
+
+---
+
 ## v2.9.1 — Folders as rows
 
 - While browsing, a folder's contents are grouped into horizontal poster rows by kind (Folders, Videos, Music, Playlists, Images). Search results and multi-select fall back to the vertical list.

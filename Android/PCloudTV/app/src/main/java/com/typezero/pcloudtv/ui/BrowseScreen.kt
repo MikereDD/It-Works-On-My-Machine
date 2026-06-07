@@ -17,6 +17,9 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -183,6 +186,11 @@ fun BrowseScreen(
         return if (p == "/") "" else p
     }
 
+    fun goToCrumb(index: Int) {
+        // Pop the folder stack back to the tapped breadcrumb segment.
+        while (stack.size > index + 1) stack.removeAt(stack.lastIndex)
+    }
+
     fun toggleSelect(file: PItem) {
         val id = file.fileId ?: return
         val existing = selectedItems.indexOfFirst { it.fileId == id }
@@ -278,13 +286,13 @@ fun BrowseScreen(
 
             // Header — stacked on narrow/portrait screens so the title and the
             // action buttons never fight for space; single row when there's room.
-            val breadcrumb = stack.joinToString("  ›  ") { it.second }
             if (compact) {
                 Column(modifier = Modifier.fillMaxWidth().padding(bottom = 14.dp)) {
                     HeaderTitle(
                         compact = true,
                         name = current.second,
-                        breadcrumb = breadcrumb,
+                        crumbs = stack.map { it.second },
+                        onCrumbClick = { goToCrumb(it) },
                         modifier = Modifier.fillMaxWidth()
                     )
                     Spacer(Modifier.height(12.dp))
@@ -327,7 +335,8 @@ fun BrowseScreen(
                     HeaderTitle(
                         compact = false,
                         name = current.second,
-                        breadcrumb = breadcrumb,
+                        crumbs = stack.map { it.second },
+                        onCrumbClick = { goToCrumb(it) },
                         modifier = Modifier.weight(1f)
                     )
                     HeaderActions(
@@ -412,21 +421,15 @@ fun BrowseScreen(
                                         modifier = Modifier.padding(top = 6.dp, bottom = 2.dp)
                                     )
                                 }
-                                item {
-                                    LazyRow(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                                    ) {
-                                        val row = recents.drop(1)
-                                        itemsIndexed(row) { _, r ->
-                                            RecentPosterCard(
-                                                entry = r,
-                                                compact = compact,
-                                                client = client,
-                                                session = session,
-                                                onClick = { onPlayQueue(r.queue, r.playlistKey) }
-                                            )
-                                        }
+                                recents.drop(1).forEach { r ->
+                                    item {
+                                        ContinueCard(
+                                            title = r.title,
+                                            compact = compact,
+                                            modifier = rowMax,
+                                            label = null,
+                                            onClick = { onPlayQueue(r.queue, r.playlistKey) }
+                                        )
                                     }
                                 }
                             }
@@ -440,78 +443,29 @@ fun BrowseScreen(
                                 )
                             }
                         }
-                        if (!selecting && query.isBlank()) {
-                            // Leanback-style typed rows: group the folder's contents by
-                            // kind, each kind a horizontal poster row.
-                            val groups = listOf(
-                                "Folders" to visible.filter { it.isFolder },
-                                "Videos" to visible.filter { it.isVideo },
-                                "Music" to visible.filter { it.isAudio },
-                                "Playlists" to visible.filter { it.isPlaylist },
-                                "Images" to visible.filter { it.isImage },
-                                "Other" to visible.filter {
-                                    !it.isFolder && !it.isVideo && !it.isAudio &&
-                                        !it.isPlaylist && !it.isImage
+                        // Vertical list — folders and files, the layout in the app.
+                        itemsIndexed(visible) { index, pItem ->
+                            ItemCard(
+                                item = pItem,
+                                compact = compact,
+                                client = client,
+                                session = session,
+                                selecting = selecting,
+                                selected = pItem.fileId != null && selectedItems.any { it.fileId == pItem.fileId },
+                                modifier = rowMax.then(
+                                    if (index == 0) Modifier.focusRequester(firstRow) else Modifier
+                                ),
+                                onClick = {
+                                    if (selecting) {
+                                        when {
+                                            pItem.isFolder ->
+                                                stack.add(pItem.folderId!! to pItem.name)
+                                            !pItem.isPlaylist && pItem.isPlayable && pItem.fileId != null ->
+                                                toggleSelect(pItem)
+                                        }
+                                    } else openItem(pItem)
                                 }
                             )
-                            val firstKey = groups.firstOrNull { it.second.isNotEmpty() }
-                                ?.second?.firstOrNull()?.let { it.fileId ?: it.folderId }
-                            groups.forEach { (label, list) ->
-                                if (list.isNotEmpty()) {
-                                    item {
-                                        Text(
-                                            label,
-                                            color = Brand.TextMid, fontSize = 13.sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                            modifier = Modifier.padding(top = 8.dp, bottom = 2.dp)
-                                        )
-                                    }
-                                    item {
-                                        LazyRow(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                                        ) {
-                                            itemsIndexed(list) { _, p ->
-                                                val key = p.fileId ?: p.folderId
-                                                PosterCard(
-                                                    item = p,
-                                                    compact = compact,
-                                                    client = client,
-                                                    session = session,
-                                                    modifier = if (key != null && key == firstKey)
-                                                        Modifier.focusRequester(firstRow) else Modifier,
-                                                    onClick = { openItem(p) }
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        } else {
-                            // Vertical list for search results and selection mode.
-                            itemsIndexed(visible) { index, pItem ->
-                                ItemCard(
-                                    item = pItem,
-                                    compact = compact,
-                                    client = client,
-                                    session = session,
-                                    selecting = selecting,
-                                    selected = pItem.fileId != null && selectedItems.any { it.fileId == pItem.fileId },
-                                    modifier = rowMax.then(
-                                        if (index == 0) Modifier.focusRequester(firstRow) else Modifier
-                                    ),
-                                    onClick = {
-                                        if (selecting) {
-                                            when {
-                                                pItem.isFolder ->
-                                                    stack.add(pItem.folderId!! to pItem.name)
-                                                !pItem.isPlaylist && pItem.isPlayable && pItem.fileId != null ->
-                                                    toggleSelect(pItem)
-                                            }
-                                        } else openItem(pItem)
-                                    }
-                                )
-                            }
                         }
                     }
                 }
@@ -1083,7 +1037,15 @@ private fun ItemCard(
 ) {
     var focused by remember { mutableStateOf(false) }
     val interaction = remember { MutableInteractionSource() }
-    val scale by animateFloatAsState(if (focused) 1.025f else 1f, label = "cardScale")
+    val pressed by interaction.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = when {
+            pressed -> 0.97f
+            focused -> 1.03f
+            else -> 1f
+        },
+        label = "cardScale"
+    )
 
     // pCloud generates thumbnails for images and videos. Resolve lazily; if it
     // fails or isn't available, the type icon stays as the fallback.
@@ -1113,13 +1075,20 @@ private fun ItemCard(
         item.isImage -> Icons.Filled.Image
         else -> Icons.Filled.InsertDriveFile
     }
-    val subtitle = when { item.isFolder -> "Folder"; item.isPlaylist -> "Playlist"; else -> humanSize(item.size) }
+    val subtitle = when {
+        item.isFolder -> "Folder"
+        item.isPlaylist -> "Playlist"
+        item.isVideo -> "Video · ${humanSize(item.size)}"
+        item.isAudio -> "Audio · ${humanSize(item.size)}"
+        item.isImage -> "Image · ${humanSize(item.size)}"
+        else -> humanSize(item.size)
+    }
 
     Row(
         modifier = modifier
             .graphicsLayer { scaleX = scale; scaleY = scale }
             .shadow(
-                elevation = if (focused) 14.dp else 0.dp,
+                elevation = if (focused) 18.dp else 0.dp,
                 shape = RoundedCornerShape(16.dp),
                 ambientColor = accent,
                 spotColor = accent
@@ -1134,18 +1103,18 @@ private fun ItemCard(
             .onFocusChanged { focused = it.isFocused }
             .focusable(interactionSource = interaction)
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
-            .padding(horizontal = if (compact) 14.dp else 18.dp, vertical = if (compact) 12.dp else 14.dp),
+            .padding(horizontal = if (compact) 14.dp else 16.dp, vertical = if (compact) 9.dp else 11.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
             modifier = Modifier
-                .size(if (compact) 40.dp else 46.dp)
+                .size(if (compact) 38.dp else 42.dp)
                 .clip(RoundedCornerShape(12.dp))
                 .background(accent.copy(alpha = if (focused) 0.26f else 0.16f)),
             contentAlignment = Alignment.Center
         ) {
             Icon(icon, contentDescription = null, tint = accent,
-                modifier = Modifier.size(if (compact) 22.dp else 26.dp))
+                modifier = Modifier.size(if (compact) 20.dp else 24.dp))
             if (thumbUrl != null) {
                 AsyncImage(
                     model = thumbUrl,
@@ -1157,12 +1126,12 @@ private fun ItemCard(
                 )
             }
         }
-        Spacer(Modifier.width(14.dp))
+        Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 item.name,
                 color = Brand.TextHi,
-                fontSize = if (compact) 16.sp else 18.sp,
+                fontSize = if (compact) 15.sp else 17.sp,
                 fontWeight = FontWeight.Medium,
                 maxLines = 1
             )
@@ -1190,7 +1159,8 @@ private fun ItemCard(
 private fun HeaderTitle(
     compact: Boolean,
     name: String,
-    breadcrumb: String,
+    crumbs: List<String>,
+    onCrumbClick: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
@@ -1219,14 +1189,35 @@ private fun HeaderTitle(
                 softWrap = false,
                 overflow = TextOverflow.Ellipsis
             )
-            Text(
-                breadcrumb,
-                fontSize = 12.sp,
-                color = Brand.TextLow,
-                maxLines = 1,
-                softWrap = false,
-                overflow = TextOverflow.Ellipsis
-            )
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                crumbs.forEachIndexed { i, crumb ->
+                    val isLast = i == crumbs.lastIndex
+                    Text(
+                        crumb,
+                        fontSize = 12.sp,
+                        color = if (isLast) Brand.TextMid else Brand.Accent,
+                        maxLines = 1,
+                        softWrap = false,
+                        modifier = if (isLast) Modifier
+                        else Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .clickable { onCrumbClick(i) }
+                            .padding(horizontal = 2.dp, vertical = 1.dp)
+                    )
+                    if (!isLast) {
+                        Text(
+                            "  ›  ",
+                            fontSize = 12.sp,
+                            color = Brand.TextLow,
+                            maxLines = 1,
+                            softWrap = false
+                        )
+                    }
+                }
+            }
         }
     }
 }
