@@ -5,6 +5,14 @@ All notable changes to **pCloud TV**. Newest first.
 
 ---
 
+## v3.0 — Multiple accounts + a cleaner header
+
+- **Multiple accounts / quick switch:** sign in to more than one pCloud account and switch between them instantly. Accounts are remembered (labelled by email), with "Add account" for a fresh sign-in and per-account switching from the menu.
+- **Cleaner header:** the row of labelled buttons (Select, Save .m3u, Sign out) that was crowding the title and breadcrumb is now a single **⋮ menu**. The header is just title + breadcrumb + Cast + ⋮, so long folder names and the full path have room to breathe.
+- Sign out now signs out of the active account and drops back to another signed-in account if you have one.
+
+---
+
 ## v2.9.2 — Back to the list, polished
 
 - Reverted the v2.9.1 leanback poster rows: the home is the clean vertical list again.

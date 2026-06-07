@@ -57,8 +57,19 @@ data class Publink(
 /** Result of authenticating against pCloud. */
 data class Session(
     val authToken: String,
-    val apiHost: String   // "api.pcloud.com" (US) or "eapi.pcloud.com" (EU)
+    val apiHost: String,   // "api.pcloud.com" (US) or "eapi.pcloud.com" (EU)
+    val email: String? = null
 )
+
+/** A saved pCloud account for the multi-account switcher. */
+data class Account(
+    val id: String,        // stable id (email when known, else the token)
+    val label: String,     // email, or a friendly fallback
+    val token: String,
+    val host: String
+) {
+    fun toSession() = Session(token, host, label.takeIf { it.contains("@") })
+}
 
 sealed interface ApiResult<out T> {
     data class Ok<T>(val value: T) : ApiResult<T>

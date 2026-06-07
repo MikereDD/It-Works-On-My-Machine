@@ -48,6 +48,12 @@ import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material.icons.filled.InsertDriveFile
 import androidx.compose.material.icons.rounded.CloudQueue
 import androidx.compose.material3.CircularProgressIndicator
@@ -89,7 +95,11 @@ private const val PLAYLIST_DIR = "/Music/playlists"
 fun BrowseScreen(
     client: PCloudClient,
     session: Session,
+    accounts: List<com.typezero.pcloudtv.data.Account>,
+    activeAccountId: String?,
     onPlayQueue: (List<com.typezero.pcloudtv.data.MediaItem>, String?) -> Unit,
+    onSwitchAccount: (String) -> Unit,
+    onAddAccount: () -> Unit,
     onLogout: () -> Unit
 ) {
     val stack = remember { mutableStateListOf(0L to "pCloud") }
@@ -306,6 +316,8 @@ fun BrowseScreen(
                             selecting = selecting,
                             selectedCount = selectedItems.size,
                             itemsNotEmpty = items.isNotEmpty(),
+                            accounts = accounts,
+                            activeAccountId = activeAccountId,
                             onStartSelect = { selecting = true; selectedItems.clear() },
                             onCancelSelect = { selecting = false; selectedItems.clear() },
                             onSaveSelected = {
@@ -321,6 +333,8 @@ fun BrowseScreen(
                                     showGenDialog = true
                                 }
                             },
+                            onSwitchAccount = onSwitchAccount,
+                            onAddAccount = onAddAccount,
                             onAbout = { showAbout = true },
                             onLogout = onLogout
                         )
@@ -344,6 +358,8 @@ fun BrowseScreen(
                         selecting = selecting,
                         selectedCount = selectedItems.size,
                         itemsNotEmpty = items.isNotEmpty(),
+                        accounts = accounts,
+                        activeAccountId = activeAccountId,
                         onStartSelect = { selecting = true; selectedItems.clear() },
                         onCancelSelect = { selecting = false; selectedItems.clear() },
                         onSaveSelected = {
@@ -359,6 +375,8 @@ fun BrowseScreen(
                                 showGenDialog = true
                             }
                         },
+                        onSwitchAccount = onSwitchAccount,
+                        onAddAccount = onAddAccount,
                         onAbout = { showAbout = true },
                         onLogout = onLogout
                     )
@@ -1228,10 +1246,14 @@ private fun HeaderActions(
     selecting: Boolean,
     selectedCount: Int,
     itemsNotEmpty: Boolean,
+    accounts: List<com.typezero.pcloudtv.data.Account>,
+    activeAccountId: String?,
     onStartSelect: () -> Unit,
     onCancelSelect: () -> Unit,
     onSaveSelected: () -> Unit,
     onGenerate: () -> Unit,
+    onSwitchAccount: (String) -> Unit,
+    onAddAccount: () -> Unit,
     onAbout: () -> Unit,
     onLogout: () -> Unit
 ) {
@@ -1248,25 +1270,65 @@ private fun HeaderActions(
             Spacer(Modifier.width(8.dp))
             HeaderButton(icon = Icons.Filled.Close, label = null, onClick = onCancelSelect)
         } else {
-            if (itemsNotEmpty) {
-                HeaderButton(
-                    icon = Icons.Filled.Checklist,
-                    label = if (compact) null else "Select",
-                    onClick = onStartSelect
-                )
-                Spacer(Modifier.width(8.dp))
-                HeaderButton(
-                    icon = Icons.Filled.PlaylistAdd,
-                    label = if (compact) null else "Save .m3u",
-                    onClick = onGenerate
-                )
-                Spacer(Modifier.width(10.dp))
-            }
             com.typezero.pcloudtv.cast.CastButton(modifier = Modifier.size(40.dp))
             Spacer(Modifier.width(10.dp))
-            HeaderButton(icon = Icons.Outlined.Info, label = null, onClick = onAbout)
-            Spacer(Modifier.width(10.dp))
-            LogoutButton(onLogout)
+            var menuOpen by remember { mutableStateOf(false) }
+            Box {
+                HeaderButton(
+                    icon = Icons.Filled.MoreVert,
+                    label = null,
+                    onClick = { menuOpen = true }
+                )
+                DropdownMenu(
+                    expanded = menuOpen,
+                    onDismissRequest = { menuOpen = false }
+                ) {
+                    if (itemsNotEmpty) {
+                        DropdownMenuItem(
+                            text = { Text("Select") },
+                            leadingIcon = { Icon(Icons.Filled.Checklist, null) },
+                            onClick = { menuOpen = false; onStartSelect() }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Save .m3u") },
+                            leadingIcon = { Icon(Icons.Filled.PlaylistAdd, null) },
+                            onClick = { menuOpen = false; onGenerate() }
+                        )
+                    }
+                    accounts.forEach { acc ->
+                        DropdownMenuItem(
+                            text = { Text(acc.label, maxLines = 1) },
+                            leadingIcon = {
+                                Icon(
+                                    if (acc.id == activeAccountId) Icons.Filled.Check
+                                    else Icons.Filled.AccountCircle,
+                                    contentDescription = null,
+                                    tint = if (acc.id == activeAccountId) Brand.Accent else Brand.TextMid
+                                )
+                            },
+                            onClick = {
+                                menuOpen = false
+                                if (acc.id != activeAccountId) onSwitchAccount(acc.id)
+                            }
+                        )
+                    }
+                    DropdownMenuItem(
+                        text = { Text("Add account") },
+                        leadingIcon = { Icon(Icons.Filled.PersonAdd, null) },
+                        onClick = { menuOpen = false; onAddAccount() }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("About") },
+                        leadingIcon = { Icon(Icons.Outlined.Info, null) },
+                        onClick = { menuOpen = false; onAbout() }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Sign out") },
+                        leadingIcon = { Icon(Icons.Filled.Logout, null) },
+                        onClick = { menuOpen = false; onLogout() }
+                    )
+                }
+            }
         }
     }
 }

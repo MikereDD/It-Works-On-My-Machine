@@ -102,7 +102,8 @@ class PCloudClient {
                     val json = http.newCall(Request.Builder().url(url).build()).execute()
                         .use { JSONObject(it.body?.string().orEmpty()) }
                     if (json.optInt("result", -1) == 0) {
-                        return@withContext ApiResult.Ok(Session(token, host))
+                        val email = if (json.has("email")) json.optString("email", null) else null
+                        return@withContext ApiResult.Ok(Session(token, host, email))
                     }
                 } catch (_: Exception) {
                     // try the other region

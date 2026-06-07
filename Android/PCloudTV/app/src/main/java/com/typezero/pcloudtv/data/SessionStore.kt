@@ -172,23 +172,100 @@ class SessionStore(context: Context) {
         }
     }
 
-    fun save(session: Session) {
-        prefs.edit()
-            .putString(KEY_TOKEN, session.authToken)
-            .putString(KEY_HOST, session.apiHost)
-            .apply()
+    // ---- Accounts (multi-account switcher) ----
+
+    fun getAccounts(): List<Account> {
+        val s = prefs.getString(KEY_ACCOUNTS, null)
+        if (s == null) {
+            // Migrate a legacy single session into the accounts list on first read.
+            val token = prefs.getString(KEY_TOKEN, null)
+            val host = prefs.getString(KEY_HOST, null)
+            if (token != null && host != null) {
+                val acc = Account(id = token, label = "pCloud account", token = token, host = host)
+                persistAccounts(listOf(acc), acc.id)
+                return listOf(acc)
+            }
+            return emptyList()
+        }
+        return try {
+            val arr = JSONArray(s)
+            buildList {
+                for (i in 0 until arr.length()) {
+                    val o = arr.getJSONObject(i)
+                    add(
+                        Account(
+                            id = o.getString("id"),
+                            label = o.optString("label", "pCloud account"),
+                            token = o.getString("token"),
+                            host = o.getString("host")
+                        )
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            emptyList()
+        }
     }
 
-    fun load(): Session? {
-        val token = prefs.getString(KEY_TOKEN, null) ?: return null
-        val host = prefs.getString(KEY_HOST, null) ?: return null
-        return Session(token, host)
+    private fun persistAccounts(list: List<Account>, activeId: String?) {
+        val arr = JSONArray()
+        list.forEach { a ->
+            arr.put(
+                JSONObject().apply {
+                    put("id", a.id); put("label", a.label)
+                    put("token", a.token); put("host", a.host)
+                }
+            )
+        }
+        val ed = prefs.edit().putString(KEY_ACCOUNTS, arr.toString())
+        if (activeId != null) ed.putString(KEY_ACTIVE, activeId) else ed.remove(KEY_ACTIVE)
+        ed.apply()
     }
+
+    fun getActiveAccount(): Account? {
+        val list = getAccounts()
+        if (list.isEmpty()) return null
+        val active = prefs.getString(KEY_ACTIVE, null)
+        return list.firstOrNull { it.id == active } ?: list.first()
+    }
+
+    fun setActive(id: String) {
+        prefs.edit().putString(KEY_ACTIVE, id).apply()
+    }
+
+    /** Add (or update, matched by id) an account and make it active. Returns its id. */
+    fun addOrUpdateAccount(session: Session): String {
+        val label = session.email ?: "pCloud account"
+        val id = session.email ?: session.authToken
+        val list = getAccounts().toMutableList()
+        val acc = Account(id = id, label = label, token = session.authToken, host = session.apiHost)
+        val existing = list.indexOfFirst { it.id == id }
+        if (existing >= 0) list[existing] = acc else list.add(acc)
+        persistAccounts(list, id)
+        return id
+    }
+
+    /** Remove an account; returns the session now active (or null if none left). */
+    fun removeAccount(id: String): Session? {
+        val list = getAccounts().filterNot { it.id == id }
+        val active = prefs.getString(KEY_ACTIVE, null)
+        val newActive = if (active == id) list.firstOrNull()?.id else active
+        persistAccounts(list, newActive)
+        return getActiveAccount()?.toSession()
+    }
+
+    // ---- Back-compat single-session API, now backed by the accounts list ----
+
+    fun save(session: Session) { addOrUpdateAccount(session) }
+
+    fun load(): Session? = getActiveAccount()?.toSession()
 
     fun clear() = prefs.edit().clear().apply()
 
     companion object {
         private const val KEY_TOKEN = "auth_token"
         private const val KEY_HOST = "api_host"
+        private const val KEY_ACCOUNTS = "accounts"
+        private const val KEY_ACTIVE = "active_account"
     }
 }
