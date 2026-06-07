@@ -8,6 +8,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.typezero.pcloudtv.data.ApiResult
+import com.typezero.pcloudtv.data.Account
 import com.typezero.pcloudtv.data.PCloudClient
 import com.typezero.pcloudtv.data.Publink
 import com.typezero.pcloudtv.data.SessionStore
@@ -30,6 +31,16 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var loginError by mutableStateOf<String?>(null)
         private set
 
+    var accounts by mutableStateOf(store.getAccounts())
+        private set
+
+    var addingAccount by mutableStateOf(false)
+        private set
+
+    /** Id of the active account (matches Account.id = email ?: token). */
+    val activeAccountId: String?
+        get() = session?.let { it.email ?: it.authToken }
+
     fun startWebLogin() {
         loginError = null
         loginInProgress = true
@@ -37,6 +48,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun cancelLogin() {
         loginInProgress = false
+        addingAccount = false
     }
 
     /** Called with a token captured from the pCloud web session. */
@@ -62,6 +74,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 is ApiResult.Ok -> {
                     store.save(r.value)
                     session = r.value
+                    accounts = store.getAccounts()
+                    addingAccount = false
                 }
                 is ApiResult.Error -> loginError = r.message
             }
@@ -69,11 +83,36 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun logout() {
-        store.clear()
-        // Clear the WebView session so the next sign-in is fresh.
+    /** Start adding another account: jump straight into the web login. */
+    fun beginAddAccount() {
+        loginError = null
+        addingAccount = true
+        loginInProgress = true
+        // Fresh web session so you can sign in as a *different* account.
         CookieManager.getInstance().removeAllCookies(null)
-        session = null
+    }
+
+    fun switchAccount(id: String) {
+        store.setActive(id)
+        session = store.load()
+        accounts = store.getAccounts()
+    }
+
+    fun removeAccount(id: String) {
+        session = store.removeAccount(id)
+        accounts = store.getAccounts()
+        if (session == null) CookieManager.getInstance().removeAllCookies(null)
+    }
+
+    fun logout() {
+        // Sign out of the active account; fall back to another if one exists.
+        val active = store.getActiveAccount()
+        session = if (active != null) store.removeAccount(active.id) else null
+        accounts = store.getAccounts()
+        if (session == null) {
+            // No accounts left — clear the WebView session for a fresh sign-in.
+            CookieManager.getInstance().removeAllCookies(null)
+        }
     }
 
     // ---- Public shared links (no account needed) ----

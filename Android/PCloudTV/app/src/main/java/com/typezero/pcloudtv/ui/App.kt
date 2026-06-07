@@ -40,7 +40,7 @@ fun App(vm: AppViewModel = viewModel()) {
         return
     }
 
-    if (session == null) {
+    if (session == null || vm.addingAccount) {
         if (vm.loginInProgress) {
             WebLoginScreen(
                 onResult = { token -> vm.completeLogin(token) },
@@ -79,7 +79,11 @@ fun App(vm: AppViewModel = viewModel()) {
         BrowseScreen(
             client = vm.client,
             session = session,
+            accounts = vm.accounts,
+            activeAccountId = vm.activeAccountId,
             onPlayQueue = { items, key -> queue = items; playlistKey = key },
+            onSwitchAccount = vm::switchAccount,
+            onAddAccount = vm::beginAddAccount,
             onLogout = vm::logout
         )
     }
