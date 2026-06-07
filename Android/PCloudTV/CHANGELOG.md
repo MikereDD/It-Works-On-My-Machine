@@ -5,6 +5,12 @@ All notable changes to **pCloud TV**. Newest first.
 
 ---
 
+## v2.9.1 — Folders as rows
+
+- While browsing, a folder's contents are grouped into horizontal poster rows by kind (Folders, Videos, Music, Playlists, Images). Search results and multi-select fall back to the vertical list.
+
+---
+
 ## v2.9 — TV experience
 
 - Recently played is now a horizontal poster row with thumbnails and focus scale/glow animations (leanback-style home, built on the existing Compose UI).

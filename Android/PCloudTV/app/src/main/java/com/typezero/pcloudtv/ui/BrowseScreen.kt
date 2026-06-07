@@ -222,6 +222,35 @@ fun BrowseScreen(
         }
     }
 
+    // Open / play an item (folder navigation, playlist resolve, or playback).
+    // Shared by the vertical list and the row layout. Selection mode is handled
+    // separately at the call site.
+    fun openItem(pItem: PItem) {
+        when {
+            pItem.isFolder -> stack.add(pItem.folderId!! to pItem.name)
+            pItem.isPlaylist -> {
+                resolveError = null
+                resolving = true
+                scope.launch {
+                    when (val r = client.resolvePlaylist(session, pItem, items)) {
+                        is ApiResult.Ok -> {
+                            resolving = false
+                            onPlayQueue(r.value, "pl:${pItem.fileId}")
+                        }
+                        is ApiResult.Error -> {
+                            resolving = false
+                            resolveError = r.message
+                        }
+                    }
+                }
+            }
+            pItem.isPlayable -> onPlayQueue(
+                listOf(com.typezero.pcloudtv.data.MediaItem(pItem.name, pItem.fileId, null)),
+                null
+            )
+        }
+    }
+
     LaunchedEffect(current.first, reloadKey) {
         loading = true
         error = null
@@ -411,57 +440,78 @@ fun BrowseScreen(
                                 )
                             }
                         }
-                        itemsIndexed(visible) { index, pItem ->
-                            ItemCard(
-                                item = pItem,
-                                compact = compact,
-                                client = client,
-                                session = session,
-                                selecting = selecting,
-                                selected = pItem.fileId != null && selectedItems.any { it.fileId == pItem.fileId },
-                                modifier = rowMax.then(
-                                    if (index == 0) Modifier.focusRequester(firstRow) else Modifier
-                                ),
-                                onClick = {
-                                    if (selecting) {
-                                        when {
-                                            // Keep navigating folders while collecting tracks.
-                                            pItem.isFolder ->
-                                                stack.add(pItem.folderId!! to pItem.name)
-                                            !pItem.isPlaylist && pItem.isPlayable && pItem.fileId != null ->
-                                                toggleSelect(pItem)
-                                        }
-                                    } else {
-                                        when {
-                                            pItem.isFolder -> stack.add(pItem.folderId!! to pItem.name)
-                                            pItem.isPlaylist -> {
-                                                resolveError = null
-                                                resolving = true
-                                                scope.launch {
-                                                    when (val r = client.resolvePlaylist(session, pItem, items)) {
-                                                        is ApiResult.Ok -> {
-                                                            resolving = false
-                                                            onPlayQueue(r.value, "pl:${pItem.fileId}")
-                                                        }
-                                                        is ApiResult.Error -> {
-                                                            resolving = false
-                                                            resolveError = r.message
-                                                        }
-                                                    }
-                                                }
+                        if (!selecting && query.isBlank()) {
+                            // Leanback-style typed rows: group the folder's contents by
+                            // kind, each kind a horizontal poster row.
+                            val groups = listOf(
+                                "Folders" to visible.filter { it.isFolder },
+                                "Videos" to visible.filter { it.isVideo },
+                                "Music" to visible.filter { it.isAudio },
+                                "Playlists" to visible.filter { it.isPlaylist },
+                                "Images" to visible.filter { it.isImage },
+                                "Other" to visible.filter {
+                                    !it.isFolder && !it.isVideo && !it.isAudio &&
+                                        !it.isPlaylist && !it.isImage
+                                }
+                            )
+                            val firstKey = groups.firstOrNull { it.second.isNotEmpty() }
+                                ?.second?.firstOrNull()?.let { it.fileId ?: it.folderId }
+                            groups.forEach { (label, list) ->
+                                if (list.isNotEmpty()) {
+                                    item {
+                                        Text(
+                                            label,
+                                            color = Brand.TextMid, fontSize = 13.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            modifier = Modifier.padding(top = 8.dp, bottom = 2.dp)
+                                        )
+                                    }
+                                    item {
+                                        LazyRow(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                        ) {
+                                            itemsIndexed(list) { _, p ->
+                                                val key = p.fileId ?: p.folderId
+                                                PosterCard(
+                                                    item = p,
+                                                    compact = compact,
+                                                    client = client,
+                                                    session = session,
+                                                    modifier = if (key != null && key == firstKey)
+                                                        Modifier.focusRequester(firstRow) else Modifier,
+                                                    onClick = { openItem(p) }
+                                                )
                                             }
-                                            pItem.isPlayable -> onPlayQueue(
-                                                listOf(
-                                                    com.typezero.pcloudtv.data.MediaItem(
-                                                        pItem.name, pItem.fileId, null
-                                                    )
-                                                ),
-                                                null
-                                            )
                                         }
                                     }
                                 }
-                            )
+                            }
+                        } else {
+                            // Vertical list for search results and selection mode.
+                            itemsIndexed(visible) { index, pItem ->
+                                ItemCard(
+                                    item = pItem,
+                                    compact = compact,
+                                    client = client,
+                                    session = session,
+                                    selecting = selecting,
+                                    selected = pItem.fileId != null && selectedItems.any { it.fileId == pItem.fileId },
+                                    modifier = rowMax.then(
+                                        if (index == 0) Modifier.focusRequester(firstRow) else Modifier
+                                    ),
+                                    onClick = {
+                                        if (selecting) {
+                                            when {
+                                                pItem.isFolder ->
+                                                    stack.add(pItem.folderId!! to pItem.name)
+                                                !pItem.isPlaylist && pItem.isPlayable && pItem.fileId != null ->
+                                                    toggleSelect(pItem)
+                                            }
+                                        } else openItem(pItem)
+                                    }
+                                )
+                            }
                         }
                     }
                 }
@@ -834,6 +884,96 @@ private fun RecentPosterCard(
             color = if (focused) Brand.TextHi else Brand.TextMid,
             fontSize = 12.sp,
             maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.width(posterW)
+        )
+    }
+}
+
+@Composable
+private fun PosterCard(
+    item: PItem,
+    compact: Boolean,
+    client: PCloudClient,
+    session: Session,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    var focused by remember { mutableStateOf(false) }
+    val interaction = remember { MutableInteractionSource() }
+    val scale by animateFloatAsState(if (focused) 1.06f else 1f, label = "posterScale")
+
+    val accent = when {
+        item.isFolder -> Brand.Folder
+        item.isPlaylist -> Brand.Glow
+        item.isVideo -> Brand.Video
+        item.isAudio -> Brand.Audio
+        item.isImage -> Brand.Accent
+        else -> Brand.TextMid
+    }
+    val icon = when {
+        item.isFolder -> Icons.Filled.Folder
+        item.isPlaylist -> Icons.Filled.QueueMusic
+        item.isVideo -> Icons.Filled.Movie
+        item.isAudio -> Icons.Filled.MusicNote
+        item.isImage -> Icons.Filled.Image
+        else -> Icons.Filled.InsertDriveFile
+    }
+
+    var thumbUrl by remember(item.fileId) { mutableStateOf<String?>(null) }
+    if (item.fileId != null && (item.isVideo || item.isImage)) {
+        LaunchedEffect(item.fileId) {
+            when (val r = client.getThumbLink(session, item.fileId, "320x180")) {
+                is ApiResult.Ok -> thumbUrl = r.value
+                is ApiResult.Error -> {}
+            }
+        }
+    }
+
+    val posterW = if (compact) 140.dp else 168.dp
+    val posterH = if (compact) 84.dp else 98.dp
+    Column(
+        modifier = modifier
+            .width(posterW)
+            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .onFocusChanged { focused = it.isFocused }
+            .focusable(interactionSource = interaction)
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+    ) {
+        Box(
+            modifier = Modifier
+                .width(posterW)
+                .height(posterH)
+                .shadow(
+                    elevation = if (focused) 16.dp else 0.dp,
+                    shape = RoundedCornerShape(14.dp),
+                    ambientColor = accent, spotColor = accent
+                )
+                .clip(RoundedCornerShape(14.dp))
+                .background(accent.copy(alpha = if (focused) 0.22f else 0.13f))
+                .border(
+                    width = if (focused) 2.dp else 1.dp,
+                    color = if (focused) accent else Brand.Stroke,
+                    shape = RoundedCornerShape(14.dp)
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(icon, contentDescription = null, tint = accent, modifier = Modifier.size(30.dp))
+            if (thumbUrl != null) {
+                AsyncImage(
+                    model = thumbUrl,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.matchParentSize().clip(RoundedCornerShape(14.dp))
+                )
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            item.name,
+            color = if (focused) Brand.TextHi else Brand.TextMid,
+            fontSize = 12.sp,
+            maxLines = 2,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.width(posterW)
         )
