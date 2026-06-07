@@ -1,9 +1,9 @@
 #--------------------------------------------
 # file:     brEncoder.ps1
 # author:   Mike Redd
-# version:  2.6.1
+# version:  2.6.2
 # created:  2026-02-11
-# updated:  2026-05-30
+# updated:  2026-06-07
 # desc:     Encode Blu-ray .m2ts files
 #           to H.265/HEVC on Windows
 #           using ffmpeg, then create a
@@ -13,9 +13,9 @@
 #           validates metadata, verifies final MKV
 #           language/default/forced tags
 #           remuxes final MKV with real track IDs
-# changes:  v2.6.1 - FIX: map audio/subs by per-type position (0:a:N/0:s:N) to
-#                    match the metadata tags; never use Blu-ray source IDs
-#                    (a1/s9/s17) as ffmpeg stream indexes ([int]"s9" was broken)
+# changes:  v2.6.2 - copy source .m2ts to m2ts/ instead of moving to done/;
+#                    leaves the original in place (Move-SourceToDone ->
+#                    Copy-SourceToM2ts, new $Script:M2tsRoot)
 #--------------------------------------------
 
 param()
@@ -55,7 +55,7 @@ else {
 $ErrorActionPreference = 'Stop'
 
 $ScriptName    = "Blu-ray Encoder"
-$ScriptVersion = "2.5.2"
+$ScriptVersion = "2.6.2"
 $ScriptAuthor  = "Mike Redd"
 
 # ── Config ────────────────────────────────────────────────────
@@ -67,6 +67,7 @@ $Script:SampleRoot      = Join-Path $Script:RootPath 'sample'
 $Script:SubtitleRoot    = Join-Path $Script:RootPath 'subtitles'
 $Script:MetaRoot        = Join-Path $Script:RootPath 'meta'
 $Script:TxtRoot         = Join-Path $Script:RootPath 'txt'
+$Script:M2tsRoot        = Join-Path $Script:RootPath 'm2ts'
 
 # Video quality — veryslow+psy tuning for maximum fidelity
 # CRF 16 for HDR (more headroom for 10-bit HDR detail), 17 for SDR
@@ -155,7 +156,8 @@ function Ensure-Directories {
         $Script:SampleRoot,
         $Script:SubtitleRoot,
         $Script:MetaRoot,
-        $Script:TxtRoot
+        $Script:TxtRoot,
+        $Script:M2tsRoot
     )
 
     foreach ($p in $paths) {
@@ -458,17 +460,19 @@ function Get-SampleOutputPath {
     return [string]$outputFile
 }
 
-function Move-SourceToDone {
+function Copy-SourceToM2ts {
+    # Copies (does not move) the finished source .m2ts into the m2ts directory,
+    # leaving the original in place. Collision-safe via timestamp suffix.
     param([Parameter(Mandatory)][System.IO.FileInfo]$SourceFile)
 
-    $dest = Join-Path $Script:DoneRoot $SourceFile.Name
+    $dest = Join-Path $Script:M2tsRoot $SourceFile.Name
 
     if (Test-Path -LiteralPath $dest) {
         $stamp = Get-Date -Format 'yyyyMMdd_HHmmss'
-        $dest = Join-Path $Script:DoneRoot ("{0}_{1}{2}" -f $SourceFile.BaseName, $stamp, $SourceFile.Extension)
+        $dest = Join-Path $Script:M2tsRoot ("{0}_{1}{2}" -f $SourceFile.BaseName, $stamp, $SourceFile.Extension)
     }
 
-    Move-Item -LiteralPath $SourceFile.FullName -Destination $dest -Force
+    Copy-Item -LiteralPath $SourceFile.FullName -Destination $dest -Force
     return [string]$dest
 }
 
@@ -1955,7 +1959,7 @@ function Encode-File {
 
     Create-SampleFromFinishedMkv -FinishedMkvPath $encodedInfo.FullName -MovieName $MovieName
 
-    $donePath = Move-SourceToDone -SourceFile $SourceFile
+    $copyPath = Copy-SourceToM2ts -SourceFile $SourceFile
     Write-MetaFile -MovieName $MovieName -SourceFile $SourceFile -OutputFile $encodedInfo.FullName `
                    -DurationSeconds $duration -TrackMetaPath $trackMetaPath -VideoProfile $vp
 
@@ -1963,7 +1967,7 @@ function Encode-File {
     Write-Host "  $($global:UI_GRN)Encode complete.$($global:UI_R)"
     Write-Host "  $($global:UI_DIM)Profile$($global:UI_R)  $($vp.Profile)  •  CRF $($vp.CRF)  •  $($Script:DefaultPreset)"
     Write-Host "  $($global:UI_DIM)Saved  $($global:UI_R)  $($encodedInfo.FullName)"
-    Write-Host "  $($global:UI_DIM)Moved  $($global:UI_R)  $donePath"
+    Write-Host "  $($global:UI_DIM)Copied $($global:UI_R)  $copyPath"
 }
 
 function Encode-SingleFile {
