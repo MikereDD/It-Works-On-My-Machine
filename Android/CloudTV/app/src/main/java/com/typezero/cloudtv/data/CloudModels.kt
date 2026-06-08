@@ -3,8 +3,9 @@ package com.typezero.cloudtv.data
 /** Which cloud backend an account belongs to. */
 enum class CloudProviderType(val displayName: String) {
     PCLOUD("pCloud"),
-    GDRIVE("Google Drive")
-    // ONEDRIVE("OneDrive"), MEGA("MEGA") — later
+    GDRIVE("Google Drive"),
+    ONEDRIVE("OneDrive")
+    // MEGA("MEGA") — later
 }
 
 /** Provider-agnostic media classification (replaces pCloud's numeric category). */

@@ -11,8 +11,8 @@ android {
         applicationId = "com.typezero.cloudtv"
         minSdk = 26
         targetSdk = 34
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = 4
+        versionName = "0.4.0"
 
         // Ship 64-bit and 32-bit ARM native libs. arm64-v8a covers modern phones
         // and most Android TVs; armeabi-v7a is REQUIRED for Chromecast with Google
@@ -22,6 +22,31 @@ android {
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
         }
+
+        // --- Google Drive OAuth (AppAuth) -------------------------------------
+        // REPLACE the two placeholders below with YOUR Android OAuth client ID
+        // from Google Cloud Console. The id looks like:
+        //   1234567890-abc123.apps.googleusercontent.com
+        // The redirect scheme is that SAME id with the domain reversed off:
+        //   com.googleusercontent.apps.1234567890-abc123
+        buildConfigField(
+            "String",
+            "GOOGLE_CLIENT_ID",
+            "\"REPLACE_ME.apps.googleusercontent.com\""
+        )
+        manifestPlaceholders["appAuthRedirectScheme"] =
+            "com.googleusercontent.apps.REPLACE_ME"
+        // ----------------------------------------------------------------------
+
+        // --- OneDrive OAuth (Microsoft Graph) ---------------------------------
+        // REPLACE with YOUR Application (client) ID from the Entra app
+        // registration (Personal + work/school accounts).
+        buildConfigField(
+            "String",
+            "MICROSOFT_CLIENT_ID",
+            "\"REPLACE_ME_MS_CLIENT_ID\""
+        )
+        // ----------------------------------------------------------------------
     }
 
     buildTypes {
@@ -74,6 +99,10 @@ dependencies {
 
     // Networking
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
+    // Google OAuth (auth-code + PKCE via Chrome Custom Tabs) for Google Drive.
+    // Google blocks OAuth in embedded WebViews, so Drive sign-in uses AppAuth.
+    implementation("net.openid:appauth:0.11.1")
 
     // Async image loading for folder/poster thumbnails (v2.8.2)
     implementation("io.coil-kt:coil-compose:2.6.0")
