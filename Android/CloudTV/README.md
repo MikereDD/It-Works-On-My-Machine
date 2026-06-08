@@ -4,7 +4,7 @@
 
 <h1 align="center">Cloud TV</h1>
 
-<p align="center"><strong>v0.2.0</strong></p>
+<p align="center"><strong>v0.4.0</strong></p>
 
 <p align="center">
 A minimal <strong>Google TV / Android TV</strong> media player (also runs on phones), built with
@@ -22,8 +22,8 @@ and stream <strong>video and audio</strong> straight from the cloud — played t
 | Provider | Status |
 |---|---|
 | **pCloud** | ✅ Supported |
-| **OneDrive** (Microsoft Graph) | 🔜 Planned |
-| **Google Drive** | 🔜 Planned |
+| **Google Drive** | 🚧 In progress (engine in v0.3) |
+| **OneDrive** (Microsoft Graph) | 🚧 In progress (engine in v0.4) |
 | **MEGA** | 🔜 Planned (phase 2) |
 
 Each provider plugs in behind a common `CloudProvider` interface, so browse, playback,
