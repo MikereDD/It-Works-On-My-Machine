@@ -1,21 +1,21 @@
 #--------------------------------------------
 # file:     brEncoder.ps1
 # author:   Mike Redd
-# version:  2.6.2
+# version:  3.0
 # created:  2026-02-11
-# updated:  2026-06-07
+# updated:  2026-06-12
 # desc:     Encode Blu-ray .m2ts files
 #           to H.265/HEVC on Windows
 #           using ffmpeg, then create a
 #           sample clip from the finished MKV
-#           and apply track metadata from
-#           sidecar JSON when available
+#           and apply required sidecar
+#           audio/subtitle metadata
 #           validates metadata, verifies final MKV
 #           language/default/forced tags
 #           remuxes final MKV with real track IDs
-# changes:  v2.6.2 - copy source .m2ts to m2ts/ instead of moving to done/;
-#                    leaves the original in place (Move-SourceToDone ->
-#                    Copy-SourceToM2ts, new $Script:M2tsRoot)
+# changes:  v3.0   - deterministic sidecar-required metadata workflow;
+#                    searches source/movie folder first; no ffprobe guessing;
+#                    fails loudly on missing sidecar or track-count mismatch.
 #--------------------------------------------
 
 param()
@@ -55,7 +55,7 @@ else {
 $ErrorActionPreference = 'Stop'
 
 $ScriptName    = "Blu-ray Encoder"
-$ScriptVersion = "2.6.2"
+$ScriptVersion = "3.0"
 $ScriptAuthor  = "Mike Redd"
 
 # ── Config ────────────────────────────────────────────────────
@@ -108,7 +108,7 @@ function Show-Header {
     Write-UiHeader -Title $ScriptName -Subtitle "v$ScriptVersion  by $ScriptAuthor" -Width $w
     Write-UiRow "User"    "$env:USERNAME@$env:COMPUTERNAME"
     Write-UiRow "Input"   $Script:InputRoot $global:UI_GRY
-    Write-UiRow "Meta"    "G:\Rip\meta" $global:UI_GRY
+    Write-UiRow "Meta"    "source folder first, then G:\Rip\meta / txt" $global:UI_GRY
     Write-UiRow "Preset"  "$($Script:DefaultPreset)  •  10-bit yuv420p10le" $global:UI_GRY
     Write-UiRow "CRF"     "HDR=$($Script:CRF_HDR)  /  SDR=$($Script:CRF_SDR)  (auto-detected)" $global:UI_GRY
     Write-UiRow "Psy"     "rd=4  psy-rd=1.5  psy-rdoq=1.0  aq-mode=3" $global:UI_GRY
@@ -553,6 +553,52 @@ function Wait-ForOutputFile {
     return $fileInfo
 }
 
+function Get-TrackMetaSearchRoots {
+    param(
+        [Parameter(Mandatory)][System.IO.FileInfo]$SourceFile,
+        [Parameter(Mandatory)][string]$MovieName
+    )
+
+    $roots = New-Object System.Collections.Generic.List[string]
+
+    if ($SourceFile.Directory -and (Test-Path -LiteralPath $SourceFile.Directory.FullName)) {
+        $roots.Add($SourceFile.Directory.FullName)
+    }
+
+    $dir = $SourceFile.Directory
+    while ($dir) {
+        if (Test-Path -LiteralPath $dir.FullName) {
+            $roots.Add($dir.FullName)
+        }
+        if ($dir.FullName -ieq $Script:InputRoot) { break }
+        $dir = $dir.Parent
+    }
+
+    $roots.Add($Script:MetaRoot)
+    $roots.Add($Script:TxtRoot)
+    $roots.Add($Script:OutputRoot)
+
+    return @($roots | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)
+}
+
+function Get-AllTrackMetadataFiles {
+    param(
+        [Parameter(Mandatory)][System.IO.FileInfo]$SourceFile,
+        [Parameter(Mandatory)][string]$MovieName
+    )
+
+    $files = New-Object System.Collections.Generic.List[object]
+    foreach ($root in (Get-TrackMetaSearchRoots -SourceFile $SourceFile -MovieName $MovieName)) {
+        if (-not (Test-Path -LiteralPath $root)) { continue }
+
+        Get-ChildItem -LiteralPath $root -File -Recurse -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -like '*.json' -or $_.Name -like '*.tracks.txt' } |
+            ForEach-Object { $files.Add($_) }
+    }
+
+    return @($files | Sort-Object FullName -Unique)
+}
+
 function Get-TrackMetaCandidates {
     param(
         [Parameter(Mandatory)][System.IO.FileInfo]$SourceFile,
@@ -564,29 +610,27 @@ function Get-TrackMetaCandidates {
     $sourceBase = [System.IO.Path]::GetFileNameWithoutExtension($SourceFile.Name)
     $movieSafe  = New-SafeName -Name $MovieName
 
-    # Direct matches first. Avoid generic Blu-ray stream aliases like 00004.json;
-    # those can collide between different discs. Also support BRTrackMeta
-    # .tracks.txt files written by bluray-trackdump/bluray-backup.
-    if ($sourceBase -notmatch '^\d{5}$') {
-        $candidates.Add((Join-Path $Script:MetaRoot "$sourceBase.json"))
-        $candidates.Add((Join-Path $Script:MetaRoot "$sourceBase.tracks.txt"))
-        $candidates.Add((Join-Path $Script:TxtRoot  "$sourceBase.tracks.txt"))
-    }
-    $candidates.Add((Join-Path $Script:MetaRoot "$movieSafe.json"))
-    $candidates.Add((Join-Path $Script:MetaRoot "$movieSafe.tracks.txt"))
-    $candidates.Add((Join-Path $Script:TxtRoot  "$movieSafe.tracks.txt"))
+    foreach ($root in (Get-TrackMetaSearchRoots -SourceFile $SourceFile -MovieName $MovieName)) {
+        if ([string]::IsNullOrWhiteSpace($root)) { continue }
 
-    # If the source is a Blu-ray stream such as 00004.m2ts, also check the
-    # parent backup folder name, because backup metadata is saved as Movie.json.
-    $dir = $SourceFile.Directory
-    while ($dir -and $dir.FullName -ne $Script:InputRoot) {
-        if ($dir.Name -and $dir.Name -notin @('STREAM', 'BDMV')) {
-            $folderSafe = New-SafeName -Name $dir.Name
-            $candidates.Add((Join-Path $Script:MetaRoot "$folderSafe.json"))
-            $candidates.Add((Join-Path $Script:MetaRoot "$folderSafe.tracks.txt"))
-            $candidates.Add((Join-Path $Script:TxtRoot  "$folderSafe.tracks.txt"))
+        if ($sourceBase -notmatch '^\d{5}$') {
+            $candidates.Add((Join-Path $root "$sourceBase.json"))
+            $candidates.Add((Join-Path $root "$sourceBase.tracks.txt"))
         }
-        $dir = $dir.Parent
+
+        $candidates.Add((Join-Path $root "$movieSafe.json"))
+        $candidates.Add((Join-Path $root "$movieSafe.tracks.txt"))
+
+        $dir = $SourceFile.Directory
+        while ($dir) {
+            if ($dir.Name -and $dir.Name -notin @('STREAM', 'BDMV')) {
+                $folderSafe = New-SafeName -Name $dir.Name
+                $candidates.Add((Join-Path $root "$folderSafe.json"))
+                $candidates.Add((Join-Path $root "$folderSafe.tracks.txt"))
+            }
+            if ($dir.FullName -ieq $Script:InputRoot) { break }
+            $dir = $dir.Parent
+        }
     }
 
     return @($candidates | Select-Object -Unique)
@@ -793,35 +837,27 @@ function Load-TrackMetadata {
                 Write-UiBlankLine
                 Write-CoreError "Failed to read track metadata: $path"
                 Write-Host "  $($global:UI_GRY)$($_.Exception.Message)$($global:UI_R)"
-                return $null
+                throw
             }
         }
     }
 
-    # Fallback scan: useful when the source file is 00004.m2ts but the metadata
-    # sidecar is named after the movie. This prevents the dreaded 'und' tracks.
-    if (Test-Path -LiteralPath $Script:MetaRoot) {
-        $metaFiles = @(
-            Get-ChildItem -LiteralPath $Script:MetaRoot -Filter *.json -File -ErrorAction SilentlyContinue
-            Get-ChildItem -LiteralPath $Script:MetaRoot -Filter *.tracks.txt -File -ErrorAction SilentlyContinue
-            if (Test-Path -LiteralPath $Script:TxtRoot) {
-                Get-ChildItem -LiteralPath $Script:TxtRoot -Filter *.tracks.txt -File -ErrorAction SilentlyContinue
-            }
-        ) | Sort-Object LastWriteTime -Descending | Select-Object -First $Script:MetadataScanLimit
+    $metadataFiles = @(Get-AllTrackMetadataFiles -SourceFile $SourceFile -MovieName $MovieName |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First $Script:MetadataScanLimit)
 
-        foreach ($file in $metaFiles) {
-            try {
-                $data = Read-TrackMetadataFile -Path $file.FullName
-                if (Test-TrackMetadataMatch -Meta $data -SourceFile $SourceFile -MovieName $MovieName) {
-                    return [pscustomobject]@{
-                        Path = $file.FullName
-                        Data = $data
-                    }
+    foreach ($file in $metadataFiles) {
+        try {
+            $data = Read-TrackMetadataFile -Path $file.FullName
+            if (Test-TrackMetadataMatch -Meta $data -SourceFile $SourceFile -MovieName $MovieName) {
+                return [pscustomobject]@{
+                    Path = $file.FullName
+                    Data = $data
                 }
             }
-            catch {
-                continue
-            }
+        }
+        catch {
+            continue
         }
     }
 
@@ -1167,13 +1203,8 @@ function Invoke-MKVLanguageRemux {
         the MKV track headers using mkvpropedit.
 
     .NOTES
-        mkvpropedit edits headers in-place — no temp file or full remux needed.
-        Uses positional track references (track:a1, track:s1 ...) which are
-        stable across MKVToolNix versions, unlike the old mkvmerge --language
-        flag approach which changed syntax in v54 and silently did nothing.
-
-        mkvpropedit --set language= expects ISO 639-2/B codes (eng, fre, spa ...)
-        which is exactly what Resolve-LanguageCode already produces.
+        v3.0 rule: sidecar metadata wins. Source ffprobe language tags are not
+        used as a primary or fallback language source.
     #>
     param(
         [Parameter(Mandatory)][string]$OutputFile,
@@ -1183,40 +1214,20 @@ function Invoke-MKVLanguageRemux {
         [string]$SourcePath
     )
 
-    # ── Order-safe language source ─────────────────────────────────────────
-    # Languages come from the source file's own stream tags (read in the exact
-    # order ffmpeg muxed them) and only fall back to the sidecar for slots the
-    # source leaves as 'und'. The sidecar still drives name / default / forced
-    # by position; those remain ordinal, so the residual mismatch risk is now
-    # limited to cosmetic name/flag drift, not the language itself.
-    $srcMap   = Get-SourceStreamLanguageMap -SourcePath $SourcePath
-    $srcAudio = @($srcMap.Audio)
-    $srcSub   = @($srcMap.Sub)
-
-    if ($srcAudio.Count -gt 0 -or $srcSub.Count -gt 0) {
-        Write-Host ("  $($global:UI_DIM)Source lang tags : audio=$($srcAudio.Count)  subs=$($srcSub.Count) (primary)$($global:UI_R)")
-    } else {
-        Write-Host "  $($global:UI_DIM)Source lang tags : none — using sidecar languages$($global:UI_R)"
-    }
-
     $propArgs = @($OutputFile)
     $applied  = 0
 
-    # Apply to every output audio track we have any info for (source tag or
-    # sidecar entry), bounded by the real number of output tracks.
-    $audioInfo    = [Math]::Max($srcAudio.Count, $AudioMeta.Count)
-    $audioToApply = [Math]::Min($TrackLayout.AudioTracks.Count, $audioInfo)
-    for ($i = 0; $i -lt $audioToApply; $i++) {
-        $metaTrack = if ($i -lt $AudioMeta.Count) { $AudioMeta[$i] } else { $null }
+    if ($TrackLayout.AudioTracks.Count -ne $AudioMeta.Count) {
+        throw "Audio validation failed: output=$($TrackLayout.AudioTracks.Count), metadata=$($AudioMeta.Count). Refusing unsafe partial tagging."
+    }
+    if ($TrackLayout.SubtitleTracks.Count -ne $SubMeta.Count) {
+        throw "Subtitle validation failed: output=$($TrackLayout.SubtitleTracks.Count), metadata=$($SubMeta.Count). Refusing unsafe partial tagging."
+    }
 
-        $srcLang  = if ($i -lt $srcAudio.Count) { Resolve-LanguageCode -Code $srcAudio[$i] } else { 'und' }
-        $metaLang = if ($metaTrack) { Get-MetaLanguage -Track $metaTrack } else { 'und' }
-
-        if     ($srcLang  -ne 'und') { $lang = $srcLang;  $langFrom = 'source'  }
-        elseif ($metaLang -ne 'und') { $lang = $metaLang; $langFrom = 'sidecar' }
-        else                         { $lang = 'und';     $langFrom = 'unknown' }
-
-        $name = if ($metaTrack) { Get-MetaTrackName -Track $metaTrack } else { $null }
+    for ($i = 0; $i -lt $AudioMeta.Count; $i++) {
+        $metaTrack = $AudioMeta[$i]
+        $lang = Get-MetaLanguage -Track $metaTrack
+        $name = Get-MetaTrackName -Track $metaTrack
         $trackRef = "track:a$($i + 1)"
 
         $propArgs += '--edit'
@@ -1229,31 +1240,20 @@ function Invoke-MKVLanguageRemux {
             $propArgs += "name=$name"
         }
 
-        if ($metaTrack) {
-            $propArgs += '--set'
-            $propArgs += "flag-default=$(if ($metaTrack.Default) { '1' } else { '0' })"
-        }
+        $propArgs += '--set'
+        $propArgs += "flag-default=$(if ($metaTrack.Default) { '1' } else { '0' })"
 
-        Write-Host ("    audio {0}: lang={1} ({2})  name={3}  default={4}" -f
-            ($i + 1), $lang, $langFrom,
+        Write-Host ("    audio {0}: lang={1} (sidecar)  name={2}  default={3}" -f
+            ($i + 1), $lang,
             $(if ([string]::IsNullOrWhiteSpace($name)) { '—' } else { $name }),
-            $(if ($metaTrack -and $metaTrack.Default) { 'yes' } else { 'no' }))
+            $(if ($metaTrack.Default) { 'yes' } else { 'no' }))
         $applied++
     }
 
-    $subInfo    = [Math]::Max($srcSub.Count, $SubMeta.Count)
-    $subToApply = [Math]::Min($TrackLayout.SubtitleTracks.Count, $subInfo)
-    for ($i = 0; $i -lt $subToApply; $i++) {
-        $metaTrack = if ($i -lt $SubMeta.Count) { $SubMeta[$i] } else { $null }
-
-        $srcLang  = if ($i -lt $srcSub.Count) { Resolve-LanguageCode -Code $srcSub[$i] } else { 'und' }
-        $metaLang = if ($metaTrack) { Get-MetaLanguage -Track $metaTrack } else { 'und' }
-
-        if     ($srcLang  -ne 'und') { $lang = $srcLang;  $langFrom = 'source'  }
-        elseif ($metaLang -ne 'und') { $lang = $metaLang; $langFrom = 'sidecar' }
-        else                         { $lang = 'und';     $langFrom = 'unknown' }
-
-        $name = if ($metaTrack) { Get-MetaTrackName -Track $metaTrack } else { $null }
+    for ($i = 0; $i -lt $SubMeta.Count; $i++) {
+        $metaTrack = $SubMeta[$i]
+        $lang = Get-MetaLanguage -Track $metaTrack
+        $name = Get-MetaTrackName -Track $metaTrack
         $trackRef = "track:s$($i + 1)"
 
         $propArgs += '--edit'
@@ -1266,24 +1266,21 @@ function Invoke-MKVLanguageRemux {
             $propArgs += "name=$name"
         }
 
-        if ($metaTrack) {
-            $propArgs += '--set'
-            $propArgs += "flag-default=$(if ($metaTrack.Default) { '1' } else { '0' })"
-            $propArgs += '--set'
-            $propArgs += "flag-forced=$(if ($metaTrack.Forced) { '1' } else { '0' })"
-        }
+        $propArgs += '--set'
+        $propArgs += "flag-default=$(if ($metaTrack.Default) { '1' } else { '0' })"
+        $propArgs += '--set'
+        $propArgs += "flag-forced=$(if ($metaTrack.Forced) { '1' } else { '0' })"
 
-        Write-Host ("    sub   {0}: lang={1} ({2})  name={3}  default={4}  forced={5}" -f
-            ($i + 1), $lang, $langFrom,
+        Write-Host ("    sub   {0}: lang={1} (sidecar)  name={2}  default={3}  forced={4}" -f
+            ($i + 1), $lang,
             $(if ([string]::IsNullOrWhiteSpace($name)) { '—' } else { $name }),
-            $(if ($metaTrack -and $metaTrack.Default) { 'yes' } else { 'no' }),
-            $(if ($metaTrack -and $metaTrack.Forced)  { 'yes' } else { 'no' }))
+            $(if ($metaTrack.Default) { 'yes' } else { 'no' }),
+            $(if ($metaTrack.Forced)  { 'yes' } else { 'no' }))
         $applied++
     }
 
     if ($applied -eq 0) {
-        Write-Host "  $($global:UI_YLW)No tracks to tag.$($global:UI_R)"
-        return
+        throw "No tracks were tagged. Refusing to mark encode complete."
     }
 
     Write-Host "  $($global:UI_CYN)Writing track metadata via mkvpropedit...$($global:UI_R)"
@@ -1408,16 +1405,14 @@ function Repair-MKVLanguages {
     .SYNOPSIS
         Standalone menu action: fix language tags on an already-encoded MKV
         without re-encoding. Prompts for the finished MKV and its source .m2ts,
-        then calls Apply-TrackMetadata, which tags via the source-first
-        Invoke-MKVLanguageRemux when a sidecar is found and falls back to
-        Get-StreamLanguagesFromSource (source ffprobe only) when none is.
+        then calls Apply-TrackMetadata. v3.0 requires a sidecar and refuses ffprobe guessing.
     #>
 
     Show-Header
     Write-Host "  $($global:UI_CYN)Repair Language Tags$($global:UI_R)"
     Write-UiBlankLine
     Write-Host "  This applies sidecar metadata from JSON or .tracks.txt when available."
-    Write-Host "  No re-encode. Falls back to source ffprobe language tags if needed."
+    Write-Host "  No re-encode. Requires sidecar metadata; no ffprobe guessing."
     Write-UiBlankLine
 
     # Pick the MKV to fix
@@ -1441,12 +1436,12 @@ function Repair-MKVLanguages {
     }
     $targetMkv = $mkvFiles[$idx - 1].FullName
 
-    # Pick the source .m2ts
-    $m2tsFiles = @(Get-ChildItem -Path $Script:DoneRoot -Filter '*.m2ts' -File -Recurse | Sort-Object Name)
-    if ($m2tsFiles.Count -eq 0) {
-        # Also check InputRoot in case it hasn't been moved yet
-        $m2tsFiles = @(Get-ChildItem -Path $Script:InputRoot -Filter '*.m2ts' -File -Recurse | Sort-Object Name)
-    }
+    # Pick the source .m2ts. v2.6+ copies completed sources to m2ts/, older runs used done/.
+    $m2tsFiles = @(
+        if (Test-Path -LiteralPath $Script:M2tsRoot)  { Get-ChildItem -Path $Script:M2tsRoot  -Filter '*.m2ts' -File -Recurse -ErrorAction SilentlyContinue }
+        if (Test-Path -LiteralPath $Script:DoneRoot)  { Get-ChildItem -Path $Script:DoneRoot  -Filter '*.m2ts' -File -Recurse -ErrorAction SilentlyContinue }
+        if (Test-Path -LiteralPath $Script:InputRoot) { Get-ChildItem -Path $Script:InputRoot -Filter '*.m2ts' -File -Recurse -ErrorAction SilentlyContinue }
+    ) | Sort-Object FullName -Unique
 
     $sourcePath = $null
     if ($m2tsFiles.Count -gt 0) {
@@ -1496,141 +1491,71 @@ function Repair-MKVLanguages {
 function Select-TrackMetadata {
     <#
     .SYNOPSIS
-        Wraps Load-TrackMetadata with interactive confirmation and a manual
-        pick-list fallback so name mismatches between bluray-backup and BREncoder
-        never silently result in untagged tracks.
+        Deterministic v3.0 metadata selector.
 
-        Flow:
-          1. Auto-match via Load-TrackMetadata (filename + full scan).
-          2. If found → show the match and ask Y/N to confirm.
-             Y → use it.  N → fall through to pick list.
-          3. If not found, or user rejected auto-match → list every JSON in
-             meta\ numbered, let user pick one, or skip to ffprobe fallback.
+    .NOTES
+        BREncoder must not guess subtitle/audio languages. If no sidecar exists,
+        encoding/repair stops instead of falling back to ffprobe tags.
     #>
     param(
         [Parameter(Mandatory)][System.IO.FileInfo]$SourceFile,
         [Parameter(Mandatory)][string]$MovieName
     )
 
-    # ── Step 1: try auto-match ────────────────────────────────
     $autoMatch = Load-TrackMetadata -SourceFile $SourceFile -MovieName $MovieName
 
     if ($autoMatch) {
         $jsonName = [System.IO.Path]::GetFileName($autoMatch.Path)
         Write-UiBlankLine
-        Write-Host "  $($global:UI_CYN)Metadata auto-matched:$($global:UI_R)"
+        Write-Host "  $($global:UI_CYN)Metadata found:$($global:UI_R)"
         Write-Host "  $($global:UI_DIM)File $($global:UI_R)  $jsonName"
+        Write-Host "  $($global:UI_DIM)Path $($global:UI_R)  $($autoMatch.Path)"
 
-        # Show audio/sub language preview from the JSON
         $title = Get-TrackMetaTitle -Meta $autoMatch.Data
         if ($title) {
             $audioList = @(Resolve-TrackList -Title $title -Kind audio)
             $subList   = @(Resolve-TrackList -Title $title -Kind subtitle)
+            Write-Host "  $($global:UI_DIM)Audio$($global:UI_R)  $($audioList.Count) track(s)"
+            Write-Host "  $($global:UI_DIM)Subs $($global:UI_R)  $($subList.Count) track(s)"
             if ($audioList.Count -gt 0) {
                 $langs = ($audioList | ForEach-Object { Get-MetaLanguage -Track $_ }) -join ', '
-                Write-Host "  $($global:UI_DIM)Audio$($global:UI_R)  $langs"
+                Write-Host "  $($global:UI_DIM)A Langs$($global:UI_R) $langs"
             }
             if ($subList.Count -gt 0) {
                 $langs = ($subList | ForEach-Object { Get-MetaLanguage -Track $_ }) -join ', '
-                Write-Host "  $($global:UI_DIM)Subs $($global:UI_R)  $langs"
+                Write-Host "  $($global:UI_DIM)S Langs$($global:UI_R) $langs"
             }
         }
 
-        Write-UiBlankLine
-        $confirm = (Read-Host "  Use this metadata file? [Y/n]").Trim().ToUpper()
-        if ($confirm -ne 'N') {
-            return $autoMatch
-        }
-
-        Write-UiBlankLine
-        Write-Host "  $($global:UI_YLW)Auto-match rejected. Showing full list...$($global:UI_R)"
-    } else {
-        Write-UiBlankLine
-        Write-Host "  $($global:UI_YLW)No auto-match found for '$MovieName'.$($global:UI_R)"
-    }
-
-    # ── Step 2: manual pick list ──────────────────────────────
-    if (-not (Test-Path -LiteralPath $Script:MetaRoot)) {
-        Write-Host "  $($global:UI_YLW)Meta folder not found: $($Script:MetaRoot)$($global:UI_R)"
-        return $null
-    }
-
-    $metadataFiles = @(
-        Get-ChildItem -LiteralPath $Script:MetaRoot -Filter '*.json' -File -ErrorAction SilentlyContinue
-        Get-ChildItem -LiteralPath $Script:MetaRoot -Filter '*.tracks.txt' -File -ErrorAction SilentlyContinue
-        if (Test-Path -LiteralPath $Script:TxtRoot) {
-            Get-ChildItem -LiteralPath $Script:TxtRoot -Filter '*.tracks.txt' -File -ErrorAction SilentlyContinue
-        }
-    ) | Sort-Object Name -Unique
-
-    if ($metadataFiles.Count -eq 0) {
-        Write-Host "  $($global:UI_YLW)No JSON or .tracks.txt files found in $($Script:MetaRoot) / $($Script:TxtRoot)$($global:UI_R)"
-        return $null
+        return $autoMatch
     }
 
     Write-UiBlankLine
-    Write-Host "  $($global:UI_MAG)Available metadata files:$($global:UI_R)"
-    for ($i = 0; $i -lt $metadataFiles.Count; $i++) {
-        Write-Host ("    [{0,2}]  {1}" -f ($i + 1), $metadataFiles[$i].Name)
-    }
-    Write-Host "    [  0]  Skip — use ffprobe language fallback instead"
+    Write-CoreError "No metadata sidecar found for '$MovieName'."
+    Write-Host "  BREncoder v3.0 refuses to guess audio/subtitle languages."
     Write-UiBlankLine
-
-    $sel = (Read-Host "  Select metadata number [0]").Trim()
-    if ([string]::IsNullOrWhiteSpace($sel)) { $sel = '0' }
-
-    $idx = 0
-    if (-not [int]::TryParse($sel, [ref]$idx)) {
-        Write-Host "  $($global:UI_YLW)Invalid input — skipping metadata.$($global:UI_R)"
-        return $null
+    Write-Host "  $($global:UI_CYN)Searched:$($global:UI_R)"
+    foreach ($root in (Get-TrackMetaSearchRoots -SourceFile $SourceFile -MovieName $MovieName)) {
+        Write-Host "    $root"
     }
-
-    if ($idx -eq 0) {
-        Write-Host "  $($global:UI_YLW)Skipping metadata — will fall back to ffprobe.$($global:UI_R)"
-        return $null
-    }
-
-    if ($idx -lt 1 -or $idx -gt $metadataFiles.Count) {
-        Write-Host "  $($global:UI_YLW)Selection out of range — skipping metadata.$($global:UI_R)"
-        return $null
-    }
-
-    $chosen = $metadataFiles[$idx - 1]
-    try {
-        $data = Read-TrackMetadataFile -Path $chosen.FullName
-        Write-Host "  $($global:UI_GRN)Using: $($chosen.Name)$($global:UI_R)"
-        return [pscustomobject]@{ Path = $chosen.FullName; Data = $data }
-    }
-    catch {
-        Write-Host "  $($global:UI_RED)Failed to read $($chosen.Name): $($_.Exception.Message)$($global:UI_R)"
-        return $null
-    }
+    Write-UiBlankLine
+    Write-Host "  Expected one of:"
+    Write-Host "    $MovieName.json"
+    Write-Host "    $MovieName.tracks.txt"
+    Write-UiBlankLine
+    Write-Host "  Run bluray-backup.ps1 or bluray-trackdump.ps1 to generate metadata first."
+    throw "No required BRTrackMeta sidecar found. Encoding cancelled."
 }
-
 
 function New-FFmpegMapArgsFromTrackMetadata {
     <#
     .SYNOPSIS
-        Builds explicit ffmpeg -map and -metadata arguments from sidecar track
-        metadata before the encode starts.
+        Builds explicit ffmpeg -map and metadata arguments from the required sidecar.
 
     .NOTES
-        Languages are taken from the source file's own stream tags (read via
-        ffprobe in the same 0:a:N / 0:s:N order ffmpeg maps them) and only fall
-        back to the sidecar for slots the source leaves as 'und'. This matches
-        the post-encode mkvpropedit pass, so both stages agree.
-
-        Blu-ray source IDs in the sidecar (a1, s8, s9, s17 ...) are NOT ffmpeg
-        stream indexes and must never be used as one. ffmpeg addresses streams
-        per type and in source order: 0:a:0, 0:a:1 ... and 0:s:0, 0:s:1 ...
-        We map per-type by position and tag the same per-type index, but the
-        language VALUE for each slot now comes from the source stream at that
-        index rather than the sidecar's listed order — which is what previously
-        let subtitle languages land on the wrong track.
-
-        Track count is still driven by the sidecar (selection behaviour is
-        unchanged); only the language value sourcing differs. name/forced are
-        still taken from the sidecar by position.
+        v3.0 rule: sidecar metadata is the source of truth. ffprobe language tags
+        from the .m2ts are not trusted because some Blu-ray streams lie or are
+        incomplete, which caused subtitle languages to collapse to the wrong value.
     #>
     param(
         [object]$MetaInfo,
@@ -1638,32 +1563,25 @@ function New-FFmpegMapArgsFromTrackMetadata {
     )
 
     if (-not $MetaInfo -or -not $MetaInfo.Data) {
-        return $null
+        throw "No sidecar metadata provided. Encoding cancelled."
     }
 
     $title = Get-TrackMetaTitle -Meta $MetaInfo.Data
     if (-not $title) {
-        return $null
+        throw "Track metadata does not contain MainTitle/Title data."
     }
 
     $audioMeta = @(Resolve-TrackList -Title $title -Kind audio)
     $subMeta   = @(Resolve-TrackList -Title $title -Kind subtitle)
 
     if ($audioMeta.Count -eq 0 -and $subMeta.Count -eq 0) {
-        return $null
+        throw "Track metadata contains no audio or subtitle tracks."
     }
-
-    # Source-first language values, aligned to the same 0:a:N / 0:s:N order.
-    $srcMap   = Get-SourceStreamLanguageMap -SourcePath $SourcePath
-    $srcAudio = @($srcMap.Audio)
-    $srcSub   = @($srcMap.Sub)
 
     $ffMapArgs = @(
         '-map', '0:v:0'
     )
 
-    # Map per-type by position: the Nth sidecar audio track -> 0:a:N, etc.
-    # '?' keeps ffmpeg from failing if a stream is genuinely absent.
     for ($i = 0; $i -lt $audioMeta.Count; $i++) {
         $ffMapArgs += '-map'
         $ffMapArgs += ("0:a:{0}?" -f $i)
@@ -1675,9 +1593,7 @@ function New-FFmpegMapArgsFromTrackMetadata {
     }
 
     for ($i = 0; $i -lt $audioMeta.Count; $i++) {
-        $srcLang  = if ($i -lt $srcAudio.Count) { Resolve-LanguageCode -Code $srcAudio[$i] } else { 'und' }
-        $metaLang = Get-MetaLanguage -Track $audioMeta[$i]
-        $lang = if ($srcLang -ne 'und') { $srcLang } elseif ($metaLang -ne 'und') { $metaLang } else { 'und' }
+        $lang = Get-MetaLanguage -Track $audioMeta[$i]
         $name = Get-MetaTrackName -Track $audioMeta[$i]
 
         $ffMapArgs += ("-metadata:s:a:{0}" -f $i)
@@ -1690,9 +1606,7 @@ function New-FFmpegMapArgsFromTrackMetadata {
     }
 
     for ($i = 0; $i -lt $subMeta.Count; $i++) {
-        $srcLang  = if ($i -lt $srcSub.Count) { Resolve-LanguageCode -Code $srcSub[$i] } else { 'und' }
-        $metaLang = Get-MetaLanguage -Track $subMeta[$i]
-        $lang = if ($srcLang -ne 'und') { $srcLang } elseif ($metaLang -ne 'und') { $metaLang } else { 'und' }
+        $lang = Get-MetaLanguage -Track $subMeta[$i]
         $name = Get-MetaTrackName -Track $subMeta[$i]
 
         $ffMapArgs += ("-metadata:s:s:{0}" -f $i)
@@ -1706,6 +1620,10 @@ function New-FFmpegMapArgsFromTrackMetadata {
         if ($subMeta[$i].Forced) {
             $ffMapArgs += ("-disposition:s:{0}" -f $i)
             $ffMapArgs += 'forced'
+        }
+        elseif ($subMeta[$i].Default) {
+            $ffMapArgs += ("-disposition:s:{0}" -f $i)
+            $ffMapArgs += 'default'
         }
     }
 
@@ -1903,8 +1821,7 @@ function Encode-File {
         Write-Host "  $($global:UI_DIM)Subs $($global:UI_R)  $($metadataMap.SubCount) track(s)"
     }
     else {
-        Write-UiBlankLine
-        Write-Host "  $($global:UI_YLW)No usable sidecar TrackId map — using ffmpeg automatic audio/subtitle mapping.$($global:UI_R)"
+        throw "No usable sidecar stream map. Encoding cancelled."
     }
 
     # ── Build ffmpeg args ──────────────────────────────────────
@@ -1920,11 +1837,7 @@ function Encode-File {
         $ffArgs += @($metadataMap.Args)
     }
     else {
-        $ffArgs += @(
-            '-map', '0:v:0',
-            '-map', '0:a?',
-            '-map', '0:s?'
-        )
+        throw "No sidecar map available. Refusing automatic ffmpeg mapping."
     }
 
     $ffArgs += @(
