@@ -5,6 +5,31 @@ All notable changes to **pCloud TV**. Newest first.
 
 ---
 
+## v3.9 — Title-over-controls header layout
+
+- The video player's title now sits on its own full-width line, with the Cast and Tracks buttons grouped on a row directly beneath it. Long filenames get the whole width before truncating, and the controls read as a tidy header block.
+
+---
+
+## v3.8 — Clean player top bar in portrait
+
+- Rebuilt the video player's top bar as a single row: the title now takes the available width and truncates with an ellipsis, while the Cast and Tracks buttons stay grouped at the right. They no longer overlap the title (or each other) in portrait, where a long filename used to run underneath the controls.
+- The audio now-playing screen keeps its Cast button in the top-right corner as before.
+
+---
+
+## v3.7 — Cast/Tracks button overlap fix
+
+- In the video player, the Cast button no longer overlaps the **Tracks** pill in the top-right corner. When video controls are visible, Cast now sits to the left of the Tracks button; on the audio now-playing screen (no Tracks button) Cast stays at the edge as before.
+
+---
+
+## v3.6 — Immersive fullscreen player
+
+- While the player is open, the status and navigation bars are now hidden on mobile, so video (and the now-playing screen) isn't framed by the system UI. Swipe from an edge to reveal the bars transiently; they're restored when you leave the player.
+
+---
+
 ## v3.5 — Recently-Played folder (sorted by type)
 
 - The old root "recently played" strip is gone; recents now live in a **Recently-Played** folder at the root, next to Music and Video.
