@@ -164,6 +164,55 @@ class PCloudClient {
             }
         }
 
+    /** List a folder addressed by a pCloud path such as "/Books/Audiobooks". */
+    suspend fun listFolderByPath(session: Session, path: String): ApiResult<List<PItem>> =
+        withContext(Dispatchers.IO) {
+            try {
+                val clean = ("/" + path.trim().trim('/')).ifBlank { "/" }
+                val url = "https://${session.apiHost}/listfolder".toHttpUrl().newBuilder()
+                    .addQueryParameter("auth", session.authToken)
+                    .addQueryParameter("path", clean)
+                    .build()
+                val req = Request.Builder().url(url).build()
+                val json = http.newCall(req).execute().use { resp ->
+                    JSONObject(resp.body?.string().orEmpty())
+                }
+                if (json.optInt("result", -1) != 0) {
+                    return@withContext ApiResult.Error(
+                        json.optString("error", "Could not load \"$clean\" (code ${json.optInt("result")})")
+                    )
+                }
+                val contents = json.getJSONObject("metadata").optJSONArray("contents")
+                val items = buildList {
+                    if (contents != null) {
+                        for (i in 0 until contents.length()) {
+                            val o = contents.getJSONObject(i)
+                            val isFolder = o.optBoolean("isfolder", false)
+                            add(
+                                PItem(
+                                    name = o.optString("name"),
+                                    isFolder = isFolder,
+                                    folderId = if (isFolder) o.optLong("folderid") else null,
+                                    fileId = if (!isFolder) o.optLong("fileid") else null,
+                                    contentType = o.optString("contenttype", ""),
+                                    category = o.optInt("category", 0),
+                                    size = o.optLong("size", 0L)
+                                )
+                            )
+                        }
+                    }
+                }
+                ApiResult.Ok(
+                    items.sortedWith(
+                        compareByDescending<PItem> { it.isFolder }
+                            .thenBy { it.name.lowercase() }
+                    )
+                )
+            } catch (e: Exception) {
+                ApiResult.Error(e.message ?: "Network error")
+            }
+        }
+
     /**
      * Resolve a direct, streamable HTTPS URL for a file.
      * The link is bound to the requesting device's IP, so we fetch it

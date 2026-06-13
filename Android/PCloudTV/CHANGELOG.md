@@ -5,6 +5,19 @@ All notable changes to **pCloud TV**. Newest first.
 
 ---
 
+## v4.6 — Audiobooks shortcut at the root
+
+- Added an **Audiobooks** entry to the pCloud root (alongside Recently-Played, Playlists, Music, and Video) that opens /Books/Audiobooks directly, so the audiobook library is one tap from the top instead of buried under /Books.
+- Added `listFolderByPath` to the client; the synthetic node maps its breadcrumb back to the real /Books/Audiobooks path so playlists saved from within it point at the right files.
+
+---
+
+## v4.5 — TV remote fast-forward / rewind
+
+- Fixed seeking with a TV remote: D-pad left/right (and the dedicated rewind / fast-forward keys) now skip back and forward 10s in the player. The key handler runs in the tunneling phase and consumes the D-pad before the focus system can divert it to on-screen button navigation, so the remote drives playback directly (center = play/pause, up = audio/subtitle tracks, next/previous keys change track).
+
+---
+
 ## v4.4 — Generated playlists go to /Music/playlists
 
 - "Generate playlists" now writes every generated .m3u into the central /Music/playlists folder (with absolute track paths) instead of dropping one inside each audio folder. They now appear in the Playlists view alongside your hand-saved ones.
