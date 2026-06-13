@@ -32,6 +32,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -62,6 +63,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -72,23 +74,33 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.typezero.pcloudtv.data.ApiResult
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import org.videolan.libvlc.LibVLC
 import org.videolan.libvlc.Media
 import org.videolan.libvlc.MediaPlayer
 import org.videolan.libvlc.util.VLCVideoLayout
+
+// libvlc_meta_t indices (stable ABI values used by VLC for getMeta()).
+private const val META_TITLE = 0
+private const val META_ARTIST = 1
+private const val META_ALBUM = 4
+private const val META_ARTWORK_URL = 15
 
 @Composable
 fun PlayerScreen(
@@ -202,9 +214,34 @@ private fun VlcPlayer(
     var lastSavedAt by remember { mutableStateOf(0L) }
     var buffering by remember { mutableStateOf(true) }
 
+    // Embedded metadata (ID3/tags) read live from the playing media. When present
+    // these are shown on the audio now-playing screen in place of the raw
+    // filename; ArtworkURL points VLC's extracted embedded cover art (a file://).
+    var metaTitle by remember { mutableStateOf<String?>(null) }
+    var metaArtist by remember { mutableStateOf<String?>(null) }
+    var metaAlbum by remember { mutableStateOf<String?>(null) }
+    var metaArtPath by remember { mutableStateOf<String?>(null) }
+    var metaAttempts by remember { mutableStateOf(0) }
+
     // The event listener below is registered once, so anything it needs about the
     // CURRENT track must be read live (index is state-backed, so this is current).
     fun currentKey(): Long? = queue.getOrNull(index)?.fileId
+
+    // Pull embedded tags off the currently-playing media. getMedia() hands back a
+    // ref we must release. Only overwrite with non-blank values, so a later read
+    // that momentarily returns null doesn't wipe a good tag we already captured.
+    fun readMeta() {
+        metaAttempts++
+        val m = runCatching { player.media }.getOrNull() ?: return
+        try {
+            m.getMeta(META_TITLE)?.trim()?.takeIf { it.isNotEmpty() }?.let { metaTitle = it }
+            m.getMeta(META_ARTIST)?.trim()?.takeIf { it.isNotEmpty() }?.let { metaArtist = it }
+            m.getMeta(META_ALBUM)?.trim()?.takeIf { it.isNotEmpty() }?.let { metaAlbum = it }
+            m.getMeta(META_ARTWORK_URL)?.trim()?.takeIf { it.isNotEmpty() }?.let { metaArtPath = it }
+        } finally {
+            runCatching { m.release() }
+        }
+    }
 
     // Persist resume position for the current file (audio or video on pCloud).
     fun persistPosition() {
@@ -417,6 +454,7 @@ private fun VlcPlayer(
                     videoKnown = true
                     resumeIfNeeded()
                     selectEnglishTracks()
+                    readMeta()
                 }
                 MediaPlayer.Event.Buffering -> {
                     // e.buffering is 0..100; treat <100 as still buffering.
@@ -432,6 +470,9 @@ private fun VlcPlayer(
                     if (!tracksChosen) selectEnglishTracks()
                     if (!hasVideo) hasVideo = player.videoTracksCount > 0
                     videoKnown = true
+                    // Embedded cover art is often extracted a beat after playback
+                    // starts, so keep re-reading early until we have it (capped).
+                    if (metaArtPath == null && metaAttempts < 12) readMeta()
                     // Throttle resume-position saves to ~once every 5s.
                     val now = System.currentTimeMillis()
                     if (now - lastSavedAt > 5_000) {
@@ -439,8 +480,8 @@ private fun VlcPlayer(
                         persistPosition()
                     }
                 }
-                MediaPlayer.Event.LengthChanged -> durationMs = e.lengthChanged
-                MediaPlayer.Event.ESAdded -> selectEnglishTracks()
+                MediaPlayer.Event.LengthChanged -> { durationMs = e.lengthChanged; readMeta() }
+                MediaPlayer.Event.ESAdded -> { selectEnglishTracks(); readMeta() }
                 MediaPlayer.Event.EndReached -> {
                     currentKey()?.let { store.clearPosition(it) }  // finished → start fresh next time
                     onEnded()
@@ -460,6 +501,11 @@ private fun VlcPlayer(
         hasVideo = false
         videoKnown = false
         buffering = true
+        metaTitle = null
+        metaArtist = null
+        metaAlbum = null
+        metaArtPath = null
+        metaAttempts = 0
         // Remember which track of the playlist we're on (within-track position is
         // saved separately per file), so reopening the playlist resumes here.
         playlistKey?.let { store.savePlaylistIndex(it, index) }
@@ -688,8 +734,14 @@ private fun VlcPlayer(
         // audio no longer drops to a black void when you come back to it.
         val showAudioUi = videoKnown && !hasVideo && !cast.isCasting && loadError == null
         if (showAudioUi) {
+            // Prefer embedded tags; fall back to a cleaned-up filename.
+            val displayTitle = metaTitle ?: prettifyName(title)
+            val displaySubtitle = listOfNotNull(metaArtist, metaAlbum)
+                .distinct().joinToString(" • ").ifBlank { null }
             AudioNowPlaying(
-                title = title,
+                title = displayTitle,
+                subtitle = displaySubtitle,
+                artPath = metaArtPath,
                 queuePos = queuePos,
                 queueCount = queueCount,
                 isPlaying = isPlaying,
@@ -959,6 +1011,8 @@ private fun Controls(
 @Composable
 private fun AudioNowPlaying(
     title: String,
+    subtitle: String?,
+    artPath: String?,
     queuePos: Int,
     queueCount: Int,
     isPlaying: Boolean,
@@ -984,6 +1038,17 @@ private fun AudioNowPlaying(
             modifier = Modifier.align(Alignment.Center).padding(horizontal = 32.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            // Decode embedded cover art off the main thread; null → placeholder.
+            val artBitmap by produceState<android.graphics.Bitmap?>(null, artPath) {
+                value = artPath?.let { p ->
+                    withContext(Dispatchers.IO) {
+                        runCatching {
+                            val path = Uri.parse(p).path ?: p.removePrefix("file://")
+                            android.graphics.BitmapFactory.decodeFile(path)
+                        }.getOrNull()
+                    }
+                }
+            }
             Box(
                 modifier = Modifier
                     .size(200.dp)
@@ -992,10 +1057,16 @@ private fun AudioNowPlaying(
                     .border(1.dp, Brand.Stroke, RoundedCornerShape(28.dp)),
                 contentAlignment = Alignment.Center
             ) {
-                if (buffering) {
-                    CircularProgressIndicator(color = Brand.Accent)
-                } else {
-                    Icon(
+                val bmp = artBitmap
+                when {
+                    bmp != null -> Image(
+                        bitmap = bmp.asImageBitmap(),
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(28.dp))
+                    )
+                    buffering -> CircularProgressIndicator(color = Brand.Accent)
+                    else -> Icon(
                         Icons.Filled.MusicNote,
                         contentDescription = null,
                         tint = Brand.Accent,
@@ -1021,6 +1092,16 @@ private fun AudioNowPlaying(
                 maxLines = 2,
                 textAlign = TextAlign.Center
             )
+            if (subtitle != null) {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    subtitle,
+                    color = Brand.TextMid,
+                    fontSize = 14.sp,
+                    maxLines = 1,
+                    textAlign = TextAlign.Center
+                )
+            }
         }
 
         // Transport + scrubber, pinned to the bottom and always visible.
@@ -1106,6 +1187,22 @@ private fun AudioNowPlaying(
                 Text(formatTime(durationMs), color = Color.White, fontSize = 13.sp)
             }
         }
+    }
+}
+
+private fun prettifyName(raw: String): String {
+    // Drop a trailing audio extension, a leading track number, turn separators
+    // into spaces (artist–title dash → em dash), and title-case each word.
+    var s = raw.replace(
+        Regex("\\.(mp3|m4a|aac|flac|ogg|oga|opus|wav|m4b|wma)$", RegexOption.IGNORE_CASE), ""
+    )
+    s = s.replace(Regex("^\\s*\\d{1,3}\\s*[-_.]\\s*"), "")
+    s = s.replace('_', ' ')
+    s = s.replace(Regex("\\s*-\\s*"), " — ")
+    s = s.replace(Regex("\\s+"), " ").trim()
+    if (s.isBlank()) return raw
+    return s.split(' ').joinToString(" ") { w ->
+        if (w == "—") w else w.replaceFirstChar { c -> c.uppercaseChar() }
     }
 }
 

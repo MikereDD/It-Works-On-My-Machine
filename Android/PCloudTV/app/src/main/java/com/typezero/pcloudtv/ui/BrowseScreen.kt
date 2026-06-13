@@ -85,11 +85,33 @@ import com.typezero.pcloudtv.data.PCloudClient
 import coil.compose.AsyncImage
 import androidx.compose.ui.layout.ContentScale
 import com.typezero.pcloudtv.data.PItem
+import com.typezero.pcloudtv.data.LastPlayed
 import com.typezero.pcloudtv.data.Session
 import com.typezero.pcloudtv.ui.theme.Brand
 
 /** Built playlists (from a song selection) are saved here. */
 private const val PLAYLIST_DIR = "/Music/playlists"
+
+/** Only these top-level folders are shown at the pCloud root (lowercased). */
+private val ROOT_FOLDERS = setOf("music", "video")
+
+// Synthetic "Recently-Played" tree. Negative ids never collide with real pCloud
+// folder ids, so these ride the normal folder navigation without hitting the API.
+private const val RP_ROOT = -100L
+private const val RP_AUDIO = -101L
+private const val RP_VIDEO = -102L
+
+private val VIDEO_EXTS = setOf(
+    "mp4", "mkv", "avi", "mov", "webm", "m4v", "ts", "m2ts", "flv", "wmv", "mpg", "mpeg", "3gp"
+)
+
+/** Classify a past session as video by the file type of its first track (else audio). */
+private fun LastPlayed.looksVideo(): Boolean {
+    val item = queue.firstOrNull() ?: return false
+    return listOfNotNull(item.path, item.title, item.directUrl).any { c ->
+        c.substringBefore('?').substringAfterLast('.', "").lowercase() in VIDEO_EXTS
+    }
+}
 
 @Composable
 fun BrowseScreen(
@@ -273,9 +295,17 @@ fun BrowseScreen(
         loading = true
         error = null
         query = ""
-        when (val r = client.listFolder(session, current.first)) {
-            is ApiResult.Ok -> items = r.value
-            is ApiResult.Error -> error = r.message
+        when (current.first) {
+            RP_ROOT -> items = listOf(
+                PItem("Audio", true, RP_AUDIO, null, "", 0, 0L),
+                PItem("Video", true, RP_VIDEO, null, "", 0, 0L)
+            )
+            // Leaves render the recents list directly (see body), not pCloud items.
+            RP_AUDIO, RP_VIDEO -> items = emptyList()
+            else -> when (val r = client.listFolder(session, current.first)) {
+                is ApiResult.Ok -> items = r.value
+                is ApiResult.Error -> error = r.message
+            }
         }
         loading = false
     }
@@ -383,6 +413,7 @@ fun BrowseScreen(
                 }
             }
 
+            val inRpLeaf = current.first == RP_AUDIO || current.first == RP_VIDEO
             when {
                 loading -> Box(Modifier.fillMaxSize(), Alignment.Center) {
                     CircularProgressIndicator(color = Brand.Accent)
@@ -393,16 +424,63 @@ fun BrowseScreen(
                         color = Brand.TextMid, fontSize = 15.sp)
                 }
 
+                inRpLeaf -> {
+                    val wantVideo = current.first == RP_VIDEO
+                    val list = remember(recents, wantVideo) {
+                        recents.filter { it.looksVideo() == wantVideo }
+                    }
+                    if (list.isEmpty()) {
+                        Box(Modifier.fillMaxSize(), Alignment.Center) {
+                            Text(
+                                "No recently played ${if (wantVideo) "video" else "audio"} yet.",
+                                color = Brand.TextLow, fontSize = 15.sp
+                            )
+                        }
+                    } else {
+                        LaunchedEffect(list) { runCatching { firstRow.requestFocus() } }
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            verticalArrangement = Arrangement.spacedBy(if (compact) 10.dp else 12.dp)
+                        ) {
+                            itemsIndexed(list) { index, r ->
+                                ContinueCard(
+                                    title = r.title,
+                                    compact = compact,
+                                    modifier = rowMax.then(
+                                        if (index == 0) Modifier.focusRequester(firstRow) else Modifier
+                                    ),
+                                    label = null,
+                                    onClick = { onPlayQueue(r.queue, r.playlistKey) }
+                                )
+                            }
+                        }
+                    }
+                }
+
                 items.isEmpty() -> Box(Modifier.fillMaxSize(), Alignment.Center) {
                     Text("Nothing playable here yet.",
                         color = Brand.TextLow, fontSize = 15.sp)
                 }
 
                 else -> {
-                    val visible = remember(items, query) {
+                    val atRoot = stack.size == 1
+                    val visible = remember(items, query, atRoot, recents) {
+                        // At the pCloud root, show the synthetic Recently-Played
+                        // folder plus the curated top-level folders (Music / Video);
+                        // everything else is hidden.
+                        val base =
+                            if (atRoot) {
+                                val real = items.filter {
+                                    it.isFolder && it.name.trim().lowercase() in ROOT_FOLDERS
+                                }
+                                val rp = if (recents.isNotEmpty())
+                                    listOf(PItem("Recently-Played", true, RP_ROOT, null, "", 0, 0L))
+                                else emptyList()
+                                rp + real
+                            } else items
                         val q = query.trim()
-                        if (q.isBlank()) items
-                        else items.filter { it.name.contains(q, ignoreCase = true) }
+                        if (q.isBlank()) base
+                        else base.filter { it.name.contains(q, ignoreCase = true) }
                     }
                     LaunchedEffect(items) { runCatching { firstRow.requestFocus() } }
                     LazyColumn(
@@ -418,38 +496,13 @@ fun BrowseScreen(
                                 )
                             }
                         }
-                        if (query.isBlank() && stack.size == 1 && !selecting && recents.isNotEmpty()) {
+                        if (query.isBlank() && stack.size == 1 && !selecting && visible.isEmpty()) {
                             item {
-                                ContinueCard(
-                                    title = recents.first().title,
-                                    compact = compact,
-                                    modifier = rowMax,
-                                    onClick = {
-                                        val r = recents.first()
-                                        onPlayQueue(r.queue, r.playlistKey)
-                                    }
+                                Text(
+                                    "Nothing here yet.",
+                                    color = Brand.TextLow, fontSize = 14.sp,
+                                    modifier = Modifier.padding(vertical = 24.dp)
                                 )
-                            }
-                            if (recents.size > 1) {
-                                item {
-                                    Text(
-                                        "Recently played",
-                                        color = Brand.TextMid, fontSize = 13.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        modifier = Modifier.padding(top = 6.dp, bottom = 2.dp)
-                                    )
-                                }
-                                recents.drop(1).forEach { r ->
-                                    item {
-                                        ContinueCard(
-                                            title = r.title,
-                                            compact = compact,
-                                            modifier = rowMax,
-                                            label = null,
-                                            onClick = { onPlayQueue(r.queue, r.playlistKey) }
-                                        )
-                                    }
-                                }
                             }
                         }
                         if (visible.isEmpty() && query.isNotBlank()) {
@@ -1270,6 +1323,12 @@ private fun HeaderActions(
             Spacer(Modifier.width(8.dp))
             HeaderButton(icon = Icons.Filled.Close, label = null, onClick = onCancelSelect)
         } else {
+            Text(
+                "v" + com.typezero.pcloudtv.BuildConfig.VERSION_NAME,
+                color = Brand.TextLow,
+                fontSize = 11.sp
+            )
+            Spacer(Modifier.width(10.dp))
             com.typezero.pcloudtv.cast.CastButton(modifier = Modifier.size(40.dp))
             Spacer(Modifier.width(10.dp))
             var menuOpen by remember { mutableStateOf(false) }
