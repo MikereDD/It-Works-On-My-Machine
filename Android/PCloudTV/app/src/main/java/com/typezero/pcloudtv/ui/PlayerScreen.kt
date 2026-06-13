@@ -15,6 +15,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.border
 import com.typezero.pcloudtv.ui.theme.Brand
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.shape.CircleShape
@@ -45,6 +46,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Forward10
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay10
@@ -68,6 +70,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -191,6 +194,10 @@ private fun VlcPlayer(
     var durationMs by remember { mutableStateOf(0L) }
     var interactionTick by remember { mutableStateOf(0) }
     var hasVideo by remember { mutableStateOf(false) }
+    // True once VLC has reported whether the current track has a video track, so
+    // the audio now-playing UI only appears for genuinely audio-only media (not
+    // during the initial buffering of a video, when hasVideo is still false).
+    var videoKnown by remember { mutableStateOf(false) }
     var resumed by remember { mutableStateOf(false) }
     var lastSavedAt by remember { mutableStateOf(0L) }
     var buffering by remember { mutableStateOf(true) }
@@ -407,6 +414,7 @@ private fun VlcPlayer(
                     isPlaying = true
                     buffering = false
                     hasVideo = player.videoTracksCount > 0
+                    videoKnown = true
                     resumeIfNeeded()
                     selectEnglishTracks()
                 }
@@ -423,6 +431,7 @@ private fun VlcPlayer(
                     if (!resumed) resumeIfNeeded()
                     if (!tracksChosen) selectEnglishTracks()
                     if (!hasVideo) hasVideo = player.videoTracksCount > 0
+                    videoKnown = true
                     // Throttle resume-position saves to ~once every 5s.
                     val now = System.currentTimeMillis()
                     if (now - lastSavedAt > 5_000) {
@@ -449,6 +458,7 @@ private fun VlcPlayer(
         tracksChosen = false
         resumed = false
         hasVideo = false
+        videoKnown = false
         buffering = true
         // Remember which track of the playlist we're on (within-track position is
         // saved separately per file), so reopening the playlist resumes here.
@@ -609,9 +619,10 @@ private fun VlcPlayer(
         onDispose { runCatching { audioManager.abandonAudioFocusRequest(focusRequest) } }
     }
 
-    // Auto-hide controls after inactivity (only while playing).
-    LaunchedEffect(controlsVisible, interactionTick, isPlaying) {
-        if (controlsVisible && isPlaying) {
+    // Auto-hide controls after inactivity (only while playing VIDEO — the audio
+    // now-playing screen keeps its transport visible like a music app).
+    LaunchedEffect(controlsVisible, interactionTick, isPlaying, hasVideo) {
+        if (controlsVisible && isPlaying && hasVideo) {
             delay(4000)
             controlsVisible = false
         }
@@ -672,6 +683,37 @@ private fun VlcPlayer(
             }
         )
 
+        // Audio-only track → a proper now-playing screen instead of a black
+        // surface. This Compose UI also survives rotation and app-switching, so
+        // audio no longer drops to a black void when you come back to it.
+        val showAudioUi = videoKnown && !hasVideo && !cast.isCasting && loadError == null
+        if (showAudioUi) {
+            AudioNowPlaying(
+                title = title,
+                queuePos = queuePos,
+                queueCount = queueCount,
+                isPlaying = isPlaying,
+                positionMs = positionMs,
+                durationMs = durationMs,
+                hasPrev = hasPrev,
+                hasNext = hasNext,
+                buffering = buffering,
+                onPrev = { onPrev() },
+                onNext = { onNext() },
+                onTogglePlay = { togglePlay() },
+                onSeekBack = { seekBy(-10_000) },
+                onSeekForward = { seekBy(10_000) },
+                onScrub = { fraction ->
+                    if (durationMs > 0) {
+                        val t = (fraction * durationMs).toLong()
+                        player.time = t
+                        positionMs = t
+                        reveal()
+                    }
+                }
+            )
+        }
+
         // Buffering spinner while the stream is loading/stalled.
         if (loadError != null) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -690,7 +732,7 @@ private fun VlcPlayer(
                     modifier = Modifier.padding(40.dp)
                 )
             }
-        } else if (buffering) {
+        } else if (buffering && !showAudioUi) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = Brand.Accent)
             }
@@ -711,7 +753,7 @@ private fun VlcPlayer(
         }
 
         AnimatedVisibility(
-            visible = controlsVisible && !showTracks,
+            visible = controlsVisible && !showTracks && hasVideo,
             enter = fadeIn(),
             exit = fadeOut()
         ) {
@@ -829,6 +871,159 @@ private fun Controls(
             }
         }
 
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp, vertical = 22.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                if (hasPrev || hasNext) {
+                    IconButton(onClick = onPrev, enabled = hasPrev) {
+                        Icon(
+                            Icons.Filled.SkipPrevious, contentDescription = "Previous",
+                            tint = if (hasPrev) Color.White else Color(0x55FFFFFF),
+                            modifier = Modifier.size(34.dp)
+                        )
+                    }
+                    Spacer(Modifier.width(16.dp))
+                }
+                IconButton(onClick = onSeekBack) {
+                    Icon(
+                        Icons.Filled.Replay10, contentDescription = "Back 10s",
+                        tint = Color.White, modifier = Modifier.size(38.dp)
+                    )
+                }
+                Spacer(Modifier.width(28.dp))
+                Box(
+                    modifier = Modifier
+                        .size(64.dp)
+                        .clip(CircleShape)
+                        .background(Brand.Accent)
+                        .clickable(onClick = onTogglePlay),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                        contentDescription = if (isPlaying) "Pause" else "Play",
+                        tint = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier.size(36.dp)
+                    )
+                }
+                Spacer(Modifier.width(28.dp))
+                IconButton(onClick = onSeekForward) {
+                    Icon(
+                        Icons.Filled.Forward10, contentDescription = "Forward 10s",
+                        tint = Color.White, modifier = Modifier.size(38.dp)
+                    )
+                }
+                if (hasPrev || hasNext) {
+                    Spacer(Modifier.width(16.dp))
+                    IconButton(onClick = onNext, enabled = hasNext) {
+                        Icon(
+                            Icons.Filled.SkipNext, contentDescription = "Next",
+                            tint = if (hasNext) Color.White else Color(0x55FFFFFF),
+                            modifier = Modifier.size(34.dp)
+                        )
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(6.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(formatTime(positionMs), color = Color.White, fontSize = 13.sp)
+                Slider(
+                    value = if (durationMs > 0) (positionMs.toFloat() / durationMs) else 0f,
+                    onValueChange = onScrub,
+                    enabled = durationMs > 0,
+                    colors = SliderDefaults.colors(
+                        thumbColor = Brand.Accent,
+                        activeTrackColor = Brand.Accent,
+                        inactiveTrackColor = Color(0x55FFFFFF)
+                    ),
+                    modifier = Modifier.weight(1f).padding(horizontal = 14.dp)
+                )
+                Text(formatTime(durationMs), color = Color.White, fontSize = 13.sp)
+            }
+        }
+    }
+}
+
+@Composable
+private fun AudioNowPlaying(
+    title: String,
+    queuePos: Int,
+    queueCount: Int,
+    isPlaying: Boolean,
+    positionMs: Long,
+    durationMs: Long,
+    hasPrev: Boolean,
+    hasNext: Boolean,
+    buffering: Boolean,
+    onPrev: () -> Unit,
+    onNext: () -> Unit,
+    onTogglePlay: () -> Unit,
+    onSeekBack: () -> Unit,
+    onSeekForward: () -> Unit,
+    onScrub: (Float) -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Brush.verticalGradient(listOf(Brand.Surface, Brand.Bg)))
+    ) {
+        // Hero: album-art placeholder + title, centered.
+        Column(
+            modifier = Modifier.align(Alignment.Center).padding(horizontal = 32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(200.dp)
+                    .clip(RoundedCornerShape(28.dp))
+                    .background(Brand.Bg)
+                    .border(1.dp, Brand.Stroke, RoundedCornerShape(28.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                if (buffering) {
+                    CircularProgressIndicator(color = Brand.Accent)
+                } else {
+                    Icon(
+                        Icons.Filled.MusicNote,
+                        contentDescription = null,
+                        tint = Brand.Accent,
+                        modifier = Modifier.size(96.dp)
+                    )
+                }
+            }
+            Spacer(Modifier.height(28.dp))
+            if (queueCount > 1) {
+                Text(
+                    "TRACK $queuePos / $queueCount",
+                    color = Brand.Accent,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(Modifier.height(6.dp))
+            }
+            Text(
+                title,
+                color = Brand.TextHi,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2,
+                textAlign = TextAlign.Center
+            )
+        }
+
+        // Transport + scrubber, pinned to the bottom and always visible.
         Column(
             modifier = Modifier
                 .align(Alignment.BottomCenter)

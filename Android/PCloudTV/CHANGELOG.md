@@ -5,6 +5,13 @@ All notable changes to **pCloud TV**. Newest first.
 
 ---
 
+## v3.1 — Audio now-playing screen
+
+- **Audio plays like a music app, not a black screen.** When the current track has no video, the player now shows a proper now-playing screen — album-art placeholder, track title, playlist position, and always-visible transport controls — instead of VLC's empty black surface.
+- This also fixes audio dropping to a black void after **rotating the device** or **leaving and returning to the app**: the now-playing screen is drawn by the UI layer, so it survives both. (Video playback is unchanged.)
+
+---
+
 ## v3.0 — Multiple accounts + a cleaner header
 
 - **Multiple accounts / quick switch:** sign in to more than one pCloud account and switch between them instantly. Accounts are remembered (labelled by email), with "Add account" for a fresh sign-in and per-account switching from the menu.
