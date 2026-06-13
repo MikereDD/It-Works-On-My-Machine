@@ -42,6 +42,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -83,6 +84,8 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -120,6 +123,23 @@ fun PlayerScreen(
         }
         return
     }
+    // Immersive fullscreen: hide the status + navigation bars while the player
+    // is open so video isn't framed by the system UI on phones. Swiping from an
+    // edge reveals them transiently; they're restored when the player closes.
+    val activityContext = LocalContext.current
+    DisposableEffect(Unit) {
+        val window = activityContext.findActivity()?.window
+        val controller = window?.let { WindowInsetsControllerCompat(it, it.decorView) }
+        controller?.apply {
+            systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            hide(WindowInsetsCompat.Type.systemBars())
+        }
+        onDispose {
+            controller?.show(WindowInsetsCompat.Type.systemBars())
+        }
+    }
+
     // The player instance is kept mounted for the whole queue; advancing the
     // index just swaps the media so playback never tears down between tracks.
     VlcPlayer(
@@ -129,6 +149,15 @@ fun PlayerScreen(
         playlistKey = playlistKey,
         onExit = onExit
     )
+}
+
+private fun android.content.Context.findActivity(): android.app.Activity? {
+    var c: android.content.Context = this
+    while (c is android.content.ContextWrapper) {
+        if (c is android.app.Activity) return c
+        c = c.baseContext
+    }
+    return null
 }
 
 private fun guessContentType(name: String): String {
@@ -790,10 +819,12 @@ private fun VlcPlayer(
             }
         }
 
-        // Cast device-picker button (only if Cast is available on this device).
+        // Cast button for the AUDIO now-playing screen only — the video controls
+        // embed their own Cast button in the top bar. Audio art is centred, so the
+        // top-right corner is free here.
         if (cast.isAvailable) {
             androidx.compose.animation.AnimatedVisibility(
-                visible = controlsVisible && !showTracks,
+                visible = controlsVisible && !showTracks && !hasVideo,
                 enter = fadeIn(),
                 exit = fadeOut(),
                 modifier = Modifier.align(Alignment.TopEnd)
@@ -811,6 +842,7 @@ private fun VlcPlayer(
         ) {
             Controls(
                 title = title,
+                castAvailable = cast.isAvailable,
                 queuePos = queuePos,
                 queueCount = queueCount,
                 isPlaying = if (cast.isCasting) cast.isRemotePlaying else isPlaying,
@@ -868,6 +900,7 @@ private fun VlcPlayer(
 @Composable
 private fun Controls(
     title: String,
+    castAvailable: Boolean,
     queuePos: Int,
     queueCount: Int,
     isPlaying: Boolean,
@@ -885,7 +918,15 @@ private fun Controls(
 ) {
     Box(modifier = Modifier.fillMaxSize().background(Brand.controlScrim)) {
 
-        Column(modifier = Modifier.align(Alignment.TopStart).padding(24.dp)) {
+        // Top header: title on its own full-width line (so long filenames show in
+        // full before truncating), with the Cast + Tracks buttons grouped on a row
+        // directly beneath it.
+        Column(
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .fillMaxWidth()
+                .padding(start = 20.dp, end = 20.dp, top = 14.dp)
+        ) {
             if (queueCount > 1) {
                 Text(
                     "TRACK $queuePos / $queueCount",
@@ -900,26 +941,34 @@ private fun Controls(
                 color = Color.White,
                 fontSize = 18.sp,
                 fontWeight = FontWeight.SemiBold,
-                maxLines = 1
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
-        }
 
-        // Audio / subtitle track selector.
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(16.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(Color(0x33FFFFFF))
-                .clickable(onClick = onTracks)
-                .padding(horizontal = 14.dp, vertical = 10.dp),
-            contentAlignment = Alignment.Center
-        ) {
+            Spacer(Modifier.height(12.dp))
+
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Filled.ClosedCaption, contentDescription = "Audio & subtitles",
-                    tint = Color.White, modifier = Modifier.size(22.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Tracks", color = Color.White, fontSize = 14.sp)
+                if (castAvailable) {
+                    com.typezero.pcloudtv.cast.CastButton(modifier = Modifier.size(40.dp))
+                    Spacer(Modifier.width(12.dp))
+                }
+
+                // Audio / subtitle track selector.
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color(0x33FFFFFF))
+                        .clickable(onClick = onTracks)
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.ClosedCaption, contentDescription = "Audio & subtitles",
+                            tint = Color.White, modifier = Modifier.size(22.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Tracks", color = Color.White, fontSize = 14.sp)
+                    }
+                }
             }
         }
 
