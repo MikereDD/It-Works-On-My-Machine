@@ -89,6 +89,7 @@ import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -721,38 +722,37 @@ private fun VlcPlayer(
             .fillMaxSize()
             .focusRequester(focus)
             .focusable()
-            .onKeyEvent { e ->
-                if (e.type != KeyEventType.KeyUp) return@onKeyEvent false
+            .onPreviewKeyEvent { e ->
                 // While the track picker is open, let the dialog handle navigation.
-                if (showTracks) return@onKeyEvent false
-                if (!controlsVisible) {
-                    reveal(); return@onKeyEvent true
-                }
-                when (e.key) {
-                    Key.DirectionCenter, Key.Enter, Key.Spacebar, Key.MediaPlayPause -> {
-                        togglePlay(); true
-                    }
-                    Key.DirectionLeft, Key.MediaRewind -> {
-                        seekBy(-10_000); true
-                    }
-                    Key.DirectionRight, Key.MediaFastForward -> {
-                        seekBy(10_000); true
-                    }
-                    // Up (or the Menu/options key) opens audio + subtitle selection.
-                    Key.DirectionUp, Key.Menu -> {
-                        refreshTrackLists(); showTracks = true; true
-                    }
-                    Key.DirectionDown -> {
-                        reveal(); true
-                    }
-                    Key.MediaNext -> {
-                        if (hasNext) onNext(); true
-                    }
-                    Key.MediaPrevious -> {
-                        if (hasPrev) onPrev(); true
-                    }
+                if (showTracks) return@onPreviewKeyEvent false
+                val handledKey = when (e.key) {
+                    Key.DirectionCenter, Key.Enter, Key.Spacebar, Key.MediaPlayPause,
+                    Key.DirectionLeft, Key.MediaRewind,
+                    Key.DirectionRight, Key.MediaFastForward,
+                    Key.DirectionUp, Key.Menu,
+                    Key.DirectionDown,
+                    Key.MediaNext, Key.MediaPrevious -> true
                     else -> false
                 }
+                if (!handledKey) return@onPreviewKeyEvent false
+                // Consume on key-down too, so the focus system never steals D-pad
+                // left/right for button navigation on a TV remote; act on key-up.
+                if (e.type != KeyEventType.KeyUp) return@onPreviewKeyEvent true
+                if (!controlsVisible) {
+                    reveal(); return@onPreviewKeyEvent true
+                }
+                when (e.key) {
+                    Key.DirectionCenter, Key.Enter, Key.Spacebar, Key.MediaPlayPause ->
+                        togglePlay()
+                    Key.DirectionLeft, Key.MediaRewind -> seekBy(-10_000)
+                    Key.DirectionRight, Key.MediaFastForward -> seekBy(10_000)
+                    // Up (or the Menu/options key) opens audio + subtitle selection.
+                    Key.DirectionUp, Key.Menu -> { refreshTrackLists(); showTracks = true }
+                    Key.DirectionDown -> reveal()
+                    Key.MediaNext -> if (hasNext) onNext()
+                    Key.MediaPrevious -> if (hasPrev) onPrev()
+                }
+                true
             }
             .pointerInput(Unit) {
                 detectTapGestures(onTap = { if (controlsVisible) controlsVisible = false else reveal() })

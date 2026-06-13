@@ -106,6 +106,11 @@ private const val RP_VIDEO = -102L
 // are the .m3u files in PLAYLIST_DIR, resolved on entry.
 private const val PLAYLISTS_ROOT = -200L
 
+// Synthetic node surfacing the audiobooks library (a grandchild of root) as a
+// top-level shortcut.
+private const val AUDIOBOOKS_ROOT = -201L
+private const val AUDIOBOOKS_DIR = "/Books/Audiobooks"
+
 private val VIDEO_EXTS = setOf(
     "mp4", "mkv", "avi", "mov", "webm", "m4v", "ts", "m2ts", "flv", "wmv", "mpg", "mpeg", "3gp"
 )
@@ -242,6 +247,11 @@ fun BrowseScreen(
 
     fun currentPathPrefix(): String {
         // Build the absolute pCloud path of the folder you're currently in.
+        // The synthetic Audiobooks node stands in for /Books/Audiobooks, so map
+        // its crumb back to the real path (keeps saved playlists pointing right).
+        if (stack.size >= 2 && stack[1].first == AUDIOBOOKS_ROOT) {
+            return AUDIOBOOKS_DIR + stack.drop(2).joinToString("") { "/" + it.second }
+        }
         val p = "/" + stack.drop(1).joinToString("/") { it.second }
         return if (p == "/") "" else p
     }
@@ -339,6 +349,10 @@ fun BrowseScreen(
                     }
                 }
                 is ApiResult.Error -> error = f.message
+            }
+            AUDIOBOOKS_ROOT -> when (val r = client.listFolderByPath(session, AUDIOBOOKS_DIR)) {
+                is ApiResult.Ok -> items = r.value
+                is ApiResult.Error -> error = r.message
             }
             else -> when (val r = client.listFolder(session, current.first)) {
                 is ApiResult.Ok -> items = r.value
@@ -547,7 +561,10 @@ fun BrowseScreen(
                                 val pl = listOf(
                                     PItem("Playlists", true, PLAYLISTS_ROOT, null, "", 0, 0L)
                                 )
-                                rp + pl + real
+                                val ab = listOf(
+                                    PItem("Audiobooks", true, AUDIOBOOKS_ROOT, null, "", 0, 0L)
+                                )
+                                rp + pl + real + ab
                             } else items
                         val q = query.trim()
                         if (q.isBlank()) base
