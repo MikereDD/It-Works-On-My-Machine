@@ -31,17 +31,23 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.ExperimentalAnimationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -58,6 +64,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -74,6 +81,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.key.Key
@@ -897,8 +906,9 @@ private fun VlcPlayer(
     }
 }
 
+@OptIn(ExperimentalAnimationApi::class, ExperimentalMaterial3Api::class)
 @Composable
-private fun Controls(
+private fun AnimatedVisibilityScope.Controls(
     title: String,
     castAvailable: Boolean,
     queuePos: Int,
@@ -916,7 +926,28 @@ private fun Controls(
     onTracks: () -> Unit,
     onScrub: (Float) -> Unit
 ) {
-    Box(modifier = Modifier.fillMaxSize().background(Brand.controlScrim)) {
+    Box(modifier = Modifier.fillMaxSize()) {
+
+        // Scrims only at the top and bottom edges (behind the controls), leaving the
+        // middle of the picture clear and bright instead of dimming the whole frame.
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .fillMaxHeight(0.32f)
+                .background(
+                    Brush.verticalGradient(listOf(Color(0xB3000000), Color.Transparent))
+                )
+        )
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .fillMaxHeight(0.40f)
+                .background(
+                    Brush.verticalGradient(listOf(Color.Transparent, Color(0xCC000000)))
+                )
+        )
 
         // Top header: title on its own full-width line (so long filenames show in
         // full before truncating), with the Cast + Tracks buttons grouped on a row
@@ -924,6 +955,10 @@ private fun Controls(
         Column(
             modifier = Modifier
                 .align(Alignment.TopStart)
+                .animateEnterExit(
+                    enter = slideInVertically { -it / 3 },
+                    exit = slideOutVertically { -it / 3 }
+                )
                 .fillMaxWidth()
                 .padding(start = 20.dp, end = 20.dp, top = 14.dp)
         ) {
@@ -949,8 +984,15 @@ private fun Controls(
 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (castAvailable) {
-                    com.typezero.pcloudtv.cast.CastButton(modifier = Modifier.size(40.dp))
-                    Spacer(Modifier.width(12.dp))
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color(0x33FFFFFF)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        com.typezero.pcloudtv.cast.CastButton(modifier = Modifier.size(42.dp))
+                    }
+                    Spacer(Modifier.width(10.dp))
                 }
 
                 // Audio / subtitle track selector.
@@ -975,6 +1017,10 @@ private fun Controls(
         Column(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
+                .animateEnterExit(
+                    enter = slideInVertically { it / 3 },
+                    exit = slideOutVertically { it / 3 }
+                )
                 .fillMaxWidth()
                 .padding(horizontal = 24.dp, vertical = 22.dp)
         ) {
@@ -1003,6 +1049,12 @@ private fun Controls(
                 Box(
                     modifier = Modifier
                         .size(64.dp)
+                        .shadow(
+                            elevation = 14.dp,
+                            shape = CircleShape,
+                            ambientColor = Brand.Accent,
+                            spotColor = Brand.Accent
+                        )
                         .clip(CircleShape)
                         .background(Brand.Accent)
                         .clickable(onClick = onTogglePlay),
@@ -1039,7 +1091,12 @@ private fun Controls(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text(formatTime(positionMs), color = Color.White, fontSize = 13.sp)
+                Text(
+                    formatTime(positionMs),
+                    color = Brand.TextHi,
+                    fontSize = 13.sp,
+                    style = TextStyle(fontFeatureSettings = "tnum")
+                )
                 Slider(
                     value = if (durationMs > 0) (positionMs.toFloat() / durationMs) else 0f,
                     onValueChange = onScrub,
@@ -1047,16 +1104,30 @@ private fun Controls(
                     colors = SliderDefaults.colors(
                         thumbColor = Brand.Accent,
                         activeTrackColor = Brand.Accent,
-                        inactiveTrackColor = Color(0x55FFFFFF)
+                        inactiveTrackColor = Color(0x33FFFFFF)
                     ),
-                    modifier = Modifier.weight(1f).padding(horizontal = 14.dp)
+                    thumb = {
+                        Box(
+                            modifier = Modifier
+                                .size(10.dp)
+                                .clip(CircleShape)
+                                .background(Brand.Accent)
+                        )
+                    },
+                    modifier = Modifier.weight(1f).padding(horizontal = 12.dp)
                 )
-                Text(formatTime(durationMs), color = Color.White, fontSize = 13.sp)
+                Text(
+                    formatTime(durationMs),
+                    color = Brand.TextMid,
+                    fontSize = 13.sp,
+                    style = TextStyle(fontFeatureSettings = "tnum")
+                )
             }
         }
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AudioNowPlaying(
     title: String,
@@ -1077,165 +1148,309 @@ private fun AudioNowPlaying(
     onSeekForward: () -> Unit,
     onScrub: (Float) -> Unit
 ) {
-    Box(
+    // Decode embedded cover art off the main thread; null -> placeholder.
+    val artBitmap by produceState<android.graphics.Bitmap?>(null, artPath) {
+        value = artPath?.let { p ->
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    val path = Uri.parse(p).path ?: p.removePrefix("file://")
+                    android.graphics.BitmapFactory.decodeFile(path)
+                }.getOrNull()
+            }
+        }
+    }
+
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .background(Brush.verticalGradient(listOf(Brand.Surface, Brand.Bg)))
     ) {
-        // Hero: album-art placeholder + title, centered.
-        Column(
-            modifier = Modifier.align(Alignment.Center).padding(horizontal = 32.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            // Decode embedded cover art off the main thread; null → placeholder.
-            val artBitmap by produceState<android.graphics.Bitmap?>(null, artPath) {
-                value = artPath?.let { p ->
-                    withContext(Dispatchers.IO) {
-                        runCatching {
-                            val path = Uri.parse(p).path ?: p.removePrefix("file://")
-                            android.graphics.BitmapFactory.decodeFile(path)
-                        }.getOrNull()
-                    }
-                }
-            }
-            Box(
+        if (maxWidth > maxHeight) {
+            // Landscape: art on the left, info + controls on the right, so nothing
+            // stacks on top of the title the way the centred portrait layout would.
+            val artSize = (maxHeight * 0.66f).coerceIn(120.dp, 240.dp)
+            Row(
                 modifier = Modifier
-                    .size(200.dp)
-                    .clip(RoundedCornerShape(28.dp))
-                    .background(Brand.Bg)
-                    .border(1.dp, Brand.Stroke, RoundedCornerShape(28.dp)),
-                contentAlignment = Alignment.Center
+                    .fillMaxSize()
+                    .padding(horizontal = 48.dp, vertical = 28.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(44.dp)
             ) {
-                val bmp = artBitmap
-                when {
-                    bmp != null -> Image(
-                        bitmap = bmp.asImageBitmap(),
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(28.dp))
+                AudioArt(
+                    art = artBitmap,
+                    buffering = buffering,
+                    modifier = Modifier.size(artSize)
+                )
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    if (queueCount > 1) {
+                        Text(
+                            "TRACK $queuePos / $queueCount",
+                            color = Brand.Accent,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(Modifier.height(6.dp))
+                    }
+                    Text(
+                        title,
+                        color = Brand.TextHi,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
                     )
-                    buffering -> CircularProgressIndicator(color = Brand.Accent)
-                    else -> Icon(
-                        Icons.Filled.MusicNote,
-                        contentDescription = null,
-                        tint = Brand.Accent,
-                        modifier = Modifier.size(96.dp)
+                    if (subtitle != null) {
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            subtitle,
+                            color = Brand.TextMid,
+                            fontSize = 14.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    Spacer(Modifier.height(20.dp))
+                    AudioTransport(
+                        isPlaying = isPlaying,
+                        hasPrev = hasPrev,
+                        hasNext = hasNext,
+                        onPrev = onPrev,
+                        onNext = onNext,
+                        onTogglePlay = onTogglePlay,
+                        onSeekBack = onSeekBack,
+                        onSeekForward = onSeekForward,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    AudioSeekbar(
+                        positionMs = positionMs,
+                        durationMs = durationMs,
+                        onScrub = onScrub,
+                        modifier = Modifier.fillMaxWidth()
                     )
                 }
             }
-            Spacer(Modifier.height(28.dp))
-            if (queueCount > 1) {
+        } else {
+            // Portrait: centred hero with the transport pinned to the bottom.
+            Column(
+                modifier = Modifier.align(Alignment.Center).padding(horizontal = 32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                AudioArt(
+                    art = artBitmap,
+                    buffering = buffering,
+                    modifier = Modifier.size(220.dp)
+                )
+                Spacer(Modifier.height(28.dp))
+                if (queueCount > 1) {
+                    Text(
+                        "TRACK $queuePos / $queueCount",
+                        color = Brand.Accent,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(Modifier.height(6.dp))
+                }
                 Text(
-                    "TRACK $queuePos / $queueCount",
-                    color = Brand.Accent,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold
+                    title,
+                    color = Brand.TextHi,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 2,
+                    textAlign = TextAlign.Center,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (subtitle != null) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        subtitle,
+                        color = Brand.TextMid,
+                        fontSize = 14.sp,
+                        maxLines = 1,
+                        textAlign = TextAlign.Center,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp, vertical = 22.dp)
+            ) {
+                AudioTransport(
+                    isPlaying = isPlaying,
+                    hasPrev = hasPrev,
+                    hasNext = hasNext,
+                    onPrev = onPrev,
+                    onNext = onNext,
+                    onTogglePlay = onTogglePlay,
+                    onSeekBack = onSeekBack,
+                    onSeekForward = onSeekForward,
+                    modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(Modifier.height(6.dp))
-            }
-            Text(
-                title,
-                color = Brand.TextHi,
-                fontSize = 20.sp,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 2,
-                textAlign = TextAlign.Center
-            )
-            if (subtitle != null) {
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    subtitle,
-                    color = Brand.TextMid,
-                    fontSize = 14.sp,
-                    maxLines = 1,
-                    textAlign = TextAlign.Center
+                AudioSeekbar(
+                    positionMs = positionMs,
+                    durationMs = durationMs,
+                    onScrub = onScrub,
+                    modifier = Modifier.fillMaxWidth()
                 )
             }
         }
+    }
+}
 
-        // Transport + scrubber, pinned to the bottom and always visible.
-        Column(
+@Composable
+private fun AudioArt(
+    art: android.graphics.Bitmap?,
+    buffering: Boolean,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(28.dp))
+            .background(Brand.Bg)
+            .border(1.dp, Brand.Stroke, RoundedCornerShape(28.dp)),
+        contentAlignment = Alignment.Center
+    ) {
+        when {
+            art != null -> Image(
+                bitmap = art.asImageBitmap(),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(28.dp))
+            )
+            buffering -> CircularProgressIndicator(color = Brand.Accent)
+            else -> Icon(
+                Icons.Filled.MusicNote,
+                contentDescription = null,
+                tint = Brand.Accent,
+                modifier = Modifier.fillMaxSize(0.46f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun AudioTransport(
+    isPlaying: Boolean,
+    hasPrev: Boolean,
+    hasNext: Boolean,
+    onPrev: () -> Unit,
+    onNext: () -> Unit,
+    onTogglePlay: () -> Unit,
+    onSeekBack: () -> Unit,
+    onSeekForward: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+        modifier = modifier
+    ) {
+        if (hasPrev || hasNext) {
+            IconButton(onClick = onPrev, enabled = hasPrev) {
+                Icon(
+                    Icons.Filled.SkipPrevious, contentDescription = "Previous",
+                    tint = if (hasPrev) Color.White else Color(0x55FFFFFF),
+                    modifier = Modifier.size(34.dp)
+                )
+            }
+            Spacer(Modifier.width(16.dp))
+        }
+        IconButton(onClick = onSeekBack) {
+            Icon(
+                Icons.Filled.Replay10, contentDescription = "Back 10s",
+                tint = Color.White, modifier = Modifier.size(38.dp)
+            )
+        }
+        Spacer(Modifier.width(28.dp))
+        Box(
             modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp, vertical = 22.dp)
+                .size(64.dp)
+                .shadow(
+                    elevation = 14.dp,
+                    shape = CircleShape,
+                    ambientColor = Brand.Accent,
+                    spotColor = Brand.Accent
+                )
+                .clip(CircleShape)
+                .background(Brand.Accent)
+                .clickable(onClick = onTogglePlay),
+            contentAlignment = Alignment.Center
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                if (hasPrev || hasNext) {
-                    IconButton(onClick = onPrev, enabled = hasPrev) {
-                        Icon(
-                            Icons.Filled.SkipPrevious, contentDescription = "Previous",
-                            tint = if (hasPrev) Color.White else Color(0x55FFFFFF),
-                            modifier = Modifier.size(34.dp)
-                        )
-                    }
-                    Spacer(Modifier.width(16.dp))
-                }
-                IconButton(onClick = onSeekBack) {
-                    Icon(
-                        Icons.Filled.Replay10, contentDescription = "Back 10s",
-                        tint = Color.White, modifier = Modifier.size(38.dp)
-                    )
-                }
-                Spacer(Modifier.width(28.dp))
+            Icon(
+                if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                contentDescription = if (isPlaying) "Pause" else "Play",
+                tint = MaterialTheme.colorScheme.onPrimary,
+                modifier = Modifier.size(36.dp)
+            )
+        }
+        Spacer(Modifier.width(28.dp))
+        IconButton(onClick = onSeekForward) {
+            Icon(
+                Icons.Filled.Forward10, contentDescription = "Forward 10s",
+                tint = Color.White, modifier = Modifier.size(38.dp)
+            )
+        }
+        if (hasPrev || hasNext) {
+            Spacer(Modifier.width(16.dp))
+            IconButton(onClick = onNext, enabled = hasNext) {
+                Icon(
+                    Icons.Filled.SkipNext, contentDescription = "Next",
+                    tint = if (hasNext) Color.White else Color(0x55FFFFFF),
+                    modifier = Modifier.size(34.dp)
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AudioSeekbar(
+    positionMs: Long,
+    durationMs: Long,
+    onScrub: (Float) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = modifier) {
+        Text(
+            formatTime(positionMs),
+            color = Brand.TextHi,
+            fontSize = 13.sp,
+            style = TextStyle(fontFeatureSettings = "tnum")
+        )
+        Slider(
+            value = if (durationMs > 0) (positionMs.toFloat() / durationMs) else 0f,
+            onValueChange = onScrub,
+            enabled = durationMs > 0,
+            colors = SliderDefaults.colors(
+                thumbColor = Brand.Accent,
+                activeTrackColor = Brand.Accent,
+                inactiveTrackColor = Color(0x33FFFFFF)
+            ),
+            thumb = {
                 Box(
                     modifier = Modifier
-                        .size(64.dp)
+                        .size(10.dp)
                         .clip(CircleShape)
                         .background(Brand.Accent)
-                        .clickable(onClick = onTogglePlay),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                        contentDescription = if (isPlaying) "Pause" else "Play",
-                        tint = MaterialTheme.colorScheme.onPrimary,
-                        modifier = Modifier.size(36.dp)
-                    )
-                }
-                Spacer(Modifier.width(28.dp))
-                IconButton(onClick = onSeekForward) {
-                    Icon(
-                        Icons.Filled.Forward10, contentDescription = "Forward 10s",
-                        tint = Color.White, modifier = Modifier.size(38.dp)
-                    )
-                }
-                if (hasPrev || hasNext) {
-                    Spacer(Modifier.width(16.dp))
-                    IconButton(onClick = onNext, enabled = hasNext) {
-                        Icon(
-                            Icons.Filled.SkipNext, contentDescription = "Next",
-                            tint = if (hasNext) Color.White else Color(0x55FFFFFF),
-                            modifier = Modifier.size(34.dp)
-                        )
-                    }
-                }
-            }
-
-            Spacer(Modifier.height(6.dp))
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(formatTime(positionMs), color = Color.White, fontSize = 13.sp)
-                Slider(
-                    value = if (durationMs > 0) (positionMs.toFloat() / durationMs) else 0f,
-                    onValueChange = onScrub,
-                    enabled = durationMs > 0,
-                    colors = SliderDefaults.colors(
-                        thumbColor = Brand.Accent,
-                        activeTrackColor = Brand.Accent,
-                        inactiveTrackColor = Color(0x55FFFFFF)
-                    ),
-                    modifier = Modifier.weight(1f).padding(horizontal = 14.dp)
                 )
-                Text(formatTime(durationMs), color = Color.White, fontSize = 13.sp)
-            }
-        }
+            },
+            modifier = Modifier.weight(1f).padding(horizontal = 12.dp)
+        )
+        Text(
+            formatTime(durationMs),
+            color = Brand.TextMid,
+            fontSize = 13.sp,
+            style = TextStyle(fontFeatureSettings = "tnum")
+        )
     }
 }
 

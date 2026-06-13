@@ -5,6 +5,55 @@ All notable changes to **pCloud TV**. Newest first.
 
 ---
 
+## v4.4 — Generated playlists go to /Music/playlists
+
+- "Generate playlists" now writes every generated .m3u into the central /Music/playlists folder (with absolute track paths) instead of dropping one inside each audio folder. They now appear in the Playlists view alongside your hand-saved ones.
+- Generated playlists are named by their folder's path under the scanned root (e.g. "Classical - Alexandra Streliski.m3u") so same-named folders don't collide, and regenerating overwrites by name rather than piling up duplicates. Hand-saved playlists in /Music/playlists are left untouched.
+
+---
+
+## v4.3 — Manage saved playlists
+
+- Saved playlists now appear in a **Playlists** folder at the pCloud root, alongside Recently-Played, Music, and Video (it lists the .m3u files in /Music/playlists).
+- Tapping a saved playlist opens a manager with **Play**, **Rename**, **Delete**, and full track editing:
+  - **Remove tracks** with a per-row ×.
+  - **Add tracks** via a built-in folder picker that walks your pCloud library; tapped files are appended.
+  - **Save changes** writes the edited list back to the same .m3u.
+- Added `renameFile` and a raw playlist reader to the pCloud client to support the above.
+
+---
+
+## v4.2 — Manage recently-played history
+
+- You can now remove saved entries from Recently-Played. Each entry has a remove (×) button, plus a "Clear all" action at the top of the list — handy for clearing out stale entries that point at files since renamed or deleted in pCloud (the "File not found" case).
+- The Recently-Played folder continues to sit at the pCloud root alongside Music and Video whenever there's any history, and the list now refreshes immediately after a removal.
+
+---
+
+## v4.1 — Landscape audio layout + smaller seek dot
+
+- The audio now-playing screen is now orientation-aware. In landscape it switches to a side-by-side layout (album art on the left, title and controls on the right) so the play button no longer overlaps the title in the short vertical space. Portrait keeps the centered hero with bottom controls.
+- The seek-bar thumb is smaller (10dp) on both the video and audio sliders for a cleaner scrubber.
+
+---
+
+## v4.1 — Landscape audio layout + finer seek dot
+
+- The audio now-playing screen is now orientation-aware. In landscape it switches to a side-by-side layout (cover art on the left, title and controls on the right) so the play button no longer overlaps the title. Portrait keeps the centred hero layout.
+- Slimmed the seek-bar thumb a touch more (both the video and audio sliders) so it reads as a fine scrubber dot rather than a large handle.
+
+---
+
+## v4.0 — Player visual polish
+
+- **Gradient scrims:** the player no longer dims the whole frame. Soft dark gradients sit only behind the top and bottom controls, so the middle of the picture stays bright.
+- **Matched Cast/Tracks buttons:** the Cast button now uses the same translucent rounded chip as Tracks, so the two read as one tidy control group.
+- **Refined seek bar:** slimmer thumb, dimmer inactive track, and tabular time figures (bright elapsed, dimmer total) that don't jitter as the clock ticks. Applied to both the video controls and the audio now-playing screen.
+- **Play-button depth:** the play/pause circle gets a soft accent-tinted shadow so it feels tactile rather than flat.
+- **Reveal animation:** the top bar slides down and the bottom controls slide up (with a fade) when the controls appear and disappear.
+
+---
+
 ## v3.9 — Title-over-controls header layout
 
 - The video player's title now sits on its own full-width line, with the Cast and Tracks buttons grouped on a row directly beneath it. Long filenames get the whole width before truncating, and the controls read as a tidy header block.

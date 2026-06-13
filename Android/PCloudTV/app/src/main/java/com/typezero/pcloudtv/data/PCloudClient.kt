@@ -408,7 +408,7 @@ class PCloudClient {
             .addQueryParameter("folderid", rootFolderId.toString())
             .addQueryParameter("recursive", "1")
             .build()
-        scanAudioFolders(url)
+        scanAudioFolders(url, "")
     }
 
     /**
@@ -424,10 +424,10 @@ class PCloudClient {
             .addQueryParameter("path", clean)
             .addQueryParameter("recursive", "1")
             .build()
-        scanAudioFolders(url)
+        scanAudioFolders(url, clean)
     }
 
-    private fun scanAudioFolders(url: okhttp3.HttpUrl): ApiResult<List<AudioFolder>> {
+    private fun scanAudioFolders(url: okhttp3.HttpUrl, basePath: String): ApiResult<List<AudioFolder>> {
         return try {
             val json = http.newCall(Request.Builder().url(url).build()).execute()
                 .use { JSONObject(it.body?.string().orEmpty()) }
@@ -455,7 +455,7 @@ class PCloudClient {
                 )
             }
 
-            fun walk(meta: JSONObject) {
+            fun walk(meta: JSONObject, folderPath: String) {
                 val fid = meta.optLong("folderid")
                 val fname = meta.optString("name")
                 val contents = meta.optJSONArray("contents") ?: return
@@ -465,15 +465,17 @@ class PCloudClient {
                     if (!item.isFolder && item.isPlayable) files.add(item)
                 }
                 if (files.isNotEmpty()) {
-                    out.add(AudioFolder(fid, fname, files.sortedBy { naturalKey(it.name) }))
+                    out.add(AudioFolder(fid, fname, folderPath, files.sortedBy { naturalKey(it.name) }))
                 }
                 for (i in 0 until contents.length()) {
                     val o = contents.getJSONObject(i)
-                    if (o.optBoolean("isfolder", false)) walk(o)
+                    if (o.optBoolean("isfolder", false)) {
+                        walk(o, folderPath.trimEnd('/') + "/" + o.optString("name"))
+                    }
                 }
             }
 
-            walk(json.getJSONObject("metadata"))
+            walk(json.getJSONObject("metadata"), if (basePath.isBlank()) "/" else basePath)
             ApiResult.Ok(out)
         } catch (e: Exception) {
             ApiResult.Error(e.message ?: "Network error")
@@ -550,6 +552,61 @@ class PCloudClient {
                 ApiResult.Error(e.message ?: "Network error")
             }
         }
+
+    /** Rename a file in place. [newName] is the bare file name (with extension). */
+    suspend fun renameFile(session: Session, fileId: Long, newName: String): ApiResult<Unit> =
+        withContext(Dispatchers.IO) {
+            try {
+                val url = "https://${session.apiHost}/renamefile".toHttpUrl().newBuilder()
+                    .addQueryParameter("auth", session.authToken)
+                    .addQueryParameter("fileid", fileId.toString())
+                    .addQueryParameter("toname", newName)
+                    .build()
+                val json = http.newCall(Request.Builder().url(url).build()).execute()
+                    .use { JSONObject(it.body?.string().orEmpty()) }
+                if (json.optInt("result", -1) == 0) ApiResult.Ok(Unit)
+                else ApiResult.Error(json.optString("error", "Rename failed (code ${json.optInt("result")})"))
+            } catch (e: Exception) {
+                ApiResult.Error(e.message ?: "Network error")
+            }
+        }
+
+    /**
+     * Read an .m3u's raw entries as (title, target) pairs, preserving each target
+     * line verbatim (absolute pCloud path or http URL). Used by the playlist editor
+     * so edits can be written straight back with [savePlaylistAbsolute].
+     */
+    suspend fun readPlaylistEntries(
+        session: Session,
+        fileId: Long
+    ): ApiResult<List<Pair<String, String>>> = withContext(Dispatchers.IO) {
+        val linkRes = getStreamUrl(session, fileId)
+        val url = when (linkRes) {
+            is ApiResult.Ok -> linkRes.value
+            is ApiResult.Error -> return@withContext ApiResult.Error(linkRes.message)
+        }
+        val text = try {
+            http.newCall(Request.Builder().url(url).build()).execute()
+                .use { it.body?.string().orEmpty() }
+        } catch (e: Exception) {
+            return@withContext ApiResult.Error(e.message ?: "Could not read playlist")
+        }
+        val out = mutableListOf<Pair<String, String>>()
+        var pendingTitle: String? = null
+        for (raw in text.lines()) {
+            val line = raw.trim()
+            if (line.isEmpty()) continue
+            if (line.startsWith("#")) {
+                if (line.startsWith("#EXTINF", ignoreCase = true)) {
+                    pendingTitle = line.substringAfter(",", "").trim().ifBlank { null }
+                }
+                continue
+            }
+            out += (pendingTitle ?: line.substringAfterLast('/').ifBlank { line }) to line
+            pendingTitle = null
+        }
+        ApiResult.Ok(out)
+    }
 
     /** Natural sort key so "2" comes before "10". */
     private fun naturalKey(name: String): String =
