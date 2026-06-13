@@ -5,6 +5,34 @@ All notable changes to **pCloud TV**. Newest first.
 
 ---
 
+## v3.5 — Recently-Played folder (sorted by type)
+
+- The old root "recently played" strip is gone; recents now live in a **Recently-Played** folder at the root, next to Music and Video.
+- Inside it are **Audio** and **Video** subfolders; each past session is auto-sorted into one by its file type (no re-tagging needed). Tapping an entry resumes that queue, same as before.
+- Keeps the curated root clean — three folders, all the same shape.
+
+---
+
+## v3.4 — Curated root (Music / Video only)
+
+- The pCloud root now shows only the **Music** and **Video** folders; everything else at the top level is hidden. Browsing into those folders works normally. (The allowed set is a single constant, easy to extend later.)
+
+---
+
+## v3.3 — Version shown in the header
+
+- A faint version tag (e.g. `v3.3`) now sits in the browse header next to the Cast/⋮ controls, so you can tell at a glance which build you're running without opening the About dialog.
+
+---
+
+## v3.2 — Track tags + cover art on the now-playing screen
+
+- The audio now-playing screen now reads **embedded tags** from the file and shows the real **title**, **artist • album**, and **embedded cover art** instead of the raw filename — pulled live from VLC's metadata, no file changes.
+- **Untagged files get a cleaned-up name** as a fallback: the leading track number is stripped, separators become spaces, and words are title-cased (e.g. `02-modest_mouse-the_world_at_large` → "Modest Mouse — The World At Large").
+- Cover art falls back to the music-note placeholder when a file has none.
+
+---
+
 ## v3.1 — Audio now-playing screen
 
 - **Audio plays like a music app, not a black screen.** When the current track has no video, the player now shows a proper now-playing screen — album-art placeholder, track title, playlist position, and always-visible transport controls — instead of VLC's empty black surface.
