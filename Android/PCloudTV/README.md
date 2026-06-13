@@ -31,13 +31,18 @@ and stream your <strong>video and audio</strong> straight from pCloud — played
 
 ## Screenshots
 
-| | |
-|:---:|:---:|
-| <img src="./screenshots/screenshot-1.jpg" width="100%"> | <img src="./screenshots/screenshot-2.jpg" width="100%"> |
-| <img src="./screenshots/screenshot-3.jpg" width="100%"> | <img src="./screenshots/screenshot-4.jpg" width="100%"> |
-
 <p align="center">
-  <img src="./screenshots/screenshot-5.jpg" width="49%">
+  <img src="./screenshots/screenshot-1.jpg" width="24%">
+  <img src="./screenshots/screenshot-2.jpg" width="24%">
+  <img src="./screenshots/screenshot-3.jpg" width="24%">
+</p>
+<p align="center">
+  <img src="./screenshots/screenshot-4.jpg" width="24%">
+  <img src="./screenshots/screenshot-5.jpg" width="24%">
+  <img src="./screenshots/screenshot-6.jpg" width="24%">
+</p>
+<p align="center">
+  <img src="./screenshots/screenshot-7.jpg" width="60%">
 </p>
 
 
