@@ -35,6 +35,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -101,6 +102,10 @@ private const val RP_ROOT = -100L
 private const val RP_AUDIO = -101L
 private const val RP_VIDEO = -102L
 
+// Synthetic node for the saved-playlists view at the pCloud root. Its contents
+// are the .m3u files in PLAYLIST_DIR, resolved on entry.
+private const val PLAYLISTS_ROOT = -200L
+
 private val VIDEO_EXTS = setOf(
     "mp4", "mkv", "avi", "mov", "webm", "m4v", "ts", "m2ts", "flv", "wmv", "mpg", "mpeg", "3gp"
 )
@@ -130,7 +135,7 @@ fun BrowseScreen(
     // "Continue" — the most recent queue, loaded fresh each time we enter the browser.
     val browseContext = LocalContext.current
     val browseStore = remember { com.typezero.pcloudtv.data.SessionStore(browseContext) }
-    val recents = remember { browseStore.getRecents() }
+    var recents by remember { mutableStateOf(browseStore.getRecents()) }
 
     var items by remember { mutableStateOf<List<PItem>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
@@ -179,20 +184,39 @@ fun BrowseScreen(
             when (scan) {
                 is ApiResult.Ok -> {
                     val folders = scan.value
+                    // All generated playlists land in the central /Music/playlists
+                    // folder (so they show up under Playlists), with absolute track
+                    // paths since the .m3u no longer sits beside the audio.
+                    val dir = client.ensureFolder(session, PLAYLIST_DIR)
+                    if (dir is ApiResult.Error) {
+                        saving = false
+                        saveMessage = "Couldn't open $PLAYLIST_DIR: ${dir.message}"
+                        return@launch
+                    }
+                    val dirId = (dir as ApiResult.Ok).value
+                    val rootRel = ("/" + path.trim().trim('/'))
                     genTotal = folders.size
                     var ok = 0
                     for ((i, fol) in folders.withIndex()) {
                         genName = fol.name
                         genDone = i + 1
-                        val pname = (fol.name.ifBlank { "Playlist" }) + ".m3u"
-                        if (client.savePlaylist(session, fol.folderId, pname, fol.files) is ApiResult.Ok) ok++
+                        val entries = fol.files.map { f ->
+                            f.name to (fol.path.trimEnd('/') + "/" + f.name)
+                        }
+                        // Name by the folder's path under the scan root so playlists
+                        // from same-named folders don't collide in one directory.
+                        val under = fol.path.removePrefix(rootRel).trim('/')
+                        val label = if (under.isBlank()) fol.name.ifBlank { "Playlist" }
+                                    else under.replace("/", " - ")
+                        val pname = "$label.m3u"
+                        if (client.savePlaylistAbsolute(session, dirId, pname, entries) is ApiResult.Ok) ok++
                     }
                     saving = false
                     val cleaned = if (replaceExisting) "Removed $removed old, " else ""
                     saveMessage = if (folders.isEmpty()) {
                         "${cleaned}no folders with audio found under \"$path\"."
                     } else {
-                        "${cleaned}saved $ok playlist(s) across ${folders.size} folder(s)."
+                        "${cleaned}saved $ok playlist(s) to $PLAYLIST_DIR from ${folders.size} folder(s)."
                     }
                     reloadKey++
                 }
@@ -211,6 +235,10 @@ fun BrowseScreen(
     var showAbout by remember { mutableStateOf(false) }
     var playlistName by remember { mutableStateOf("") }
     var query by remember { mutableStateOf("") }
+
+    // Saved-playlist management (inside the synthetic Playlists folder).
+    var playlistsFolderId by remember { mutableStateOf<Long?>(null) }
+    var managePlaylist by remember { mutableStateOf<PItem?>(null) }
 
     fun currentPathPrefix(): String {
         // Build the absolute pCloud path of the folder you're currently in.
@@ -302,6 +330,16 @@ fun BrowseScreen(
             )
             // Leaves render the recents list directly (see body), not pCloud items.
             RP_AUDIO, RP_VIDEO -> items = emptyList()
+            PLAYLISTS_ROOT -> when (val f = client.ensureFolder(session, PLAYLIST_DIR)) {
+                is ApiResult.Ok -> {
+                    playlistsFolderId = f.value
+                    when (val r = client.listFolder(session, f.value)) {
+                        is ApiResult.Ok -> items = r.value.filter { it.isPlaylist }
+                        is ApiResult.Error -> error = r.message
+                    }
+                }
+                is ApiResult.Error -> error = f.message
+            }
             else -> when (val r = client.listFolder(session, current.first)) {
                 is ApiResult.Ok -> items = r.value
                 is ApiResult.Error -> error = r.message
@@ -442,6 +480,32 @@ fun BrowseScreen(
                             modifier = Modifier.fillMaxSize(),
                             verticalArrangement = Arrangement.spacedBy(if (compact) 10.dp else 12.dp)
                         ) {
+                            item {
+                                Row(
+                                    modifier = rowMax.padding(horizontal = 4.dp, vertical = 2.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        "${list.size} saved",
+                                        color = Brand.TextMid,
+                                        fontSize = 13.sp,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Text(
+                                        "Clear all",
+                                        color = Brand.Accent,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .clickable {
+                                                browseStore.clearRecents()
+                                                recents = browseStore.getRecents()
+                                            }
+                                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                                    )
+                                }
+                            }
                             itemsIndexed(list) { index, r ->
                                 ContinueCard(
                                     title = r.title,
@@ -450,6 +514,10 @@ fun BrowseScreen(
                                         if (index == 0) Modifier.focusRequester(firstRow) else Modifier
                                     ),
                                     label = null,
+                                    onDelete = {
+                                        browseStore.removeRecent(r.title, r.playlistKey)
+                                        recents = browseStore.getRecents()
+                                    },
                                     onClick = { onPlayQueue(r.queue, r.playlistKey) }
                                 )
                             }
@@ -476,7 +544,10 @@ fun BrowseScreen(
                                 val rp = if (recents.isNotEmpty())
                                     listOf(PItem("Recently-Played", true, RP_ROOT, null, "", 0, 0L))
                                 else emptyList()
-                                rp + real
+                                val pl = listOf(
+                                    PItem("Playlists", true, PLAYLISTS_ROOT, null, "", 0, 0L)
+                                )
+                                rp + pl + real
                             } else items
                         val q = query.trim()
                         if (q.isBlank()) base
@@ -526,6 +597,9 @@ fun BrowseScreen(
                                 modifier = rowMax.then(
                                     if (index == 0) Modifier.focusRequester(firstRow) else Modifier
                                 ),
+                                onManage = if (current.first == PLAYLISTS_ROOT && pItem.isPlaylist) {
+                                    { managePlaylist = pItem }
+                                } else null,
                                 onClick = {
                                     if (selecting) {
                                         when {
@@ -609,6 +683,29 @@ fun BrowseScreen(
 
         if (showAbout) {
             AboutDialog(onClose = { showAbout = false })
+        }
+
+        managePlaylist?.let { pl ->
+            PlaylistManager(
+                playlist = pl,
+                playlistsFolderId = playlistsFolderId,
+                client = client,
+                session = session,
+                compact = compact,
+                onPlay = {
+                    managePlaylist = null
+                    resolveError = null
+                    resolving = true
+                    scope.launch {
+                        when (val r = client.resolvePlaylist(session, pl, items)) {
+                            is ApiResult.Ok -> { resolving = false; onPlayQueue(r.value, "pl:${pl.fileId}") }
+                            is ApiResult.Error -> { resolving = false; resolveError = r.message }
+                        }
+                    }
+                },
+                onChanged = { reloadKey++ },
+                onDismiss = { managePlaylist = null }
+            )
         }
     }
 }
@@ -760,8 +857,8 @@ private fun GeneratePlaylistsDialog(
                 fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(6.dp))
             Text(
-                "Writes an .m3u into every folder with audio under this pCloud path " +
-                    "(including subfolders).",
+                "For every folder with audio under this pCloud path (including " +
+                    "subfolders), writes one .m3u into /Music/playlists.",
                 color = Brand.TextLow, fontSize = 12.sp
             )
             Spacer(Modifier.height(14.dp))
@@ -1045,6 +1142,7 @@ private fun ContinueCard(
     compact: Boolean,
     modifier: Modifier = Modifier,
     label: String? = "Continue",
+    onDelete: (() -> Unit)? = null,
     onClick: () -> Unit
 ) {
     val interaction = remember { MutableInteractionSource() }
@@ -1092,6 +1190,24 @@ private fun ContinueCard(
                 overflow = TextOverflow.Ellipsis
             )
         }
+        if (onDelete != null) {
+            Spacer(Modifier.width(10.dp))
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(Brand.Bg.copy(alpha = 0.6f))
+                    .clickable(onClick = onDelete),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Filled.Close,
+                    contentDescription = "Remove from recently played",
+                    tint = Brand.TextMid,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
     }
 }
 
@@ -1104,6 +1220,7 @@ private fun ItemCard(
     selecting: Boolean = false,
     selected: Boolean = false,
     modifier: Modifier = Modifier,
+    onManage: (() -> Unit)? = null,
     onClick: () -> Unit
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -1222,6 +1339,24 @@ private fun ItemCard(
                 tint = if (focused) accent else Brand.TextLow,
                 modifier = Modifier.size(24.dp)
             )
+        }
+        if (onManage != null && !selecting) {
+            Spacer(Modifier.width(6.dp))
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(Brand.Bg.copy(alpha = 0.6f))
+                    .clickable(onClick = onManage),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Filled.MoreVert,
+                    contentDescription = "Manage playlist",
+                    tint = Brand.TextMid,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
         }
     }
 }
@@ -1454,4 +1589,410 @@ private fun humanSize(bytes: Long): String {
     var v = bytes.toDouble(); var i = 0
     while (v >= 1024 && i < u.lastIndex) { v /= 1024; i++ }
     return if (i == 0) "${bytes} B" else "%.1f %s".format(v, u[i])
+}
+
+@Composable
+private fun PlaylistManager(
+    playlist: PItem,
+    playlistsFolderId: Long?,
+    client: PCloudClient,
+    session: Session,
+    compact: Boolean,
+    onPlay: () -> Unit,
+    onChanged: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val tracks = remember { mutableStateListOf<Pair<String, String>>() }
+    var loaded by remember { mutableStateOf(false) }
+    var busy by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf<String?>(null) }
+    var dirty by remember { mutableStateOf(false) }
+    var renaming by remember { mutableStateOf(false) }
+    var nameField by remember {
+        mutableStateOf(playlist.name.removeSuffix(".m3u8").removeSuffix(".m3u"))
+    }
+    var confirmDelete by remember { mutableStateOf(false) }
+    var picking by remember { mutableStateOf(false) }
+
+    LaunchedEffect(playlist.fileId) {
+        val fid = playlist.fileId
+        if (fid == null) { loaded = true; return@LaunchedEffect }
+        when (val r = client.readPlaylistEntries(session, fid)) {
+            is ApiResult.Ok -> { tracks.clear(); tracks.addAll(r.value); loaded = true }
+            is ApiResult.Error -> { message = r.message; loaded = true }
+        }
+    }
+
+    fun saveTracks() {
+        val fid = playlistsFolderId
+        if (fid == null) { message = "Playlists folder isn't ready yet."; return }
+        busy = true; message = null
+        scope.launch {
+            val res = client.savePlaylistAbsolute(session, fid, playlist.name, tracks.toList())
+            busy = false
+            when (res) {
+                is ApiResult.Ok -> { dirty = false; message = "Saved."; onChanged() }
+                is ApiResult.Error -> message = "Couldn't save: ${res.message}"
+            }
+        }
+    }
+
+    BackHandler {
+        when {
+            picking -> picking = false
+            renaming -> renaming = false
+            confirmDelete -> confirmDelete = false
+            else -> onDismiss()
+        }
+    }
+
+    Box(
+        Modifier.fillMaxSize().background(Color(0xE6000000)),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth().widthIn(max = 560.dp)
+                .fillMaxHeight(0.92f)
+                .padding(if (compact) 12.dp else 24.dp)
+                .clip(RoundedCornerShape(20.dp))
+                .background(Brand.Surface)
+                .border(1.dp, Brand.Stroke, RoundedCornerShape(20.dp))
+                .padding(18.dp)
+        ) {
+            Text(
+                playlist.name,
+                color = Brand.TextHi, fontSize = 18.sp, fontWeight = FontWeight.Bold,
+                maxLines = 2, overflow = TextOverflow.Ellipsis
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                if (picking) "Tap a track to add it" else "${tracks.size} track(s)",
+                color = Brand.TextLow, fontSize = 12.sp
+            )
+            Spacer(Modifier.height(14.dp))
+
+            if (!loaded) {
+                Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = Brand.Accent)
+                }
+            } else if (picking) {
+                PlaylistAddPicker(
+                    client = client,
+                    session = session,
+                    modifier = Modifier.weight(1f),
+                    onAdd = { title, path -> tracks.add(title to path); dirty = true }
+                )
+            } else {
+                LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (tracks.isEmpty()) {
+                        item {
+                            Text(
+                                "This playlist is empty. Use \"Add tracks\" below.",
+                                color = Brand.TextLow, fontSize = 13.sp,
+                                modifier = Modifier.padding(vertical = 12.dp)
+                            )
+                        }
+                    }
+                    itemsIndexed(tracks) { index, t ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Brand.Bg)
+                                .border(1.dp, Brand.Stroke, RoundedCornerShape(12.dp))
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "${index + 1}.",
+                                color = Brand.TextLow, fontSize = 13.sp,
+                                modifier = Modifier.padding(end = 10.dp)
+                            )
+                            Text(
+                                t.first,
+                                color = Brand.TextHi, fontSize = 14.sp,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .clip(RoundedCornerShape(9.dp))
+                                    .clickable { tracks.removeAt(index); dirty = true },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    Icons.Filled.Close, contentDescription = "Remove track",
+                                    tint = Brand.TextMid, modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            message?.let {
+                Spacer(Modifier.height(8.dp))
+                Text(it, color = Brand.Accent, fontSize = 12.sp)
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            if (picking) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    HeaderButton(
+                        icon = Icons.Filled.Check, label = "Done adding", primary = true,
+                        onClick = { picking = false }
+                    )
+                }
+            } else {
+                Row(Modifier.fillMaxWidth()) {
+                    HeaderButton(icon = Icons.Filled.PlayArrow, label = "Play", onClick = onPlay)
+                    Spacer(Modifier.width(8.dp))
+                    HeaderButton(
+                        icon = Icons.Filled.PlaylistAdd, label = "Add tracks",
+                        onClick = { message = null; picking = true }
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+                Row(Modifier.fillMaxWidth()) {
+                    HeaderButton(icon = null, label = "Rename", onClick = { renaming = true })
+                    Spacer(Modifier.width(8.dp))
+                    HeaderButton(icon = null, label = "Delete", onClick = { confirmDelete = true })
+                }
+                Spacer(Modifier.height(12.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    HeaderButton(icon = null, label = "Close", onClick = onDismiss)
+                    Spacer(Modifier.width(8.dp))
+                    HeaderButton(
+                        icon = Icons.Filled.Check,
+                        label = if (dirty) "Save changes" else "Saved",
+                        primary = dirty,
+                        onClick = { if (dirty) saveTracks() }
+                    )
+                }
+            }
+        }
+
+        if (busy) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = Brand.Accent)
+            }
+        }
+    }
+
+    if (renaming) {
+        Box(
+            Modifier.fillMaxSize().background(Color(0xCC000000)).clickable { renaming = false },
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth().widthIn(max = 460.dp).padding(28.dp)
+                    .clip(RoundedCornerShape(20.dp)).background(Brand.Surface)
+                    .border(1.dp, Brand.Stroke, RoundedCornerShape(20.dp)).padding(22.dp)
+            ) {
+                Text("Rename playlist", color = Brand.TextHi, fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(14.dp))
+                OutlinedTextField(
+                    value = nameField,
+                    onValueChange = { nameField = it },
+                    singleLine = true,
+                    label = { Text("Name") },
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Brand.Accent,
+                        unfocusedBorderColor = Brand.Stroke,
+                        focusedLabelColor = Brand.Accent,
+                        cursorColor = Brand.Accent
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(18.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    HeaderButton(icon = null, label = "Cancel", onClick = { renaming = false })
+                    Spacer(Modifier.width(10.dp))
+                    HeaderButton(
+                        icon = Icons.Filled.Check, label = "Rename", primary = true,
+                        onClick = {
+                            val fid = playlist.fileId
+                            val clean = nameField.trim().removeSuffix(".m3u8").removeSuffix(".m3u")
+                            if (fid != null && clean.isNotBlank()) {
+                                busy = true
+                                scope.launch {
+                                    val res = client.renameFile(session, fid, "$clean.m3u")
+                                    busy = false; renaming = false
+                                    when (res) {
+                                        is ApiResult.Ok -> { onChanged(); onDismiss() }
+                                        is ApiResult.Error -> message = "Couldn't rename: ${res.message}"
+                                    }
+                                }
+                            } else {
+                                renaming = false
+                            }
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+    if (confirmDelete) {
+        Box(
+            Modifier.fillMaxSize().background(Color(0xCC000000)).clickable { confirmDelete = false },
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth().widthIn(max = 460.dp).padding(28.dp)
+                    .clip(RoundedCornerShape(20.dp)).background(Brand.Surface)
+                    .border(1.dp, Brand.Stroke, RoundedCornerShape(20.dp)).padding(22.dp)
+            ) {
+                Text("Delete playlist?", color = Brand.TextHi, fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "\"${playlist.name}\" will be permanently removed from $PLAYLIST_DIR.",
+                    color = Brand.TextLow, fontSize = 13.sp
+                )
+                Spacer(Modifier.height(18.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    HeaderButton(icon = null, label = "Cancel", onClick = { confirmDelete = false })
+                    Spacer(Modifier.width(10.dp))
+                    HeaderButton(
+                        icon = null, label = "Delete", primary = true,
+                        onClick = {
+                            val fid = playlist.fileId
+                            if (fid != null) {
+                                busy = true
+                                scope.launch {
+                                    val res = client.deleteFile(session, fid)
+                                    busy = false; confirmDelete = false
+                                    when (res) {
+                                        is ApiResult.Ok -> { onChanged(); onDismiss() }
+                                        is ApiResult.Error -> message = "Couldn't delete: ${res.message}"
+                                    }
+                                }
+                            } else {
+                                confirmDelete = false
+                            }
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlaylistAddPicker(
+    client: PCloudClient,
+    session: Session,
+    modifier: Modifier = Modifier,
+    onAdd: (String, String) -> Unit
+) {
+    val crumbs = remember { mutableStateListOf(0L to "") }
+    var entries by remember { mutableStateOf<List<PItem>>(emptyList()) }
+    var loading by remember { mutableStateOf(false) }
+    val added = remember { mutableStateListOf<String>() }
+
+    LaunchedEffect(crumbs.last().first) {
+        loading = true
+        when (val r = client.listFolder(session, crumbs.last().first)) {
+            is ApiResult.Ok -> entries = r.value
+            is ApiResult.Error -> entries = emptyList()
+        }
+        loading = false
+    }
+
+    fun pathOf(name: String): String {
+        val p = "/" + crumbs.drop(1).joinToString("/") { it.second }
+        return (if (p == "/") "" else p) + "/" + name
+    }
+
+    Column(modifier = modifier) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (crumbs.size > 1) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable { crumbs.removeAt(crumbs.lastIndex) }
+                        .padding(horizontal = 8.dp, vertical = 6.dp)
+                ) {
+                    Text("\u2039 Back", color = Brand.Accent, fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold)
+                }
+                Spacer(Modifier.width(8.dp))
+            }
+            Text(
+                "/" + crumbs.drop(1).joinToString("/") { it.second },
+                color = Brand.TextMid, fontSize = 12.sp, maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        if (loading) {
+            Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = Brand.Accent)
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                itemsIndexed(entries) { _, e ->
+                    val isAudio = !e.isFolder && e.isPlayable && !e.isPlaylist
+                    if (e.isFolder || isAudio) {
+                        val path = if (isAudio) pathOf(e.name) else ""
+                        val alreadyAdded = isAudio && added.contains(path)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Brand.Bg)
+                                .border(1.dp, Brand.Stroke, RoundedCornerShape(12.dp))
+                                .clickable {
+                                    if (e.isFolder) {
+                                        crumbs.add(e.folderId!! to e.name)
+                                    } else if (!alreadyAdded) {
+                                        onAdd(e.name, path); added.add(path)
+                                    }
+                                }
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                if (e.isFolder) Icons.Filled.Folder else Icons.Filled.MusicNote,
+                                contentDescription = null,
+                                tint = if (e.isFolder) Brand.Accent else Brand.TextMid,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Spacer(Modifier.width(12.dp))
+                            Text(
+                                e.name,
+                                color = if (alreadyAdded) Brand.TextLow else Brand.TextHi,
+                                fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                            if (alreadyAdded) {
+                                Icon(Icons.Filled.Check, contentDescription = "Added",
+                                    tint = Brand.Accent, modifier = Modifier.size(18.dp))
+                            } else if (!e.isFolder) {
+                                Icon(Icons.Filled.PlaylistAdd, contentDescription = "Add",
+                                    tint = Brand.Accent, modifier = Modifier.size(18.dp))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }

@@ -39,6 +39,7 @@ data class LastPlayed(
 data class AudioFolder(
     val folderId: Long,
     val name: String,
+    val path: String,
     val files: List<PItem>
 )
 

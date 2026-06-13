@@ -172,6 +172,28 @@ class SessionStore(context: Context) {
         }
     }
 
+    /** Remove a single recently-played entry, matched by title + playlist key. */
+    fun removeRecent(title: String, playlistKey: String?) {
+        val s = posPrefs.getString("recents", null) ?: return
+        runCatching {
+            val arr = JSONArray(s)
+            val out = JSONArray()
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                val sameTitle = o.optString("title", "") == title
+                val sameKey = (if (o.has("key")) o.getString("key") else null) == playlistKey
+                if (sameTitle && sameKey) continue
+                out.put(o)
+            }
+            posPrefs.edit().putString("recents", out.toString()).apply()
+        }
+    }
+
+    /** Wipe the entire recently-played history. */
+    fun clearRecents() {
+        posPrefs.edit().remove("recents").apply()
+    }
+
     // ---- Accounts (multi-account switcher) ----
 
     fun getAccounts(): List<Account> {
