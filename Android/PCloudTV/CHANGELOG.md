@@ -5,6 +5,14 @@ All notable changes to **pCloud TV**. Newest first.
 
 ---
 
+## v4.7 — Search that actually finds things
+
+- **Search now recurses into subfolders.** Previously "Search this folder" only filtered the folder's immediate children, so searching "Helmet" from Music returned nothing even though it lived in Music/Rock/Helmet. Search now walks the whole subtree (one `listfolder?recursive=1` call) and lists every matching folder and playable file, each tagged with where it lives ("in Rock"). Tapping a result opens or plays it and rebuilds the breadcrumb to its real path.
+- Search keystrokes are debounced (~350 ms) before hitting the API, with a "Searching…" indicator while results load.
+- The folder search field also pops the on-screen keyboard when it gains focus, so it's usable with a TV remote (D-pad up from the list to reach it), and has a Search IME action that dismisses the keyboard when confirmed.
+
+---
+
 ## v4.6 — Audiobooks shortcut at the root
 
 - Added an **Audiobooks** entry to the pCloud root (alongside Recently-Played, Playlists, Music, and Video) that opens /Books/Audiobooks directly, so the audiobook library is one tap from the top instead of buried under /Books.

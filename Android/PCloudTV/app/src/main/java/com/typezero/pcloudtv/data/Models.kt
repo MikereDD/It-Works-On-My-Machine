@@ -44,6 +44,18 @@ data class AudioFolder(
 )
 
 /**
+ * A match from a recursive folder search. [ancestors] is the chain of
+ * (folderId, name) folders from the search root (exclusive) down to the match's
+ * parent, so the browser can rebuild a correct breadcrumb when opening it, and
+ * [parentLabel] is that chain joined for display ("Rock / Helmet").
+ */
+data class SearchHit(
+    val item: PItem,
+    val parentLabel: String,
+    val ancestors: List<Pair<Long, String>>
+)
+
+/**
  * A resolved pCloud public share link (no account needed).
  * [children] maps a folderId to its contents so a shared folder tree can be
  * browsed entirely from the single showpublink response.
