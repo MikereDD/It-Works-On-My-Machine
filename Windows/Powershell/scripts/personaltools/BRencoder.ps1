@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file:     brEncoder.ps1
 # author:   Mike Redd
-# version:  3.0
+# version:  3.0.2
 # created:  2026-02-11
 # updated:  2026-06-12
 # desc:     Encode Blu-ray .m2ts files
@@ -13,9 +13,9 @@
 #           validates metadata, verifies final MKV
 #           language/default/forced tags
 #           remuxes final MKV with real track IDs
-# changes:  v3.0   - deterministic sidecar-required metadata workflow;
-#                    searches source/movie folder first; no ffprobe guessing;
-#                    fails loudly on missing sidecar or track-count mismatch.
+# changes:  v3.0.2 - read subtitle languages from Blu-ray .clpi clip info
+#                    (PID order = ffmpeg order); authoritative over sidecar,
+#                    sidecar used only as fallback; relaxes sub count guard
 #--------------------------------------------
 
 param()
@@ -55,7 +55,7 @@ else {
 $ErrorActionPreference = 'Stop'
 
 $ScriptName    = "Blu-ray Encoder"
-$ScriptVersion = "3.0"
+$ScriptVersion = "3.0.2"
 $ScriptAuthor  = "Mike Redd"
 
 # ── Config ────────────────────────────────────────────────────
@@ -1196,6 +1196,76 @@ function Get-SourceStreamLanguageMap {
     return [pscustomobject]@{ Audio = $audio; Sub = $sub }
 }
 
+function Read-ClpiSubtitleLanguages {
+    <#
+    .SYNOPSIS
+        Reads authoritative PGS subtitle languages from the Blu-ray clip info
+        file (BDMV\CLIPINF\<clip>.clpi) that sits beside the source .m2ts.
+    .DESCRIPTION
+        The raw .m2ts carries no subtitle language tags, but the .clpi stores
+        every elementary stream's ISO-639 language by PID. PGS streams sorted
+        by PID are in the exact order ffmpeg maps 0:s:0..0:s:N, so the returned
+        list lines up 1:1 with the encoded subtitle tracks. Returns $null if the
+        .clpi can't be found or parsed (caller falls back to sidecar tagging).
+    #>
+    param([Parameter(Mandatory)][string]$M2tsPath)
+
+    try {
+        $streamDir = [System.IO.Path]::GetDirectoryName($M2tsPath)        # ...\BDMV\STREAM
+        $base      = [System.IO.Path]::GetFileNameWithoutExtension($M2tsPath)
+        $bdmv      = [System.IO.Path]::GetDirectoryName($streamDir)       # ...\BDMV
+        if (-not $bdmv) { return $null }
+        $clpi = Join-Path (Join-Path $bdmv 'CLIPINF') ('{0}.clpi' -f $base)
+        if (-not (Test-Path -LiteralPath $clpi)) { return $null }
+
+        $b = [System.IO.File]::ReadAllBytes($clpi)
+        if ($b.Length -lt 40) { return $null }
+        if ([System.Text.Encoding]::ASCII.GetString($b, 0, 4) -ne 'HDMV') { return $null }
+
+        # ProgramInfo_start_address is a big-endian uint32 at offset 12.
+        $progStart = ([int]$b[12] -shl 24) -bor ([int]$b[13] -shl 16) -bor ([int]$b[14] -shl 8) -bor [int]$b[15]
+        if ($progStart -le 0 -or ($progStart + 6) -ge $b.Length) { return $null }
+
+        $p = $progStart + 4          # skip length (4 bytes)
+        $p += 1                      # reserved_for_word_align (1)
+        $numSeq = [int]$b[$p]; $p += 1
+
+        $subs = New-Object System.Collections.Generic.List[object]
+        for ($sq = 0; $sq -lt $numSeq; $sq++) {
+            $p += 4                  # SPN_program_sequence_start
+            $p += 2                  # program_map_PID
+            $numStreams = [int]$b[$p]; $p += 1
+            $p += 1                  # reserved
+            for ($k = 0; $k -lt $numStreams; $k++) {
+                if (($p + 3) -gt $b.Length) { return $null }
+                $pid   = ([int]$b[$p] -shl 8) -bor [int]$b[$p + 1]; $p += 2
+                $ciLen = [int]$b[$p]; $p += 1     # StreamCodingInfo length
+                $ciEnd = $p + $ciLen
+                if ($ciEnd -gt $b.Length) { return $null }
+                $codingType = [int]$b[$p]
+                if ($codingType -eq 0x90 -or $codingType -eq 0x91) {
+                    # PG/IG subtitle: 3-byte language_code right after coding type.
+                    $lang = [System.Text.Encoding]::ASCII.GetString($b, $p + 1, 3)
+                    $subs.Add([pscustomobject]@{ PID = $pid; Lang = $lang })
+                }
+                elseif ($codingType -eq 0x92) {
+                    # Text subtitle: char_code (1) then 3-byte language_code.
+                    $lang = [System.Text.Encoding]::ASCII.GetString($b, $p + 2, 3)
+                    $subs.Add([pscustomobject]@{ PID = $pid; Lang = $lang })
+                }
+                $p = $ciEnd
+            }
+        }
+
+        if ($subs.Count -eq 0) { return $null }
+        # ffmpeg maps PGS in ascending PID order -> sort to match 0:s:0..N.
+        return @($subs | Sort-Object PID | ForEach-Object {
+            Resolve-LanguageCode -Code ($_.Lang -replace '[^A-Za-z]', '')
+        })
+    }
+    catch { return $null }
+}
+
 function Invoke-MKVLanguageRemux {
     <#
     .SYNOPSIS
@@ -1220,8 +1290,14 @@ function Invoke-MKVLanguageRemux {
     if ($TrackLayout.AudioTracks.Count -ne $AudioMeta.Count) {
         throw "Audio validation failed: output=$($TrackLayout.AudioTracks.Count), metadata=$($AudioMeta.Count). Refusing unsafe partial tagging."
     }
-    if ($TrackLayout.SubtitleTracks.Count -ne $SubMeta.Count) {
-        throw "Subtitle validation failed: output=$($TrackLayout.SubtitleTracks.Count), metadata=$($SubMeta.Count). Refusing unsafe partial tagging."
+    # Prefer authoritative subtitle languages from the Blu-ray clip info; the
+    # sidecar's subtitle order/count then no longer gates tagging.
+    $subOutCount  = $TrackLayout.SubtitleTracks.Count
+    $clpiSubLangs = if ($SourcePath) { Read-ClpiSubtitleLanguages -M2tsPath $SourcePath } else { $null }
+    $useClpiSubs  = ($clpiSubLangs -and $clpiSubLangs.Count -eq $subOutCount)
+
+    if (-not $useClpiSubs -and $subOutCount -ne $SubMeta.Count) {
+        throw "Subtitle validation failed: output=$subOutCount, metadata=$($SubMeta.Count), and no usable .clpi languages. Refusing unsafe partial tagging."
     }
 
     for ($i = 0; $i -lt $AudioMeta.Count; $i++) {
@@ -1250,32 +1326,68 @@ function Invoke-MKVLanguageRemux {
         $applied++
     }
 
-    for ($i = 0; $i -lt $SubMeta.Count; $i++) {
-        $metaTrack = $SubMeta[$i]
-        $lang = Get-MetaLanguage -Track $metaTrack
-        $name = Get-MetaTrackName -Track $metaTrack
-        $trackRef = "track:s$($i + 1)"
+    # Build effective subtitle tracks: language from .clpi when usable, else
+    # from the sidecar. Forced comes from the sidecar positionally only when its
+    # count matches; name follows the language so the two never contradict.
+    $sidecarSubMatches = ($SubMeta.Count -eq $subOutCount)
+    $effSub = New-Object System.Collections.Generic.List[object]
+    for ($i = 0; $i -lt $subOutCount; $i++) {
+        if     ($useClpiSubs)        { $lang = $clpiSubLangs[$i] }
+        elseif ($i -lt $SubMeta.Count) { $lang = Get-MetaLanguage -Track $SubMeta[$i] }
+        else                         { $lang = 'und' }
 
+        $forced = [bool]($sidecarSubMatches -and $SubMeta[$i].Forced)
+
+        if ($useClpiSubs) {
+            $langName = switch ($lang) {
+                'eng' { 'English' } 'spa' { 'Spanish' } 'fra' { 'French' } 'fre' { 'French' }
+                'jpn' { 'Japanese' } 'ger' { 'German' } 'ita' { 'Italian' } 'por' { 'Portuguese' }
+                default { $null }
+            }
+            if ($langName) { $name = if ($forced) { "PGS $langName (forced only)" } else { "PGS $langName" } }
+            else           { $name = $null }
+        }
+        elseif ($i -lt $SubMeta.Count) { $name = Get-MetaTrackName -Track $SubMeta[$i] }
+        else                           { $name = $null }
+
+        $effSub.Add([pscustomobject]@{ Lang = $lang; Name = $name; Forced = $forced })
+    }
+
+    # Force English as the default subtitle (first non-forced English, else
+    # first English), overriding any sidecar [default].
+    $subDefaultIndex = 0
+    for ($di = 0; $di -lt $effSub.Count; $di++) {
+        if ($effSub[$di].Lang -eq 'eng' -and -not $effSub[$di].Forced) { $subDefaultIndex = $di + 1; break }
+    }
+    if ($subDefaultIndex -eq 0) {
+        for ($di = 0; $di -lt $effSub.Count; $di++) {
+            if ($effSub[$di].Lang -eq 'eng') { $subDefaultIndex = $di + 1; break }
+        }
+    }
+
+    $langSrc = if ($useClpiSubs) { 'clpi' } else { 'sidecar' }
+    for ($i = 0; $i -lt $effSub.Count; $i++) {
+        $t = $effSub[$i]
         $propArgs += '--edit'
-        $propArgs += $trackRef
+        $propArgs += "track:s$($i + 1)"
         $propArgs += '--set'
-        $propArgs += "language=$lang"
+        $propArgs += "language=$($t.Lang)"
 
-        if (-not [string]::IsNullOrWhiteSpace($name)) {
+        if (-not [string]::IsNullOrWhiteSpace($t.Name)) {
             $propArgs += '--set'
-            $propArgs += "name=$name"
+            $propArgs += "name=$($t.Name)"
         }
 
         $propArgs += '--set'
-        $propArgs += "flag-default=$(if ($metaTrack.Default) { '1' } else { '0' })"
+        $propArgs += "flag-default=$(if (($i + 1) -eq $subDefaultIndex) { '1' } else { '0' })"
         $propArgs += '--set'
-        $propArgs += "flag-forced=$(if ($metaTrack.Forced) { '1' } else { '0' })"
+        $propArgs += "flag-forced=$(if ($t.Forced) { '1' } else { '0' })"
 
-        Write-Host ("    sub   {0}: lang={1} (sidecar)  name={2}  default={3}  forced={4}" -f
-            ($i + 1), $lang,
-            $(if ([string]::IsNullOrWhiteSpace($name)) { '—' } else { $name }),
-            $(if ($metaTrack.Default) { 'yes' } else { 'no' }),
-            $(if ($metaTrack.Forced)  { 'yes' } else { 'no' }))
+        Write-Host ("    sub   {0}: lang={1} ({2})  name={3}  default={4}  forced={5}" -f
+            ($i + 1), $t.Lang, $langSrc,
+            $(if ([string]::IsNullOrWhiteSpace($t.Name)) { [char]0x2014 } else { $t.Name }),
+            $(if (($i + 1) -eq $subDefaultIndex) { 'yes' } else { 'no' }),
+            $(if ($t.Forced) { 'yes' } else { 'no' }))
         $applied++
     }
 
