@@ -9,7 +9,9 @@ data class ExtractRequest(
     /** Base output file name (no extension). Blank = derive from source. */
     val outputName: String,
     /** YouTube player client override (links only); null = yt-dlp default. */
-    val extractorClient: String? = null
+    val extractorClient: String? = null,
+    /** Path to a Netscape cookies.txt (links only); null = no cookies. */
+    val cookiesPath: String? = null
 ) {
     sealed interface Source {
         /**

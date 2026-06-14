@@ -5,13 +5,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.2.0] - 2026-06-14
 ### Added
-- **YouTube player selector** on the Link screen (Default / TV / Web / iOS / Mobile). Switching the impersonated client is the common workaround for YouTube `HTTP Error 403`; passed through as `--extractor-args youtube:player_client=<client>`.
+- **Cookies support** — load a Netscape `cookies.txt` (exported from a signed-in
+  browser) from the Link screen, passed to yt-dlp via `--cookies` to get past
+  YouTube's "Sign in to confirm you're not a bot" wall. Stored in app storage and
+  reusable across launches; removable from the same screen.
+- **YouTube player selector** on the Link screen (Default / TV / Web / iOS / Mobile).
+  Switching the impersonated client is the common workaround for YouTube
+  `HTTP Error 403`; passed through as `--extractor-args youtube:player_client=<client>`.
 - **Update extractor** action in the top-bar menu (stable or nightly channel),
-  wrapping `YoutubeDL.updateYoutubeDL`. Lets the bundled yt-dlp be refreshed
-  without rebuilding the app — the practical fix when YouTube links start
-  returning `HTTP Error 403` because the bundled binary has gone stale. Result is
-  reported via a snackbar.
+  wrapping `YoutubeDL.updateYoutubeDL`. Refreshes the bundled yt-dlp without
+  rebuilding the app — the practical fix when YouTube links start returning
+  `HTTP Error 403` because the bundled binary has gone stale. Reported via a snackbar.
 
 ### Fixed
 - Local-file extraction now invokes the bundled **FFmpeg binary directly** instead
@@ -21,7 +28,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   content URI under scoped storage.
 
 ### Changed
-- Build now targets the **arm64-v8a** ABI only and skips the universal APK (the all-ABI artifact was OOM-ing the packaging task). Add ABIs back to the `splits` block for other devices, or use `./gradlew :app:bundleRelease` for a shareable multi-device build.
+- Build now targets the **arm64-v8a** ABI only and skips the universal APK (the
+  all-ABI artifact was OOM-ing the packaging task). Add ABIs back to the `splits`
+  block for other devices, or use `./gradlew :app:bundleRelease` for a shareable
+  multi-device build.
 
 ## [0.1.0] - 2026-06-13
 ### Added
@@ -41,5 +51,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Live progress with cancel, plus a recent-jobs list.
 - Per-ABI APK splits and Git LFS configuration for release binaries.
 
-[Unreleased]: https://github.com/MikereDD/It-Works-On-My-Machine/compare/siphon-v0.1.0...HEAD
+[Unreleased]: https://github.com/MikereDD/It-Works-On-My-Machine/compare/siphon-v0.2.0...HEAD
+[0.2.0]: https://github.com/MikereDD/It-Works-On-My-Machine/releases/tag/siphon-v0.2.0
 [0.1.0]: https://github.com/MikereDD/It-Works-On-My-Machine/releases/tag/siphon-v0.1.0

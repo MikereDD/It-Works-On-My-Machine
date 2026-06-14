@@ -1,11 +1,15 @@
 package com.typezero.siphon.ui.screens
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.Cookie
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.font.FontWeight
@@ -18,6 +22,9 @@ import com.typezero.siphon.data.model.YouTubeClient
 @Composable
 fun LinkScreen(state: SiphonUiState, vm: SiphonViewModel) {
     val clipboard = LocalClipboardManager.current
+    val cookiePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri -> uri?.let(vm::importCookies) }
     Column(
         Modifier.fillMaxSize().padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -59,6 +66,32 @@ fun LinkScreen(state: SiphonUiState, vm: SiphonViewModel) {
             label = { it.label },
             onSelect = vm::setLinkClient
         )
+
+        HorizontalDivider()
+
+        Text(
+            "Still blocked with a sign-in / \"not a bot\" message? Load a cookies.txt exported from a browser signed in to the site:",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        if (state.cookiesLoaded) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Cookie, null, tint = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.width(8.dp))
+                Text("Cookies loaded", Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodyMedium)
+                TextButton(onClick = vm::clearCookies) { Text("Remove") }
+            }
+        } else {
+            OutlinedButton(
+                onClick = { cookiePicker.launch(arrayOf("*/*")) },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Default.Cookie, null)
+                Spacer(Modifier.width(8.dp))
+                Text("Load cookies.txt")
+            }
+        }
 
         AssistChip(onClick = {}, label = {
             Text("Only extract content you own or have the right to use.",

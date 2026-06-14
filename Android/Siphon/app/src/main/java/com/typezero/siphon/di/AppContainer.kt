@@ -3,6 +3,7 @@ package com.typezero.siphon.di
 import android.content.Context
 import com.typezero.siphon.data.MediaStoreVideoRepository
 import com.typezero.siphon.engine.OutputResolver
+import com.typezero.siphon.engine.CookieStore
 import com.typezero.siphon.engine.LocalFfmpegExtractor
 import com.typezero.siphon.engine.YtdlpEngine
 
@@ -13,4 +14,5 @@ class AppContainer(context: Context) {
     val outputResolver by lazy { OutputResolver(app) }
     val engine by lazy { YtdlpEngine(app) }
     val localExtractor by lazy { LocalFfmpegExtractor(app, engine) }
+    val cookieStore by lazy { CookieStore(app) }
 }

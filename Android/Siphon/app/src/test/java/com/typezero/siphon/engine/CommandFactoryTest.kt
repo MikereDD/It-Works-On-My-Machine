@@ -58,6 +58,20 @@ class CommandFactoryTest {
         assertFalse(args.contains("--extractor-args"))
     }
 
+
+    @Test fun cookies_path_adds_cookies_flag() {
+        val req = ExtractRequest(
+            ExtractRequest.Source.Link("https://youtu.be/x"),
+            AudioFormat.MP3, AudioQuality.K320, Tags(), "", cookiesPath = "/data/cookies.txt"
+        )
+        val args = CommandFactory.build(req, "/out", "a")
+        assertTrue(args.containsInOrder("--cookies", "/data/cookies.txt"))
+    }
+
+    @Test fun no_cookies_means_no_cookies_flag() {
+        assertFalse(CommandFactory.build(linkReq(), "/out", "a").contains("--cookies"))
+    }
+
     private fun List<String>.containsInOrder(a: String, b: String): Boolean {
         val i = indexOf(a); return i >= 0 && i + 1 < size && this[i + 1] == b
     }

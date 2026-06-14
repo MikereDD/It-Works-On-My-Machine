@@ -1,12 +1,16 @@
+<p align="center">
+  <img src="https://github.com/MikereDD/It-Works-On-My-Machine/raw/main/Android/Siphon/ic_launcher-web.png" alt="Siphon icon" width="120">
+</p>
+
 # Siphon
 
 Extract audio from a video — from a **local file** or a **link** — in the format
 and quality you want, with full metadata tagging. Android / Kotlin + Jetpack
 Compose.
 
-**Latest version: 0.1.0** · [Changelog](https://github.com/MikereDD/It-Works-On-My-Machine/blob/main/Android/Siphon/CHANGELOG.md)
+**Latest version: 0.2.0** · [Changelog](https://github.com/MikereDD/It-Works-On-My-Machine/blob/main/Android/Siphon/CHANGELOG.md)
 
-📦 **Download:** [Siphon-v0.1.0.apk](https://github.com/MikereDD/It-Works-On-My-Machine/raw/main/Android/Siphon/releases/Siphon-v0.1.0.apk) — arm64-v8a, ~78 MB
+📦 **Download:** [Siphon-v0.2.0.apk](https://github.com/MikereDD/It-Works-On-My-Machine/raw/main/Android/Siphon/releases/Siphon-v0.2.0.apk) — arm64-v8a, ~78 MB
 *(committed to `releases/` via Git LFS; see [Build](#build) for other ABIs)*
 
 ## What it does
@@ -67,9 +71,16 @@ YouTube changes constantly and the bundled yt-dlp goes stale, which shows up as
 the media fetch is refused. Use **Update extractor → nightly** from the top-bar
 menu to pull the latest yt-dlp in place; the maintainers ship fixes almost daily.
 
-Some YouTube videos may still fail even on nightly: current extraction can require
-PO tokens / a full JS runtime that can't be provided on-device. Non-YouTube links
-and most YouTube ones work; this is a yt-dlp/YouTube limitation, not a Siphon bug.
+If a specific video is still blocked, the Link screen has two escalating fallbacks:
+switch the **player** (Default / TV / Web / iOS / Mobile), and if it asks you to
+"sign in to confirm you're not a bot," **load a cookies.txt** exported from a
+browser signed in to the site. Export it with a "Get cookies.txt" browser
+extension — ideally from a throwaway account in a private window that you close
+(not log out of) afterward, so the cookies don't get rotated/invalidated.
+
+Some videos may still fail even then: current YouTube extraction can require PO
+tokens that can't be generated on-device. Non-YouTube links and most YouTube ones
+work; this is a yt-dlp/YouTube limitation, not a Siphon bug.
 
 ## Permissions
 

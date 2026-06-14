@@ -11,7 +11,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import android.net.Uri
 import java.util.UUID
 
 enum class Tab { LOCAL, LINK }
@@ -24,6 +27,7 @@ data class SiphonUiState(
     val searchQuery: String = "",
     val linkUrl: String = "",
     val linkClient: YouTubeClient = YouTubeClient.DEFAULT,
+    val cookiesLoaded: Boolean = false,
     // options sheet
     val sheetOpen: Boolean = false,
     val pendingSource: ExtractRequest.Source? = null,
@@ -49,11 +53,32 @@ class SiphonViewModel(private val container: AppContainer) : ViewModel() {
 
     private var currentProcessId: String? = null
 
+    init {
+        _state.update { it.copy(cookiesLoaded = container.cookieStore.hasCookies()) }
+    }
+
     // ---- navigation / input ----
     fun selectTab(tab: Tab) = _state.update { it.copy(tab = tab) }
     fun setSearch(q: String) = _state.update { it.copy(searchQuery = q) }
     fun setLinkUrl(url: String) = _state.update { it.copy(linkUrl = url) }
     fun setLinkClient(client: YouTubeClient) = _state.update { it.copy(linkClient = client) }
+
+    fun importCookies(uri: Uri) {
+        viewModelScope.launch {
+            val ok = withContext(Dispatchers.IO) { container.cookieStore.importFrom(uri) }
+            _state.update {
+                it.copy(
+                    cookiesLoaded = container.cookieStore.hasCookies(),
+                    snackbar = if (ok) "Cookies loaded" else "That doesn't look like a cookies.txt file"
+                )
+            }
+        }
+    }
+
+    fun clearCookies() {
+        container.cookieStore.clear()
+        _state.update { it.copy(cookiesLoaded = false, snackbar = "Cookies removed") }
+    }
 
     fun onPermissionResult(granted: Boolean) {
         _state.update { it.copy(hasMediaPermission = granted) }
@@ -125,8 +150,12 @@ class SiphonViewModel(private val container: AppContainer) : ViewModel() {
     fun startExtraction() {
         val s = _state.value
         val source = s.pendingSource ?: return
-        val extractorClient = (source as? ExtractRequest.Source.Link)?.let { s.linkClient.value }
-        val request = ExtractRequest(source, s.format, s.quality, s.tags, s.outputName, extractorClient)
+        val isLink = source is ExtractRequest.Source.Link
+        val extractorClient = if (isLink) s.linkClient.value else null
+        val cookiesPath = if (isLink) container.cookieStore.path() else null
+        val request = ExtractRequest(
+            source, s.format, s.quality, s.tags, s.outputName, extractorClient, cookiesPath
+        )
         val id = UUID.randomUUID().toString()
         currentProcessId = id
         val title = when (source) {

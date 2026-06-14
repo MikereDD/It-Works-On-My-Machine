@@ -86,6 +86,10 @@ object CommandFactory {
             request.extractorClient?.takeIf { it.isNotBlank() }?.let { client ->
                 add("--extractor-args"); add("youtube:player_client=$client")
             }
+            // Cookies for sign-in / "not a bot" gated content.
+            request.cookiesPath?.takeIf { it.isNotBlank() }?.let { path ->
+                add("--cookies"); add(path)
+            }
         }
     }
 
