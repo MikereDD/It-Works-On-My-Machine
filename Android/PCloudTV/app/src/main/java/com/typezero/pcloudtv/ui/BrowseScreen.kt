@@ -241,6 +241,30 @@ fun BrowseScreen(
     var playlistName by remember { mutableStateOf("") }
     var query by remember { mutableStateOf("") }
 
+    // Recursive ("deep") search of the current folder's whole subtree. The plain
+    // `visible` filter only sees the current folder's immediate children, so a
+    // match nested in a subfolder (e.g. Music/Rock/Helmet searched from Music)
+    // would otherwise show "no matches". Active only inside a real pCloud folder
+    // (current.first >= 0); the synthetic roots use the local filter.
+    var deepResults by remember { mutableStateOf<List<com.typezero.pcloudtv.data.SearchHit>>(emptyList()) }
+    var deepSearching by remember { mutableStateOf(false) }
+
+    LaunchedEffect(query, current.first) {
+        val q = query.trim()
+        if (q.length < 2 || current.first < 0L) {
+            deepResults = emptyList()
+            deepSearching = false
+            return@LaunchedEffect
+        }
+        deepSearching = true
+        kotlinx.coroutines.delay(350)   // debounce keystrokes before hitting the API
+        when (val r = client.searchFolder(session, current.first, q)) {
+            is ApiResult.Ok -> deepResults = r.value
+            is ApiResult.Error -> deepResults = emptyList()
+        }
+        deepSearching = false
+    }
+
     // Saved-playlist management (inside the synthetic Playlists folder).
     var playlistsFolderId by remember { mutableStateOf<Long?>(null) }
     var managePlaylist by remember { mutableStateOf<PItem?>(null) }
@@ -324,6 +348,24 @@ fun BrowseScreen(
             }
             pItem.isPlayable -> onPlayQueue(
                 listOf(com.typezero.pcloudtv.data.MediaItem(pItem.name, pItem.fileId, null)),
+                null
+            )
+        }
+    }
+
+    // Open a deep-search hit. For a folder we append its ancestor chain plus the
+    // folder itself onto the stack so the breadcrumb stays accurate; for a file
+    // we just play it. Clearing the query drops us back into normal browsing.
+    fun openHit(hit: com.typezero.pcloudtv.data.SearchHit) {
+        val node = hit.item
+        when {
+            node.isFolder && node.folderId != null -> {
+                hit.ancestors.forEach { stack.add(it) }
+                stack.add(node.folderId!! to node.name)
+                query = ""
+            }
+            node.isPlayable -> onPlayQueue(
+                listOf(com.typezero.pcloudtv.data.MediaItem(node.name, node.fileId, null)),
                 null
             )
         }
@@ -593,41 +635,98 @@ fun BrowseScreen(
                                 )
                             }
                         }
-                        if (visible.isEmpty() && query.isNotBlank()) {
-                            item {
-                                Text(
-                                    "No matches for \u201C${query.trim()}\u201D",
-                                    color = Brand.TextLow, fontSize = 14.sp,
-                                    modifier = Modifier.padding(vertical = 24.dp)
+                        val deepActive =
+                            query.trim().length >= 2 && current.first >= 0L && !selecting
+                        if (deepActive) {
+                            // Recursive results across this folder and all subfolders.
+                            if (deepResults.isEmpty() && deepSearching) {
+                                item {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.padding(vertical = 24.dp)
+                                    ) {
+                                        CircularProgressIndicator(
+                                            color = Brand.Accent, strokeWidth = 2.dp,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Spacer(Modifier.width(12.dp))
+                                        Text(
+                                            "Searching \u201C${query.trim()}\u201D\u2026",
+                                            color = Brand.TextLow, fontSize = 14.sp
+                                        )
+                                    }
+                                }
+                            } else if (deepResults.isEmpty()) {
+                                item {
+                                    Text(
+                                        "No matches for \u201C${query.trim()}\u201D",
+                                        color = Brand.TextLow, fontSize = 14.sp,
+                                        modifier = Modifier.padding(vertical = 24.dp)
+                                    )
+                                }
+                            } else {
+                                if (deepSearching) {
+                                    item {
+                                        Text(
+                                            "Searching\u2026",
+                                            color = Brand.TextLow, fontSize = 12.sp,
+                                            modifier = Modifier.padding(bottom = 2.dp)
+                                        )
+                                    }
+                                }
+                                itemsIndexed(deepResults) { index, hit ->
+                                    ItemCard(
+                                        item = hit.item,
+                                        compact = compact,
+                                        client = client,
+                                        session = session,
+                                        modifier = rowMax.then(
+                                            if (index == 0) Modifier.focusRequester(firstRow) else Modifier
+                                        ),
+                                        subtitleOverride = if (hit.parentLabel.isBlank())
+                                            (if (hit.item.isFolder) "Folder · here" else "here")
+                                        else "in ${hit.parentLabel}",
+                                        onClick = { openHit(hit) }
+                                    )
+                                }
+                            }
+                        } else {
+                            if (visible.isEmpty() && query.isNotBlank()) {
+                                item {
+                                    Text(
+                                        "No matches for \u201C${query.trim()}\u201D",
+                                        color = Brand.TextLow, fontSize = 14.sp,
+                                        modifier = Modifier.padding(vertical = 24.dp)
+                                    )
+                                }
+                            }
+                            // Vertical list — folders and files, the layout in the app.
+                            itemsIndexed(visible) { index, pItem ->
+                                ItemCard(
+                                    item = pItem,
+                                    compact = compact,
+                                    client = client,
+                                    session = session,
+                                    selecting = selecting,
+                                    selected = pItem.fileId != null && selectedItems.any { it.fileId == pItem.fileId },
+                                    modifier = rowMax.then(
+                                        if (index == 0) Modifier.focusRequester(firstRow) else Modifier
+                                    ),
+                                    onManage = if (current.first == PLAYLISTS_ROOT && pItem.isPlaylist) {
+                                        { managePlaylist = pItem }
+                                    } else null,
+                                    onClick = {
+                                        if (selecting) {
+                                            when {
+                                                pItem.isFolder ->
+                                                    stack.add(pItem.folderId!! to pItem.name)
+                                                !pItem.isPlaylist && pItem.isPlayable && pItem.fileId != null ->
+                                                    toggleSelect(pItem)
+                                            }
+                                        } else openItem(pItem)
+                                    }
                                 )
                             }
-                        }
-                        // Vertical list — folders and files, the layout in the app.
-                        itemsIndexed(visible) { index, pItem ->
-                            ItemCard(
-                                item = pItem,
-                                compact = compact,
-                                client = client,
-                                session = session,
-                                selecting = selecting,
-                                selected = pItem.fileId != null && selectedItems.any { it.fileId == pItem.fileId },
-                                modifier = rowMax.then(
-                                    if (index == 0) Modifier.focusRequester(firstRow) else Modifier
-                                ),
-                                onManage = if (current.first == PLAYLISTS_ROOT && pItem.isPlaylist) {
-                                    { managePlaylist = pItem }
-                                } else null,
-                                onClick = {
-                                    if (selecting) {
-                                        when {
-                                            pItem.isFolder ->
-                                                stack.add(pItem.folderId!! to pItem.name)
-                                            !pItem.isPlaylist && pItem.isPlayable && pItem.fileId != null ->
-                                                toggleSelect(pItem)
-                                        }
-                                    } else openItem(pItem)
-                                }
-                            )
                         }
                     }
                 }
@@ -1125,6 +1224,9 @@ private fun SearchField(
     onQueryChange: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // On a TV the on-screen keyboard doesn't pop just from D-pad focus the way a
+    // touch tap does, so request it explicitly when the field gains focus.
+    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     OutlinedTextField(
         value = query,
         onValueChange = onQueryChange,
@@ -1142,6 +1244,12 @@ private fun SearchField(
             }
         },
         shape = RoundedCornerShape(12.dp),
+        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+            imeAction = androidx.compose.ui.text.input.ImeAction.Search
+        ),
+        keyboardActions = androidx.compose.foundation.text.KeyboardActions(
+            onSearch = { keyboard?.hide() }
+        ),
         colors = OutlinedTextFieldDefaults.colors(
             focusedBorderColor = Brand.Accent,
             unfocusedBorderColor = Brand.Stroke,
@@ -1149,7 +1257,9 @@ private fun SearchField(
             focusedTextColor = Brand.TextHi,
             unfocusedTextColor = Brand.TextHi
         ),
-        modifier = modifier.fillMaxWidth()
+        modifier = modifier
+            .fillMaxWidth()
+            .onFocusChanged { if (it.isFocused) keyboard?.show() }
     )
 }
 
@@ -1238,6 +1348,7 @@ private fun ItemCard(
     selected: Boolean = false,
     modifier: Modifier = Modifier,
     onManage: (() -> Unit)? = null,
+    subtitleOverride: String? = null,
     onClick: () -> Unit
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -1280,7 +1391,7 @@ private fun ItemCard(
         item.isImage -> Icons.Filled.Image
         else -> Icons.Filled.InsertDriveFile
     }
-    val subtitle = when {
+    val subtitle = subtitleOverride ?: when {
         item.isFolder -> "Folder"
         item.isPlaylist -> "Playlist"
         item.isVideo -> "Video · ${humanSize(item.size)}"

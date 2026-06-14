@@ -214,6 +214,87 @@ class PCloudClient {
         }
 
     /**
+     * Recursively search a folder and everything beneath it for items whose
+     * name contains [query] (case-insensitive). One `listfolder?recursive=1`
+     * call walks the whole subtree; each hit carries the folder chain from
+     * [folderId] (exclusive) down to its parent so the browser can navigate to
+     * it with a correct breadcrumb. Matching folders and playable files are
+     * returned; other file types are ignored.
+     */
+    suspend fun searchFolder(
+        session: Session,
+        folderId: Long,
+        query: String
+    ): ApiResult<List<SearchHit>> =
+        withContext(Dispatchers.IO) {
+            try {
+                val q = query.trim()
+                if (q.isBlank()) return@withContext ApiResult.Ok(emptyList())
+                val url = "https://${session.apiHost}/listfolder".toHttpUrl().newBuilder()
+                    .addQueryParameter("auth", session.authToken)
+                    .addQueryParameter("folderid", folderId.toString())
+                    .addQueryParameter("recursive", "1")
+                    .build()
+                val json = http.newCall(Request.Builder().url(url).build()).execute()
+                    .use { JSONObject(it.body?.string().orEmpty()) }
+                if (json.optInt("result", -1) != 0) {
+                    return@withContext ApiResult.Error(
+                        json.optString("error", "Search failed (code ${json.optInt("result")})")
+                    )
+                }
+
+                val hits = mutableListOf<SearchHit>()
+
+                fun parseItem(o: JSONObject): PItem {
+                    val isFolder = o.optBoolean("isfolder", false)
+                    return PItem(
+                        name = o.optString("name"),
+                        isFolder = isFolder,
+                        folderId = if (isFolder) o.optLong("folderid") else null,
+                        fileId = if (!isFolder) o.optLong("fileid") else null,
+                        contentType = o.optString("contenttype", ""),
+                        category = o.optInt("category", 0),
+                        size = o.optLong("size", 0L)
+                    )
+                }
+
+                // [ancestors] is the chain from the search root (exclusive) to the
+                // folder whose contents we're currently scanning (inclusive).
+                fun walk(meta: JSONObject, ancestors: List<Pair<Long, String>>) {
+                    val contents = meta.optJSONArray("contents") ?: return
+                    for (i in 0 until contents.length()) {
+                        val o = contents.getJSONObject(i)
+                        val item = parseItem(o)
+                        if (item.name.contains(q, ignoreCase = true) &&
+                            (item.isFolder || item.isPlayable)
+                        ) {
+                            hits.add(
+                                SearchHit(
+                                    item = item,
+                                    parentLabel = ancestors.joinToString(" / ") { it.second },
+                                    ancestors = ancestors
+                                )
+                            )
+                        }
+                        if (item.isFolder && item.folderId != null) {
+                            walk(o, ancestors + (item.folderId to item.name))
+                        }
+                    }
+                }
+
+                walk(json.getJSONObject("metadata"), emptyList())
+                ApiResult.Ok(
+                    hits.sortedWith(
+                        compareByDescending<SearchHit> { it.item.isFolder }
+                            .thenBy { it.item.name.lowercase() }
+                    )
+                )
+            } catch (e: Exception) {
+                ApiResult.Error(e.message ?: "Network error")
+            }
+        }
+
+    /**
      * Resolve a direct, streamable HTTPS URL for a file.
      * The link is bound to the requesting device's IP, so we fetch it
      * immediately before playback on the same device.
