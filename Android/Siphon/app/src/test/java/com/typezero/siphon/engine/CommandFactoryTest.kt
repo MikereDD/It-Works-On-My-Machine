@@ -43,6 +43,21 @@ class CommandFactoryTest {
         assertNull(CommandFactory.buildMetadataPpArg(Tags()))
     }
 
+
+    @Test fun player_client_override_adds_extractor_args() {
+        val req = ExtractRequest(
+            ExtractRequest.Source.Link("https://youtu.be/x"),
+            AudioFormat.MP3, AudioQuality.K320, Tags(), "", extractorClient = "tv"
+        )
+        val args = CommandFactory.build(req, "/out", "a")
+        assertTrue(args.containsInOrder("--extractor-args", "youtube:player_client=tv"))
+    }
+
+    @Test fun no_player_client_means_no_extractor_args() {
+        val args = CommandFactory.build(linkReq(), "/out", "a")
+        assertFalse(args.contains("--extractor-args"))
+    }
+
     private fun List<String>.containsInOrder(a: String, b: String): Boolean {
         val i = indexOf(a); return i >= 0 && i + 1 < size && this[i + 1] == b
     }

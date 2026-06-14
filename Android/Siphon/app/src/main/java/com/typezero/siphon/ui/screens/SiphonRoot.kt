@@ -7,7 +7,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -23,12 +27,48 @@ import com.typezero.siphon.ui.SiphonViewModel
 @Composable
 fun SiphonRoot(vm: SiphonViewModel, onRequestPermission: () -> Unit) {
     val state by vm.state.collectAsStateWithLifecycle()
+    val snackbarHostState = remember { SnackbarHostState() }
+    var menuOpen by remember { mutableStateOf(false) }
+
+    LaunchedEffect(state.snackbar) {
+        state.snackbar?.let {
+            snackbarHostState.showSnackbar(it)
+            vm.consumeSnackbar()
+        }
+    }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
-            CenterAlignedTopAppBar(title = {
-                Text("Siphon", fontWeight = FontWeight.Bold)
-            })
+            CenterAlignedTopAppBar(
+                title = { Text("Siphon", fontWeight = FontWeight.Bold) },
+                actions = {
+                    if (state.extractorUpdating) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(22.dp),
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(Modifier.width(8.dp))
+                    }
+                    IconButton(onClick = { menuOpen = true }) {
+                        Icon(Icons.Default.MoreVert, contentDescription = "Menu")
+                    }
+                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Update extractor") },
+                            leadingIcon = { Icon(Icons.Default.Update, null) },
+                            enabled = !state.extractorUpdating,
+                            onClick = { menuOpen = false; vm.updateExtractor(nightly = false) }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Update extractor (nightly)") },
+                            leadingIcon = { Icon(Icons.Default.Bolt, null) },
+                            enabled = !state.extractorUpdating,
+                            onClick = { menuOpen = false; vm.updateExtractor(nightly = true) }
+                        )
+                    }
+                }
+            )
         }
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {

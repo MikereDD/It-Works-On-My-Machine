@@ -7,7 +7,9 @@ data class ExtractRequest(
     val quality: AudioQuality,
     val tags: Tags,
     /** Base output file name (no extension). Blank = derive from source. */
-    val outputName: String
+    val outputName: String,
+    /** YouTube player client override (links only); null = yt-dlp default. */
+    val extractorClient: String? = null
 ) {
     sealed interface Source {
         /**

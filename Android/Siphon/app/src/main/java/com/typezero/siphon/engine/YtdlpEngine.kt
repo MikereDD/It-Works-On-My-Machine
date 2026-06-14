@@ -31,11 +31,28 @@ class YtdlpEngine(private val appContext: Context) {
         }
     }
 
-    /** Pull the latest yt-dlp binary (optional; call from a settings action). */
-    suspend fun updateBinary() = withContext(Dispatchers.IO) {
+    /** Current yt-dlp version string, or null before first init/update. */
+    fun extractorVersion(): String? =
+        runCatching { YoutubeDL.getInstance().version(appContext) }.getOrNull()
+
+    /**
+     * Pull the latest yt-dlp binary. Nightly usually carries fixes for YouTube
+     * breakage (e.g. HTTP 403) weeks before stable. Returns a user-facing message.
+     */
+    suspend fun updateBinary(nightly: Boolean): String = withContext(Dispatchers.IO) {
         ensureInit()
-        runCatching {
-            YoutubeDL.getInstance().updateYoutubeDL(appContext, YoutubeDL.UpdateChannel.STABLE)
+        val channel = if (nightly) YoutubeDL.UpdateChannel.NIGHTLY
+                      else YoutubeDL.UpdateChannel.STABLE
+        try {
+            val status = YoutubeDL.getInstance().updateYoutubeDL(appContext, channel)
+            val ver = extractorVersion()?.let { " ($it)" } ?: ""
+            when (status) {
+                YoutubeDL.UpdateStatus.DONE -> "Extractor updated$ver"
+                YoutubeDL.UpdateStatus.ALREADY_UP_TO_DATE -> "Extractor already up to date$ver"
+                else -> "Update finished$ver"
+            }
+        } catch (e: Exception) {
+            throw EngineException("Update failed: ${e.message}", e)
         }
     }
 

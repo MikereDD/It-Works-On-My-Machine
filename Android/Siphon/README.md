@@ -60,6 +60,17 @@ compileSdk/targetSdk 35 · minSdk 26 · Java 17 · manual DI.
 > `releases/` as `Siphon-v<version>.apk` (tracked via Git LFS), which is where the
 > download link above resolves.
 
+## Keeping the link extractor working
+
+YouTube changes constantly and the bundled yt-dlp goes stale, which shows up as
+`ERROR: unable to download video data: HTTP Error 403` — the title resolves but
+the media fetch is refused. Use **Update extractor → nightly** from the top-bar
+menu to pull the latest yt-dlp in place; the maintainers ship fixes almost daily.
+
+Some YouTube videos may still fail even on nightly: current extraction can require
+PO tokens / a full JS runtime that can't be provided on-device. Non-YouTube links
+and most YouTube ones work; this is a yt-dlp/YouTube limitation, not a Siphon bug.
+
 ## Permissions
 
 - `READ_MEDIA_VIDEO` (API 33+) / `READ_EXTERNAL_STORAGE` (≤32) — list local videos.

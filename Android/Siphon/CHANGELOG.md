@@ -5,6 +5,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- **YouTube player selector** on the Link screen (Default / TV / Web / iOS / Mobile). Switching the impersonated client is the common workaround for YouTube `HTTP Error 403`; passed through as `--extractor-args youtube:player_client=<client>`.
+- **Update extractor** action in the top-bar menu (stable or nightly channel),
+  wrapping `YoutubeDL.updateYoutubeDL`. Lets the bundled yt-dlp be refreshed
+  without rebuilding the app — the practical fix when YouTube links start
+  returning `HTTP Error 403` because the bundled binary has gone stale. Result is
+  reported via a snackbar.
+
 ### Fixed
 - Local-file extraction now invokes the bundled **FFmpeg binary directly** instead
   of yt-dlp. yt-dlp only handles URLs, so local paths were failing with

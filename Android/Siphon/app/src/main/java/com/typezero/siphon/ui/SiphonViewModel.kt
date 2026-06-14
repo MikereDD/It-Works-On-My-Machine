@@ -23,6 +23,7 @@ data class SiphonUiState(
     val allVideos: List<VideoItem> = emptyList(),
     val searchQuery: String = "",
     val linkUrl: String = "",
+    val linkClient: YouTubeClient = YouTubeClient.DEFAULT,
     // options sheet
     val sheetOpen: Boolean = false,
     val pendingSource: ExtractRequest.Source? = null,
@@ -32,7 +33,9 @@ data class SiphonUiState(
     val outputName: String = "",
     // jobs
     val activeJob: JobState? = null,
-    val history: List<JobState> = emptyList()
+    val history: List<JobState> = emptyList(),
+    val extractorUpdating: Boolean = false,
+    val snackbar: String? = null
 ) {
     val visibleVideos: List<VideoItem>
         get() = if (searchQuery.isBlank()) allVideos
@@ -50,11 +53,27 @@ class SiphonViewModel(private val container: AppContainer) : ViewModel() {
     fun selectTab(tab: Tab) = _state.update { it.copy(tab = tab) }
     fun setSearch(q: String) = _state.update { it.copy(searchQuery = q) }
     fun setLinkUrl(url: String) = _state.update { it.copy(linkUrl = url) }
+    fun setLinkClient(client: YouTubeClient) = _state.update { it.copy(linkClient = client) }
 
     fun onPermissionResult(granted: Boolean) {
         _state.update { it.copy(hasMediaPermission = granted) }
         if (granted) loadVideos()
     }
+
+    fun updateExtractor(nightly: Boolean) {
+        if (_state.value.extractorUpdating) return
+        _state.update { it.copy(extractorUpdating = true) }
+        viewModelScope.launch {
+            val msg = try {
+                container.engine.updateBinary(nightly)
+            } catch (e: Exception) {
+                e.message ?: "Update failed"
+            }
+            _state.update { it.copy(extractorUpdating = false, snackbar = msg) }
+        }
+    }
+
+    fun consumeSnackbar() = _state.update { it.copy(snackbar = null) }
 
     fun loadVideos() {
         _state.update { it.copy(videosLoading = true) }
@@ -106,7 +125,8 @@ class SiphonViewModel(private val container: AppContainer) : ViewModel() {
     fun startExtraction() {
         val s = _state.value
         val source = s.pendingSource ?: return
-        val request = ExtractRequest(source, s.format, s.quality, s.tags, s.outputName)
+        val extractorClient = (source as? ExtractRequest.Source.Link)?.let { s.linkClient.value }
+        val request = ExtractRequest(source, s.format, s.quality, s.tags, s.outputName, extractorClient)
         val id = UUID.randomUUID().toString()
         currentProcessId = id
         val title = when (source) {

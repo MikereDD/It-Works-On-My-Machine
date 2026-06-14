@@ -12,6 +12,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.typezero.siphon.ui.SiphonUiState
 import com.typezero.siphon.ui.SiphonViewModel
+import com.typezero.siphon.ui.components.ChipRow
+import com.typezero.siphon.data.model.YouTubeClient
 
 @Composable
 fun LinkScreen(state: SiphonUiState, vm: SiphonViewModel) {
@@ -45,6 +47,18 @@ fun LinkScreen(state: SiphonUiState, vm: SiphonViewModel) {
             enabled = state.linkUrl.isNotBlank(),
             modifier = Modifier.fillMaxWidth().height(52.dp)
         ) { Text("Choose format & tags") }
+
+        Text(
+            "If a YouTube link is blocked (\"403\"), try a different player and extract again:",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        ChipRow(
+            options = YouTubeClient.entries,
+            selected = state.linkClient,
+            label = { it.label },
+            onSelect = vm::setLinkClient
+        )
 
         AssistChip(onClick = {}, label = {
             Text("Only extract content you own or have the right to use.",

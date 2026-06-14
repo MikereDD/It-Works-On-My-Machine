@@ -82,6 +82,10 @@ object CommandFactory {
             add("--retries"); add("5")
             add("--fragment-retries"); add("5")
             add("--no-warnings")
+            // YouTube 403 workaround: impersonate a different player client.
+            request.extractorClient?.takeIf { it.isNotBlank() }?.let { client ->
+                add("--extractor-args"); add("youtube:player_client=$client")
+            }
         }
     }
 
