@@ -1,0 +1,2 @@
+# Built APKs are tracked via Git LFS (GitHub 100MB hard limit).
+releases/*.apk filter=lfs diff=lfs merge=lfs -text
