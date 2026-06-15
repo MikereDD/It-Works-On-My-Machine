@@ -22,6 +22,7 @@ data class LibraryUiState(
     val folders: List<FolderNode> = emptyList(),
     val files: List<AudioFile> = emptyList(),
     val breadcrumb: List<FolderNode> = emptyList(),
+    val pcloudSignedIn: Boolean = false,
     val error: String? = null,
 ) {
     val atRoot: Boolean get() = breadcrumb.isEmpty()
@@ -34,6 +35,18 @@ class LibraryViewModel(
 
     private val _state = MutableStateFlow(LibraryUiState())
     val state: StateFlow<LibraryUiState> = _state.asStateFlow()
+
+    init {
+        // Reflect a persisted pCloud session (token survives restarts).
+        _state.update { it.copy(pcloudSignedIn = sources.pcloud.signedIn) }
+    }
+
+    /** Sign out of pCloud and return to the source picker. */
+    fun signOutPCloud() {
+        sources.pcloud.signOut()
+        sources.setActive(StorageSource.DEVICE)
+        _state.value = LibraryUiState(pcloudSignedIn = false)
+    }
 
     // One-shot requests for the host Activity to open pCloud's web login.
     private val _pcloudAuthRequests = Channel<Unit>(Channel.BUFFERED)
@@ -63,6 +76,7 @@ class LibraryViewModel(
             val error = runCatching { sources.pcloud.signInWithToken(token) }
                 .getOrElse { it.message ?: "Sign-in error." }
             if (error == null) {
+                _state.update { it.copy(pcloudSignedIn = true) }
                 sources.setActive(StorageSource.PCLOUD)
                 loadFolder(emptyList())
             } else {

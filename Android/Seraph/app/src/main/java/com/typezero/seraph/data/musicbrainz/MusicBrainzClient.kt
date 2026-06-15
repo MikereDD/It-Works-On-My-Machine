@@ -1,6 +1,9 @@
 package com.typezero.seraph.data.musicbrainz
 
 import com.typezero.seraph.data.model.MusicBrainzResult
+import com.typezero.seraph.data.model.ReleaseCandidate
+import com.typezero.seraph.data.model.ReleaseDetail
+import com.typezero.seraph.data.model.ReleaseTrack
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -41,6 +44,75 @@ class MusicBrainzClient {
     suspend fun frontCover(releaseMbid: String): ByteArray? = withContext(Dispatchers.IO) {
         getBytes("$CAA/release/$releaseMbid/front-500")
             ?: getBytes("$CAA/release/$releaseMbid/front")
+    }
+
+    /** Free-text release (album) search. Good for a folder name like "Artist - Album". */
+    suspend fun searchReleases(query: String, limit: Int = 10): List<ReleaseCandidate> =
+        withContext(Dispatchers.IO) {
+            if (query.isBlank()) return@withContext emptyList()
+            val q = URLEncoder.encode(query.trim(), "UTF-8")
+            val body = get("$WS/release?query=$q&fmt=json&limit=$limit") ?: return@withContext emptyList()
+            parseReleases(body)
+        }
+
+    /** Fetch a release with its full tracklist (sequential positions across media). */
+    suspend fun getRelease(mbid: String): ReleaseDetail? = withContext(Dispatchers.IO) {
+        val body = get("$WS/release/$mbid?inc=recordings+artist-credits&fmt=json")
+            ?: return@withContext null
+        parseReleaseDetail(mbid, body)
+    }
+
+    private fun parseReleases(json: String): List<ReleaseCandidate> {
+        val arr = JSONObject(json).optJSONArray("releases") ?: return emptyList()
+        val out = ArrayList<ReleaseCandidate>(arr.length())
+        for (i in 0 until arr.length()) {
+            val r = arr.getJSONObject(i)
+            out += ReleaseCandidate(
+                mbid = r.optString("id"),
+                title = r.optString("title"),
+                artist = creditJoin(r.optJSONArray("artist-credit")),
+                date = r.optString("date").ifBlank { null },
+                trackCount = r.optInt("track-count", 0),
+            )
+        }
+        return out
+    }
+
+    private fun parseReleaseDetail(mbid: String, json: String): ReleaseDetail {
+        val root = JSONObject(json)
+        val albumArtist = creditJoin(root.optJSONArray("artist-credit"))
+        val tracks = ArrayList<ReleaseTrack>()
+        val media = root.optJSONArray("media")
+        if (media != null) {
+            var pos = 0
+            for (m in 0 until media.length()) {
+                val tArr = media.getJSONObject(m).optJSONArray("tracks") ?: continue
+                for (t in 0 until tArr.length()) {
+                    val tk = tArr.getJSONObject(t)
+                    pos++
+                    tracks += ReleaseTrack(
+                        position = pos,
+                        title = tk.optString("title"),
+                        artist = creditJoin(tk.optJSONArray("artist-credit")).ifBlank { albumArtist },
+                    )
+                }
+            }
+        }
+        return ReleaseDetail(
+            mbid = mbid,
+            title = root.optString("title"),
+            artist = albumArtist,
+            date = root.optString("date").ifBlank { null },
+            tracks = tracks,
+        )
+    }
+
+    private fun creditJoin(ac: org.json.JSONArray?): String {
+        if (ac == null) return ""
+        return (0 until ac.length()).joinToString("") { idx ->
+            val c = ac.getJSONObject(idx)
+            c.optString("name") + c.optString("joinphrase")
+        }
     }
 
     private fun parseRecordings(json: String): List<MusicBrainzResult> {
@@ -115,6 +187,6 @@ class MusicBrainzClient {
         private const val MIN_SPACING_MS = 1100L
         // MusicBrainz asks that the app + contact be identifiable.
         const val USER_AGENT =
-            "Seraph/0.1.0 ( https://github.com/MikereDD/It-Works-On-My-Machine )"
+            "Seraph/0.2.0 ( https://github.com/MikereDD/It-Works-On-My-Machine )"
     }
 }

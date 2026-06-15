@@ -6,6 +6,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-06-14
+
+### Added
+- **Album match (MusicBrainz)** — from inside an album folder, tap the album
+  button to search MusicBrainz for the release, pick the right one, and the app
+  matches the folder's files to the tracklist (by leading filename number, else
+  by sorted order). Review the result, then apply in one pass: it writes tags
+  (title, artist, album, album artist, track number/total, year) to every file
+  and, optionally, embeds the cover art and renames the files from the template.
+  Works on device and pCloud alike.
+- **About screen** — app icon, version, credits (jaudiotagger, MusicBrainz +
+  Cover Art Archive, pCloud), a source link, and a **Sign out of pCloud** action.
+  Reached from the info button in the library top bar.
+
 ## [0.1.0] - 2026-06-14
 
 First baseline of **Seraph** — a Material 3 / Jetpack Compose audio tagger for

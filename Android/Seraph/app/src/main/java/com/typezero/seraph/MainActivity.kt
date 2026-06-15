@@ -20,6 +20,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.runtime.collectAsState
 import com.typezero.seraph.data.model.AudioFile
 import com.typezero.seraph.di.ViewModelFactory
+import com.typezero.seraph.ui.about.AboutScreen
+import com.typezero.seraph.ui.album.AlbumMatchScreen
+import com.typezero.seraph.ui.album.AlbumMatchViewModel
 import com.typezero.seraph.ui.editor.TagEditorScreen
 import com.typezero.seraph.ui.editor.TagEditorViewModel
 import com.typezero.seraph.ui.library.LibraryScreen
@@ -50,13 +53,17 @@ private fun AppRoot(factory: ViewModelFactory) {
     val libraryVm: LibraryViewModel = viewModel(factory = factory)
     val editorVm: TagEditorViewModel = viewModel(factory = factory)
     val renameVm: RenameViewModel = viewModel(factory = factory)
+    val albumVm: AlbumMatchViewModel = viewModel(factory = factory)
 
     val libraryState by libraryVm.state.collectAsState()
     val editorState by editorVm.state.collectAsState()
     val renameState by renameVm.state.collectAsState()
+    val albumState by albumVm.state.collectAsState()
 
     var selected by remember { mutableStateOf<AudioFile?>(null) }
     var showRename by remember { mutableStateOf(false) }
+    var showAlbum by remember { mutableStateOf(false) }
+    var showAbout by remember { mutableStateOf(false) }
 
     // Leave the editor automatically once a save lands.
     LaunchedEffect(Unit) {
@@ -66,6 +73,13 @@ private fun AppRoot(factory: ViewModelFactory) {
     LaunchedEffect(Unit) {
         renameVm.applied.collect {
             showRename = false
+            libraryVm.rescan()
+        }
+    }
+    // After an album match applies, leave and rescan (tags + names changed).
+    LaunchedEffect(Unit) {
+        albumVm.applied.collect {
+            showAlbum = false
             libraryVm.rescan()
         }
     }
@@ -90,10 +104,31 @@ private fun AppRoot(factory: ViewModelFactory) {
 
     val current = selected
     // On the library screen, system Back climbs out of subfolders before exiting.
-    if (current == null && !showRename && !showWebLogin && !libraryState.atRoot) {
+    if (current == null && !showRename && !showWebLogin && !showAbout && !showAlbum && !libraryState.atRoot) {
         BackHandler { libraryVm.navigateUp() }
     }
+    if (showAbout) BackHandler { showAbout = false }
+    if (showAlbum) BackHandler { showAlbum = false }
     when {
+        showAbout -> AboutScreen(
+            pcloudSignedIn = libraryState.pcloudSignedIn,
+            onSignOutPCloud = {
+                libraryVm.signOutPCloud()
+                showAbout = false
+            },
+            onBack = { showAbout = false },
+        )
+        showAlbum -> AlbumMatchScreen(
+            state = albumState,
+            onQueryChange = { albumVm.onQueryChange(it) },
+            onSearch = { albumVm.search() },
+            onPick = { albumVm.pick(it) },
+            onToggleRename = { albumVm.toggleRename() },
+            onToggleArt = { albumVm.toggleArt() },
+            onApply = { albumVm.apply() },
+            onBackToPick = { albumVm.backToPick() },
+            onBack = { showAlbum = false },
+        )
         showWebLogin -> PCloudWebLogin(
             onResult = { token ->
                 showWebLogin = false
@@ -122,6 +157,11 @@ private fun AppRoot(factory: ViewModelFactory) {
                 renameVm.start(libraryState.files)
                 showRename = true
             },
+            onAlbumMatch = {
+                albumVm.start(libraryState.currentName, libraryState.files)
+                showAlbum = true
+            },
+            onAbout = { showAbout = true },
         )
         else -> TagEditorScreen(
             state = editorState,

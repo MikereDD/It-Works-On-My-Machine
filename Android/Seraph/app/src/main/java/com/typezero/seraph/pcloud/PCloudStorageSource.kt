@@ -20,6 +20,9 @@ class PCloudStorageSource(
 
     override suspend fun isReady() = session.isSignedIn
 
+    /** Synchronous sign-in check for UI (e.g. the About screen's sign-out button). */
+    val signedIn: Boolean get() = session.isSignedIn
+
     /** Bind a token captured from the pCloud web login to its region and store it.
      *  Returns null on success, or an error message. */
     suspend fun signInWithToken(token: String): String? {

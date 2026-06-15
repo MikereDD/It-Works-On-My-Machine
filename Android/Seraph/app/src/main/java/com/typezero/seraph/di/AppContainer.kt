@@ -1,6 +1,7 @@
 package com.typezero.seraph.di
 
 import android.content.Context
+import com.typezero.seraph.data.album.AlbumMatchService
 import com.typezero.seraph.data.musicbrainz.MusicBrainzClient
 import com.typezero.seraph.data.rename.RenameService
 import com.typezero.seraph.data.tagging.TagFileService
@@ -33,4 +34,7 @@ class AppContainer(context: Context) {
     val tagFileService: TagFileService by lazy { TagFileService(sourceManager, tagger) }
     val renameService: RenameService by lazy { RenameService(sourceManager, tagFileService) }
     val musicBrainz: MusicBrainzClient by lazy { MusicBrainzClient() }
+    val albumMatchService: AlbumMatchService by lazy {
+        AlbumMatchService(musicBrainz, tagFileService, renameService)
+    }
 }

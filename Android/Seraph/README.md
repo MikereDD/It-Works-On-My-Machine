@@ -4,7 +4,7 @@
 
 <h1 align="center">Seraph</h1>
 
-<p align="center"><strong>v0.1.0</strong></p>
+<p align="center"><strong>v0.2.0</strong></p>
 
 <p align="center">
 A <strong>Material 3 + Jetpack Compose</strong> audio <strong>tagger</strong> for Android — the tagging
@@ -14,14 +14,14 @@ folders from a template.
 </p>
 
 <p align="center">
-  <a href="https://github.com/MikereDD/It-Works-On-My-Machine/raw/main/Android/Seraph/releases/Seraph-v0.1.0.apk"><strong>Download the APK (v0.1.0)</strong></a>
+  <a href="https://github.com/MikereDD/It-Works-On-My-Machine/raw/main/Android/Seraph/releases/Seraph-v0.2.0.apk"><strong>Download the APK (v0.2.0)</strong></a>
 </p>
 
 ---
 
 ## Install
 
-1. Download **[Seraph-v0.1.0.apk](https://github.com/MikereDD/It-Works-On-My-Machine/raw/main/Android/Seraph/releases/Seraph-v0.1.0.apk)** and copy it to your phone.
+1. Download **[Seraph-v0.2.0.apk](https://github.com/MikereDD/It-Works-On-My-Machine/raw/main/Android/Seraph/releases/Seraph-v0.2.0.apk)** and copy it to your phone.
 2. Open it with a file manager and install. You'll see Google **Play Protect**'s "unknown developer" notice — tap **More details -> Install anyway**. That's expected for a sideloaded personal build.
 3. Launch **Seraph**, then pick a source: **Device** to choose a folder, or **pCloud** to sign in (Google sign-in and two-factor are handled on pCloud's own page).
 

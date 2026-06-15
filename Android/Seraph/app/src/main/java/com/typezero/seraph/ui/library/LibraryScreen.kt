@@ -18,7 +18,9 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.DriveFileRenameOutline
+import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material3.CircularProgressIndicator
@@ -50,6 +52,8 @@ fun LibraryScreen(
     onUp: () -> Unit,
     onOpen: (AudioFile) -> Unit,
     onRename: () -> Unit,
+    onAlbumMatch: () -> Unit,
+    onAbout: () -> Unit,
 ) {
     Scaffold(
         topBar = {
@@ -64,9 +68,15 @@ fun LibraryScreen(
                 },
                 actions = {
                     if (state.files.isNotEmpty()) {
+                        IconButton(onClick = onAlbumMatch) {
+                            Icon(Icons.Rounded.Album, contentDescription = "Match album with MusicBrainz")
+                        }
                         IconButton(onClick = onRename) {
                             Icon(Icons.Rounded.DriveFileRenameOutline, contentDescription = "Rename files in this folder")
                         }
+                    }
+                    IconButton(onClick = onAbout) {
+                        Icon(Icons.Rounded.Info, contentDescription = "About")
                     }
                 },
             )

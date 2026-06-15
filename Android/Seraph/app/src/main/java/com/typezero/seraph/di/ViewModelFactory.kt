@@ -2,6 +2,7 @@ package com.typezero.seraph.di
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import com.typezero.seraph.ui.album.AlbumMatchViewModel
 import com.typezero.seraph.ui.editor.TagEditorViewModel
 import com.typezero.seraph.ui.library.LibraryViewModel
 import com.typezero.seraph.ui.rename.RenameViewModel
@@ -16,6 +17,8 @@ class ViewModelFactory(private val container: AppContainer) : ViewModelProvider.
             TagEditorViewModel(container.tagFileService, container.musicBrainz) as T
         modelClass.isAssignableFrom(RenameViewModel::class.java) ->
             RenameViewModel(container.renameService) as T
+        modelClass.isAssignableFrom(AlbumMatchViewModel::class.java) ->
+            AlbumMatchViewModel(container.albumMatchService, container.musicBrainz) as T
         else -> throw IllegalArgumentException("Unknown ViewModel: ${modelClass.name}")
     }
 }
