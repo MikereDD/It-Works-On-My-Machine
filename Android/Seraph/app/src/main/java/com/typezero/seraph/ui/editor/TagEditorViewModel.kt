@@ -69,11 +69,13 @@ class TagEditorViewModel(
         val t = _state.value.tags
         _state.update { it.copy(isSearching = true, candidates = emptyList(), message = null) }
         viewModelScope.launch {
-            val results = musicBrainz.searchRecordings(
-                title = t.title.ifBlank { fileNameAsTitle() },
-                artist = t.artist,
-                album = t.album,
-            )
+            val results = runCatching {
+                musicBrainz.searchRecordings(
+                    title = t.title.ifBlank { fileNameAsTitle() },
+                    artist = t.artist,
+                    album = t.album,
+                )
+            }.getOrElse { emptyList() }
             _state.update {
                 it.copy(
                     isSearching = false,
@@ -98,7 +100,7 @@ class TagEditorViewModel(
         }
         if (fetchArtwork && c.releaseMbid != null) {
             viewModelScope.launch {
-                val art = musicBrainz.frontCover(c.releaseMbid)
+                val art = runCatching { musicBrainz.frontCover(c.releaseMbid) }.getOrNull()
                 if (art != null) edit { it.copy(artwork = art) }
             }
         }

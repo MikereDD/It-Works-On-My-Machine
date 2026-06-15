@@ -6,13 +6,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.2.0] - 2026-06-14
+## [0.3.0] - 2026-06-14
+
+### Fixed
+- **Album match / rename failed with `ExceptionInInitializerError`.** The filename
+  template compiled a control-character regex (`\x00-\x1F`) in a static field that
+  some Android builds reject, which took down the whole renderer the first time it
+  ran. Rewrote it with no compiled regex (pure-code sanitization), so matching and
+  renaming work again.
+- **Album match now pairs files by title.** Matching tries the leading track
+  number, then song-title similarity (filenames usually contain the title),
+  then sorted order — so a folder like `101-the_beatles-love_me_do.mp3` lines up
+  with the release even when the numbering is disc-prefixed. The review screen
+  reports the file/track counts (and any error) when nothing matches.
+- **Crash when opening the tag editor or applying cover art.** Embedded/fetched
+  artwork is now decoded downsampled and off the main thread, so large covers
+  (1400px+) no longer exhaust memory. MusicBrainz lookups and album apply are
+  also fully guarded — a bad response surfaces a message instead of crashing.
 
 ### Added
-- **Album match (MusicBrainz)** — from inside an album folder, tap the album
-  button to search MusicBrainz for the release, pick the right one, and the app
-  matches the folder's files to the tracklist (by leading filename number, else
-  by sorted order). Review the result, then apply in one pass: it writes tags
+- **Multi-select in the library.** Long-press a track to start a selection, tap
+  to add/remove, and use the select-all toggle to grab the whole folder. The
+  album-match and rename actions then operate on just the selected files. Back
+  clears the selection before leaving the folder.
+- **In-app crash log.** Uncaught exceptions are recorded and shown under
+  "Last crash" on the About screen, with copy/clear — so a crash can be reported
+  without adb.
+- **Album match (MusicBrainz)** — from inside an album folder (or a selection),
+  tap the album button to search MusicBrainz for the release, pick the right one,
+  and the app matches the folder's files to the tracklist (by track number or
+  song title). Review the result, then apply in one pass: it writes tags
   (title, artist, album, album artist, track number/total, year) to every file
   and, optionally, embeds the cover art and renames the files from the template.
   Works on device and pCloud alike.
@@ -63,5 +86,6 @@ Android, the tagging companion to the video-to-audio extractor.
   token is in plain `SharedPreferences` (swap to `EncryptedSharedPreferences`).
 - Whole-album batch tagging; no undo yet (saves and renames are immediate).
 
-[Unreleased]: https://github.com/MikereDD/It-Works-On-My-Machine/compare/seraph-v0.1.0...HEAD
+[Unreleased]: https://github.com/MikereDD/It-Works-On-My-Machine/compare/seraph-v0.3.0...HEAD
+[0.3.0]: https://github.com/MikereDD/It-Works-On-My-Machine/compare/seraph-v0.1.0...seraph-v0.3.0
 [0.1.0]: https://github.com/MikereDD/It-Works-On-My-Machine/releases/tag/seraph-v0.1.0

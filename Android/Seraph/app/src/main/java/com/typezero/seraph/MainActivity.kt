@@ -103,9 +103,12 @@ private fun AppRoot(factory: ViewModelFactory) {
     }
 
     val current = selected
-    // On the library screen, system Back climbs out of subfolders before exiting.
-    if (current == null && !showRename && !showWebLogin && !showAbout && !showAlbum && !libraryState.atRoot) {
-        BackHandler { libraryVm.navigateUp() }
+    // Library Back priority: clear a selection, else climb out of subfolders.
+    if (current == null && !showRename && !showWebLogin && !showAbout && !showAlbum) {
+        when {
+            libraryState.selectionMode -> BackHandler { libraryVm.clearSelection() }
+            !libraryState.atRoot -> BackHandler { libraryVm.navigateUp() }
+        }
     }
     if (showAbout) BackHandler { showAbout = false }
     if (showAlbum) BackHandler { showAlbum = false }
@@ -154,13 +157,18 @@ private fun AppRoot(factory: ViewModelFactory) {
                 editorVm.load(file)
             },
             onRename = {
-                renameVm.start(libraryState.files)
+                renameVm.start(libraryVm.targetFiles())
+                libraryVm.clearSelection()
                 showRename = true
             },
             onAlbumMatch = {
-                albumVm.start(libraryState.currentName, libraryState.files)
+                albumVm.start(libraryState.currentName, libraryVm.targetFiles())
+                libraryVm.clearSelection()
                 showAlbum = true
             },
+            onToggleSelect = { libraryVm.toggleSelect(it) },
+            onSelectAll = { libraryVm.selectAll() },
+            onClearSelection = { libraryVm.clearSelection() },
             onAbout = { showAbout = true },
         )
         else -> TagEditorScreen(

@@ -78,14 +78,20 @@ class AlbumMatchViewModel(
                 _state.update { it.copy(busy = false, message = "Couldn't load that release — try another.") }
                 return@launch
             }
-            val rows = service.plan(files, release, template)
+            val planResult = runCatching { service.plan(files, release, template) }
+            val rows = planResult.getOrDefault(emptyList())
+            val err = planResult.exceptionOrNull()
             _state.update {
                 it.copy(
                     stage = AlbumStage.Review,
                     busy = false,
                     release = release,
                     rows = rows,
-                    message = if (rows.isEmpty()) "No tracks matched the files in this folder." else null,
+                    message = when {
+                        err != null -> "Match error: ${err.javaClass.simpleName}: ${err.message}"
+                        rows.isEmpty() -> "No tracks matched (${files.size} files, ${release.total} tracks)."
+                        else -> null
+                    },
                 )
             }
         }
@@ -104,7 +110,9 @@ class AlbumMatchViewModel(
         if (st.rows.isEmpty()) return
         _state.update { it.copy(stage = AlbumStage.Applying, busy = true, message = null) }
         viewModelScope.launch {
-            val res = service.apply(st.rows, release, st.folderName, st.rename, st.embedArt)
+            val res = runCatching {
+                service.apply(st.rows, release, st.folderName, st.rename, st.embedArt)
+            }.getOrElse { com.typezero.seraph.data.album.AlbumApplyResult(0, 0, st.rows.size) }
             if (res.failed == 0) {
                 _applied.send(Unit)
             } else {

@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -23,6 +25,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -33,9 +36,19 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.typezero.seraph.R
+import com.typezero.seraph.SeraphApp
+import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
+import java.io.File
 
 private const val REPO_URL = "https://github.com/MikereDD/It-Works-On-My-Machine/tree/main/Android/Seraph"
 
@@ -48,9 +61,14 @@ fun AboutScreen(
 ) {
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
+    val clipboard = LocalClipboardManager.current
+    val crashFile = remember { File(context.filesDir, SeraphApp.CRASH_FILE) }
+    var crashLog by remember {
+        mutableStateOf(runCatching { if (crashFile.exists()) crashFile.readText() else null }.getOrNull())
+    }
     val version = remember {
         runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }
-            .getOrNull() ?: "0.2.0"
+            .getOrNull() ?: "0.3.0"
     }
 
     Scaffold(
@@ -118,6 +136,46 @@ fun AboutScreen(
 
             if (pcloudSignedIn) {
                 OutlinedButton(onClick = onSignOutPCloud) { Text("Sign out of pCloud") }
+                Spacer(Modifier.height(16.dp))
+            }
+
+            crashLog?.let { log ->
+                Spacer(Modifier.height(8.dp))
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+                Spacer(Modifier.height(8.dp))
+                SectionLabel("Last crash")
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        log,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier
+                            .heightIn(max = 220.dp)
+                            .verticalScroll(rememberScrollState())
+                            .horizontalScroll(rememberScrollState())
+                            .padding(12.dp),
+                    )
+                }
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    OutlinedButton(
+                        onClick = { clipboard.setText(AnnotatedString(log)) },
+                        modifier = Modifier.weight(1f),
+                    ) { Text("Copy") }
+                    OutlinedButton(
+                        onClick = {
+                            runCatching { crashFile.delete() }
+                            crashLog = null
+                        },
+                        modifier = Modifier.weight(1f),
+                    ) { Text("Clear") }
+                }
                 Spacer(Modifier.height(16.dp))
             }
 

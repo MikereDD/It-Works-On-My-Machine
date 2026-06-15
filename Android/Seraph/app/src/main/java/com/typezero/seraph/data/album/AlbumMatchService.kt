@@ -39,6 +39,8 @@ class AlbumMatchService(
 ) {
     // Leading track number in a filename: "01 - ", "(01) ", "1. ", "07_"…
     private val leadingNum = Regex("""^[\s(\[]*(\d{1,3})[)\].\s_-]""")
+    private val extension = Regex("""\.[A-Za-z0-9]{1,5}$""")
+    private val nonAlnum = Regex("""[^a-z0-9]+""")
 
     fun plan(files: List<AudioFile>, release: ReleaseDetail, template: String): List<AlbumPlanRow> {
         val width = maxOf(2, release.total.toString().length)
@@ -72,25 +74,74 @@ class AlbumMatchService(
         }
     }
 
-    /** Match by leading filename number when most files have one; otherwise by sorted order. */
+    /**
+     * Match files to tracks. Tries, in order: leading filename number == track
+     * position; title similarity (filenames usually contain the song title);
+     * then plain sorted order as a last resort.
+     */
     private fun matchFilesToTracks(
         files: List<AudioFile>,
         release: ReleaseDetail,
     ): List<Pair<AudioFile, ReleaseTrack>> {
         val sorted = files.sortedBy { it.displayName.lowercase() }
+        if (sorted.isEmpty() || release.tracks.isEmpty()) return emptyList()
+        val half = (minOf(sorted.size, release.tracks.size) + 1) / 2
+
         val byNum = LinkedHashMap<Int, AudioFile>()
         for (f in sorted) {
-            val n = leadingNum.find(f.displayName)?.groupValues?.get(1)?.toIntOrNull()
+            val n = leadingNum.find(f.displayName)?.groupValues?.getOrNull(1)?.toIntOrNull()
             if (n != null) byNum.putIfAbsent(n, f)
         }
-        val coverage = release.tracks.count { byNum.containsKey(it.position) }
-        val useNumbers = byNum.isNotEmpty() &&
-            coverage >= (minOf(sorted.size, release.tracks.size) + 1) / 2
-        return if (useNumbers) {
-            release.tracks.mapNotNull { t -> byNum[t.position]?.let { it to t } }
-        } else {
-            sorted.zip(release.tracks)
+        val numbered = release.tracks.mapNotNull { t -> byNum[t.position]?.let { it to t } }
+        if (numbered.size >= half) return numbered
+
+        val byTitle = matchByTitle(sorted, release.tracks)
+        if (byTitle.size >= half) return byTitle
+
+        return when {
+            byTitle.size >= numbered.size && byTitle.isNotEmpty() -> byTitle
+            numbered.isNotEmpty() -> numbered
+            else -> sorted.zip(release.tracks)
         }
+    }
+
+    /** Greedily pair each track with the unused file whose name best covers its title. */
+    private fun matchByTitle(
+        files: List<AudioFile>,
+        tracks: List<ReleaseTrack>,
+    ): List<Pair<AudioFile, ReleaseTrack>> {
+        val fileTokens = files.associateWith { tokenize(it.displayName) }
+        val used = HashSet<String>()
+        val out = ArrayList<Pair<AudioFile, ReleaseTrack>>()
+        for (track in tracks) {
+            val tt = tokenize(track.title)
+            if (tt.isEmpty()) continue
+            var best: AudioFile? = null
+            var bestScore = 0.0
+            for (f in files) {
+                if (f.id in used) continue
+                val ft = fileTokens[f] ?: continue
+                val score = tt.count { it in ft }.toDouble() / tt.size
+                if (score > bestScore) {
+                    bestScore = score
+                    best = f
+                }
+            }
+            val b = best
+            if (b != null && bestScore >= 0.6) {
+                used += b.id
+                out += b to track
+            }
+        }
+        return out
+    }
+
+    private fun tokenize(name: String): Set<String> {
+        var s = name.lowercase()
+        s = extension.replace(s, "")
+        s = leadingNum.replace(s, "")
+        s = nonAlnum.replace(s, " ")
+        return s.split(' ').filter { it.length >= 2 }.toSet()
     }
 
     suspend fun apply(

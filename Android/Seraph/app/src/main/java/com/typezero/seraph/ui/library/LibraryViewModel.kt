@@ -23,10 +23,13 @@ data class LibraryUiState(
     val files: List<AudioFile> = emptyList(),
     val breadcrumb: List<FolderNode> = emptyList(),
     val pcloudSignedIn: Boolean = false,
+    val selection: Set<String> = emptySet(),
     val error: String? = null,
 ) {
     val atRoot: Boolean get() = breadcrumb.isEmpty()
     val currentName: String get() = breadcrumb.lastOrNull()?.name ?: "Seraph"
+    val selectionMode: Boolean get() = selection.isNotEmpty()
+    val allSelected: Boolean get() = files.isNotEmpty() && selection.size == files.size
 }
 
 class LibraryViewModel(
@@ -105,11 +108,30 @@ class LibraryViewModel(
     /** Reload the current folder (e.g. after a rename changed names). */
     fun rescan() = loadFolder(_state.value.breadcrumb)
 
+    // --- Multi-select within the current folder ---
+
+    fun toggleSelect(file: AudioFile) = _state.update {
+        val next = if (file.id in it.selection) it.selection - file.id else it.selection + file.id
+        it.copy(selection = next)
+    }
+
+    fun selectAll() = _state.update {
+        val all = it.files.map { f -> f.id }.toSet()
+        it.copy(selection = if (it.selection.size == all.size) emptySet() else all)
+    }
+
+    fun clearSelection() = _state.update { it.copy(selection = emptySet()) }
+
+    /** The currently selected files, or the whole folder when nothing is selected. */
+    fun targetFiles(): List<AudioFile> = _state.value.let { st ->
+        if (st.selection.isEmpty()) st.files else st.files.filter { it.id in st.selection }
+    }
+
     private fun loadFolder(crumb: List<FolderNode>) {
         val source = sources.active
         val folderId = crumb.lastOrNull()?.id
         _state.update {
-            it.copy(isLoading = true, hasSource = true, activeSourceId = source.id, breadcrumb = crumb, error = null)
+            it.copy(isLoading = true, hasSource = true, activeSourceId = source.id, breadcrumb = crumb, selection = emptySet(), error = null)
         }
         viewModelScope.launch {
             runCatching { source.listChildren(folderId) }
