@@ -1,7 +1,7 @@
 ﻿<#
 ================================================================
   BRencoder GUI  -  thin WinForms front end for BRencoder.ps1
-  version:  0.8  by Mike Redd
+  version:  0.8.1  by Mike Redd
 ----------------------------------------------------------------
   Reuses BRencoder.ps1's own functions (config, Get-M2tsFiles,
   Read-ClpiSubtitleLanguages, Encode-File) by dot-sourcing it.
@@ -181,10 +181,10 @@ function Get-DurationSeconds {
 }
 
 $form = New-Object System.Windows.Forms.Form
-$form.Text = "BRencoder GUI  v0.8"
-$form.Size = New-Object System.Drawing.Size(1000, 700)
+$form.Text = "BRencoder GUI  v0.8.1"
+$form.Size = New-Object System.Drawing.Size(1240, 920)
 $form.StartPosition = 'CenterScreen'
-$form.MinimumSize = New-Object System.Drawing.Size(860, 560)
+$form.MinimumSize = New-Object System.Drawing.Size(1000, 640)
 $form.BackColor = [System.Drawing.Color]::FromArgb(30, 30, 34)
 $form.ForeColor = [System.Drawing.Color]::Gainsboro
 $mono = New-Object System.Drawing.Font('Consolas', 9)
@@ -196,14 +196,14 @@ $lblFiles.Location = '12,10'; $lblFiles.AutoSize = $true
 $form.Controls.Add($lblFiles)
 
 $lstFiles = New-Object System.Windows.Forms.ListBox
-$lstFiles.Location = '12,30'; $lstFiles.Size = '320,470'
+$lstFiles.Location = '12,30'; $lstFiles.Size = '320,756'; $lstFiles.Anchor = 'Top, Bottom, Left'
 $lstFiles.Font = $mono
 $lstFiles.BackColor = [System.Drawing.Color]::FromArgb(22, 22, 26)
 $lstFiles.ForeColor = [System.Drawing.Color]::Gainsboro
 $form.Controls.Add($lstFiles)
 
 $btnRefresh = New-Object System.Windows.Forms.Button
-$btnRefresh.Text = "Refresh"; $btnRefresh.Location = '12,506'; $btnRefresh.Size = '100,28'
+$btnRefresh.Text = "Refresh"; $btnRefresh.Location = '12,798'; $btnRefresh.Size = '100,28'; $btnRefresh.Anchor = 'Bottom, Left'
 $form.Controls.Add($btnRefresh)
 
 # --- movie name ---
@@ -213,7 +213,7 @@ $lblName.Location = '352,10'; $lblName.AutoSize = $true
 $form.Controls.Add($lblName)
 
 $txtName = New-Object System.Windows.Forms.TextBox
-$txtName.Location = '352,30'; $txtName.Size = '618,24'
+$txtName.Location = '352,30'; $txtName.Size = '856,24'; $txtName.Anchor = 'Top, Left, Right'
 $txtName.Font = $mono
 $txtName.BackColor = [System.Drawing.Color]::FromArgb(22, 22, 26)
 $txtName.ForeColor = [System.Drawing.Color]::Gainsboro
@@ -226,7 +226,7 @@ $lblGrid.Location = '352,62'; $lblGrid.AutoSize = $true
 $form.Controls.Add($lblGrid)
 
 $grid = New-Object System.Windows.Forms.DataGridView
-$grid.Location = '352,84'; $grid.Size = '618,260'
+$grid.Location = '352,84'; $grid.Size = '856,440'; $grid.Anchor = 'Top, Bottom, Left, Right'
 $grid.AllowUserToAddRows = $false
 $grid.ReadOnly = $false
 $grid.RowHeadersVisible = $false
@@ -254,7 +254,7 @@ $form.Controls.Add($grid)
 
 # --- log + progress ---
 $log = New-Object System.Windows.Forms.RichTextBox
-$log.Location = '352,356'; $log.Size = '618,228'
+$log.Location = '352,536'; $log.Size = '856,250'; $log.Anchor = 'Bottom, Left, Right'
 $log.ReadOnly = $true
 $log.Font = $mono
 $log.BackColor = [System.Drawing.Color]::FromArgb(16, 16, 20)
@@ -262,22 +262,22 @@ $log.ForeColor = [System.Drawing.Color]::FromArgb(170, 220, 170)
 $form.Controls.Add($log)
 
 $progress = New-Object System.Windows.Forms.ProgressBar
-$progress.Location = '352,590'; $progress.Size = '460,22'
+$progress.Location = '352,798'; $progress.Size = '660,22'; $progress.Anchor = 'Bottom, Left'
 $progress.Style = 'Continuous'
 $form.Controls.Add($progress)
 
 $lblStat = New-Object System.Windows.Forms.Label
-$lblStat.Location = '352,616'; $lblStat.Size = '460,18'
+$lblStat.Location = '352,824'; $lblStat.Size = '660,18'; $lblStat.Anchor = 'Bottom, Left'
 $lblStat.Font = $mono; $lblStat.Text = ''
 $form.Controls.Add($lblStat)
 
 $btnEncode = New-Object System.Windows.Forms.Button
-$btnEncode.Text = "Encode"; $btnEncode.Location = '820,588'; $btnEncode.Size = '72,26'
+$btnEncode.Text = "Encode"; $btnEncode.Location = '1058,798'; $btnEncode.Size = '72,26'; $btnEncode.Anchor = 'Bottom, Right'
 $btnEncode.BackColor = [System.Drawing.Color]::FromArgb(40, 90, 50)
 $form.Controls.Add($btnEncode)
 
 $btnCancel = New-Object System.Windows.Forms.Button
-$btnCancel.Text = "Cancel"; $btnCancel.Location = '898,588'; $btnCancel.Size = '72,26'
+$btnCancel.Text = "Cancel"; $btnCancel.Location = '1136,798'; $btnCancel.Size = '72,26'; $btnCancel.Anchor = 'Bottom, Right'
 $btnCancel.Enabled = $false
 $btnCancel.BackColor = [System.Drawing.Color]::FromArgb(110, 45, 45)
 $form.Controls.Add($btnCancel)
