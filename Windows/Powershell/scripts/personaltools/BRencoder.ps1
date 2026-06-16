@@ -1,7 +1,7 @@
 ﻿#--------------------------------------------
 # file:     brEncoder.ps1
 # author:   Mike Redd
-# version:  3.1.2
+# version:  3.1.4
 # created:  2026-02-11
 # updated:  2026-06-12
 # desc:     Encode Blu-ray .m2ts files
@@ -13,23 +13,12 @@
 #           validates metadata, verifies final MKV
 #           language/default/forced tags
 #           remuxes final MKV with real track IDs
-# changes:  v3.1.2 - run ffmpeg encode with EAP=Continue so stderr info lines
-#                    don't abort under the script-wide EAP=Stop (GUI runspace);
-#                    add -nostats with -progress to keep the front-end log clean
-#           v3.1.1 - Read-ClpiStreamLanguages: pull audio + subtitle ISO-639
-#                    languages from .clpi for the GUI preview grid
-#           v3.1.0 - per-track overrides (-OverridesFile JSON) drive language,
-#                    default, forced, and flag-commentary for audio + subs;
-#                    relaxes count guards when overrides present
-#           v3.0.4 - guard the menu loop behind $env:BRENCODER_NOMENU so the
-#                    GUI can dot-source the functions without the CLI menu
-#           v3.0.3 - Encode-File: -AutoAccept and -ProgressFile hooks for the
-#                    GUI front end (ffmpeg -progress tailing)
-#           v3.0.2 - read subtitle languages from Blu-ray .clpi clip info
-#                    (PID order = ffmpeg order); authoritative over sidecar,
-#                    sidecar used only as fallback; relaxes sub count guard
-#           v3.0.1 - force English as default subtitle, overriding sidecar
-#                    [default] flag (first non-forced English track)
+# changes:  v3.1.4 - Invoke-MKVLanguageRemux: tag audio from the .clpi (physical
+#                    PID order) when the sidecar's logical count diverges from the
+#                    streams ffmpeg actually muxes, instead of throwing "Audio
+#                    validation failed"; cap tagging to the real output count;
+#                    default audio = best-sounding English (lossless over lossy,
+#                    then most channels)
 #--------------------------------------------
 
 param()
@@ -787,6 +776,21 @@ function Read-TrackMetadataFile {
     return ($raw | ConvertFrom-Json)
 }
 
+function Get-LooseNameKey {
+    # Punctuation-insensitive key for fuzzy sidecar matching, so a display name
+    # like "Blade Runner 2049 (2017)" still matches a sidecar named or recorded
+    # as "Blade Runner 2049 [2017]". Strips known metadata extensions, lowercases,
+    # and flattens () [] {} and every other non-alphanumeric run to one space.
+    # Used only as a fallback -- exact candidate paths are still tried first.
+    param([string]$Name)
+
+    if ([string]::IsNullOrWhiteSpace($Name)) { return '' }
+    $k = ([string]$Name) -replace '(?i)\.(json|tracks\.txt|m2ts|mkv|mpls|clpi)$', ''
+    $k = $k.ToLowerInvariant() -replace '[^a-z0-9]+', ' '
+    return (($k -replace '\s+', ' ').Trim())
+}
+
+
 function Test-TrackMetadataMatch {
     param(
         [Parameter(Mandatory)][object]$Meta,
@@ -827,6 +831,15 @@ function Test-TrackMetadataMatch {
         return $true
     }
 
+    # Punctuation-insensitive fallback: e.g. "... (2017)" matches "... [2017]".
+    $movieKey = Get-LooseNameKey -Name $MovieName
+    if ($movieKey) {
+        foreach ($name in $metaNames) {
+            if ((Get-LooseNameKey -Name $name) -ieq $movieKey) { return $true }
+        }
+        if ($Meta.MovieName -and ((Get-LooseNameKey -Name ([string]$Meta.MovieName)) -ieq $movieKey)) { return $true }
+    }
+
     return $false
 }
 
@@ -860,10 +873,12 @@ function Load-TrackMetadata {
         Sort-Object LastWriteTime -Descending |
         Select-Object -First $Script:MetadataScanLimit)
 
+    $movieKey = Get-LooseNameKey -Name $MovieName
     foreach ($file in $metadataFiles) {
         try {
             $data = Read-TrackMetadataFile -Path $file.FullName
-            if (Test-TrackMetadataMatch -Meta $data -SourceFile $SourceFile -MovieName $MovieName) {
+            $fileKey = Get-LooseNameKey -Name $file.Name
+            if ((Test-TrackMetadataMatch -Meta $data -SourceFile $SourceFile -MovieName $MovieName) -or ($movieKey -and $fileKey -ieq $movieKey)) {
                 return [pscustomobject]@{
                     Path = $file.FullName
                     Data = $data
@@ -1370,6 +1385,24 @@ function Get-LanguageDisplayName {
     }
 }
 
+function New-AudioTrackName {
+    # Friendly name like "TrueHD Atmos 7.1 English" from the mkvmerge codec
+    # display string + channel count + language. Used when tagging audio from
+    # the .clpi, which carries no track names.
+    param([string]$Codec, [int]$Channels, [string]$Lang)
+
+    $ch = switch ($Channels) {
+        8 { '7.1' }
+        7 { '6.1' }
+        6 { '5.1' }
+        2 { '2.0' }
+        1 { 'Mono' }
+        default { if ($Channels -gt 0) { "$Channels ch" } else { '' } }
+    }
+    $ln = Get-LanguageDisplayName -Code $Lang
+    return ((@($Codec, $ch, $ln) | Where-Object { $_ }) -join ' ').Trim()
+}
+
 function Invoke-MKVLanguageRemux {
     <#
     .SYNOPSIS
@@ -1407,8 +1440,16 @@ function Invoke-MKVLanguageRemux {
         } catch { Write-Host "    (overrides parse failed: $($_.Exception.Message))" }
     }
 
-    if ($ovrAudio.Count -eq 0 -and $TrackLayout.AudioTracks.Count -ne $AudioMeta.Count) {
-        throw "Audio validation failed: output=$($TrackLayout.AudioTracks.Count), metadata=$($AudioMeta.Count). Refusing unsafe partial tagging."
+    # Audio languages from the Blu-ray clip info when the sidecar (playlist-level
+    # MakeMKV count) diverges from the physical stream count ffmpeg actually muxes.
+    # The .clpi is in physical PID order, so it lines up 1:1 with the encoded tracks.
+    $audOutCount  = $TrackLayout.AudioTracks.Count
+    $clpiAllLangs = if ($SourcePath) { Read-ClpiStreamLanguages -M2tsPath $SourcePath } else { $null }
+    $clpiAudLangs = if ($clpiAllLangs) { @($clpiAllLangs.Audio) } else { @() }
+    $useClpiAudio = ($clpiAudLangs.Count -eq $audOutCount -and $audOutCount -gt 0)
+
+    if ($ovrAudio.Count -eq 0 -and -not $useClpiAudio -and $audOutCount -ne $AudioMeta.Count) {
+        throw "Audio validation failed: output=$audOutCount, metadata=$($AudioMeta.Count), and no usable .clpi languages. Refusing unsafe partial tagging."
     }
     # Prefer authoritative subtitle languages from the Blu-ray clip info; the
     # sidecar's subtitle order/count then no longer gates tagging.
@@ -1420,7 +1461,32 @@ function Invoke-MKVLanguageRemux {
         throw "Subtitle validation failed: output=$subOutCount, metadata=$($SubMeta.Count), and no usable .clpi languages. Refusing unsafe partial tagging."
     }
 
-    $audioCount = if ($ovrAudio.Count -gt 0) { $TrackLayout.AudioTracks.Count } else { $AudioMeta.Count }
+    # Default audio = best-sounding English that physically exists: rank lossless
+    # codecs over lossy, then most channels. Explicit GUI overrides still win.
+    $audLangAt = {
+        param([int]$ix)
+        if     ($useClpiAudio)            { return [string]$clpiAudLangs[$ix] }
+        elseif ($ix -lt $AudioMeta.Count) { return (Get-MetaLanguage -Track $AudioMeta[$ix]) }
+        else                              { return 'und' }
+    }
+    $audDefaultIndex = 0
+    if ($ovrAudio.Count -eq 0) {
+        $codecRank = @{ 'A_TRUEHD' = 6; 'A_MLP' = 6; 'A_FLAC' = 5; 'A_DTS' = 4; 'A_EAC3' = 3; 'A_AC3' = 2; 'A_AAC' = 1; 'A_OPUS' = 1 }
+        $bestRank = -1; $bestCh = -1
+        for ($di = 0; $di -lt $audOutCount; $di++) {
+            if ((& $audLangAt $di) -ne 'eng') { continue }
+            $props = $TrackLayout.AudioTracks[$di].properties
+            $cid = if ($props -and $props.codec_id)      { [string]$props.codec_id }     else { '' }
+            $ch  = if ($props -and $props.audio_channels) { [int]$props.audio_channels } else { 0 }
+            $rank = if ($codecRank.ContainsKey($cid)) { $codecRank[$cid] } else { 0 }
+            if ($rank -gt $bestRank -or ($rank -eq $bestRank -and $ch -gt $bestCh)) {
+                $bestRank = $rank; $bestCh = $ch; $audDefaultIndex = $di + 1
+            }
+        }
+        if ($audDefaultIndex -eq 0 -and $audOutCount -gt 0) { $audDefaultIndex = 1 }
+    }
+
+    $audioCount = $audOutCount
     for ($i = 0; $i -lt $audioCount; $i++) {
         $metaTrack = if ($i -lt $AudioMeta.Count) { $AudioMeta[$i] } else { $null }
         $o = $ovrAudio[$i + 1]
@@ -1431,15 +1497,22 @@ function Invoke-MKVLanguageRemux {
             $isComm    = [bool]$o.commentary
             $src       = 'override'
         }
+        elseif ($useClpiAudio) {
+            $lang      = [string]$clpiAudLangs[$i]
+            $name      = New-AudioTrackName -Codec ([string]$TrackLayout.AudioTracks[$i].codec) -Channels ([int]$TrackLayout.AudioTracks[$i].properties.audio_channels) -Lang $lang
+            $isDefault = (($i + 1) -eq $audDefaultIndex)
+            $isComm    = $false
+            $src       = 'clpi'
+        }
         elseif ($metaTrack) {
             $lang      = Get-MetaLanguage -Track $metaTrack
             $name      = Get-MetaTrackName -Track $metaTrack
-            $isDefault = [bool]$metaTrack.Default
+            $isDefault = (($i + 1) -eq $audDefaultIndex)
             $isComm    = $false
             $src       = 'sidecar'
         }
         else {
-            $lang = 'und'; $name = $null; $isDefault = $false; $isComm = $false; $src = 'none'
+            $lang = 'und'; $name = $null; $isDefault = (($i + 1) -eq $audDefaultIndex); $isComm = $false; $src = 'none'
         }
         if ($isComm -and [string]::IsNullOrWhiteSpace($name)) {
             $ln = Get-LanguageDisplayName -Code $lang
