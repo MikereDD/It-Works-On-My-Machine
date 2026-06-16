@@ -1,7 +1,7 @@
 ﻿#--------------------------------------------
 # file:     brEncoder.ps1
 # author:   Mike Redd
-# version:  3.1.1
+# version:  3.1.2
 # created:  2026-02-11
 # updated:  2026-06-12
 # desc:     Encode Blu-ray .m2ts files
@@ -13,7 +13,10 @@
 #           validates metadata, verifies final MKV
 #           language/default/forced tags
 #           remuxes final MKV with real track IDs
-# changes:  v3.1.1 - Read-ClpiStreamLanguages: pull audio + subtitle ISO-639
+# changes:  v3.1.2 - run ffmpeg encode with EAP=Continue so stderr info lines
+#                    don't abort under the script-wide EAP=Stop (GUI runspace);
+#                    add -nostats with -progress to keep the front-end log clean
+#           v3.1.1 - Read-ClpiStreamLanguages: pull audio + subtitle ISO-639
 #                    languages from .clpi for the GUI preview grid
 #           v3.1.0 - per-track overrides (-OverridesFile JSON) drive language,
 #                    default, forced, and flag-commentary for audio + subs;
@@ -2107,7 +2110,10 @@ function Encode-File {
     $ffArgs = @('-hide_banner', '-y')
     if ($ProgressFile) {
         # Machine-readable progress for a front end (frame/out_time/speed...).
-        $ffArgs += @('-progress', $ProgressFile, '-stats_period', '1')
+        # -nostats stops ffmpeg also streaming a per-second stats line to stderr
+        # (the front end reads the progress file instead), which would otherwise
+        # flood the GUI log and produce NativeCommandError noise.
+        $ffArgs += @('-progress', $ProgressFile, '-stats_period', '1', '-nostats')
     }
     $ffArgs += @(
         '-probesize', $Script:M2tsProbeSize,
@@ -2137,7 +2143,18 @@ function Encode-File {
         $outputFile
     )
 
-    & $Script:FFmpegPath @ffArgs
+    # ffmpeg writes progress/info to stderr. In a runspace (e.g. the GUI) those
+    # surface as NativeCommandError records, and the script-wide EAP=Stop would
+    # turn the very first one into a terminating error before we can read the
+    # real exit code. Relax EAP for the encode itself and judge by exit code.
+    $ffEAP = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        & $Script:FFmpegPath @ffArgs
+    }
+    finally {
+        $ErrorActionPreference = $ffEAP
+    }
 
     if ($LASTEXITCODE -ne 0) {
         throw "ffmpeg failed with exit code $LASTEXITCODE"
