@@ -1,9 +1,9 @@
-#--------------------------------------------
+﻿#--------------------------------------------
 # file:     tool-menu.ps1
 # author:   Mike Redd
-# version:  3.3
+# version:  3.4
 # created:  2026-03-30
-# updated:  2026-06-04
+# updated:  2026-06-15
 # desc:     Unified script launcher (Admin + Personal + Games)
 #--------------------------------------------
 
@@ -56,7 +56,7 @@ if (Test-Path $corePath) {
 }
 
 $ScriptName    = "Tool Menu"
-$ScriptVersion = "3.3"
+$ScriptVersion = "3.4"
 $ScriptAuthor  = "Mike Redd"
 
 # ── Base script paths ─────────────────────────────────────────
@@ -90,6 +90,7 @@ $PersonalTools = @(
     [PSCustomObject]@{ Name="Blu-ray Backup";        File="bluray-backup.ps1" }
     [PSCustomObject]@{ Name="Blu-ray Track Dump";	 File="bluray-trackdump.ps1" }
     [PSCustomObject]@{ Name="Blu-ray Encoder";       File="BRencoder.ps1" }
+    [PSCustomObject]@{ Name="Blu-ray Encoder (GUI)"; File="BRencoder-gui.ps1" }
     [PSCustomObject]@{ Name="WebRipper";             File="web-ripper.ps1" }
 )
 
@@ -175,6 +176,19 @@ function Start-ToolScript {
     }
 
     try {
+        # GUI tools (convention: *-gui.ps1) are WinForms and must run under
+        # Windows PowerShell in a single-threaded apartment (-STA). pwsh is MTA
+        # and unreliable for WinForms, so force powershell.exe here. -File gives
+        # the GUI a correct $PSScriptRoot so it finds its sibling engine script.
+        if ($ScriptPath -like '*-gui.ps1') {
+            $winPS = Get-Command powershell.exe -ErrorAction SilentlyContinue
+            if (-not $winPS) {
+                throw "powershell.exe (Windows PowerShell) is required for the GUI: $ScriptPath"
+            }
+            & $winPS.Source -NoProfile -ExecutionPolicy Bypass -STA -File $ScriptPath
+            return
+        }
+
         # Launch child scripts through pwsh with ExecutionPolicy Bypass so
         # downloaded/generated scripts do not fail under RemoteSigned.
         $pwshCmd = Get-Command pwsh -ErrorAction SilentlyContinue

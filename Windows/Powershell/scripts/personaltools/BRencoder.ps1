@@ -1,7 +1,7 @@
-#--------------------------------------------
+﻿#--------------------------------------------
 # file:     brEncoder.ps1
 # author:   Mike Redd
-# version:  3.0.2
+# version:  3.1.1
 # created:  2026-02-11
 # updated:  2026-06-12
 # desc:     Encode Blu-ray .m2ts files
@@ -13,9 +13,20 @@
 #           validates metadata, verifies final MKV
 #           language/default/forced tags
 #           remuxes final MKV with real track IDs
-# changes:  v3.0.2 - read subtitle languages from Blu-ray .clpi clip info
+# changes:  v3.1.1 - Read-ClpiStreamLanguages: pull audio + subtitle ISO-639
+#                    languages from .clpi for the GUI preview grid
+#           v3.1.0 - per-track overrides (-OverridesFile JSON) drive language,
+#                    default, forced, and flag-commentary for audio + subs;
+#                    relaxes count guards when overrides present
+#           v3.0.4 - guard the menu loop behind $env:BRENCODER_NOMENU so the
+#                    GUI can dot-source the functions without the CLI menu
+#           v3.0.3 - Encode-File: -AutoAccept and -ProgressFile hooks for the
+#                    GUI front end (ffmpeg -progress tailing)
+#           v3.0.2 - read subtitle languages from Blu-ray .clpi clip info
 #                    (PID order = ffmpeg order); authoritative over sidecar,
 #                    sidecar used only as fallback; relaxes sub count guard
+#           v3.0.1 - force English as default subtitle, overriding sidecar
+#                    [default] flag (first non-forced English track)
 #--------------------------------------------
 
 param()
@@ -55,7 +66,7 @@ else {
 $ErrorActionPreference = 'Stop'
 
 $ScriptName    = "Blu-ray Encoder"
-$ScriptVersion = "3.0.2"
+$ScriptVersion = "3.1.0"
 $ScriptAuthor  = "Mike Redd"
 
 # ── Config ────────────────────────────────────────────────────
@@ -1266,6 +1277,96 @@ function Read-ClpiSubtitleLanguages {
     catch { return $null }
 }
 
+function Read-ClpiStreamLanguages {
+    <#
+    .SYNOPSIS
+        Reads ISO-639 languages for BOTH audio and PG/Text subtitle streams from
+        the Blu-ray clip info (BDMV\CLIPINF\<clip>.clpi) beside the source .m2ts.
+    .DESCRIPTION
+        The raw .m2ts carries no language tags; the .clpi StreamCodingInfo table
+        does, for audio coding types as well as PG/IG/Text subtitles. Returns
+        [pscustomobject]@{ Audio=@(langs); Subtitle=@(langs); Status='...' } with
+        each list sorted by PID so it lines up 1:1 with ffmpeg's 0:a:0..N and
+        0:s:0..N mapping. Lists are empty when nothing is found; Status is a short
+        human-readable note for logging. Never throws -- worst case is empty lists.
+    #>
+    param([Parameter(Mandatory)][string]$M2tsPath)
+
+    $audio = New-Object System.Collections.Generic.List[object]
+    $subs  = New-Object System.Collections.Generic.List[object]
+    try {
+        $streamDir = [System.IO.Path]::GetDirectoryName($M2tsPath)
+        $base      = [System.IO.Path]::GetFileNameWithoutExtension($M2tsPath)
+        $bdmv      = [System.IO.Path]::GetDirectoryName($streamDir)
+        if (-not $bdmv) { return [pscustomobject]@{ Audio=@(); Subtitle=@(); Status='clpi: no BDMV parent dir' } }
+        $clpi = Join-Path (Join-Path $bdmv 'CLIPINF') ('{0}.clpi' -f $base)
+        if (-not (Test-Path -LiteralPath $clpi)) {
+            return [pscustomobject]@{ Audio=@(); Subtitle=@(); Status=("clpi: not found -> {0}" -f $clpi) }
+        }
+        $b = [System.IO.File]::ReadAllBytes($clpi)
+        if ($b.Length -lt 40 -or [System.Text.Encoding]::ASCII.GetString($b, 0, 4) -ne 'HDMV') {
+            return [pscustomobject]@{ Audio=@(); Subtitle=@(); Status='clpi: bad header (not HDMV)' }
+        }
+        $progStart = ([int]$b[12] -shl 24) -bor ([int]$b[13] -shl 16) -bor ([int]$b[14] -shl 8) -bor [int]$b[15]
+        if ($progStart -le 0 -or ($progStart + 6) -ge $b.Length) {
+            return [pscustomobject]@{ Audio=@(); Subtitle=@(); Status='clpi: bad ProgramInfo offset' }
+        }
+        $p = $progStart + 4      # skip length (4)
+        $p += 1                  # reserved_for_word_align (1)
+        $numSeq = [int]$b[$p]; $p += 1
+        for ($sq = 0; $sq -lt $numSeq; $sq++) {
+            $p += 4              # SPN_program_sequence_start
+            $p += 2              # program_map_PID
+            $numStreams = [int]$b[$p]; $p += 1
+            $p += 1              # reserved
+            for ($k = 0; $k -lt $numStreams; $k++) {
+                if (($p + 3) -gt $b.Length) { break }
+                $pid   = ([int]$b[$p] -shl 8) -bor [int]$b[$p + 1]; $p += 2
+                $ciLen = [int]$b[$p]; $p += 1     # StreamCodingInfo length
+                $ciEnd = $p + $ciLen
+                if ($ciEnd -gt $b.Length) { break }
+                $ct = [int]$b[$p]
+                # Audio coding types: MPEG1/2 (0x03,0x04), LPCM (0x80), AC-3 (0x81),
+                # DTS (0x82), TrueHD (0x83), E-AC3 (0x84), DTS-HD (0x85), DTS-HD MA
+                # (0x86), secondary E-AC3/DTS (0xA1,0xA2). Layout after coding_type:
+                # audio_format/sample_rate (1 byte) then 3-byte ISO-639 language.
+                if ($ct -eq 0x03 -or $ct -eq 0x04 -or ($ct -ge 0x80 -and $ct -le 0x86) -or $ct -eq 0xA1 -or $ct -eq 0xA2) {
+                    $lang = [System.Text.Encoding]::ASCII.GetString($b, $p + 2, 3)
+                    $audio.Add([pscustomobject]@{ PID = $pid; Lang = $lang })
+                }
+                elseif ($ct -eq 0x90 -or $ct -eq 0x91) {
+                    # PG/IG subtitle: 3-byte language right after coding type.
+                    $lang = [System.Text.Encoding]::ASCII.GetString($b, $p + 1, 3)
+                    $subs.Add([pscustomobject]@{ PID = $pid; Lang = $lang })
+                }
+                elseif ($ct -eq 0x92) {
+                    # Text subtitle: char_code (1) then 3-byte language.
+                    $lang = [System.Text.Encoding]::ASCII.GetString($b, $p + 2, 3)
+                    $subs.Add([pscustomobject]@{ PID = $pid; Lang = $lang })
+                }
+                $p = $ciEnd
+            }
+        }
+        $aL = @($audio | Sort-Object PID | ForEach-Object { Resolve-LanguageCode -Code ($_.Lang -replace '[^A-Za-z]', '') })
+        $sL = @($subs  | Sort-Object PID | ForEach-Object { Resolve-LanguageCode -Code ($_.Lang -replace '[^A-Za-z]', '') })
+        return [pscustomobject]@{ Audio = $aL; Subtitle = $sL; Status = ("clpi: {0} audio / {1} subtitle langs" -f $aL.Count, $sL.Count) }
+    }
+    catch {
+        return [pscustomobject]@{ Audio = @(); Subtitle = @(); Status = ("clpi: parse error - {0}" -f $_.Exception.Message) }
+    }
+}
+
+function Get-LanguageDisplayName {
+    param([string]$Code)
+    switch ($Code) {
+        'eng' { 'English' } 'spa' { 'Spanish' } 'fra' { 'French' } 'fre' { 'French' }
+        'jpn' { 'Japanese' } 'ger' { 'German' } 'deu' { 'German' } 'ita' { 'Italian' }
+        'por' { 'Portuguese' } 'rus' { 'Russian' } 'kor' { 'Korean' }
+        'chi' { 'Chinese' } 'zho' { 'Chinese' } 'dut' { 'Dutch' } 'nld' { 'Dutch' }
+        default { $null }
+    }
+}
+
 function Invoke-MKVLanguageRemux {
     <#
     .SYNOPSIS
@@ -1281,13 +1382,29 @@ function Invoke-MKVLanguageRemux {
         [Parameter(Mandatory)][object]$TrackLayout,
         [Parameter(Mandatory)][object[]]$AudioMeta,
         [Parameter(Mandatory)][object[]]$SubMeta,
-        [string]$SourcePath
+        [string]$SourcePath,
+        [string]$OverridesFile
     )
 
     $propArgs = @($OutputFile)
     $applied  = 0
 
-    if ($TrackLayout.AudioTracks.Count -ne $AudioMeta.Count) {
+    # Optional per-track overrides (authoritative, from the GUI). Each entry:
+    # { type:'audio'|'subtitle', n:<1-based>, lang, forced, default, commentary, name }
+    $ovrAudio = @{}; $ovrSub = @{}
+    if ($OverridesFile -and (Test-Path -LiteralPath $OverridesFile)) {
+        try {
+            $ovrData = Get-Content -LiteralPath $OverridesFile -Raw | ConvertFrom-Json
+            foreach ($o in @($ovrData)) {
+                $n = [int]$o.n
+                if     ($o.type -eq 'audio')    { $ovrAudio[$n] = $o }
+                elseif ($o.type -eq 'subtitle') { $ovrSub[$n]   = $o }
+            }
+            Write-Host "  Overrides loaded: $($ovrAudio.Count) audio, $($ovrSub.Count) subtitle"
+        } catch { Write-Host "    (overrides parse failed: $($_.Exception.Message))" }
+    }
+
+    if ($ovrAudio.Count -eq 0 -and $TrackLayout.AudioTracks.Count -ne $AudioMeta.Count) {
         throw "Audio validation failed: output=$($TrackLayout.AudioTracks.Count), metadata=$($AudioMeta.Count). Refusing unsafe partial tagging."
     }
     # Prefer authoritative subtitle languages from the Blu-ray clip info; the
@@ -1300,29 +1417,50 @@ function Invoke-MKVLanguageRemux {
         throw "Subtitle validation failed: output=$subOutCount, metadata=$($SubMeta.Count), and no usable .clpi languages. Refusing unsafe partial tagging."
     }
 
-    for ($i = 0; $i -lt $AudioMeta.Count; $i++) {
-        $metaTrack = $AudioMeta[$i]
-        $lang = Get-MetaLanguage -Track $metaTrack
-        $name = Get-MetaTrackName -Track $metaTrack
-        $trackRef = "track:a$($i + 1)"
+    $audioCount = if ($ovrAudio.Count -gt 0) { $TrackLayout.AudioTracks.Count } else { $AudioMeta.Count }
+    for ($i = 0; $i -lt $audioCount; $i++) {
+        $metaTrack = if ($i -lt $AudioMeta.Count) { $AudioMeta[$i] } else { $null }
+        $o = $ovrAudio[$i + 1]
+        if ($o) {
+            $lang      = Resolve-LanguageCode -Code ([string]$o.lang)
+            $name      = if ($o.PSObject.Properties['name'] -and $o.name) { [string]$o.name } else { $null }
+            $isDefault = [bool]$o.default
+            $isComm    = [bool]$o.commentary
+            $src       = 'override'
+        }
+        elseif ($metaTrack) {
+            $lang      = Get-MetaLanguage -Track $metaTrack
+            $name      = Get-MetaTrackName -Track $metaTrack
+            $isDefault = [bool]$metaTrack.Default
+            $isComm    = $false
+            $src       = 'sidecar'
+        }
+        else {
+            $lang = 'und'; $name = $null; $isDefault = $false; $isComm = $false; $src = 'none'
+        }
+        if ($isComm -and [string]::IsNullOrWhiteSpace($name)) {
+            $ln = Get-LanguageDisplayName -Code $lang
+            $name = if ($ln) { "$ln Commentary" } else { 'Commentary' }
+        }
 
         $propArgs += '--edit'
-        $propArgs += $trackRef
+        $propArgs += "track:a$($i + 1)"
         $propArgs += '--set'
         $propArgs += "language=$lang"
-
         if (-not [string]::IsNullOrWhiteSpace($name)) {
             $propArgs += '--set'
             $propArgs += "name=$name"
         }
-
         $propArgs += '--set'
-        $propArgs += "flag-default=$(if ($metaTrack.Default) { '1' } else { '0' })"
+        $propArgs += "flag-default=$(if ($isDefault) { '1' } else { '0' })"
+        $propArgs += '--set'
+        $propArgs += "flag-commentary=$(if ($isComm) { '1' } else { '0' })"
 
-        Write-Host ("    audio {0}: lang={1} (sidecar)  name={2}  default={3}" -f
-            ($i + 1), $lang,
-            $(if ([string]::IsNullOrWhiteSpace($name)) { '—' } else { $name }),
-            $(if ($metaTrack.Default) { 'yes' } else { 'no' }))
+        Write-Host ("    audio {0}: lang={1} ({2})  name={3}  default={4}  commentary={5}" -f
+            ($i + 1), $lang, $src,
+            $(if ([string]::IsNullOrWhiteSpace($name)) { [char]0x2014 } else { $name }),
+            $(if ($isDefault) { 'yes' } else { 'no' }),
+            $(if ($isComm) { 'yes' } else { 'no' }))
         $applied++
     }
 
@@ -1332,40 +1470,58 @@ function Invoke-MKVLanguageRemux {
     $sidecarSubMatches = ($SubMeta.Count -eq $subOutCount)
     $effSub = New-Object System.Collections.Generic.List[object]
     for ($i = 0; $i -lt $subOutCount; $i++) {
-        if     ($useClpiSubs)        { $lang = $clpiSubLangs[$i] }
-        elseif ($i -lt $SubMeta.Count) { $lang = Get-MetaLanguage -Track $SubMeta[$i] }
-        else                         { $lang = 'und' }
+        $o = $ovrSub[$i + 1]
+        if ($o) {
+            $lang   = Resolve-LanguageCode -Code ([string]$o.lang)
+            $forced = [bool]$o.forced
+            $isComm = [bool]$o.commentary
+            $isDef  = [bool]$o.default
+            $name   = if ($o.PSObject.Properties['name'] -and $o.name) { [string]$o.name } else { $null }
+        }
+        else {
+            if     ($useClpiSubs)          { $lang = $clpiSubLangs[$i] }
+            elseif ($i -lt $SubMeta.Count) { $lang = Get-MetaLanguage -Track $SubMeta[$i] }
+            else                           { $lang = 'und' }
+            $forced = [bool]($sidecarSubMatches -and $SubMeta[$i].Forced)
+            $isComm = $false
+            $isDef  = $false
+            $name   = if ($useClpiSubs) { $null }
+                      elseif ($i -lt $SubMeta.Count) { Get-MetaTrackName -Track $SubMeta[$i] }
+                      else { $null }
+        }
 
-        $forced = [bool]($sidecarSubMatches -and $SubMeta[$i].Forced)
-
-        if ($useClpiSubs) {
-            $langName = switch ($lang) {
-                'eng' { 'English' } 'spa' { 'Spanish' } 'fra' { 'French' } 'fre' { 'French' }
-                'jpn' { 'Japanese' } 'ger' { 'German' } 'ita' { 'Italian' } 'por' { 'Portuguese' }
-                default { $null }
+        if ([string]::IsNullOrWhiteSpace($name)) {
+            $ln = Get-LanguageDisplayName -Code $lang
+            if ($ln) {
+                if     ($forced) { $name = "PGS $ln (forced only)" }
+                elseif ($isComm) { $name = "$ln Commentary" }
+                else             { $name = "PGS $ln" }
             }
-            if ($langName) { $name = if ($forced) { "PGS $langName (forced only)" } else { "PGS $langName" } }
-            else           { $name = $null }
         }
-        elseif ($i -lt $SubMeta.Count) { $name = Get-MetaTrackName -Track $SubMeta[$i] }
-        else                           { $name = $null }
 
-        $effSub.Add([pscustomobject]@{ Lang = $lang; Name = $name; Forced = $forced })
+        $effSub.Add([pscustomobject]@{ Lang = $lang; Name = $name; Forced = $forced; Commentary = $isComm; Default = $isDef })
     }
 
-    # Force English as the default subtitle (first non-forced English, else
-    # first English), overriding any sidecar [default].
+    # Default subtitle: explicit overrides win; otherwise force English (first
+    # non-forced English, else first English).
     $subDefaultIndex = 0
-    for ($di = 0; $di -lt $effSub.Count; $di++) {
-        if ($effSub[$di].Lang -eq 'eng' -and -not $effSub[$di].Forced) { $subDefaultIndex = $di + 1; break }
-    }
-    if ($subDefaultIndex -eq 0) {
+    if ($ovrSub.Count -gt 0) {
         for ($di = 0; $di -lt $effSub.Count; $di++) {
-            if ($effSub[$di].Lang -eq 'eng') { $subDefaultIndex = $di + 1; break }
+            if ($effSub[$di].Default) { $subDefaultIndex = $di + 1; break }
+        }
+    }
+    else {
+        for ($di = 0; $di -lt $effSub.Count; $di++) {
+            if ($effSub[$di].Lang -eq 'eng' -and -not $effSub[$di].Forced) { $subDefaultIndex = $di + 1; break }
+        }
+        if ($subDefaultIndex -eq 0) {
+            for ($di = 0; $di -lt $effSub.Count; $di++) {
+                if ($effSub[$di].Lang -eq 'eng') { $subDefaultIndex = $di + 1; break }
+            }
         }
     }
 
-    $langSrc = if ($useClpiSubs) { 'clpi' } else { 'sidecar' }
+    $langSrc = if ($ovrSub.Count -gt 0) { 'override' } elseif ($useClpiSubs) { 'clpi' } else { 'sidecar' }
     for ($i = 0; $i -lt $effSub.Count; $i++) {
         $t = $effSub[$i]
         $propArgs += '--edit'
@@ -1382,12 +1538,15 @@ function Invoke-MKVLanguageRemux {
         $propArgs += "flag-default=$(if (($i + 1) -eq $subDefaultIndex) { '1' } else { '0' })"
         $propArgs += '--set'
         $propArgs += "flag-forced=$(if ($t.Forced) { '1' } else { '0' })"
+        $propArgs += '--set'
+        $propArgs += "flag-commentary=$(if ($t.Commentary) { '1' } else { '0' })"
 
-        Write-Host ("    sub   {0}: lang={1} ({2})  name={3}  default={4}  forced={5}" -f
+        Write-Host ("    sub   {0}: lang={1} ({2})  name={3}  default={4}  forced={5}  commentary={6}" -f
             ($i + 1), $t.Lang, $langSrc,
             $(if ([string]::IsNullOrWhiteSpace($t.Name)) { [char]0x2014 } else { $t.Name }),
             $(if (($i + 1) -eq $subDefaultIndex) { 'yes' } else { 'no' }),
-            $(if ($t.Forced) { 'yes' } else { 'no' }))
+            $(if ($t.Forced) { 'yes' } else { 'no' }),
+            $(if ($t.Commentary) { 'yes' } else { 'no' }))
         $applied++
     }
 
@@ -1811,7 +1970,7 @@ function Apply-TrackMetadata {
     # mkvmerge -J is still used to get the real audio/subtitle counts and ordering,
     # but the actual tag writes go through mkvpropedit --edit/--set which edits
     # headers in-place and has stable flag names across all MKVToolNix versions.
-    Invoke-MKVLanguageRemux -OutputFile $OutputFile -TrackLayout $trackLayout -AudioMeta $audioMeta -SubMeta $subMeta -SourcePath $SourceFile.FullName
+    Invoke-MKVLanguageRemux -OutputFile $OutputFile -TrackLayout $trackLayout -AudioMeta $audioMeta -SubMeta $subMeta -SourcePath $SourceFile.FullName -OverridesFile $OverridesFile
 
     Write-UiBlankLine
     Write-Host "  $($global:UI_GRN)Track metadata applied.$($global:UI_R)"
@@ -1870,8 +2029,16 @@ function Create-SampleFromFinishedMkv {
 function Encode-File {
     param(
         [Parameter(Mandatory)][System.IO.FileInfo]$SourceFile,
-        [Parameter(Mandatory)][string]$MovieName
+        [Parameter(Mandatory)][string]$MovieName,
+        # Headless/GUI hooks: AutoAccept suppresses any interactive prompts in
+        # the encode chain; ProgressFile makes ffmpeg write -progress key=value
+        # blocks to that path for a front end to tail.
+        [switch]$AutoAccept,
+        [string]$ProgressFile,
+        [string]$OverridesFile
     )
+
+    if ($AutoAccept) { $Script:NonInteractive = $true }
 
     $outputFile    = Get-OutputPath -MovieName $MovieName
     $duration      = Get-VideoDuration -Path $SourceFile.FullName
@@ -1937,9 +2104,12 @@ function Encode-File {
     }
 
     # ── Build ffmpeg args ──────────────────────────────────────
-    $ffArgs = @(
-        '-hide_banner',
-        '-y',
+    $ffArgs = @('-hide_banner', '-y')
+    if ($ProgressFile) {
+        # Machine-readable progress for a front end (frame/out_time/speed...).
+        $ffArgs += @('-progress', $ProgressFile, '-stats_period', '1')
+    }
+    $ffArgs += @(
         '-probesize', $Script:M2tsProbeSize,
         '-analyzeduration', $Script:M2tsAnalyzeDur,
         '-i', $SourceFile.FullName
@@ -2119,6 +2289,10 @@ catch {
     return
 }
 
+# Only launch the interactive menu when run directly. When the GUI (or any
+# other script) dot-sources this file it sets $env:BRENCODER_NOMENU so the
+# functions load without entering the menu loop.
+if (-not $env:BRENCODER_NOMENU) {
 while ($true) {
     Show-Header
     Show-Menu
@@ -2141,4 +2315,5 @@ while ($true) {
             Start-Sleep -Seconds 1
         }
     }
+}
 }
