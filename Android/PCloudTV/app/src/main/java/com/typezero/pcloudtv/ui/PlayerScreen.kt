@@ -716,8 +716,19 @@ private fun VlcPlayer(
     }
 
     val focus = remember { FocusRequester() }
-    // Return focus to the player surface whenever the picker is closed.
-    LaunchedEffect(showTracks) { if (!showTracks) runCatching { focus.requestFocus() } }
+    // Focus target for the on-screen transport (seeded on the play/pause button)
+    // so a TV remote can move across the control buttons.
+    val transportFocus = remember { FocusRequester() }
+    // When controls are visible, put focus on the transport so the D-pad can move
+    // between buttons; when hidden, the root surface catches the first press.
+    LaunchedEffect(controlsVisible, showTracks, hasVideo) {
+        if (showTracks) return@LaunchedEffect
+        delay(60)
+        runCatching {
+            if (controlsVisible) transportFocus.requestFocus()
+            else focus.requestFocus()
+        }
+    }
 
     Box(
         modifier = Modifier
@@ -727,34 +738,52 @@ private fun VlcPlayer(
             .onPreviewKeyEvent { e ->
                 // While the track picker is open, let the dialog handle navigation.
                 if (showTracks) return@onPreviewKeyEvent false
-                val handledKey = when (e.key) {
-                    Key.DirectionCenter, Key.Enter, Key.Spacebar, Key.MediaPlayPause,
-                    Key.DirectionLeft, Key.MediaRewind,
-                    Key.DirectionRight, Key.MediaFastForward,
-                    Key.DirectionUp, Key.Menu,
-                    Key.DirectionDown,
-                    Key.MediaNext, Key.MediaPrevious -> true
+
+                // Hardware media keys + the options/Menu key act directly,
+                // regardless of where focus currently sits.
+                val direct = when (e.key) {
+                    Key.MediaPlayPause, Key.MediaRewind, Key.MediaFastForward,
+                    Key.MediaNext, Key.MediaPrevious, Key.Menu -> true
                     else -> false
                 }
-                if (!handledKey) return@onPreviewKeyEvent false
-                // Consume on key-down too, so the focus system never steals D-pad
-                // left/right for button navigation on a TV remote; act on key-up.
-                if (e.type != KeyEventType.KeyUp) return@onPreviewKeyEvent true
+                if (direct) {
+                    if (e.type != KeyEventType.KeyUp) return@onPreviewKeyEvent true
+                    when (e.key) {
+                        Key.MediaPlayPause -> togglePlay()
+                        Key.MediaRewind -> seekBy(-10_000)
+                        Key.MediaFastForward -> seekBy(10_000)
+                        Key.MediaNext -> if (hasNext) onNext()
+                        Key.MediaPrevious -> if (hasPrev) onPrev()
+                        Key.Menu -> { refreshTrackLists(); showTracks = true }
+                    }
+                    return@onPreviewKeyEvent true
+                }
+
+                val dpad = when (e.key) {
+                    Key.DirectionCenter, Key.Enter, Key.Spacebar,
+                    Key.DirectionLeft, Key.DirectionRight,
+                    Key.DirectionUp, Key.DirectionDown -> true
+                    else -> false
+                }
+                if (!dpad) return@onPreviewKeyEvent false
+                if (e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+
+                // Controls hidden: first press just brings them up and lands focus
+                // on the transport.
                 if (!controlsVisible) {
-                    reveal(); return@onPreviewKeyEvent true
+                    reveal()
+                    runCatching { transportFocus.requestFocus() }
+                    return@onPreviewKeyEvent true
                 }
-                when (e.key) {
-                    Key.DirectionCenter, Key.Enter, Key.Spacebar, Key.MediaPlayPause ->
-                        togglePlay()
-                    Key.DirectionLeft, Key.MediaRewind -> seekBy(-10_000)
-                    Key.DirectionRight, Key.MediaFastForward -> seekBy(10_000)
-                    // Up (or the Menu/options key) opens audio + subtitle selection.
-                    Key.DirectionUp, Key.Menu -> { refreshTrackLists(); showTracks = true }
-                    Key.DirectionDown -> reveal()
-                    Key.MediaNext -> if (hasNext) onNext()
-                    Key.MediaPrevious -> if (hasPrev) onPrev()
+                // Up opens the audio/subtitle picker as a shortcut.
+                if (e.key == Key.DirectionUp) {
+                    refreshTrackLists(); showTracks = true
+                    return@onPreviewKeyEvent true
                 }
-                true
+                // Everything else flows to the focusable buttons (Left/Right move
+                // focus, Center activates). Keep the bar from auto-hiding mid-use.
+                reveal()
+                false
             }
             .pointerInput(Unit) {
                 detectTapGestures(onTap = { if (controlsVisible) controlsVisible = false else reveal() })
@@ -808,6 +837,7 @@ private fun VlcPlayer(
                         reveal()
                     }
                 },
+                playFocus = transportFocus,
                 onScrub = { fraction ->
                     if (durationMs > 0) {
                         val t = (fraction * durationMs).toLong()
@@ -896,6 +926,7 @@ private fun VlcPlayer(
                     refreshTrackLists()
                     showTracks = true
                 },
+                playFocus = transportFocus,
                 onScrub = { fraction ->
                     if (durationMs > 0) {
                         val t = (fraction * durationMs).toLong()
@@ -954,6 +985,7 @@ private fun AnimatedVisibilityScope.Controls(
     onSeekToStart: () -> Unit,
     onSeekToEnd: () -> Unit,
     onTracks: () -> Unit,
+    playFocus: FocusRequester,
     onScrub: (Float) -> Unit
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
@@ -1094,6 +1126,7 @@ private fun AnimatedVisibilityScope.Controls(
                         )
                         .clip(CircleShape)
                         .background(Brand.Accent)
+                        .focusRequester(playFocus)
                         .clickable(onClick = onTogglePlay),
                     contentAlignment = Alignment.Center
                 ) {
@@ -1192,6 +1225,7 @@ private fun AudioNowPlaying(
     onSeekForward: () -> Unit,
     onSeekToStart: () -> Unit,
     onSeekToEnd: () -> Unit,
+    playFocus: FocusRequester,
     onScrub: (Float) -> Unit
 ) {
     // Decode embedded cover art off the main thread; null -> placeholder.
@@ -1270,6 +1304,7 @@ private fun AudioNowPlaying(
                         onSeekForward = onSeekForward,
                         onSeekToStart = onSeekToStart,
                         onSeekToEnd = onSeekToEnd,
+                        playFocus = playFocus,
                         modifier = Modifier.fillMaxWidth()
                     )
                     Spacer(Modifier.height(8.dp))
@@ -1341,6 +1376,7 @@ private fun AudioNowPlaying(
                     onSeekForward = onSeekForward,
                     onSeekToStart = onSeekToStart,
                     onSeekToEnd = onSeekToEnd,
+                    playFocus = playFocus,
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(Modifier.height(6.dp))
@@ -1398,6 +1434,7 @@ private fun AudioTransport(
     onSeekForward: () -> Unit,
     onSeekToStart: () -> Unit,
     onSeekToEnd: () -> Unit,
+    playFocus: FocusRequester,
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -1440,6 +1477,7 @@ private fun AudioTransport(
                 )
                 .clip(CircleShape)
                 .background(Brand.Accent)
+                .focusRequester(playFocus)
                 .clickable(onClick = onTogglePlay),
             contentAlignment = Alignment.Center
         ) {
