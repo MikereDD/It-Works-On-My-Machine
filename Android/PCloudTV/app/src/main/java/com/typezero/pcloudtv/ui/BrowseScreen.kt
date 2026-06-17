@@ -43,6 +43,10 @@ import androidx.compose.material.icons.outlined.Info
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Movie
@@ -269,6 +273,9 @@ fun BrowseScreen(
     var playlistsFolderId by remember { mutableStateOf<Long?>(null) }
     var managePlaylist by remember { mutableStateOf<PItem?>(null) }
 
+    // The .nfo / .htm document currently open in the built-in viewer, if any.
+    var viewingDoc by remember { mutableStateOf<PItem?>(null) }
+
     fun currentPathPrefix(): String {
         // Build the absolute pCloud path of the folder you're currently in.
         // The synthetic Audiobooks node stands in for /Books/Audiobooks, so map
@@ -346,6 +353,7 @@ fun BrowseScreen(
                     }
                 }
             }
+            pItem.isViewableDoc -> viewingDoc = pItem
             pItem.isPlayable -> onPlayQueue(
                 listOf(com.typezero.pcloudtv.data.MediaItem(pItem.name, pItem.fileId, null)),
                 null
@@ -364,6 +372,7 @@ fun BrowseScreen(
                 stack.add(node.folderId!! to node.name)
                 query = ""
             }
+            node.isViewableDoc -> viewingDoc = node
             node.isPlayable -> onPlayQueue(
                 listOf(com.typezero.pcloudtv.data.MediaItem(node.name, node.fileId, null)),
                 null
@@ -823,6 +832,121 @@ fun BrowseScreen(
                 onDismiss = { managePlaylist = null }
             )
         }
+
+        viewingDoc?.let { doc ->
+            DocViewer(
+                item = doc,
+                client = client,
+                session = session,
+                onClose = { viewingDoc = null }
+            )
+        }
+    }
+}
+
+@Composable
+private fun DocViewer(
+    item: PItem,
+    client: PCloudClient,
+    session: Session,
+    onClose: () -> Unit
+) {
+    var loading by remember { mutableStateOf(true) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var text by remember { mutableStateOf("") }            // .nfo / plain text
+    var html by remember { mutableStateOf<String?>(null) } // .htm / .html
+
+    LaunchedEffect(item.fileId) {
+        loading = true; error = null
+        val id = item.fileId
+        if (id == null) { error = "No file id"; loading = false; return@LaunchedEffect }
+        when (val r = client.fetchDocument(session, id)) {
+            is ApiResult.Ok -> {
+                val bytes = r.value
+                if (item.isHtmlDoc) {
+                    html = String(bytes, Charsets.UTF_8)
+                } else {
+                    val u = String(bytes, Charsets.UTF_8)
+                    // NFOs are usually UTF-8; if that yields replacement chars,
+                    // fall back to CP437 for legacy ASCII-art releases.
+                    text = if (u.contains('\uFFFD'))
+                        runCatching { String(bytes, charset("IBM437")) }.getOrDefault(u)
+                    else u
+                }
+            }
+            is ApiResult.Error -> error = r.message
+        }
+        loading = false
+    }
+
+    Box(
+        Modifier.fillMaxSize().background(Color(0xCC000000)).clickable(onClick = onClose),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth(0.94f)
+                .fillMaxHeight(0.9f)
+                .clip(RoundedCornerShape(16.dp))
+                .background(Brand.Surface)
+                .border(1.dp, Brand.Stroke, RoundedCornerShape(16.dp))
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                ) { /* swallow taps so the body doesn't dismiss */ }
+                .padding(16.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Filled.Description, null, tint = Brand.Accent,
+                    modifier = Modifier.size(22.dp))
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    item.name,
+                    color = Brand.TextHi, fontSize = 16.sp, fontWeight = FontWeight.Medium,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(Modifier.width(10.dp))
+                HeaderButton(icon = null, label = "Close", onClick = onClose)
+            }
+            Spacer(Modifier.height(12.dp))
+            when {
+                loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = Brand.Accent)
+                }
+                error != null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(error!!, color = Brand.TextLow, fontSize = 14.sp)
+                }
+                html != null -> AndroidView(
+                    factory = { ctx ->
+                        android.webkit.WebView(ctx).apply {
+                            settings.javaScriptEnabled = false
+                            settings.loadWithOverviewMode = true
+                            settings.useWideViewPort = true
+                            setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                        }
+                    },
+                    update = { wv ->
+                        wv.loadDataWithBaseURL(null, html!!, "text/html", "UTF-8", null)
+                    },
+                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(10.dp))
+                )
+                else -> Text(
+                    text,
+                    color = Brand.TextMid,
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace,
+                    softWrap = false,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                        .horizontalScroll(rememberScrollState())
+                )
+            }
+        }
     }
 }
 
@@ -1147,6 +1271,7 @@ private fun PosterCard(
         item.isVideo -> Brand.Video
         item.isAudio -> Brand.Audio
         item.isImage -> Brand.Accent
+        item.isViewableDoc -> Brand.Accent
         else -> Brand.TextMid
     }
     val icon = when {
@@ -1155,6 +1280,7 @@ private fun PosterCard(
         item.isVideo -> Icons.Filled.Movie
         item.isAudio -> Icons.Filled.MusicNote
         item.isImage -> Icons.Filled.Image
+        item.isViewableDoc -> Icons.Filled.Description
         else -> Icons.Filled.InsertDriveFile
     }
 
@@ -1381,6 +1507,7 @@ private fun ItemCard(
         item.isVideo -> Brand.Video
         item.isAudio -> Brand.Audio
         item.isImage -> Brand.Accent
+        item.isViewableDoc -> Brand.Accent
         else -> Brand.TextMid
     }
     val icon = when {
@@ -1389,6 +1516,7 @@ private fun ItemCard(
         item.isVideo -> Icons.Filled.Movie
         item.isAudio -> Icons.Filled.MusicNote
         item.isImage -> Icons.Filled.Image
+        item.isViewableDoc -> Icons.Filled.Description
         else -> Icons.Filled.InsertDriveFile
     }
     val subtitle = subtitleOverride ?: when {
@@ -1397,6 +1525,8 @@ private fun ItemCard(
         item.isVideo -> "Video · ${humanSize(item.size)}"
         item.isAudio -> "Audio · ${humanSize(item.size)}"
         item.isImage -> "Image · ${humanSize(item.size)}"
+        item.isNfo -> "Info · ${humanSize(item.size)}"
+        item.isHtmlDoc -> "Web page · ${humanSize(item.size)}"
         else -> humanSize(item.size)
     }
 

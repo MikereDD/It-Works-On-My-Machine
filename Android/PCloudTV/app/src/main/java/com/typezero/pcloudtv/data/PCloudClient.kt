@@ -266,7 +266,7 @@ class PCloudClient {
                         val o = contents.getJSONObject(i)
                         val item = parseItem(o)
                         if (item.name.contains(q, ignoreCase = true) &&
-                            (item.isFolder || item.isPlayable)
+                            (item.isFolder || item.isPlayable || item.isViewableDoc)
                         ) {
                             hits.add(
                                 SearchHit(
@@ -289,6 +289,31 @@ class PCloudClient {
                             .thenBy { it.item.name.lowercase() }
                     )
                 )
+            } catch (e: Exception) {
+                ApiResult.Error(e.message ?: "Network error")
+            }
+        }
+
+    /**
+     * Download a small text/HTML document's raw bytes (for the .nfo / .htm
+     * viewer). Resolves a streamable link via getfilelink, then GETs it.
+     */
+    suspend fun fetchDocument(session: Session, fileId: Long): ApiResult<ByteArray> =
+        withContext(Dispatchers.IO) {
+            try {
+                when (val link = getStreamUrl(session, fileId)) {
+                    is ApiResult.Error -> ApiResult.Error(link.message)
+                    is ApiResult.Ok -> {
+                        val req = Request.Builder().url(link.value).build()
+                        http.newCall(req).execute().use { resp ->
+                            if (!resp.isSuccessful) {
+                                ApiResult.Error("Could not load file (HTTP ${resp.code})")
+                            } else {
+                                ApiResult.Ok(resp.body?.bytes() ?: ByteArray(0))
+                            }
+                        }
+                    }
+                }
             } catch (e: Exception) {
                 ApiResult.Error(e.message ?: "Network error")
             }
