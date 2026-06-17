@@ -15,6 +15,10 @@ data class PItem(
     val isImage: Boolean get() = category == 1 || contentType.startsWith("image/")
     val isPlaylist: Boolean get() =
         name.endsWith(".m3u", true) || name.endsWith(".m3u8", true)
+    val isNfo: Boolean get() = name.endsWith(".nfo", true)
+    val isHtmlDoc: Boolean get() = name.endsWith(".htm", true) || name.endsWith(".html", true)
+    /** Text/HTML documents the app can render in its built-in viewer. */
+    val isViewableDoc: Boolean get() = isNfo || isHtmlDoc
     val isPlayable: Boolean get() = isVideo || isAudio
     /** Things the user can tap to start playback (files or playlists). */
     val isOpenable: Boolean get() = isPlayable || isPlaylist

@@ -5,6 +5,14 @@ All notable changes to **pCloud TV**. Newest first.
 
 ---
 
+## v4.8 — Built-in .nfo and .htm viewer
+
+- Tap a **.nfo** or **.htm/.html** file to read it in-app instead of nothing happening. `.nfo` files render as monospace text (UTF-8, with a CP437 fallback for legacy ASCII-art releases) so box-drawing and ASCII headers line up; `.htm/.html` render in a WebView with full styling and remote images. Both open in a dismissable overlay with a Close button.
+- These document types now also surface in recursive search and get a document icon in the browser, with "Info" / "Web page" subtitles.
+- Added `fetchDocument` to the client (resolves a file link, then downloads the bytes) and `isNfo` / `isHtmlDoc` / `isViewableDoc` helpers on the file model.
+
+---
+
 ## v4.7 — Search that actually finds things
 
 - **Search now recurses into subfolders.** Previously "Search this folder" only filtered the folder's immediate children, so searching "Helmet" from Music returned nothing even though it lived in Music/Rock/Helmet. Search now walks the whole subtree (one `listfolder?recursive=1` call) and lists every matching folder and playable file, each tagged with where it lives ("in Rock"). Tapping a result opens or plays it and rebuilds the breadcrumb to its real path.
