@@ -94,7 +94,7 @@ $PersonalTools = @(
     [PSCustomObject]@{ Name="Blu-ray Encoder";       File="BRencoder.ps1" }
     [PSCustomObject]@{ Name="Blu-ray Encoder (GUI)"; File="BRencoder-gui.ps1" }
     [PSCustomObject]@{ Name="MKV Sample";            File="mkv-sample.ps1" }
-	[PSCustomObject]@{ Name="Media Encoder GUI";     File="media-encoder-gui.ps1" }
+	[PSCustomObject]@{ Name="Media Encoder (GUI)";     File="media-encoder-gui.ps1" }
     [PSCustomObject]@{ Name="WebRipper";             File="web-ripper.ps1" }
 )
 
