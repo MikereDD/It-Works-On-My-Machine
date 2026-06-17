@@ -1,4 +1,4 @@
-#--------------------------------------------
+﻿#--------------------------------------------
 # file:     mkv-sample.ps1
 # author:   Mike Redd / ChatGPT
 # version:  1.1
@@ -352,6 +352,8 @@ function Show-Config {
     Pause-Script
 }
 
+if (-not $env:MKVSAMPLE_NOMENU) {
+
 try {
     Ensure-Dependencies
     Ensure-Directories
@@ -383,3 +385,4 @@ while ($true) {
         }
     }
 }
+} # end: if (-not $env:MKVSAMPLE_NOMENU)
