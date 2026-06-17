@@ -1,4 +1,4 @@
-#--------------------------------------------
+﻿#--------------------------------------------
 # file:     bluray-trackdump.ps1
 # author:   Mike Redd
 # version:  1.4
@@ -437,7 +437,7 @@ function Resolve-TrackLanguages {
         $code = Show-LanguagePicker -TrackLabel $label
         $track.LanguageCode = $code
         $track.LanguageName = if ($code -ne 'und') {
-            ($Script:QuickLangs.Values | Where-Object { $_[0] -eq $code } | Select-Object -First 1)?[1] ?? $code
+            if ($qln = $Script:QuickLangs.Values | Where-Object { $_[0] -eq $code } | Select-Object -First 1) { $qln[1] } else { $code }
         } else { 'Undetermined' }
 
         Write-Host "  → Set to: $($track.LanguageCode)"
@@ -452,7 +452,7 @@ function Resolve-TrackLanguages {
         $code = Show-LanguagePicker -TrackLabel $label
         $track.LanguageCode = $code
         $track.LanguageName = if ($code -ne 'und') {
-            ($Script:QuickLangs.Values | Where-Object { $_[0] -eq $code } | Select-Object -First 1)?[1] ?? $code
+            if ($qln = $Script:QuickLangs.Values | Where-Object { $_[0] -eq $code } | Select-Object -First 1) { $qln[1] } else { $code }
         } else { 'Undetermined' }
 
         Write-Host "  → Set to: $($track.LanguageCode)"
@@ -674,6 +674,7 @@ function Start-TrackDump {
 }
 
 # ── Main Loop ──────────────────────────────
+if (-not $env:BLURAYTRACKDUMP_NOMENU) {
 Ensure-Dirs
 
 while ($true) {
@@ -686,3 +687,4 @@ while ($true) {
         default { }
     }
 }
+} # end: if (-not $env:BLURAYTRACKDUMP_NOMENU)

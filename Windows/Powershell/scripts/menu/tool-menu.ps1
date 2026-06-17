@@ -56,7 +56,7 @@ if (Test-Path $corePath) {
 }
 
 $ScriptName    = "Tool Menu"
-$ScriptVersion = "3.5"
+$ScriptVersion = "3.6"
 $ScriptAuthor  = "Mike Redd"
 
 # ── Base script paths ─────────────────────────────────────────
@@ -87,11 +87,13 @@ $PersonalTools = @(
     [PSCustomObject]@{ Name="CD Image FLAC Ripper";  File="cd-image-flac.ps1" }
     [PSCustomObject]@{ Name="CD Track FLAC Ripper";  File="cd-tracks-flac.ps1" }
     [PSCustomObject]@{ Name="DVD Encoder";           File="dvd-ripper-encoder.ps1" }
+    [PSCustomObject]@{ Name="DVD Encoder (GUI)";     File="dvd-ripper-encoder-gui.ps1" }
     [PSCustomObject]@{ Name="Blu-ray Backup";        File="bluray-backup.ps1" }
     [PSCustomObject]@{ Name="Blu-ray Track Dump";	 File="bluray-trackdump.ps1" }
     [PSCustomObject]@{ Name="Blu-ray Encoder";       File="BRencoder.ps1" }
     [PSCustomObject]@{ Name="Blu-ray Encoder (GUI)"; File="BRencoder-gui.ps1" }
     [PSCustomObject]@{ Name="MKV Sample";            File="mkv-sample.ps1" }
+	[PSCustomObject]@{ Name="Media Encoder GUI";     File="media-encoder-gui.ps1" }
     [PSCustomObject]@{ Name="WebRipper";             File="web-ripper.ps1" }
 )
 

@@ -1,5 +1,5 @@
 ﻿#--------------------------------------------
-# file:     brEncoder.ps1
+# file:     BRencoder.ps1
 # author:   Mike Redd
 # version:  3.1.6
 # created:  2026-02-11

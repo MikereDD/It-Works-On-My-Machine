@@ -1,15 +1,19 @@
-#--------------------------------------------
+﻿#--------------------------------------------
 # file:     dvd-ripper-encoder.ps1
 # author:   Mike Redd
-# version:  3.1
+# version:  4.0
 # created:  2026-04-11
-# updated:  2026-04-11
-# desc:     Encode DVDs directly with HandBrakeCLI
-#           on Windows using high-quality x265 defaults
+# updated:  2026-06-16
+# desc:     Encode DVDs directly with HandBrakeCLI on Windows
+#           using high-quality x265 defaults. Sibling pipeline
+#           to BRencoder.ps1: DVDTrackMeta sidecars, mkvpropedit
+#           language remux, source archiving, and -AutoAccept
+#           for unattended encodes.
 #--------------------------------------------
 
 param(
-    [switch]$DryRun
+    [switch]$DryRun,
+    [switch]$AutoAccept
 )
 
 # ── Load custom UI ────────────────────────────────────────────
@@ -43,21 +47,27 @@ else {
 $ErrorActionPreference = 'Stop'
 
 $ScriptName    = "DVD Ripper Encoder"
-$ScriptVersion = "3.1"
+$ScriptVersion = "4.0"
 $ScriptAuthor  = "Mike Redd"
 
 # ── Config ────────────────────────────────────────────────────
 $Script:RootPath         = "G:\Rip"
 $Script:OutputRoot       = Join-Path $Script:RootPath 'dvdarchive'
 $Script:NfoRoot          = Join-Path $Script:RootPath 'nfo'
+$Script:MetaRoot         = Join-Path $Script:RootPath 'meta'
+$Script:SourceRoot       = Join-Path $Script:RootPath 'dvdsource'
 $Script:DefaultDrive     = 'D:'
 $Script:HandBrakeCLI     = $null
+$Script:MkvPropEdit      = $null
 
 $Script:DefaultContainer = 'mkv'
 $Script:DefaultEncoder   = 'x265_10bit'
 $Script:DefaultRF        = 20
 $Script:DefaultPreset    = 'slower'
 $Script:MinTitleSeconds  = 900   # 15 min
+
+$Script:MetaSchema       = 'DVDTrackMeta/1.0'
+$Script:ArchiveSource    = $true   # copy VIDEO_TS to dvdsource\ after a clean encode
 
 # ── Header ────────────────────────────────────────────────────
 function Show-Header {
@@ -70,6 +80,9 @@ function Show-Header {
     if ($DryRun) {
         Write-UiRow "Mode" "DRY RUN — no files will be written" $global:UI_YLW
     }
+    if ($AutoAccept) {
+        Write-UiRow "Mode" "AUTO-ACCEPT — defaults, no prompts" $global:UI_YLW
+    }
     Write-UiBlankLine
 }
 
@@ -80,7 +93,10 @@ function Show-Menu {
     Write-Host "  $($global:UI_GRN)  2)$($global:UI_R)  Scan DVD titles only"
     Write-Host "  $($global:UI_GRN)  3)$($global:UI_R)  Encode from existing folder"
     Write-UiDivider
-    Write-Host "  $($global:UI_CYN)  4)$($global:UI_R)  Show config"
+    Write-Host "  $($global:UI_MAG)  4)$($global:UI_R)  Write track-meta sidecar (scan → meta)"
+    Write-Host "  $($global:UI_MAG)  5)$($global:UI_R)  Remux MKV languages (standalone)"
+    Write-UiDivider
+    Write-Host "  $($global:UI_CYN)  6)$($global:UI_R)  Show config"
     Write-UiDivider
     Write-Host "  $($global:UI_GRY)  Q)$($global:UI_R)  Quit"
     Write-UiBlankLine
@@ -120,8 +136,53 @@ function Get-HandBrakeCLIPath {
     return $null
 }
 
+function Get-MkvPropEditPath {
+    if ($Script:MkvPropEdit -and (Test-Path -LiteralPath $Script:MkvPropEdit)) {
+        return [string]$Script:MkvPropEdit
+    }
+
+    $paths = @(
+        'C:\Program Files\MKVToolNix\mkvpropedit.exe',
+        'C:\Program Files (x86)\MKVToolNix\mkvpropedit.exe',
+        "$env:LOCALAPPDATA\Programs\MKVToolNix\mkvpropedit.exe",
+        'C:\Tools\MKVToolNix\mkvpropedit.exe'
+    )
+
+    foreach ($p in $paths) {
+        if (Test-Path -LiteralPath $p) {
+            return [string]$p
+        }
+    }
+
+    $cmd = Get-Command mkvpropedit -ErrorAction SilentlyContinue
+    if ($cmd -and $cmd.Source -and (Test-Path -LiteralPath $cmd.Source)) {
+        return [string]$cmd.Source
+    }
+
+    return $null
+}
+
+function Get-DvdVolumeLabel {
+    param([Parameter(Mandatory)][string]$DriveLetter)
+
+    $letter = $DriveLetter.Trim().TrimEnd(':').Substring(0, 1)
+    try {
+        $vol = Get-Volume -DriveLetter $letter -ErrorAction Stop
+        if ($vol -and -not [string]::IsNullOrWhiteSpace($vol.FileSystemLabel)) {
+            # DVD labels are usually ALLCAPS_WITH_UNDERSCORES — make them friendlier.
+            $label = $vol.FileSystemLabel.Trim()
+            $label = ($label -replace '_', ' ')
+            $label = (Get-Culture).TextInfo.ToTitleCase($label.ToLowerInvariant())
+            return [string]$label
+        }
+    }
+    catch { }
+
+    return ''
+}
+
 function Ensure-Directories {
-    foreach ($p in @($Script:RootPath, $Script:OutputRoot, $Script:NfoRoot)) {
+    foreach ($p in @($Script:RootPath, $Script:OutputRoot, $Script:NfoRoot, $Script:MetaRoot, $Script:SourceRoot)) {
         if (-not (Test-Path -LiteralPath $p)) {
             [System.IO.Directory]::CreateDirectory($p) | Out-Null
         }
@@ -135,6 +196,17 @@ function Ensure-Dependencies {
     }
 
     $Script:HandBrakeCLI = $resolvedCli
+
+    # mkvpropedit is optional — only needed for the language remux step.
+    $resolvedMkv = Get-MkvPropEditPath
+    if ($resolvedMkv) {
+        $Script:MkvPropEdit = $resolvedMkv
+    }
+    else {
+        $Script:MkvPropEdit = $null
+        Write-Host "  $($global:UI_YLW)mkvpropedit not found — language remux will be skipped.$($global:UI_R)"
+        Write-Host "  $($global:UI_GRY)Install MKVToolNix to enable it.$($global:UI_R)"
+    }
 }
 
 function New-SafeName {
@@ -282,6 +354,7 @@ function Invoke-HandBrakeScan {
                     $currentTitle.AudioList += [pscustomobject]@{
                         Num   = $trackNum
                         Lang  = $lang.Label
+                        Code  = $lang.Code
                         Desc  = $trackDesc
                     }
                 }
@@ -289,6 +362,7 @@ function Invoke-HandBrakeScan {
                     $currentTitle.SubtitleList += [pscustomobject]@{
                         Num   = $trackNum
                         Lang  = $lang.Label
+                        Code  = $lang.Code
                         Desc  = $trackDesc
                     }
                 }
@@ -353,7 +427,264 @@ function Get-AutoTune {
     return @{ Tune = ''; Note = 'default x265 live-action profile' }
 }
 
+# ── Track-meta sidecar (DVDTrackMeta/1.0) ─────────────────────
+function Get-MetaSidecarPath {
+    param([Parameter(Mandatory)][string]$MovieName)
+    $safeName = New-SafeName -Name $MovieName
+    return [string](Join-Path $Script:MetaRoot "$safeName.dvdmeta")
+}
+
+function Read-DvdTrackMeta {
+    # Returns @{ Title; Audio = @{<num>=<code>}; Subtitle = @{...} } or $null.
+    param([Parameter(Mandatory)][string]$MovieName)
+
+    $path = Get-MetaSidecarPath -MovieName $MovieName
+    if (-not (Test-Path -LiteralPath $path)) { return $null }
+
+    $audio = @{}
+    $sub   = @{}
+    $title = 0
+    $valid = $false
+
+    foreach ($line in (Get-Content -LiteralPath $path -ErrorAction SilentlyContinue)) {
+        $t = $line.Trim()
+        if ($t.StartsWith('DVDTrackMeta/')) { $valid = $true; continue }
+        if ([string]::IsNullOrWhiteSpace($t) -or $t.StartsWith('#')) { continue }
+
+        if ($t -match '^title\s*=\s*(\d+)\s*(?:#.*)?$') {
+            $title = [int]$matches[1]
+        }
+        elseif ($t -match '^audio\.(\d+)\s*=\s*([A-Za-z]{2,3})\s*(?:#.*)?$') {
+            $audio[[int]$matches[1]] = $matches[2].ToLowerInvariant()
+        }
+        elseif ($t -match '^subtitle\.(\d+)\s*=\s*([A-Za-z]{2,3})\s*(?:#.*)?$') {
+            $sub[[int]$matches[1]] = $matches[2].ToLowerInvariant()
+        }
+    }
+
+    if (-not $valid) { return $null }
+    return @{ Title = $title; Audio = $audio; Subtitle = $sub }
+}
+
+function Write-DvdTrackMeta {
+    # Writes/refreshes a sidecar documenting every scanned track. Scan code wins;
+    # an existing sidecar entry fills gaps; otherwise 'und'. User can hand-edit.
+    param(
+        [Parameter(Mandatory)][string]$MovieName,
+        [Parameter(Mandatory)][int]$Title,
+        $AudioList    = @(),
+        $SubtitleList = @(),
+        $Existing     = $null
+    )
+
+    $path = Get-MetaSidecarPath -MovieName $MovieName
+    $now  = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+
+    $sb = New-Object System.Text.StringBuilder
+    [void]$sb.AppendLine($Script:MetaSchema)
+    [void]$sb.AppendLine("# Track language map for: $MovieName")
+    [void]$sb.AppendLine("# Generated $now by $ScriptName v$ScriptVersion")
+    [void]$sb.AppendLine("# Edit codes to ISO 639-2 (eng, fra, spa, jpn, deu, ...) then re-run the encode.")
+    [void]$sb.AppendLine("movie=$MovieName")
+    [void]$sb.AppendLine("source=DVD")
+    [void]$sb.AppendLine("title=$Title")
+
+    foreach ($a in $AudioList) {
+        $code = $a.Code
+        if ((-not $code) -or $code -eq 'und') {
+            if ($Existing -and $Existing.Audio.ContainsKey([int]$a.Num)) { $code = $Existing.Audio[[int]$a.Num] }
+        }
+        if (-not $code) { $code = 'und' }
+        [void]$sb.AppendLine("audio.$($a.Num)=$code    # $($a.Lang)")
+    }
+
+    foreach ($s in $SubtitleList) {
+        $code = $s.Code
+        if ((-not $code) -or $code -eq 'und') {
+            if ($Existing -and $Existing.Subtitle.ContainsKey([int]$s.Num)) { $code = $Existing.Subtitle[[int]$s.Num] }
+        }
+        if (-not $code) { $code = 'und' }
+        [void]$sb.AppendLine("subtitle.$($s.Num)=$code    # $($s.Lang)")
+    }
+
+    try {
+        $sb.ToString() | Out-File -LiteralPath $path -Encoding utf8 -Force
+        Write-Host "  $($global:UI_GRY)Track-meta sidecar: $path$($global:UI_R)"
+    }
+    catch {
+        Write-Host "  $($global:UI_YLW)Could not write sidecar: $($_.Exception.Message)$($global:UI_R)"
+    }
+}
+
+# ── Track selection + language resolution ─────────────────────
+function Get-SelectedTracks {
+    # Returns the scan track objects that match a selection string, in output order.
+    param($List, [string]$Selection)
+
+    if (-not $List -or $List.Count -eq 0) { return @() }
+    if ($Selection -eq 'none') { return @() }
+    if ($Selection -eq 'all' -or [string]::IsNullOrWhiteSpace($Selection)) { return ,@($List) }
+
+    $out = @()
+    foreach ($p in ($Selection -split '\s*,\s*')) {
+        if ($p -match '^\d+$') {
+            $m = $List | Where-Object { $_.Num -eq [int]$p } | Select-Object -First 1
+            if ($m) { $out += $m }
+        }
+    }
+    return ,$out
+}
+
+function Resolve-LangCodes {
+    # For each selected track (in output order): scan code wins, else sidecar, else 'und'.
+    param($Selected, $SidecarMap)
+
+    $codes = @()
+    foreach ($t in $Selected) {
+        $c = ''
+        if ($t.Code -and $t.Code -ne 'und') {
+            $c = $t.Code
+        }
+        elseif ($SidecarMap -and $SidecarMap.ContainsKey([int]$t.Num)) {
+            $c = $SidecarMap[[int]$t.Num]
+        }
+        if (-not $c) { $c = 'und' }
+        $codes += $c
+    }
+    return ,$codes
+}
+
+# ── Language remux via mkvpropedit ────────────────────────────
+function Invoke-MKVLanguageRemux {
+    # Sets per-track language tags on an existing MKV. Output-order arrays:
+    # $AudioCodes[0] -> track:a1, $SubtitleCodes[0] -> track:s1, etc.
+    param(
+        [Parameter(Mandatory)][string]$MkvPath,
+        [string[]]$AudioCodes    = @(),
+        [string[]]$SubtitleCodes = @()
+    )
+
+    if (-not $Script:MkvPropEdit) {
+        Write-Host "  $($global:UI_YLW)Skipping language remux — mkvpropedit unavailable.$($global:UI_R)"
+        return
+    }
+    if (-not $DryRun -and -not (Test-Path -LiteralPath $MkvPath)) {
+        Write-Host "  $($global:UI_YLW)Skipping language remux — file not found: $MkvPath$($global:UI_R)"
+        return
+    }
+    if ($MkvPath -notmatch '\.mkv$') {
+        Write-Host "  $($global:UI_YLW)Skipping language remux — not an MKV: $MkvPath$($global:UI_R)"
+        return
+    }
+
+    $ppArgs = @($MkvPath)
+    $edits  = 0
+
+    for ($i = 0; $i -lt $AudioCodes.Count; $i++) {
+        $c = $AudioCodes[$i]
+        if ($c -and $c -ne 'und') {
+            $ppArgs += @('--edit', "track:a$($i + 1)", '--set', "language=$c")
+            $edits++
+        }
+    }
+    for ($i = 0; $i -lt $SubtitleCodes.Count; $i++) {
+        $c = $SubtitleCodes[$i]
+        if ($c -and $c -ne 'und') {
+            $ppArgs += @('--edit', "track:s$($i + 1)", '--set', "language=$c")
+            $edits++
+        }
+    }
+
+    if ($edits -eq 0) {
+        Write-Host "  $($global:UI_GRY)No language tags to set (all undefined or already correct).$($global:UI_R)"
+        return
+    }
+
+    if ($DryRun) {
+        Write-Host "  $($global:UI_YLW)[DRY RUN] Would remux languages:$($global:UI_R)"
+        Write-Host "  $Script:MkvPropEdit $($ppArgs -join ' ')"
+        return
+    }
+
+    try {
+        & $Script:MkvPropEdit @ppArgs | Out-Null
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "  $($global:UI_GRN)Language tags applied ($edits track(s)).$($global:UI_R)"
+        }
+        else {
+            Write-Host "  $($global:UI_YLW)mkvpropedit returned exit code $LASTEXITCODE — tags may be partial.$($global:UI_R)"
+        }
+    }
+    catch {
+        Write-Host "  $($global:UI_YLW)Language remux failed: $($_.Exception.Message)$($global:UI_R)"
+    }
+}
+
+# ── Source archiving ──────────────────────────────────────────
+function Get-VideoTsPath {
+    param([Parameter(Mandatory)][string]$InputPath)
+
+    $candidates = @()
+    $candidates += (Join-Path $InputPath 'VIDEO_TS')
+    try {
+        $resolved = Resolve-HandBrakeInputPath -Path $InputPath
+        if ($resolved -match 'VIDEO_TS$') { $candidates += $resolved }
+        else { $candidates += (Join-Path $resolved 'VIDEO_TS') }
+    }
+    catch { }
+
+    foreach ($c in $candidates) {
+        if ($c -and (Test-Path -LiteralPath $c)) { return [string]$c }
+    }
+    return $null
+}
+
+function Copy-DvdSource {
+    param(
+        [Parameter(Mandatory)][string]$InputPath,
+        [Parameter(Mandatory)][string]$MovieName
+    )
+
+    if (-not $Script:ArchiveSource) { return }
+
+    $vts = Get-VideoTsPath -InputPath $InputPath
+    if (-not $vts) {
+        Write-Host "  $($global:UI_YLW)Source archive skipped — no VIDEO_TS found under $InputPath$($global:UI_R)"
+        return
+    }
+
+    $safe = New-SafeName -Name $MovieName
+    $dest = Join-Path $Script:SourceRoot $safe
+    $destVts = Join-Path $dest 'VIDEO_TS'
+
+    if (Test-Path -LiteralPath $destVts) {
+        Write-Host "  $($global:UI_GRY)Source already archived: $destVts$($global:UI_R)"
+        return
+    }
+
+    if ($DryRun) {
+        Write-Host "  $($global:UI_YLW)[DRY RUN] Would archive source $vts -> $destVts$($global:UI_R)"
+        return
+    }
+
+    try {
+        if (-not (Test-Path -LiteralPath $dest)) {
+            [System.IO.Directory]::CreateDirectory($dest) | Out-Null
+        }
+        Write-Host "  $($global:UI_GRY)Archiving source (this can be several GB)...$($global:UI_R)"
+        Copy-Item -LiteralPath $vts -Destination $dest -Recurse -Force
+        Write-Host "  $($global:UI_GRN)Source archived: $destVts$($global:UI_R)"
+    }
+    catch {
+        Write-Host "  $($global:UI_YLW)Source archive failed: $($_.Exception.Message)$($global:UI_R)"
+    }
+}
+
 function Get-EncodeSettings {
+    if ($AutoAccept) {
+        return @{ RF = $Script:DefaultRF; Preset = $Script:DefaultPreset; Container = $Script:DefaultContainer }
+    }
+
     Write-UiBlankLine
     Write-Host "  $($global:UI_GRY)Press Enter to accept defaults shown in [brackets].$($global:UI_R)"
     Write-UiBlankLine
@@ -408,7 +739,9 @@ function Encode-DvdTitle {
         [ValidateRange(16,28)][int]$RF = 20,
         [ValidateSet('slow','slower','veryslow')][string]$Preset = 'slower',
         [string]$AudioSelection    = 'all',   # 'all' | 'none' | '1,3'
-        [string]$SubtitleSelection = 'all'    # 'all' | 'none' | '1,2'
+        [string]$SubtitleSelection = 'all',   # 'all' | 'none' | '1,2'
+        [string[]]$AudioCodes      = @(),     # output-order ISO 639-2 codes
+        [string[]]$SubtitleCodes   = @()
     )
 
     $resolvedInput = Resolve-HandBrakeInputPath -Path $InputPath
@@ -418,7 +751,9 @@ function Encode-DvdTitle {
     if (Test-Path -LiteralPath $outputFile) {
         Write-UiBlankLine
         Write-Host "  $($global:UI_YLW)Output file already exists:$($global:UI_R) $outputFile"
-        $overwrite = Read-Host "Overwrite? (Y/N)"
+
+        $overwrite = if ($AutoAccept) { 'N' } else { Read-Host "Overwrite? (Y/N)" }
+
         if ($overwrite -notmatch '^(Y|y)$') {
             $stamp      = Get-Date -Format 'yyyyMMdd_HHmmss'
             $outputFile = Join-Path $Script:OutputRoot "${safeName}_${stamp}.$Container"
@@ -488,6 +823,10 @@ function Encode-DvdTitle {
     if ($DryRun) {
         Write-Host "  $($global:UI_YLW)[DRY RUN] Would execute:$($global:UI_R)"
         Write-Host "  $Script:HandBrakeCLI $($encodeArgs -join ' ')"
+        if ($Container -eq 'mkv') {
+            Invoke-MKVLanguageRemux -MkvPath $outputFile -AudioCodes $AudioCodes -SubtitleCodes $SubtitleCodes
+        }
+        Copy-DvdSource -InputPath $InputPath -MovieName $MovieName
         Write-UiBlankLine
         return
     }
@@ -500,6 +839,18 @@ function Encode-DvdTitle {
 
     Write-UiBlankLine
     Write-Host "  $($global:UI_GRN)Encode complete:$($global:UI_R) $outputFile"
+
+    # Post-encode: fix language tags (MKV only), archive source, write NFO.
+    if ($Container -eq 'mkv') {
+        Write-UiBlankLine
+        Write-Host "  $($global:UI_GRN)Tagging track languages...$($global:UI_R)"
+        Invoke-MKVLanguageRemux -MkvPath $outputFile -AudioCodes $AudioCodes -SubtitleCodes $SubtitleCodes
+    }
+    else {
+        Write-Host "  $($global:UI_GRY)Container is $Container — language remux applies to MKV only.$($global:UI_R)"
+    }
+
+    Copy-DvdSource -InputPath $InputPath -MovieName $MovieName
 
     Write-NfoStub -MovieName $MovieName -OutputFile $outputFile -Tune $Tune -RF $RF -Preset $Preset
 }
@@ -539,9 +890,27 @@ Script   : $ScriptName v$ScriptVersion
 }
 
 function Read-MovieNameWithYear {
-    $movieName = Read-Host "Movie name"
+    param([string]$DefaultName = '')
+
+    if ($AutoAccept) {
+        if (-not [string]::IsNullOrWhiteSpace($DefaultName)) {
+            Write-Host "  $($global:UI_GRY)Auto-accept: naming from disc label -> $DefaultName$($global:UI_R)"
+            return [string]$DefaultName
+        }
+        $fallback = "dvd_encode_$(Get-Date -Format 'yyyyMMdd_HHmmss')"
+        Write-Host "  $($global:UI_GRY)Auto-accept: no disc label, using $fallback$($global:UI_R)"
+        return [string]$fallback
+    }
+
+    $prompt = if ([string]::IsNullOrWhiteSpace($DefaultName)) { "Movie name" } else { "Movie name [$DefaultName]" }
+    $movieName = Read-Host $prompt
     if ([string]::IsNullOrWhiteSpace($movieName)) {
-        $movieName = "dvd_encode_$(Get-Date -Format 'yyyyMMdd_HHmmss')"
+        $movieName = if (-not [string]::IsNullOrWhiteSpace($DefaultName)) {
+            $DefaultName
+        }
+        else {
+            "dvd_encode_$(Get-Date -Format 'yyyyMMdd_HHmmss')"
+        }
     }
 
     $movieYear = Read-Host "Year (optional, 4 digits)"
@@ -562,6 +931,11 @@ function Select-Tracks {
 
     if (-not $Tracks -or $Tracks.Count -eq 0) {
         Write-Host "  $($global:UI_YLW)No $Kind tracks detected — including all available.$($global:UI_R)"
+        return 'all'
+    }
+
+    if ($AutoAccept) {
+        Write-Host "  $($global:UI_GRY)Auto-accept: including all $Kind tracks.$($global:UI_R)"
         return 'all'
     }
 
@@ -619,13 +993,29 @@ function Invoke-EncodeFlow {
     Write-UiBlankLine
     Write-Host "  $($global:UI_YLW)Suggested main title:$($global:UI_R) $($mainTitle.Title)  Duration: $($mainTitle.Duration)"
 
-    $titleChoice = Read-Host "Title to encode [$($mainTitle.Title)]"
-    $selectedTitle = if ([string]::IsNullOrWhiteSpace($titleChoice)) { $mainTitle.Title } else { [int]$titleChoice }
+    if ($AutoAccept) {
+        $selectedTitle = $mainTitle.Title
+        Write-Host "  $($global:UI_GRY)Auto-accept: encoding title $selectedTitle.$($global:UI_R)"
+    }
+    else {
+        $titleChoice = Read-Host "Title to encode [$($mainTitle.Title)]"
+        $selectedTitle = if ([string]::IsNullOrWhiteSpace($titleChoice)) { $mainTitle.Title } else { [int]$titleChoice }
+    }
 
     $titleObj = $scan.Titles | Where-Object { $_.Title -eq $selectedTitle } | Select-Object -First 1
 
     $audioSel = Select-Tracks -Kind 'audio'    -Tracks $titleObj.AudioList
     $subSel   = Select-Tracks -Kind 'subtitle' -Tracks $titleObj.SubtitleList
+
+    # Resolve output-order language codes: scan-primary, sidecar fallback.
+    $sidecar  = Read-DvdTrackMeta -MovieName $MovieName
+    if ($sidecar) {
+        Write-Host "  $($global:UI_GRY)Found track-meta sidecar — using it to fill undefined languages.$($global:UI_R)"
+    }
+    $selAudio  = Get-SelectedTracks -List $titleObj.AudioList    -Selection $audioSel
+    $selSubs   = Get-SelectedTracks -List $titleObj.SubtitleList -Selection $subSel
+    $audioCodes = Resolve-LangCodes -Selected $selAudio -SidecarMap ($(if ($sidecar) { $sidecar.Audio }    else { $null }))
+    $subCodes   = Resolve-LangCodes -Selected $selSubs  -SidecarMap ($(if ($sidecar) { $sidecar.Subtitle } else { $null }))
 
     $tuneInfo = Get-AutoTune -MovieName $MovieName
     $tune     = $tuneInfo.Tune
@@ -643,16 +1033,30 @@ function Invoke-EncodeFlow {
         -RF                $settings.RF `
         -Preset            $settings.Preset `
         -AudioSelection    $audioSel `
-        -SubtitleSelection $subSel
+        -SubtitleSelection $subSel `
+        -AudioCodes        $audioCodes `
+        -SubtitleCodes     $subCodes
+
+    # Refresh the sidecar so it always documents the disc's tracks.
+    Write-DvdTrackMeta -MovieName $MovieName -Title $selectedTitle `
+        -AudioList $titleObj.AudioList -SubtitleList $titleObj.SubtitleList -Existing $sidecar
 }
 
 # ── Menu actions ──────────────────────────────────────────────
 function Encode-DirectFromDvd {
     Write-UiBlankLine
-    $drive = Read-Host "DVD drive letter [$Script:DefaultDrive]"
-    if ([string]::IsNullOrWhiteSpace($drive)) { $drive = $Script:DefaultDrive }
 
-    $movieName = Read-MovieNameWithYear
+    if ($AutoAccept) {
+        $drive = $Script:DefaultDrive
+        Write-Host "  $($global:UI_GRY)Auto-accept: using drive $drive$($global:UI_R)"
+    }
+    else {
+        $drive = Read-Host "DVD drive letter [$Script:DefaultDrive]"
+        if ([string]::IsNullOrWhiteSpace($drive)) { $drive = $Script:DefaultDrive }
+    }
+
+    $label     = Get-DvdVolumeLabel -DriveLetter $drive
+    $movieName = Read-MovieNameWithYear -DefaultName $label
 
     try {
         [string]$sourceDrive = Get-DvdSourcePath -DriveLetter $drive
@@ -694,7 +1098,11 @@ function Encode-From-ExistingFolder {
         return
     }
 
-    $movieName = Read-MovieNameWithYear
+    # Default the title to the folder name (its parent if the path is VIDEO_TS).
+    $leaf = Split-Path -Leaf $inputPath
+    if ($leaf -ieq 'VIDEO_TS') { $leaf = Split-Path -Leaf (Split-Path -Parent $inputPath) }
+
+    $movieName = Read-MovieNameWithYear -DefaultName $leaf
 
     try {
         Invoke-EncodeFlow -InputPath ([string]$inputPath) -MovieName $movieName
@@ -707,22 +1115,107 @@ function Encode-From-ExistingFolder {
     Pause-Script
 }
 
-function Show-Config {
+function Write-TrackMetaSidecar-Action {
     Write-UiBlankLine
-    Write-UiRow "RootPath"     $Script:RootPath $global:UI_GRY
-    Write-UiRow "OutputRoot"   $Script:OutputRoot $global:UI_GRY
-    Write-UiRow "NfoRoot"      $Script:NfoRoot $global:UI_GRY
-    Write-UiRow "DefaultDrive" $Script:DefaultDrive $global:UI_GRY
-    Write-UiRow "Container"    $Script:DefaultContainer $global:UI_GRY
-    Write-UiRow "Encoder"      $Script:DefaultEncoder $global:UI_GRY
-    Write-UiRow "RF"           "$($Script:DefaultRF)" $global:UI_GRY
-    Write-UiRow "Preset"       $Script:DefaultPreset $global:UI_GRY
-    Write-UiRow "HandBrakeCLI" $Script:HandBrakeCLI $global:UI_GRY
-    Write-UiRow "DryRun"       $(if ($DryRun) { 'Yes' } else { 'No' }) $global:UI_GRY
+
+    if ($AutoAccept) {
+        $drive = $Script:DefaultDrive
+    }
+    else {
+        $drive = Read-Host "DVD drive letter [$Script:DefaultDrive]"
+        if ([string]::IsNullOrWhiteSpace($drive)) { $drive = $Script:DefaultDrive }
+    }
+
+    $label     = Get-DvdVolumeLabel -DriveLetter $drive
+    $movieName = Read-MovieNameWithYear -DefaultName $label
+
+    try {
+        [string]$sourceDrive = Get-DvdSourcePath -DriveLetter $drive
+        $scan = Invoke-HandBrakeScan -InputPath $sourceDrive
+        if ($scan -is [array]) { $scan = $scan | Where-Object { $_ -is [hashtable] } | Select-Object -Last 1 }
+
+        if (-not $scan.Titles -or $scan.Titles.Count -eq 0) {
+            throw "No titles found to document."
+        }
+
+        $mainTitle = Get-MainTitle -Titles $scan.Titles
+        $titleObj  = $scan.Titles | Where-Object { $_.Title -eq $mainTitle.Title } | Select-Object -First 1
+        $existing  = Read-DvdTrackMeta -MovieName $movieName
+
+        Write-DvdTrackMeta -MovieName $movieName -Title $mainTitle.Title `
+            -AudioList $titleObj.AudioList -SubtitleList $titleObj.SubtitleList -Existing $existing
+
+        Write-UiBlankLine
+        Write-Host "  $($global:UI_GRY)Edit the sidecar to fix any 'und' codes, then run an encode.$($global:UI_R)"
+    }
+    catch {
+        Write-UiBlankLine
+        Write-CoreError $_.Exception.Message
+    }
+
     Pause-Script
 }
 
-# ── Startup ───────────────────────────────────────────────────
+function Remux-ExistingMkv-Action {
+    Write-UiBlankLine
+
+    if (-not $Script:MkvPropEdit) {
+        Write-CoreError "mkvpropedit not available. Install MKVToolNix to use this."
+        Pause-Script
+        return
+    }
+
+    $mkvPath = Read-Host "Path to .mkv file"
+    if ([string]::IsNullOrWhiteSpace($mkvPath) -or -not (Test-Path -LiteralPath $mkvPath)) {
+        Write-CoreError "File not found."
+        Pause-Script
+        return
+    }
+
+    Write-Host "  $($global:UI_GRY)Enter ISO 639-2 codes in track order, comma-separated (blank = skip).$($global:UI_R)"
+    Write-Host "  $($global:UI_GRY)Example audio: eng,fra   subtitles: eng,spa$($global:UI_R)"
+
+    $audioIn = (Read-Host "Audio track languages").Trim()
+    $subIn   = (Read-Host "Subtitle track languages").Trim()
+
+    $audioCodes = if ($audioIn) { @($audioIn -split '\s*,\s*') } else { @() }
+    $subCodes   = if ($subIn)   { @($subIn   -split '\s*,\s*') } else { @() }
+
+    try {
+        Invoke-MKVLanguageRemux -MkvPath ([string]$mkvPath) -AudioCodes $audioCodes -SubtitleCodes $subCodes
+    }
+    catch {
+        Write-UiBlankLine
+        Write-CoreError $_.Exception.Message
+    }
+
+    Pause-Script
+}
+
+function Show-Config {
+    Write-UiBlankLine
+    Write-UiRow "RootPath"      $Script:RootPath $global:UI_GRY
+    Write-UiRow "OutputRoot"    $Script:OutputRoot $global:UI_GRY
+    Write-UiRow "NfoRoot"       $Script:NfoRoot $global:UI_GRY
+    Write-UiRow "MetaRoot"      $Script:MetaRoot $global:UI_GRY
+    Write-UiRow "SourceRoot"    $Script:SourceRoot $global:UI_GRY
+    Write-UiRow "DefaultDrive"  $Script:DefaultDrive $global:UI_GRY
+    Write-UiRow "Container"     $Script:DefaultContainer $global:UI_GRY
+    Write-UiRow "Encoder"       $Script:DefaultEncoder $global:UI_GRY
+    Write-UiRow "RF"            "$($Script:DefaultRF)" $global:UI_GRY
+    Write-UiRow "Preset"        $Script:DefaultPreset $global:UI_GRY
+    Write-UiRow "HandBrakeCLI"  $Script:HandBrakeCLI $global:UI_GRY
+    Write-UiRow "MkvPropEdit"   $(if ($Script:MkvPropEdit) { $Script:MkvPropEdit } else { '(not found — remux disabled)' }) $global:UI_GRY
+    Write-UiRow "ArchiveSource" $(if ($Script:ArchiveSource) { 'Yes' } else { 'No' }) $global:UI_GRY
+    Write-UiRow "DryRun"        $(if ($DryRun) { 'Yes' } else { 'No' }) $global:UI_GRY
+    Write-UiRow "AutoAccept"    $(if ($AutoAccept) { 'Yes' } else { 'No' }) $global:UI_GRY
+    Pause-Script
+}
+
+# ── Startup (interactive menu runs only when executed directly; the GUI ──
+# ── dot-sources this file with DVDENCODER_NOMENU set to reuse the functions) ──
+if (-not $env:DVDENCODER_NOMENU) {
+
 try {
     Ensure-Dependencies
     Ensure-Directories
@@ -742,7 +1235,9 @@ while ($true) {
         '1' { Encode-DirectFromDvd }
         '2' { Scan-DvdOnly }
         '3' { Encode-From-ExistingFolder }
-        '4' { Show-Config }
+        '4' { Write-TrackMetaSidecar-Action }
+        '5' { Remux-ExistingMkv-Action }
+        '6' { Show-Config }
         'Q' {
             Write-UiBlankLine
             Write-Host "  $($global:UI_CYN)Goodbye.$($global:UI_R)"
@@ -755,3 +1250,5 @@ while ($true) {
         }
     }
 }
+
+} # end: if (-not $env:DVDENCODER_NOMENU)

@@ -1,4 +1,4 @@
-#--------------------------------------------
+﻿#--------------------------------------------
 # file:     bluray-backup.ps1
 # author:   Mike Redd
 # version:  2.2
@@ -122,6 +122,64 @@ function Get-MakeMKVPath {
     }
 
     return $null
+}
+
+function Get-MakeMKVDrives {
+    # Enumerates the optical drives MakeMKV can see. The 'disc:9999' trick can't
+    # open, so makemkvcon just prints one DRV: line per drive and exits.
+    #   DRV:index,visible,enabled,flags,"drive name","disc name","device"
+    # Returns: Index[int] DriveName DiscName Device HasDisc[bool]
+    param([Parameter(Mandatory)][string]$Exe)
+
+    $out = & $Exe -r --cache=1 info disc:9999 2>&1
+    $drives = @()
+    foreach ($line in $out) {
+        if ($line -match '^DRV:(\d+),(\d+),\d+,\d+,"([^"]*)","([^"]*)","([^"]*)"') {
+            $idx     = [int]$matches[1]
+            $visible = [int]$matches[2]
+            $drvName = $matches[3]
+            $discNm  = $matches[4]
+            $device  = $matches[5]
+            # MakeMKV pads the list with empty disabled slots — skip those.
+            if ($visible -eq 0 -and [string]::IsNullOrWhiteSpace($drvName) -and [string]::IsNullOrWhiteSpace($device)) { continue }
+            $drives += [pscustomobject]@{
+                Index     = $idx
+                DriveName = $drvName
+                DiscName  = $discNm
+                Device    = $device
+                HasDisc   = -not [string]::IsNullOrWhiteSpace($discNm)
+            }
+        }
+    }
+    return @($drives)
+}
+
+function Resolve-MakeMKVDiscIndex {
+    # Returns the best 'disc:N' source string for a scan/backup:
+    #   1) a drive whose reported device matches the given letter (e.g. D:)
+    #   2) else the lowest-index drive that currently has a disc loaded
+    #   3) else the lowest-index drive at all
+    #   4) else 'disc:0' (legacy fallback — keeps old single-drive behaviour)
+    param(
+        [Parameter(Mandatory)][string]$Exe,
+        [string]$DriveLetter
+    )
+
+    $drives = @(Get-MakeMKVDrives -Exe $Exe)
+    if ($drives.Count -eq 0) { return 'disc:0' }
+
+    if ($DriveLetter) {
+        $letter = ($DriveLetter.TrimEnd('\').TrimEnd(':')).ToUpperInvariant()
+        $byLetter = $drives | Where-Object {
+            $_.Device -and ($_.Device.TrimEnd('\').TrimEnd(':').ToUpperInvariant() -eq $letter)
+        } | Select-Object -First 1
+        if ($byLetter) { return "disc:$($byLetter.Index)" }
+    }
+
+    $withDisc = $drives | Where-Object { $_.HasDisc } | Sort-Object Index | Select-Object -First 1
+    if ($withDisc) { return "disc:$($withDisc.Index)" }
+
+    return "disc:$((@($drives | Sort-Object Index))[0].Index)"
 }
 
 function Pause-Script {
@@ -521,7 +579,7 @@ function Resolve-TrackLanguages {
         $code = Show-LanguagePicker -TrackLabel $label
         $track.LanguageCode = $code
         $track.LanguageName = if ($code -ne 'und') {
-            ($Script:QuickLangs.Values | Where-Object { $_[0] -eq $code } | Select-Object -First 1)?[1] ?? $code
+            if ($qln = $Script:QuickLangs.Values | Where-Object { $_[0] -eq $code } | Select-Object -First 1) { $qln[1] } else { $code }
         } else { 'Undetermined' }
 
         Write-Host "  → Set to: $($track.LanguageCode)"
@@ -536,7 +594,7 @@ function Resolve-TrackLanguages {
         $code = Show-LanguagePicker -TrackLabel $label
         $track.LanguageCode = $code
         $track.LanguageName = if ($code -ne 'und') {
-            ($Script:QuickLangs.Values | Where-Object { $_[0] -eq $code } | Select-Object -First 1)?[1] ?? $code
+            if ($qln = $Script:QuickLangs.Values | Where-Object { $_[0] -eq $code } | Select-Object -First 1) { $qln[1] } else { $code }
         } else { 'Undetermined' }
 
         Write-Host "  → Set to: $($track.LanguageCode)"
@@ -818,6 +876,7 @@ function Main {
     }
 }
 
+if (-not $env:BLURAYBACKUP_NOMENU) {
 try {
     Main
 }
@@ -826,3 +885,4 @@ catch {
     Write-Host "  $($_.Exception.Message)"
     Pause-Script
 }
+} # end: if (-not $env:BLURAYBACKUP_NOMENU)
