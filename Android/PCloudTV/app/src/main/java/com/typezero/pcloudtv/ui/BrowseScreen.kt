@@ -47,6 +47,12 @@ import androidx.compose.material.icons.filled.Description
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Movie
@@ -931,24 +937,67 @@ private fun DocViewer(
                             settings.loadWithOverviewMode = true
                             settings.useWideViewPort = true
                             setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                            // Let a TV remote drive the page scroll.
+                            isFocusable = true
+                            isFocusableInTouchMode = true
                         }
                     },
                     update = { wv ->
                         wv.loadDataWithBaseURL(null, html!!, "text/html", "UTF-8", null)
+                        wv.requestFocus()
                     },
                     modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(10.dp))
                 )
-                else -> Text(
-                    text,
-                    color = Brand.TextMid,
-                    fontSize = 11.sp,
-                    fontFamily = FontFamily.Monospace,
-                    softWrap = false,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .verticalScroll(rememberScrollState())
-                        .horizontalScroll(rememberScrollState())
-                )
+                else -> {
+                    val vScroll = rememberScrollState()
+                    val hScroll = rememberScrollState()
+                    val scope = androidx.compose.runtime.rememberCoroutineScope()
+                    val docFocus = remember { FocusRequester() }
+                    val stepPx = with(LocalDensity.current) { 96.dp.roundToPx() }
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .focusRequester(docFocus)
+                            .focusable()
+                            .onKeyEvent { e ->
+                                if (e.type != KeyEventType.KeyDown) return@onKeyEvent false
+                                when (e.key) {
+                                    Key.DirectionDown -> {
+                                        scope.launch { vScroll.animateScrollTo(vScroll.value + stepPx) }; true
+                                    }
+                                    Key.DirectionUp -> {
+                                        // At the very top, let focus escape upward (to Close).
+                                        if (vScroll.value == 0) false
+                                        else {
+                                            scope.launch { vScroll.animateScrollTo(vScroll.value - stepPx) }; true
+                                        }
+                                    }
+                                    Key.DirectionRight -> {
+                                        scope.launch { hScroll.animateScrollTo(hScroll.value + stepPx) }; true
+                                    }
+                                    Key.DirectionLeft -> {
+                                        scope.launch { hScroll.animateScrollTo(hScroll.value - stepPx) }; true
+                                    }
+                                    else -> false
+                                }
+                            }
+                    ) {
+                        Text(
+                            text,
+                            color = Brand.TextMid,
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace,
+                            softWrap = false,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .verticalScroll(vScroll)
+                                .horizontalScroll(hScroll)
+                        )
+                    }
+                    LaunchedEffect(text) {
+                        if (text.isNotEmpty()) runCatching { docFocus.requestFocus() }
+                    }
+                }
             }
         }
     }
