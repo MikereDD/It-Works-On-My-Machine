@@ -5,6 +5,12 @@ All notable changes to **pCloud TV**. Newest first.
 
 ---
 
+## v4.13 — Remote can reach every player button
+
+- The player now uses standard TV focus navigation. Previously the D-pad was hard-wired to seek/play directly, which meant the on-screen buttons (start, skip-to-end, previous, next, play/pause) could never be selected with a remote. Now Left/Right move focus across the control row and Center activates the focused button, with focus seeded on play/pause when the controls appear. Up still opens the audio/subtitle picker, and hardware media keys (play/pause, rewind, fast-forward, next, previous) still act directly. Mobile touch is unchanged.
+
+---
+
 ## v4.12 — Jump to start / end in the player
 
 - Added two transport buttons flanking the skip-10s controls: **start from the beginning** (left of the back-10s button) jumps to 0:00, and **skip to the end** (right of the forward-10s button) jumps to the final moments. Works in both the video and audio players; track previous/next (when a queue exists) sit outside them.
