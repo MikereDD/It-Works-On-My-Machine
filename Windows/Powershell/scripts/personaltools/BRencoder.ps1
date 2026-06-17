@@ -1,9 +1,9 @@
 ﻿#--------------------------------------------
 # file:     brEncoder.ps1
 # author:   Mike Redd
-# version:  3.1.4
+# version:  3.1.6
 # created:  2026-02-11
-# updated:  2026-06-12
+# updated:  2026-06-17
 # desc:     Encode Blu-ray .m2ts files
 #           to H.265/HEVC on Windows
 #           using ffmpeg, then create a
@@ -13,12 +13,12 @@
 #           validates metadata, verifies final MKV
 #           language/default/forced tags
 #           remuxes final MKV with real track IDs
-# changes:  v3.1.4 - Invoke-MKVLanguageRemux: tag audio from the .clpi (physical
-#                    PID order) when the sidecar's logical count diverges from the
-#                    streams ffmpeg actually muxes, instead of throwing "Audio
-#                    validation failed"; cap tagging to the real output count;
-#                    default audio = best-sounding English (lossless over lossy,
-#                    then most channels)
+# changes:  v3.1.6 - subtitle tagging trusts the .clpi as the single source of
+#                    truth when its stream count matches the encoded output:
+#                    exact language in physical PID order, forced inferred from
+#                    a repeated language, English forced default; GUI overrides
+#                    (built from the mis-ordered sidecar) no longer set the
+#                    subtitle language/flags when authoritative .clpi is present
 #--------------------------------------------
 
 param()
@@ -1410,8 +1410,8 @@ function Invoke-MKVLanguageRemux {
         the MKV track headers using mkvpropedit.
 
     .NOTES
-        v3.0 rule: sidecar metadata wins. Source ffprobe language tags are not
-        used as a primary or fallback language source.
+        Language priority: authoritative .clpi (physical PID order) > GUI
+        overrides > sidecar. Source ffprobe language tags are never used.
     #>
     param(
         [Parameter(Mandatory)][string]$OutputFile,
@@ -1457,8 +1457,8 @@ function Invoke-MKVLanguageRemux {
     $clpiSubLangs = if ($SourcePath) { Read-ClpiSubtitleLanguages -M2tsPath $SourcePath } else { $null }
     $useClpiSubs  = ($clpiSubLangs -and $clpiSubLangs.Count -eq $subOutCount)
 
-    if (-not $useClpiSubs -and $subOutCount -ne $SubMeta.Count) {
-        throw "Subtitle validation failed: output=$subOutCount, metadata=$($SubMeta.Count), and no usable .clpi languages. Refusing unsafe partial tagging."
+    if ($ovrSub.Count -eq 0 -and -not $useClpiSubs -and $subOutCount -ne $SubMeta.Count) {
+        throw "Subtitle validation failed: output=$subOutCount, metadata=$($SubMeta.Count), and no usable .clpi languages or overrides. Refusing unsafe partial tagging."
     }
 
     # Default audio = best-sounding English that physically exists: rank lossless
@@ -1545,9 +1545,25 @@ function Invoke-MKVLanguageRemux {
     # count matches; name follows the language so the two never contradict.
     $sidecarSubMatches = ($SubMeta.Count -eq $subOutCount)
     $effSub = New-Object System.Collections.Generic.List[object]
+    $seenSubLang = @{}
     for ($i = 0; $i -lt $subOutCount; $i++) {
+        # The .clpi authoritatively describes the subtitle streams in physical
+        # PID order (== ffmpeg 0:s:0..N) whenever its count matches the encoded
+        # output. There it is the single source of truth: an override built from
+        # the mis-ordered sidecar grid can't be trusted positionally, so it is
+        # skipped for subtitles. Language is exact; forced is inferred from a
+        # repeated language (the second copy of a language is the forced/signs
+        # track); English is forced default below.
         $o = $ovrSub[$i + 1]
-        if ($o) {
+        if ($useClpiSubs) {
+            $lang   = [string]$clpiSubLangs[$i]
+            $forced = [bool]$seenSubLang[$lang]
+            $seenSubLang[$lang] = $true
+            $isComm = $false
+            $isDef  = $false
+            $name   = $null
+        }
+        elseif ($o) {
             $lang   = Resolve-LanguageCode -Code ([string]$o.lang)
             $forced = [bool]$o.forced
             $isComm = [bool]$o.commentary
@@ -1555,14 +1571,12 @@ function Invoke-MKVLanguageRemux {
             $name   = if ($o.PSObject.Properties['name'] -and $o.name) { [string]$o.name } else { $null }
         }
         else {
-            if     ($useClpiSubs)          { $lang = $clpiSubLangs[$i] }
-            elseif ($i -lt $SubMeta.Count) { $lang = Get-MetaLanguage -Track $SubMeta[$i] }
+            if     ($i -lt $SubMeta.Count) { $lang = Get-MetaLanguage -Track $SubMeta[$i] }
             else                           { $lang = 'und' }
             $forced = [bool]($sidecarSubMatches -and $SubMeta[$i].Forced)
             $isComm = $false
             $isDef  = $false
-            $name   = if ($useClpiSubs) { $null }
-                      elseif ($i -lt $SubMeta.Count) { Get-MetaTrackName -Track $SubMeta[$i] }
+            $name   = if ($i -lt $SubMeta.Count) { Get-MetaTrackName -Track $SubMeta[$i] }
                       else { $null }
         }
 
@@ -1581,7 +1595,7 @@ function Invoke-MKVLanguageRemux {
     # Default subtitle: explicit overrides win; otherwise force English (first
     # non-forced English, else first English).
     $subDefaultIndex = 0
-    if ($ovrSub.Count -gt 0) {
+    if ($ovrSub.Count -gt 0 -and -not $useClpiSubs) {
         for ($di = 0; $di -lt $effSub.Count; $di++) {
             if ($effSub[$di].Default) { $subDefaultIndex = $di + 1; break }
         }
@@ -1597,7 +1611,7 @@ function Invoke-MKVLanguageRemux {
         }
     }
 
-    $langSrc = if ($ovrSub.Count -gt 0) { 'override' } elseif ($useClpiSubs) { 'clpi' } else { 'sidecar' }
+    $langSrc = if ($useClpiSubs) { 'clpi' } elseif ($ovrSub.Count -gt 0) { 'override' } else { 'sidecar' }
     for ($i = 0; $i -lt $effSub.Count; $i++) {
         $t = $effSub[$i]
         $propArgs += '--edit'
