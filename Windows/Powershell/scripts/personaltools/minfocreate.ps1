@@ -1,18 +1,20 @@
 #--------------------------------------------
 # file:     minfocreate.ps1
 # author:   Mike Redd
-# version:  1.7
+# version:  1.8
 # created:  2026-04-11
-# updated:  2026-04-11
+# updated:  2026-06-17
 # desc:     Create NFO, HTML, and poster data
 #           for a video file using OMDb and
-#           MediaInfo CLI.
+#           MediaInfo CLI. Optional -Preview pops
+#           the downloaded poster in a window.
 #--------------------------------------------
 
 param(
     [string]$VideoDir  = "",
     [string]$VideoFile = "",
-    [string]$ApiKey    = ""
+    [string]$ApiKey    = "",
+    [switch]$Preview
 )
 
 # ── Load custom UI ────────────────────────────────────────────
@@ -48,7 +50,7 @@ if (Test-Path -LiteralPath $corePath) {
 $ErrorActionPreference = 'Stop'
 
 $ScriptName    = "MiNfoCreate"
-$ScriptVersion = "1.7"
+$ScriptVersion = "1.8"
 $ScriptAuthor  = "Mike Redd"
 
 # ── Config ────────────────────────────────────────────────────
@@ -82,16 +84,88 @@ if (-not $ApiKey -or $ApiKey -eq "your_api_key_here") {
 }
 
 if (-not $VideoDir) {
-    $VideoDir = if ($global:MINFO_VIDEODIR) { $global:MINFO_VIDEODIR } else { "$HOME\Rip\done" }
+    $VideoDir = if ($global:MINFO_VIDEODIR) { $global:MINFO_VIDEODIR } else { "G:\Rip\done" }
 }
 
-$Script:NfoDir    = if ($global:MINFO_NFODIR)    { $global:MINFO_NFODIR }    else { "$HOME\Rip\nfo" }
-$Script:PosterDir = if ($global:MINFO_POSTERDIR) { $global:MINFO_POSTERDIR } else { "$HOME\Rip\meta\posters" }
+$Script:NfoDir    = if ($global:MINFO_NFODIR)    { $global:MINFO_NFODIR }    else { "G:\Rip\nfo" }
+$Script:PosterDir = if ($global:MINFO_POSTERDIR) { $global:MINFO_POSTERDIR } else { "G:\Rip\meta\posters" }
+
+if (-not $Preview -and $global:MINFO_PREVIEW) {
+    $Preview = [bool]$global:MINFO_PREVIEW
+}
 
 New-Item -ItemType Directory -Path $Script:NfoDir    -Force | Out-Null
 New-Item -ItemType Directory -Path $Script:PosterDir -Force | Out-Null
 
 # ── Helpers ───────────────────────────────────────────────────
+function ConvertTo-HtmlSafe {
+    param([string]$Text)
+    if ($null -eq $Text) { return "" }
+    return ($Text -replace '&', '&amp;' -replace '<', '&lt;' -replace '>', '&gt;' -replace '"', '&quot;' -replace "'", '&#39;')
+}
+
+function Show-PosterWindow {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ImagePath
+    )
+
+    if (-not (Test-Path -LiteralPath $ImagePath)) {
+        Write-Host "  $($global:UI_YLW)Image not found: $ImagePath$($global:UI_R)"
+        return
+    }
+
+    Add-Type -AssemblyName System.Windows.Forms
+    Add-Type -AssemblyName System.Drawing
+
+    $form = New-Object System.Windows.Forms.Form
+    $form.Text = "Poster Preview"
+    $form.StartPosition = "CenterScreen"
+    $form.Width = 700
+    $form.Height = 1000
+    $form.BackColor = [System.Drawing.Color]::Black
+    $form.KeyPreview = $true
+    $form.TopMost = $true
+
+    $pictureBox = New-Object System.Windows.Forms.PictureBox
+    $pictureBox.Dock = [System.Windows.Forms.DockStyle]::Fill
+    $pictureBox.SizeMode = [System.Windows.Forms.PictureBoxSizeMode]::Zoom
+    $pictureBox.BackColor = [System.Drawing.Color]::Black
+
+    try {
+        $fs = [System.IO.File]::Open($ImagePath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read)
+        try {
+            $imgTemp = [System.Drawing.Image]::FromStream($fs)
+            $bmp = New-Object System.Drawing.Bitmap $imgTemp
+            $imgTemp.Dispose()
+        } finally {
+            $fs.Close()
+            $fs.Dispose()
+        }
+        $pictureBox.Image = $bmp
+    } catch {
+        Write-Host "  $($global:UI_YLW)Failed to load image: $($_.Exception.Message)$($global:UI_R)"
+        return
+    }
+
+    $form.Controls.Add($pictureBox)
+
+    $form.Add_KeyDown({
+        param($sender, $e)
+        if ($e.KeyCode -eq [System.Windows.Forms.Keys]::Escape -or $e.KeyCode -eq [System.Windows.Forms.Keys]::Q) {
+            $sender.Close()
+        }
+    })
+
+    $form.Add_FormClosed({
+        if ($pictureBox.Image) {
+            $pictureBox.Image.Dispose()
+        }
+    })
+
+    [void]$form.ShowDialog()
+}
+
 function Show-Header {
     Clear-UiScreen
     $w = Get-UiBoxWidth -MaxWidth 64 -MinWidth 46
@@ -570,6 +644,32 @@ $nfoContent | Out-File -LiteralPath $nfoFile -Encoding UTF8
 Write-UiBlankLine
 Write-Host "  $($global:UI_GRN)NFO saved: $nfoFile$($global:UI_R)"
 
+# HTML-escape text fields
+# The NFO above is plain text and keeps raw values; the HTML below
+# must escape OMDb/MediaInfo text so &, <, > and quotes don't break
+# the markup. Poster URL and IMDb ID are left raw on purpose.
+$title         = ConvertTo-HtmlSafe $title
+$mediaInfoText = ConvertTo-HtmlSafe $mediaInfoText
+if ($omdbOK) {
+    $mTitle   = ConvertTo-HtmlSafe $mTitle
+    $mYear    = ConvertTo-HtmlSafe $mYear
+    $mRated   = ConvertTo-HtmlSafe $mRated
+    $mRel     = ConvertTo-HtmlSafe $mRel
+    $mRuntime = ConvertTo-HtmlSafe $mRuntime
+    $mGenre   = ConvertTo-HtmlSafe $mGenre
+    $mDir     = ConvertTo-HtmlSafe $mDir
+    $mWriter  = ConvertTo-HtmlSafe $mWriter
+    $mCast    = ConvertTo-HtmlSafe $mCast
+    $mPlot    = ConvertTo-HtmlSafe $mPlot
+    $mLang    = ConvertTo-HtmlSafe $mLang
+    $mCountry = ConvertTo-HtmlSafe $mCountry
+    $mAwards  = ConvertTo-HtmlSafe $mAwards
+    $mRating  = ConvertTo-HtmlSafe $mRating
+    $mVotes   = ConvertTo-HtmlSafe $mVotes
+    $mMeta    = ConvertTo-HtmlSafe $mMeta
+    $mRT      = ConvertTo-HtmlSafe $mRT
+}
+
 # ── Write HTML ────────────────────────────────────────────────
 $htmFile = Join-Path $outDir "$baseName.htm"
 
@@ -718,6 +818,18 @@ if ($omdbOK -and $mPoster -ne "N/A") {
 
     if ($LASTEXITCODE -eq 0 -and (Test-Path -LiteralPath $posterOut) -and (Get-Item -LiteralPath $posterOut).Length -gt 0) {
         Write-Host "  $($global:UI_GRN)Poster saved: $posterOut$($global:UI_R)"
+
+        if ($Preview) {
+            if ([System.Threading.Thread]::CurrentThread.GetApartmentState() -ne 'STA') {
+                Write-Host "  $($global:UI_YLW)Poster preview needs an STA host; relaunch with -STA to use it.$($global:UI_R)"
+            } else {
+                try {
+                    Show-PosterWindow -ImagePath $posterOut
+                } catch {
+                    Write-Host "  $($global:UI_YLW)Preview failed: $($_.Exception.Message)$($global:UI_R)"
+                }
+            }
+        }
     } else {
         Write-Host "  $($global:UI_YLW)Poster download failed (non-fatal).$($global:UI_R)"
         Remove-Item -LiteralPath $posterOut -Force -ErrorAction SilentlyContinue

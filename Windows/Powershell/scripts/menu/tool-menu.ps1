@@ -1,9 +1,9 @@
 ﻿#--------------------------------------------
 # file:     tool-menu.ps1
 # author:   Mike Redd
-# version:  3.4
+# version:  3.5
 # created:  2026-03-30
-# updated:  2026-06-15
+# updated:  2026-06-17
 # desc:     Unified script launcher (Admin + Personal + Games)
 #--------------------------------------------
 
@@ -56,7 +56,7 @@ if (Test-Path $corePath) {
 }
 
 $ScriptName    = "Tool Menu"
-$ScriptVersion = "3.4"
+$ScriptVersion = "3.5"
 $ScriptAuthor  = "Mike Redd"
 
 # ── Base script paths ─────────────────────────────────────────
@@ -91,6 +91,7 @@ $PersonalTools = @(
     [PSCustomObject]@{ Name="Blu-ray Track Dump";	 File="bluray-trackdump.ps1" }
     [PSCustomObject]@{ Name="Blu-ray Encoder";       File="BRencoder.ps1" }
     [PSCustomObject]@{ Name="Blu-ray Encoder (GUI)"; File="BRencoder-gui.ps1" }
+    [PSCustomObject]@{ Name="MKV Sample";            File="mkv-sample.ps1" }
     [PSCustomObject]@{ Name="WebRipper";             File="web-ripper.ps1" }
 )
 

@@ -1,9 +1,9 @@
 #--------------------------------------------
 # file:     mkv-sample.ps1
 # author:   Mike Redd / ChatGPT
-# version:  1.0
+# version:  1.1
 # created:  2026-04-16
-# updated:  2026-04-16
+# updated:  2026-06-17
 # desc:     Create a short sample clip
 #           from a finished MKV file
 #           in G:\Rip\raw265 using ffmpeg
@@ -46,7 +46,7 @@ else {
 $ErrorActionPreference = 'Stop'
 
 $ScriptName    = "MKV Sample"
-$ScriptVersion = "1.0"
+$ScriptVersion = "1.1"
 $ScriptAuthor  = "Mike Redd"
 
 # ── Config ────────────────────────────────────────────────────
@@ -185,7 +185,7 @@ function Get-SampleOutputPath {
     $safeName = New-SafeName -Name $MovieName
     $outputFile = Join-Path $Script:SampleRoot "${safeName}_sample.$($Script:DefaultExt)"
 
-    if (Test-Path $outputFile) {
+    if (Test-Path -LiteralPath $outputFile) {
         $stamp = Get-Date -Format 'yyyyMMdd_HHmmss'
         $outputFile = Join-Path $Script:SampleRoot "${safeName}_sample_$stamp.$($Script:DefaultExt)"
     }
@@ -279,7 +279,7 @@ function Create-SampleFile {
 
     Start-Sleep -Milliseconds 300
 
-    $outputInfo = Get-Item -Path $outputFile -ErrorAction SilentlyContinue
+    $outputInfo = Get-Item -LiteralPath $outputFile -ErrorAction SilentlyContinue
     if (-not $outputInfo) {
         throw "Sample creation failed. Output file not found."
     }
