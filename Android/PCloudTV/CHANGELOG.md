@@ -5,6 +5,12 @@ All notable changes to **pCloud TV**. Newest first.
 
 ---
 
+## v4.9 — Back closes the document viewer
+
+- Pressing Back (phone gesture or TV remote) while reading a .nfo or .htm file now closes the viewer, instead of navigating the folder behind it and leaving you stuck on the document. Tap-outside and the Close button already worked.
+
+---
+
 ## v4.8 — Built-in .nfo and .htm viewer
 
 - Tap a **.nfo** or **.htm/.html** file to read it in-app instead of nothing happening. `.nfo` files render as monospace text (UTF-8, with a CP437 fallback for legacy ASCII-art releases) so box-drawing and ASCII headers line up; `.htm/.html` render in a WebView with full styling and remote images. Both open in a dismissable overlay with a Close button.
