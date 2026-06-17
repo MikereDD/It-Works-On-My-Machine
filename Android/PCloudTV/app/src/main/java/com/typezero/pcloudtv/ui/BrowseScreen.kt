@@ -851,6 +851,10 @@ private fun DocViewer(
     session: Session,
     onClose: () -> Unit
 ) {
+    // Intercept Back (phone gesture / TV remote) so it closes the viewer instead
+    // of falling through to the folder navigation behind the overlay.
+    BackHandler { onClose() }
+
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var text by remember { mutableStateOf("") }            // .nfo / plain text
