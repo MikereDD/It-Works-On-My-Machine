@@ -5,6 +5,12 @@ All notable changes to **pCloud TV**. Newest first.
 
 ---
 
+## v4.11 — Perfectly aligned .nfo art
+
+- Bundled **DejaVu Sans Mono** and render .nfo files with it. The system monospace font fell back per-glyph for box-drawing/block characters (═ ║ ╔ █ …), giving them inconsistent widths so the ASCII-art columns and right-hand borders drifted out of line. DejaVu covers all those glyphs at a uniform cell width, with font padding disabled and tightened line height, so headers and borders line up cleanly.
+
+---
+
 ## v4.10 — Scroll documents with a TV remote
 
 - .nfo and .htm files can now be scrolled with a TV remote, not just by touch. The .nfo text view takes D-pad focus and maps up/down/left/right to vertical and horizontal scrolling (so wide ASCII-art lines are reachable); pressing Up at the very top releases focus back toward Close. The .htm WebView is now focusable so the remote scrolls the page. Touch scrolling on mobile is unchanged.

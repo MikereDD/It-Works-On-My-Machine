@@ -46,6 +46,7 @@ import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.Font
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.Key
@@ -954,6 +955,12 @@ private fun DocViewer(
                     val scope = androidx.compose.runtime.rememberCoroutineScope()
                     val docFocus = remember { FocusRequester() }
                     val stepPx = with(LocalDensity.current) { 96.dp.roundToPx() }
+                    // Bundled DejaVu Sans Mono covers box-drawing/block glyphs at a
+                    // uniform cell width, so the ASCII-art columns line up (the system
+                    // monospace font falls back per-glyph and drifts).
+                    val nfoFont = remember {
+                        FontFamily(Font(com.typezero.pcloudtv.R.font.dejavu_sans_mono))
+                    }
                     Box(
                         Modifier
                             .fillMaxSize()
@@ -986,8 +993,15 @@ private fun DocViewer(
                             text,
                             color = Brand.TextMid,
                             fontSize = 11.sp,
-                            fontFamily = FontFamily.Monospace,
+                            lineHeight = 13.sp,
+                            letterSpacing = 0.sp,
+                            fontFamily = nfoFont,
                             softWrap = false,
+                            style = androidx.compose.ui.text.TextStyle(
+                                platformStyle = androidx.compose.ui.text.PlatformTextStyle(
+                                    includeFontPadding = false
+                                )
+                            ),
                             modifier = Modifier
                                 .fillMaxSize()
                                 .verticalScroll(vScroll)
