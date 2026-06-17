@@ -3,6 +3,8 @@ package com.typezero.pcloudtv.ui
 import com.typezero.pcloudtv.data.MediaItem
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.FirstPage
+import androidx.compose.material.icons.filled.LastPage
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.RadioButtonChecked
 import androidx.compose.material.icons.filled.ClosedCaption
@@ -793,6 +795,19 @@ private fun VlcPlayer(
                 onTogglePlay = { togglePlay() },
                 onSeekBack = { seekBy(-10_000) },
                 onSeekForward = { seekBy(10_000) },
+                onSeekToStart = {
+                    player.time = 0
+                    positionMs = 0
+                    reveal()
+                },
+                onSeekToEnd = {
+                    if (durationMs > 0) {
+                        val t = (durationMs - 1500).coerceAtLeast(0L)
+                        player.time = t
+                        positionMs = t
+                        reveal()
+                    }
+                },
                 onScrub = { fraction ->
                     if (durationMs > 0) {
                         val t = (fraction * durationMs).toLong()
@@ -864,6 +879,19 @@ private fun VlcPlayer(
                 onTogglePlay = { togglePlay() },
                 onSeekBack = { seekBy(-10_000) },
                 onSeekForward = { seekBy(10_000) },
+                onSeekToStart = {
+                    player.time = 0
+                    positionMs = 0
+                    reveal()
+                },
+                onSeekToEnd = {
+                    if (durationMs > 0) {
+                        val t = (durationMs - 1500).coerceAtLeast(0L)
+                        player.time = t
+                        positionMs = t
+                        reveal()
+                    }
+                },
                 onTracks = {
                     refreshTrackLists()
                     showTracks = true
@@ -923,6 +951,8 @@ private fun AnimatedVisibilityScope.Controls(
     onTogglePlay: () -> Unit,
     onSeekBack: () -> Unit,
     onSeekForward: () -> Unit,
+    onSeekToStart: () -> Unit,
+    onSeekToEnd: () -> Unit,
     onTracks: () -> Unit,
     onScrub: (Float) -> Unit
 ) {
@@ -1039,6 +1069,13 @@ private fun AnimatedVisibilityScope.Controls(
                     }
                     Spacer(Modifier.width(16.dp))
                 }
+                IconButton(onClick = onSeekToStart) {
+                    Icon(
+                        Icons.Filled.FirstPage, contentDescription = "Start from beginning",
+                        tint = Color.White, modifier = Modifier.size(32.dp)
+                    )
+                }
+                Spacer(Modifier.width(14.dp))
                 IconButton(onClick = onSeekBack) {
                     Icon(
                         Icons.Filled.Replay10, contentDescription = "Back 10s",
@@ -1072,6 +1109,13 @@ private fun AnimatedVisibilityScope.Controls(
                     Icon(
                         Icons.Filled.Forward10, contentDescription = "Forward 10s",
                         tint = Color.White, modifier = Modifier.size(38.dp)
+                    )
+                }
+                Spacer(Modifier.width(14.dp))
+                IconButton(onClick = onSeekToEnd) {
+                    Icon(
+                        Icons.Filled.LastPage, contentDescription = "Skip to end",
+                        tint = Color.White, modifier = Modifier.size(32.dp)
                     )
                 }
                 if (hasPrev || hasNext) {
@@ -1146,6 +1190,8 @@ private fun AudioNowPlaying(
     onTogglePlay: () -> Unit,
     onSeekBack: () -> Unit,
     onSeekForward: () -> Unit,
+    onSeekToStart: () -> Unit,
+    onSeekToEnd: () -> Unit,
     onScrub: (Float) -> Unit
 ) {
     // Decode embedded cover art off the main thread; null -> placeholder.
@@ -1222,6 +1268,8 @@ private fun AudioNowPlaying(
                         onTogglePlay = onTogglePlay,
                         onSeekBack = onSeekBack,
                         onSeekForward = onSeekForward,
+                        onSeekToStart = onSeekToStart,
+                        onSeekToEnd = onSeekToEnd,
                         modifier = Modifier.fillMaxWidth()
                     )
                     Spacer(Modifier.height(8.dp))
@@ -1291,6 +1339,8 @@ private fun AudioNowPlaying(
                     onTogglePlay = onTogglePlay,
                     onSeekBack = onSeekBack,
                     onSeekForward = onSeekForward,
+                    onSeekToStart = onSeekToStart,
+                    onSeekToEnd = onSeekToEnd,
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(Modifier.height(6.dp))
@@ -1346,6 +1396,8 @@ private fun AudioTransport(
     onTogglePlay: () -> Unit,
     onSeekBack: () -> Unit,
     onSeekForward: () -> Unit,
+    onSeekToStart: () -> Unit,
+    onSeekToEnd: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -1363,6 +1415,13 @@ private fun AudioTransport(
             }
             Spacer(Modifier.width(16.dp))
         }
+        IconButton(onClick = onSeekToStart) {
+            Icon(
+                Icons.Filled.FirstPage, contentDescription = "Start from beginning",
+                tint = Color.White, modifier = Modifier.size(32.dp)
+            )
+        }
+        Spacer(Modifier.width(14.dp))
         IconButton(onClick = onSeekBack) {
             Icon(
                 Icons.Filled.Replay10, contentDescription = "Back 10s",
@@ -1396,6 +1455,13 @@ private fun AudioTransport(
             Icon(
                 Icons.Filled.Forward10, contentDescription = "Forward 10s",
                 tint = Color.White, modifier = Modifier.size(38.dp)
+            )
+        }
+        Spacer(Modifier.width(14.dp))
+        IconButton(onClick = onSeekToEnd) {
+            Icon(
+                Icons.Filled.LastPage, contentDescription = "Skip to end",
+                tint = Color.White, modifier = Modifier.size(32.dp)
             )
         }
         if (hasPrev || hasNext) {

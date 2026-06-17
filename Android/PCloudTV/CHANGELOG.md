@@ -5,6 +5,12 @@ All notable changes to **pCloud TV**. Newest first.
 
 ---
 
+## v4.12 — Jump to start / end in the player
+
+- Added two transport buttons flanking the skip-10s controls: **start from the beginning** (left of the back-10s button) jumps to 0:00, and **skip to the end** (right of the forward-10s button) jumps to the final moments. Works in both the video and audio players; track previous/next (when a queue exists) sit outside them.
+
+---
+
 ## v4.11 — Perfectly aligned .nfo art
 
 - Bundled **DejaVu Sans Mono** and render .nfo files with it. The system monospace font fell back per-glyph for box-drawing/block characters (═ ║ ╔ █ …), giving them inconsistent widths so the ASCII-art columns and right-hand borders drifted out of line. DejaVu covers all those glyphs at a uniform cell width, with font padding disabled and tightened line height, so headers and borders line up cleanly.
