@@ -1,7 +1,7 @@
 ﻿#--------------------------------------------
-# file:     BRencoder.ps1
+# file:     brEncoder.ps1
 # author:   Mike Redd
-# version:  3.1.6
+# version:  3.1.7
 # created:  2026-02-11
 # updated:  2026-06-17
 # desc:     Encode Blu-ray .m2ts files
@@ -13,12 +13,11 @@
 #           validates metadata, verifies final MKV
 #           language/default/forced tags
 #           remuxes final MKV with real track IDs
-# changes:  v3.1.6 - subtitle tagging trusts the .clpi as the single source of
-#                    truth when its stream count matches the encoded output:
-#                    exact language in physical PID order, forced inferred from
-#                    a repeated language, English forced default; GUI overrides
-#                    (built from the mis-ordered sidecar) no longer set the
-#                    subtitle language/flags when authoritative .clpi is present
+# changes:  v3.1.7 - sample creation no longer fails on PGS subtitles: the
+#                    sample maps video + audio only (a PGS sub can't be
+#                    stream-copied from a mid-file seek - "unspecified size"),
+#                    and its ffmpeg call relaxes the script-wide EAP=Stop like
+#                    the main encode so a benign stderr warning can't abort it
 #--------------------------------------------
 
 param()
@@ -2084,9 +2083,12 @@ function Create-SampleFromFinishedMkv {
     Write-Host "  $($global:UI_DIM)Output$($global:UI_R)  $sampleOutput"
     Write-Host "  $($global:UI_DIM)Start $($global:UI_R)  $sampleStart"
     Write-Host "  $($global:UI_DIM)Length$($global:UI_R)  $($Script:DefaultLength) seconds"
-    Write-Host "  $($global:UI_DIM)Mode  $($global:UI_R)  stream copy"
+    Write-Host "  $($global:UI_DIM)Mode  $($global:UI_R)  stream copy (video + audio; subtitles skipped)"
     Write-UiBlankLine
 
+    # A sample is for eyeballing video/audio quality; subtitles are skipped.
+    # PGS subs especially can't be stream-copied from a mid-file seek point
+    # (ffmpeg: "unspecified size"), so map video + audio only and drop subs.
     $args = @(
         '-hide_banner',
         '-y',
@@ -2097,12 +2099,22 @@ function Create-SampleFromFinishedMkv {
         '-t', "$($Script:DefaultLength)",
         '-map', '0:v?',
         '-map', '0:a?',
-        '-map', '0:s?',
+        '-sn',
         '-c', 'copy',
         $sampleOutput
     )
 
-    & $Script:FFmpegPath @args
+    # ffmpeg warnings go to stderr; in a runspace under the script-wide EAP=Stop
+    # the first one becomes a terminating error before we can read the exit code.
+    # Relax EAP for the call and judge success by exit code, like the encode does.
+    $smpEAP = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        & $Script:FFmpegPath @args
+    }
+    finally {
+        $ErrorActionPreference = $smpEAP
+    }
 
     if ($LASTEXITCODE -ne 0) {
         throw "Sample creation failed. ffmpeg exit code $LASTEXITCODE"
