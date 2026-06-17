@@ -32,7 +32,9 @@ param(
     [string]$BlurayBackupPath,
     [string]$MkvSamplePath,
     [string]$MinfoPath,
-    [string]$TrackdumpPath
+    [string]$TrackdumpPath,
+    [string]$CdTracksPath,
+    [string]$CdImagePath
 )
 
 # ── WinForms needs a single-threaded apartment. If we're launched from a host
@@ -74,6 +76,8 @@ $BlurayBackupPath = Resolve-Engine $BlurayBackupPath 'bluray-backup.ps1'
 $MkvSamplePath    = Resolve-Engine $MkvSamplePath    'mkv-sample.ps1'
 $MinfoPath        = Resolve-Engine $MinfoPath        'minfocreate.ps1'
 $TrackdumpPath    = Resolve-Engine $TrackdumpPath    'bluray-trackdump.ps1'
+$CdTracksPath     = Resolve-Engine $CdTracksPath     'cd-tracks-flac.ps1'
+$CdImagePath      = Resolve-Engine $CdImagePath      'cd-image-flac.ps1'
 
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
@@ -116,6 +120,8 @@ try {
     Write-DebugLog ("SMP={0}" -f $MkvSamplePath)
     Write-DebugLog ("NFO={0}" -f $MinfoPath)
     Write-DebugLog ("DMP={0}" -f $TrackdumpPath)
+    Write-DebugLog ("CDT={0}" -f $CdTracksPath)
+    Write-DebugLog ("CDI={0}" -f $CdImagePath)
 } catch { }
 
 function Strip-Ansi { param([string]$s); if (-not $s) { return '' }; return [regex]::Replace($s, "\x1b\[[0-9;]*[A-Za-z]", '') }
@@ -131,7 +137,7 @@ function Get-OpticalDrives {
 #  FORM (dark theme)
 # ════════════════════════════════════════════════════════════════
 $form = New-Object System.Windows.Forms.Form
-$form.Text = 'Media Encoder GUI  v0.3.3  (DVD / Blu-ray / File)'
+$form.Text = 'Media Encoder GUI  v0.3.4  (DVD / Blu-ray / File / Audio CD)'
 $form.Size = New-Object System.Drawing.Size(1240, 920)
 $form.MinimumSize = New-Object System.Drawing.Size(1040, 920)
 $form.StartPosition = 'CenterScreen'
@@ -156,6 +162,9 @@ $form.Controls.Add($rbBd)
 $rbFile = New-Object System.Windows.Forms.RadioButton
 $rbFile.Text = 'File'; $rbFile.Location = '160,30'; $rbFile.Size = '60,24'
 $form.Controls.Add($rbFile)
+$rbCd = New-Object System.Windows.Forms.RadioButton
+$rbCd.Text = 'Audio CD'; $rbCd.Location = '224,30'; $rbCd.Size = '96,24'
+$form.Controls.Add($rbCd)
 
 $cmbDrive = New-Object System.Windows.Forms.ComboBox
 $cmbDrive.Location = '12,58'; $cmbDrive.Size = '150,24'; $cmbDrive.DropDownStyle = 'DropDownList'
@@ -240,6 +249,22 @@ $lblBdNote.Text = 'Blu-ray mode: BRencoder controls quality / preset / HDR. Only
 $lblBdNote.ForeColor = [System.Drawing.Color]::FromArgb(150, 180, 210)
 $lblBdNote.Location = '14,258'; $lblBdNote.Size = '296,48'; $lblBdNote.Visible = $false
 $grpSet.Controls.Add($lblBdNote)
+# --- Audio CD rip mode (shown only in CD mode; overlaps the DVD/BD checkboxes,
+#     which are hidden in CD mode) ---
+$lblCdMode = New-Object System.Windows.Forms.Label
+$lblCdMode.Text = 'Audio CD -> FLAC:'; $lblCdMode.Location = '14,158'; $lblCdMode.AutoSize = $true; $lblCdMode.Visible = $false
+$grpSet.Controls.Add($lblCdMode)
+$rbCdTracks = New-Object System.Windows.Forms.RadioButton
+$rbCdTracks.Text = 'Per-track FLAC'; $rbCdTracks.Location = '14,182'; $rbCdTracks.Size = '290,22'; $rbCdTracks.Checked = $true; $rbCdTracks.Visible = $false
+$grpSet.Controls.Add($rbCdTracks)
+$rbCdImage = New-Object System.Windows.Forms.RadioButton
+$rbCdImage.Text = 'Single image + CUE'; $rbCdImage.Location = '14,206'; $rbCdImage.Size = '290,22'; $rbCdImage.Visible = $false
+$grpSet.Controls.Add($rbCdImage)
+$lblCdNote = New-Object System.Windows.Forms.Label
+$lblCdNote.Text = 'Rips in its own elevated window (UAC) — reads the disc and resolves MusicBrainz there. Uses the ripper''s configured CD drive.'
+$lblCdNote.ForeColor = [System.Drawing.Color]::FromArgb(150, 180, 210)
+$lblCdNote.Location = '14,234'; $lblCdNote.Size = '296,60'; $lblCdNote.Visible = $false
+$grpSet.Controls.Add($lblCdNote)
 $lblPost = New-Object System.Windows.Forms.Label
 $lblPost.Text = 'After encode:'; $lblPost.Location = '14,314'; $lblPost.AutoSize = $true
 $lblPost.ForeColor = [System.Drawing.Color]::Gainsboro; $grpSet.Controls.Add($lblPost)
@@ -411,7 +436,7 @@ function Get-DriveLetter {
     if ($d -and $d -notmatch ':$') { $d += ':' }
     return $d
 }
-function Get-SourceKind { if ($rbFile.Checked) { 'file' } elseif ($rbBd.Checked) { 'bluray' } else { 'dvd' } }
+function Get-SourceKind { if ($rbFile.Checked) { 'file' } elseif ($rbCd.Checked) { 'cd' } elseif ($rbBd.Checked) { 'bluray' } else { 'dvd' } }
 function Get-ToolTarget {
     # A standalone tool runs on the File-mode file if set, else the last encode output.
     $f = $txtFile.Text.Trim()
@@ -1046,6 +1071,35 @@ function Get-MakeMKVPath {
     Start-EncodeTimer
 }
 
+function Start-RipCd {
+    # Audio CD -> FLAC. The CD rippers are interactive (MusicBrainz prompts) and
+    # self-elevate (UAC), so they can't run in a silent runspace — launch the
+    # chosen one in its OWN console window and let it drive the disc there.
+    if ($script:Encoding -or $script:Stage -ne 'idle') { return }
+    $image  = $rbCdImage.Checked
+    $target = if ($image) { $CdImagePath } else { $CdTracksPath }
+    $mode   = if ($image) { 'single image + CUE' } else { 'per-track FLAC' }
+    if (-not (Test-Path -LiteralPath $target)) {
+        [System.Windows.Forms.MessageBox]::Show("CD ripper not found:`n$target", 'Media Encoder GUI', 'OK', 'Error') | Out-Null
+        return
+    }
+    $launcher = (Get-Command pwsh -ErrorAction SilentlyContinue).Source
+    if (-not $launcher) { $launcher = (Get-Command powershell.exe -ErrorAction SilentlyContinue).Source }
+    if (-not $launcher) {
+        [System.Windows.Forms.MessageBox]::Show('No pwsh / powershell.exe found to launch the CD ripper.', 'Media Encoder GUI', 'OK', 'Error') | Out-Null
+        return
+    }
+    Add-Log "==> Launching Audio CD ripper ($mode) in its own window"
+    Add-Log "    $target"
+    Add-Log '    It will request elevation (UAC), read the disc, and prompt for MusicBrainz matches there.'
+    try {
+        Start-Process -FilePath $launcher -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File', $target)
+        Add-Log '    Launched. Continue in the new window — this GUI stays free.'
+    } catch {
+        Add-Log "    ERROR launching CD ripper: $($_.Exception.Message)"
+    }
+}
+
 function Start-EncodeTimer {
     $timer = New-Object System.Windows.Forms.Timer; $timer.Interval = 500; $script:Timer = $timer
     $timer.Add_Tick({
@@ -1181,18 +1235,32 @@ function Sync-DiscType {
 }
 function Update-SourceUi {
     $kind = Get-SourceKind
-    $dvd  = ($kind -eq 'dvd'); $bd = ($kind -eq 'bluray'); $file = ($kind -eq 'file')
+    $dvd  = ($kind -eq 'dvd'); $bd = ($kind -eq 'bluray'); $file = ($kind -eq 'file'); $cd = ($kind -eq 'cd')
     foreach ($c in @($numRF, $cmbPreset, $cmbCont, $cmbTune, $chkArchive, $chkRemux, $chkDry)) { $c.Enabled = $dvd }
     $chkDry.Visible        = $dvd
     $chkBackupOnly.Visible = $bd
     $chkKeepBackup.Enabled = $bd
     $lblBdNote.Visible     = $bd
+    # DVD/BD checkboxes hide in CD mode; the CD rip-mode controls take their slot
+    $chkArchive.Visible    = -not $cd
+    $chkRemux.Visible      = -not $cd
+    $chkKeepBackup.Visible = -not $cd
+    $lblCdMode.Visible     = $cd
+    $rbCdTracks.Visible    = $cd
+    $rbCdImage.Visible     = $cd
+    $lblCdNote.Visible     = $cd
+    # 'After encode' post steps don't apply to a CD rip (it runs in its own window)
+    $lblPost.Visible       = -not $cd
+    $chkPostSample.Visible = -not $cd
+    $chkPostMinfo.Visible  = -not $cd
     $cmbDrive.Visible      = -not $file
     $txtFile.Visible       = $file
     $btnBrowse.Visible     = $file
     $btnDump.Enabled       = $bd
+    $btnScan.Enabled       = -not $cd          # no in-GUI scan for an audio CD
     $btnEncode.Enabled     = -not $file
     $btnScan.Text          = if ($file) { 'Probe' } else { 'Scan' }
+    $btnEncode.Text        = if ($cd)   { 'Rip CD' } else { 'Encode' }
     Update-Plan
 }
 function Update-Plan {
@@ -1202,6 +1270,11 @@ function Update-Plan {
     $kind = Get-SourceKind
     if ($kind -eq 'file') {
         $lblPlan.Text = 'Plan:  File mode — tools only (use Create sample / Create minfo)'
+        return
+    }
+    if ($kind -eq 'cd') {
+        $m = if ($rbCdImage.Checked) { 'single image + CUE' } else { 'per-track FLAC' }
+        $lblPlan.Text = "Plan:  Audio CD -> $m   (FLAC + MusicBrainz, runs in its own elevated window)"
         return
     }
     $steps = @()
@@ -1221,6 +1294,9 @@ function Update-Plan {
 $rbDvd.Add_CheckedChanged({ Update-SourceUi })
 $rbBd.Add_CheckedChanged({ Update-SourceUi })
 $rbFile.Add_CheckedChanged({ Update-SourceUi })
+$rbCd.Add_CheckedChanged({ Update-SourceUi })
+$rbCdTracks.Add_CheckedChanged({ Update-Plan })
+$rbCdImage.Add_CheckedChanged({ Update-Plan })
 $cmbDrive.Add_SelectedIndexChanged({ $t = Sync-DiscType; if ($t) { Add-Log "Detected $($t.ToUpper()) in $(Get-DriveLetter)" } })
 $btnScan.Add_Click({ Start-Scan })
 $lstTitles.Add_SelectedIndexChanged({
@@ -1230,7 +1306,7 @@ $lstTitles.Add_SelectedIndexChanged({
     # for the BRencoder progress bar we need a duration estimate
     $script:TotalSeconds = Get-DurSec $T.Duration
 })
-$btnEncode.Add_Click({ Start-Encode })
+$btnEncode.Add_Click({ if ((Get-SourceKind) -eq 'cd') { Start-RipCd } else { Start-Encode } })
 $btnCancel.Add_Click({ Stop-Encode })
 # keep the live Plan line in sync with the toggles that change the chain
 foreach ($cb in @($chkBackupOnly, $chkArchive, $chkRemux, $chkDry, $chkPostSample, $chkPostMinfo)) {
@@ -1260,7 +1336,7 @@ catch {
 $form.Add_Shown({
     Write-DebugLog 'Add_Shown: fired'
     try {
-        Add-Log 'Media Encoder GUI v0.3.3  (DVD / Blu-ray / File + sample / minfo / sidecar)'
+        Add-Log 'Media Encoder GUI v0.3.4  (DVD / Blu-ray / File / Audio CD)'
         Add-Log 'Engines:'
         $engineMap = [ordered]@{
             'dvd-ripper-encoder.ps1' = $DvdEncoderPath
@@ -1269,6 +1345,8 @@ $form.Add_Shown({
             'mkv-sample.ps1'         = $MkvSamplePath
             'minfocreate.ps1'        = $MinfoPath
             'bluray-trackdump.ps1'   = $TrackdumpPath
+            'cd-tracks-flac.ps1'     = $CdTracksPath
+            'cd-image-flac.ps1'      = $CdImagePath
         }
         $okColor   = [System.Drawing.Color]::FromArgb(120, 220, 120)
         $badColor  = [System.Drawing.Color]::FromArgb(240, 120, 120)

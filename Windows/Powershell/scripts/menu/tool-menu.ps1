@@ -86,6 +86,7 @@ $PersonalTools = @(
     [PSCustomObject]@{ Name="MiNfoCreate";           File="minfocreate.ps1" }
     [PSCustomObject]@{ Name="CD Image FLAC Ripper";  File="cd-image-flac.ps1" }
     [PSCustomObject]@{ Name="CD Track FLAC Ripper";  File="cd-tracks-flac.ps1" }
+    [PSCustomObject]@{ Name="CD FLAC Ripper (GUI)";  File="cd-ripper-gui.ps1" }
     [PSCustomObject]@{ Name="DVD Encoder";           File="dvd-ripper-encoder.ps1" }
     [PSCustomObject]@{ Name="DVD Encoder (GUI)";     File="dvd-ripper-encoder-gui.ps1" }
     [PSCustomObject]@{ Name="Blu-ray Backup";        File="bluray-backup.ps1" }
