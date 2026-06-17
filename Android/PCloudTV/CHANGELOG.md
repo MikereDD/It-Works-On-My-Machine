@@ -5,6 +5,12 @@ All notable changes to **pCloud TV**. Newest first.
 
 ---
 
+## v4.10 — Scroll documents with a TV remote
+
+- .nfo and .htm files can now be scrolled with a TV remote, not just by touch. The .nfo text view takes D-pad focus and maps up/down/left/right to vertical and horizontal scrolling (so wide ASCII-art lines are reachable); pressing Up at the very top releases focus back toward Close. The .htm WebView is now focusable so the remote scrolls the page. Touch scrolling on mobile is unchanged.
+
+---
+
 ## v4.9 — Back closes the document viewer
 
 - Pressing Back (phone gesture or TV remote) while reading a .nfo or .htm file now closes the viewer, instead of navigating the folder behind it and leaving you stuck on the document. Tap-outside and the Close button already worked.
