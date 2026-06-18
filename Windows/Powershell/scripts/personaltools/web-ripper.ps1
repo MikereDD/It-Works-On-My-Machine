@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file:     web-ripper.ps1
 # author:   Mike Redd
-# version:  1.9
+# version:  1.9.1
 # created:  2026-04-18
 # updated:  2026-06-17
 # desc:     Web media downloader wrapper for
@@ -43,7 +43,7 @@ if (-not $global:UI_MAG) { $global:UI_MAG = "" }
 
 # ── Script Info ───────────────────────────────────────────────
 $ScriptName    = "Web Ripper"
-$ScriptVersion = "1.9"
+$ScriptVersion = "1.9.1"
 $ScriptAuthor  = "Mike Redd"
 
 # ── Config ────────────────────────────────────────────────────
@@ -432,6 +432,8 @@ function Invoke-WebDownload {
         "--write-subs",
         "--write-auto-subs",
         "--sub-langs", "en.*",
+        "--extractor-args", "youtube:skip=translated_subs",
+        "--sleep-subtitles", "1",
         "--convert-subs", "srt",
         "--embed-subs",
         "--no-playlist"
