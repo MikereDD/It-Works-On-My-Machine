@@ -231,8 +231,9 @@ private fun VlcPlayer(
             arrayListOf(
                 "--network-caching=1500",
                 "--http-reconnect",
-                "--no-drop-late-frames",
-                "--no-skip-frames",
+                // Allow VLC to drop late frames to stay in sync. Forcing every frame
+                // (--no-drop-late-frames/--no-skip-frames) makes 2160p stutter badly
+                // whenever decode or network can't keep pace.
                 // Prefer English by language metadata (ISO codes), not display name.
                 "--audio-language=eng,en,english",
                 "--sub-language=eng,en,english"
