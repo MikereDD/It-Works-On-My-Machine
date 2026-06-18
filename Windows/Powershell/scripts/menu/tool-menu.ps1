@@ -1,7 +1,7 @@
 ﻿#--------------------------------------------
 # file:     tool-menu.ps1
 # author:   Mike Redd
-# version:  3.5
+# version:  3.7
 # created:  2026-03-30
 # updated:  2026-06-17
 # desc:     Unified script launcher (Admin + Personal + Games)
@@ -56,7 +56,7 @@ if (Test-Path $corePath) {
 }
 
 $ScriptName    = "Tool Menu"
-$ScriptVersion = "3.6"
+$ScriptVersion = "3.7"
 $ScriptAuthor  = "Mike Redd"
 
 # ── Base script paths ─────────────────────────────────────────
@@ -87,6 +87,7 @@ $PersonalTools = @(
     [PSCustomObject]@{ Name="CD Image FLAC Ripper";  File="cd-image-flac.ps1" }
     [PSCustomObject]@{ Name="CD Track FLAC Ripper";  File="cd-tracks-flac.ps1" }
     [PSCustomObject]@{ Name="CD FLAC Ripper (GUI)";  File="cd-ripper-gui.ps1" }
+    [PSCustomObject]@{ Name="M3U Playlist Generator";File="generate-playlists.ps1" }
     [PSCustomObject]@{ Name="DVD Encoder";           File="dvd-ripper-encoder.ps1" }
     [PSCustomObject]@{ Name="DVD Encoder (GUI)";     File="dvd-ripper-encoder-gui.ps1" }
     [PSCustomObject]@{ Name="Blu-ray Backup";        File="bluray-backup.ps1" }
