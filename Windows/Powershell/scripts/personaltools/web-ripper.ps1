@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file:     web-ripper.ps1
 # author:   Mike Redd
-# version:  1.10.0
+# version:  1.11.0
 # created:  2026-04-18
 # updated:  2026-06-17
 # desc:     Web media downloader wrapper for
@@ -43,7 +43,7 @@ if (-not $global:UI_MAG) { $global:UI_MAG = "" }
 
 # ── Script Info ───────────────────────────────────────────────
 $ScriptName    = "Web Ripper"
-$ScriptVersion = "1.10.0"
+$ScriptVersion = "1.11.0"
 $ScriptAuthor  = "Mike Redd"
 
 # ── Config ────────────────────────────────────────────────────
@@ -447,6 +447,40 @@ function Select-WebQuality {
     }
 }
 
+function Select-PlayerClient {
+    while ($true) {
+        Show-WebRipperHeader
+        Write-DTSection "Player Client (YouTube)" $global:UI_YLW
+        Write-Host "  $($global:UI_DIM)Affects which formats YouTube exposes. Leave on Automatic unless$($global:UI_R)"
+        Write-Host "  $($global:UI_DIM)chasing Premium formats - needs Premium cookies, may still be gated.$($global:UI_R)"
+        Write-DTBlankLine
+        Write-Host "  1) Automatic (recommended)"
+        Write-Host "  2) TV client (Premium attempt)"
+        Write-Host "  3) Custom client string"
+        Write-Host "  Q) Quit"
+        Write-DTBlankLine
+
+        $choice = (Read-DTChoice "Choice:").Trim().ToLower()
+
+        switch ($choice) {
+            '1' { return "" }
+            '2' { return "default,tv" }
+            '3' {
+                $custom = (Read-Host "Client(s), e.g. tv,web_safari").Trim()
+                if (-not [string]::IsNullOrWhiteSpace($custom)) {
+                    return $custom
+                }
+            }
+            'q' { return $null }
+            default {
+                Write-Host ""
+                Write-Host "  $($global:UI_RED)Invalid selection.$($global:UI_R)"
+                Start-Sleep -Seconds 1
+            }
+        }
+    }
+}
+
 function Invoke-WebDownload {
     param(
         [Parameter(Mandatory)][string]$Url,
@@ -454,8 +488,15 @@ function Invoke-WebDownload {
         [Parameter(Mandatory)][string]$Platform,
         [string[]]$CookieArgs = @(),
         [int]$MaxHeight = 0,
+        [string]$PlayerClient = "",
         [switch]$Playlist
     )
+
+    # Always skip auto-translated subs; optionally force a player client (e.g. tv for Premium attempts)
+    $ytExtractorArgs = "youtube:skip=translated_subs"
+    if (-not [string]::IsNullOrWhiteSpace($PlayerClient)) {
+        $ytExtractorArgs += ";player_client=$PlayerClient"
+    }
 
     if ($Playlist) {
         $outputTemplate = "$($Script:OutputRoot)\%(playlist_title)s\%(playlist_index)02d - %(title)s [%(id)s].%(ext)s"
@@ -481,6 +522,9 @@ function Invoke-WebDownload {
     Write-DTRow "Format"   $Script:OutputLabel $global:UI_GRY
     Write-DTRow "Quality"  $qualityLabel
     Write-DTRow "Platform" $Platform
+    if (-not [string]::IsNullOrWhiteSpace($PlayerClient)) {
+        Write-DTRow "Client" $PlayerClient $global:UI_GRY
+    }
     Write-DTBlankLine
 
     $args = @()
@@ -494,7 +538,7 @@ function Invoke-WebDownload {
         "--write-subs",
         "--write-auto-subs",
         "--sub-langs", "en.*",
-        "--extractor-args", "youtube:skip=translated_subs",
+        "--extractor-args", $ytExtractorArgs,
         "--sleep-subtitles", "1",
         "--convert-subs", "srt",
         "--embed-subs"
@@ -580,6 +624,14 @@ function Start-WebRipper {
                 $downloadPlaylist = $plChoice
             }
 
+            $playerClient = ""
+            if ($platform -eq "YouTube") {
+                $playerClient = Select-PlayerClient
+                if ($null -eq $playerClient) {
+                    continue
+                }
+            }
+
             if ($downloadPlaylist) {
                 $maxHeight = Select-WebQuality
                 if ($null -eq $maxHeight) {
@@ -594,6 +646,9 @@ function Start-WebRipper {
                 Write-DTRow "Mode"     "Entire playlist"
                 Write-DTRow "Quality"  $qualityLabel
                 Write-DTRow "Auth"     $authLabel $global:UI_GRY
+                if (-not [string]::IsNullOrWhiteSpace($playerClient)) {
+                    Write-DTRow "Client" $playerClient $global:UI_GRY
+                }
                 Write-DTRow "Output"   $Script:OutputRoot $global:UI_GRY
                 Write-DTBlankLine
 
@@ -602,7 +657,7 @@ function Start-WebRipper {
                     continue
                 }
 
-                Invoke-WebDownload -Url $url -Platform $platform -CookieArgs $cookieArgs -MaxHeight $maxHeight -Playlist
+                Invoke-WebDownload -Url $url -Platform $platform -CookieArgs $cookieArgs -MaxHeight $maxHeight -PlayerClient $playerClient -Playlist
                 Pause-DT
                 continue
             }
@@ -657,6 +712,9 @@ function Start-WebRipper {
             if ($cookieArgs.Count -gt 0) {
                 Write-DTRow "Auth" "Cookies" $global:UI_GRY
             }
+            if (-not [string]::IsNullOrWhiteSpace($playerClient)) {
+                Write-DTRow "Client" $playerClient $global:UI_GRY
+            }
             Write-DTBlankLine
 
             $confirm = (Read-DTChoice "Proceed? (Y/n)").Trim().ToLower()
@@ -664,7 +722,7 @@ function Start-WebRipper {
                 continue
             }
 
-            Invoke-WebDownload -Url $url -BaseName $baseName -Platform $platform -CookieArgs $cookieArgs -MaxHeight $maxHeight
+            Invoke-WebDownload -Url $url -BaseName $baseName -Platform $platform -CookieArgs $cookieArgs -MaxHeight $maxHeight -PlayerClient $playerClient
             Pause-DT
         }
         catch {
