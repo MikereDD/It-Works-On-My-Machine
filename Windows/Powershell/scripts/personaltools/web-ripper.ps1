@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file:     web-ripper.ps1
 # author:   Mike Redd
-# version:  1.11.0
+# version:  1.12.0
 # created:  2026-04-18
 # updated:  2026-06-17
 # desc:     Web media downloader wrapper for
@@ -43,7 +43,7 @@ if (-not $global:UI_MAG) { $global:UI_MAG = "" }
 
 # ── Script Info ───────────────────────────────────────────────
 $ScriptName    = "Web Ripper"
-$ScriptVersion = "1.11.0"
+$ScriptVersion = "1.12.0"
 $ScriptAuthor  = "Mike Redd"
 
 # ── Config ────────────────────────────────────────────────────
@@ -52,6 +52,7 @@ $Script:OutputRoot  = Join-Path $Script:RootPath "web"
 $Script:TempRoot    = Join-Path $Script:RootPath "temp"
 $Script:OutputExt   = "mkv"
 $Script:OutputLabel = "MKV"
+$Script:DefaultCookieFile = Join-Path $env:USERPROFILE "cookies.txt"
 
 New-Item -ItemType Directory -Force -Path $Script:OutputRoot | Out-Null
 New-Item -ItemType Directory -Force -Path $Script:TempRoot   | Out-Null
@@ -213,15 +214,19 @@ function Get-CookieArgs {
     param([string]$Platform)
 
     while ($true) {
+        $defaultExists = Test-Path $Script:DefaultCookieFile
+        $defaultTag = if ($defaultExists) { "" } else { "  $($global:UI_RED)(not found)$($global:UI_R)" }
+
         Show-WebRipperHeader
         Write-DTSection "Authentication" $global:UI_YLW
         Write-Host "  $($global:UI_DIM)For Premium quality, members-only, or private content.$($global:UI_R)"
         Write-DTBlankLine
         Write-Host "  1) None (public content)"
-        Write-Host "  2) Firefox cookies"
-        Write-Host "  3) Chrome cookies"
-        Write-Host "  4) Edge cookies"
-        Write-Host "  5) cookies.txt file"
+        Write-Host "  2) Default cookies.txt  $($global:UI_DIM)$($Script:DefaultCookieFile)$($global:UI_R)$defaultTag"
+        Write-Host "  3) Firefox cookies"
+        Write-Host "  4) Chrome cookies"
+        Write-Host "  5) Edge cookies"
+        Write-Host "  6) Other cookies.txt file"
         Write-Host "  Q) Cancel"
         Write-DTBlankLine
 
@@ -229,10 +234,20 @@ function Get-CookieArgs {
 
         switch ($choice) {
             '1' { return @() }
-            '2' { return @("--cookies-from-browser", "firefox") }
-            '3' { return @("--cookies-from-browser", "chrome") }
-            '4' { return @("--cookies-from-browser", "edge") }
-            '5' {
+            '2' {
+                if (Test-Path $Script:DefaultCookieFile) {
+                    return @("--cookies", $Script:DefaultCookieFile)
+                }
+                else {
+                    Write-Host ""
+                    Write-Host "  $($global:UI_RED)Not found: $($Script:DefaultCookieFile)$($global:UI_R)"
+                    Start-Sleep -Seconds 2
+                }
+            }
+            '3' { return @("--cookies-from-browser", "firefox") }
+            '4' { return @("--cookies-from-browser", "chrome") }
+            '5' { return @("--cookies-from-browser", "edge") }
+            '6' {
                 $cookiePath = (Read-Host "Path to cookies.txt").Trim().Trim('"')
                 if ([string]::IsNullOrWhiteSpace($cookiePath)) {
                     Write-Host ""
