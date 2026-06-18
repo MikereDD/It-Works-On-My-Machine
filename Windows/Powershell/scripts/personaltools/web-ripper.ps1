@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file:     web-ripper.ps1
 # author:   Mike Redd
-# version:  1.9.1
+# version:  1.10.0
 # created:  2026-04-18
 # updated:  2026-06-17
 # desc:     Web media downloader wrapper for
@@ -43,7 +43,7 @@ if (-not $global:UI_MAG) { $global:UI_MAG = "" }
 
 # ── Script Info ───────────────────────────────────────────────
 $ScriptName    = "Web Ripper"
-$ScriptVersion = "1.9.1"
+$ScriptVersion = "1.10.0"
 $ScriptAuthor  = "Mike Redd"
 
 # ── Config ────────────────────────────────────────────────────
@@ -212,25 +212,73 @@ function Get-WebPlatform {
 function Get-CookieArgs {
     param([string]$Platform)
 
-    if ($Platform -ne "Instagram") {
-        return @()
-    }
-
     while ($true) {
         Show-WebRipperHeader
-        Write-DTSection "Instagram Authentication" $global:UI_YLW
-        Write-Host "  1) Use Firefox cookies"
-        Write-Host "  2) Use Chrome cookies"
-        Write-Host "  3) No cookies"
+        Write-DTSection "Authentication" $global:UI_YLW
+        Write-Host "  $($global:UI_DIM)For Premium quality, members-only, or private content.$($global:UI_R)"
+        Write-DTBlankLine
+        Write-Host "  1) None (public content)"
+        Write-Host "  2) Firefox cookies"
+        Write-Host "  3) Chrome cookies"
+        Write-Host "  4) Edge cookies"
+        Write-Host "  5) cookies.txt file"
         Write-Host "  Q) Cancel"
         Write-DTBlankLine
 
         $choice = (Read-DTChoice "Choice:").Trim().ToLower()
 
         switch ($choice) {
-            '1' { return @("--cookies-from-browser", "firefox") }
-            '2' { return @("--cookies-from-browser", "chrome") }
-            '3' { return @() }
+            '1' { return @() }
+            '2' { return @("--cookies-from-browser", "firefox") }
+            '3' { return @("--cookies-from-browser", "chrome") }
+            '4' { return @("--cookies-from-browser", "edge") }
+            '5' {
+                $cookiePath = (Read-Host "Path to cookies.txt").Trim().Trim('"')
+                if ([string]::IsNullOrWhiteSpace($cookiePath)) {
+                    Write-Host ""
+                    Write-Host "  $($global:UI_RED)No path entered.$($global:UI_R)"
+                    Start-Sleep -Seconds 1
+                }
+                elseif (-not (Test-Path $cookiePath)) {
+                    Write-Host ""
+                    Write-Host "  $($global:UI_RED)File not found: $cookiePath$($global:UI_R)"
+                    Start-Sleep -Seconds 2
+                }
+                else {
+                    return @("--cookies", $cookiePath)
+                }
+            }
+            'q' { return $null }
+            default {
+                Write-Host ""
+                Write-Host "  $($global:UI_RED)Invalid selection.$($global:UI_R)"
+                Start-Sleep -Seconds 1
+            }
+        }
+    }
+}
+
+function Test-IsPlaylistUrl {
+    param([Parameter(Mandatory)][string]$Url)
+    return ($Url -match '[?&]list=' -or $Url -match '/playlist' -or $Url -match '/sets/')
+}
+
+function Select-PlaylistMode {
+    while ($true) {
+        Show-WebRipperHeader
+        Write-DTSection "Playlist Detected" $global:UI_YLW
+        Write-Host "  This URL belongs to a playlist."
+        Write-DTBlankLine
+        Write-Host "  1) Download this video only"
+        Write-Host "  2) Download the entire playlist"
+        Write-Host "  Q) Cancel"
+        Write-DTBlankLine
+
+        $choice = (Read-DTChoice "Choice:").Trim().ToLower()
+
+        switch ($choice) {
+            '1' { return $false }
+            '2' { return $true }
             'q' { return $null }
             default {
                 Write-Host ""
@@ -402,19 +450,33 @@ function Select-WebQuality {
 function Invoke-WebDownload {
     param(
         [Parameter(Mandatory)][string]$Url,
-        [Parameter(Mandatory)][string]$BaseName,
+        [string]$BaseName = "",
         [Parameter(Mandatory)][string]$Platform,
         [string[]]$CookieArgs = @(),
-        [int]$MaxHeight = 0
+        [int]$MaxHeight = 0,
+        [switch]$Playlist
     )
 
-    $outputTemplate = Join-Path $Script:OutputRoot ($BaseName + ".%(ext)s")
+    if ($Playlist) {
+        $outputTemplate = "$($Script:OutputRoot)\%(playlist_title)s\%(playlist_index)02d - %(title)s [%(id)s].%(ext)s"
+        $playlistArg = "--yes-playlist"
+    }
+    else {
+        $outputTemplate = Join-Path $Script:OutputRoot ($BaseName + ".%(ext)s")
+        $playlistArg = "--no-playlist"
+    }
+
     $formatArgs = Get-FormatArgs -MaxHeight $MaxHeight
     $qualityLabel = if ($MaxHeight -gt 0) { "${MaxHeight}p" } else { "Best" }
 
     Show-WebRipperHeader
     Write-DTSection "Download Starting" $global:UI_CYN
-    Write-DTRow "Filename" $BaseName
+    if ($Playlist) {
+        Write-DTRow "Mode"     "Entire playlist"
+    }
+    else {
+        Write-DTRow "Filename" $BaseName
+    }
     Write-DTRow "Output"   $Script:OutputRoot $global:UI_GRY
     Write-DTRow "Format"   $Script:OutputLabel $global:UI_GRY
     Write-DTRow "Quality"  $qualityLabel
@@ -435,9 +497,9 @@ function Invoke-WebDownload {
         "--extractor-args", "youtube:skip=translated_subs",
         "--sleep-subtitles", "1",
         "--convert-subs", "srt",
-        "--embed-subs",
-        "--no-playlist"
+        "--embed-subs"
     )
+    $args += @($playlistArg)
     $args += $CookieArgs
     $args += @(
         "-o", $outputTemplate,
@@ -504,12 +566,45 @@ function Start-WebRipper {
 
             $platform = Get-WebPlatform -Url $url
 
-            $cookieArgs = @()
-            if ($platform -eq "Instagram") {
-                $cookieArgs = Get-CookieArgs -Platform $platform
-                if ($null -eq $cookieArgs) {
+            $cookieArgs = Get-CookieArgs -Platform $platform
+            if ($null -eq $cookieArgs) {
+                continue
+            }
+
+            $downloadPlaylist = $false
+            if (Test-IsPlaylistUrl -Url $url) {
+                $plChoice = Select-PlaylistMode
+                if ($null -eq $plChoice) {
                     continue
                 }
+                $downloadPlaylist = $plChoice
+            }
+
+            if ($downloadPlaylist) {
+                $maxHeight = Select-WebQuality
+                if ($null -eq $maxHeight) {
+                    continue
+                }
+                $qualityLabel = if ($maxHeight -gt 0) { "${maxHeight}p" } else { "Best" }
+                $authLabel = if ($cookieArgs.Count -gt 0) { "Yes" } else { "No" }
+
+                Show-WebRipperHeader
+                Write-DTSection "Ready to Download (Playlist)" $global:UI_CYN
+                Write-DTRow "Platform" $platform
+                Write-DTRow "Mode"     "Entire playlist"
+                Write-DTRow "Quality"  $qualityLabel
+                Write-DTRow "Auth"     $authLabel $global:UI_GRY
+                Write-DTRow "Output"   $Script:OutputRoot $global:UI_GRY
+                Write-DTBlankLine
+
+                $confirm = (Read-DTChoice "Proceed? (Y/n)").Trim().ToLower()
+                if ($confirm -match '^(n|no)$') {
+                    continue
+                }
+
+                Invoke-WebDownload -Url $url -Platform $platform -CookieArgs $cookieArgs -MaxHeight $maxHeight -Playlist
+                Pause-DT
+                continue
             }
 
             Show-WebRipperHeader
@@ -559,8 +654,8 @@ function Start-WebRipper {
             Write-DTRow "ID"       $id $global:UI_GRY
             Write-DTRow "Quality"  $qualityLabel
             Write-DTRow "Save As"  "$baseName.$($Script:OutputExt)"
-            if ($platform -eq "Instagram" -and $cookieArgs.Count -gt 0) {
-                Write-DTRow "Auth" "Browser Cookies" $global:UI_GRY
+            if ($cookieArgs.Count -gt 0) {
+                Write-DTRow "Auth" "Cookies" $global:UI_GRY
             }
             Write-DTBlankLine
 
