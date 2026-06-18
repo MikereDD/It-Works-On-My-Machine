@@ -5,6 +5,12 @@ All notable changes to **pCloud TV**. Newest first.
 
 ---
 
+## v4.14 — Smoother 4K (2160p) playback
+
+- Removed the `--no-drop-late-frames` / `--no-skip-frames` LibVLC flags. They forced VLC to render every frame even when it was falling behind, which made 2160p stutter badly whenever decode or network couldn't keep pace. With VLC's default frame-dropping restored, high-resolution files stay in sync. Hardware decoding remains enabled.
+
+---
+
 ## v4.13 — Remote can reach every player button
 
 - The player now uses standard TV focus navigation. Previously the D-pad was hard-wired to seek/play directly, which meant the on-screen buttons (start, skip-to-end, previous, next, play/pause) could never be selected with a remote. Now Left/Right move focus across the control row and Center activates the focused button, with focus seeded on play/pause when the controls appear. Up still opens the audio/subtitle picker, and hardware media keys (play/pause, rewind, fast-forward, next, previous) still act directly. Mobile touch is unchanged.

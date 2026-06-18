@@ -4,7 +4,7 @@
 
 <h1 align="center">pCloud TV</h1>
 
-<p align="center"><strong>v4.13</strong></p>
+<p align="center"><strong>v4.14</strong></p>
 
 <p align="center">
 A minimal <strong>Google TV / Android TV</strong> app (also runs on phones), built with
@@ -14,14 +14,14 @@ and stream your <strong>video and audio</strong> straight from pCloud — played
 </p>
 
 <p align="center">
-  <a href="https://github.com/MikereDD/It-Works-On-My-Machine/releases/download/pCloudTV-v4.13/pCloudTV-v4.13.apk"><strong>Download the APK (v4.13)</strong></a>
+  <a href="https://github.com/MikereDD/It-Works-On-My-Machine/releases/download/pCloudTV-v4.14/pCloudTV-v4.14.apk"><strong>Download the APK (v4.14)</strong></a>
 </p>
 
 ---
 
 ## Install
 
-1. Download **[pCloudTV-v4.13.apk](https://github.com/MikereDD/It-Works-On-My-Machine/releases/download/pCloudTV-v4.13/pCloudTV-v4.13.apk)** and copy it to your phone or Android TV device.
+1. Download **[pCloudTV-v4.14.apk](https://github.com/MikereDD/It-Works-On-My-Machine/releases/download/pCloudTV-v4.14/pCloudTV-v4.14.apk)** and copy it to your phone or Android TV device.
 2. Open it with a file manager and install. You'll see Google **Play Protect**'s "unknown developer" notice — tap **More details -> Install anyway**. That's expected for a sideloaded personal build.
 3. Launch **pCloud TV**, tap **Sign in with pCloud**, and log in (two-factor authentication is handled on pCloud's own page).
 
