@@ -1,9 +1,9 @@
 ﻿#--------------------------------------------
 # file:     brEncoder.ps1
 # author:   Mike Redd
-# version:  3.1.7
+# version:  3.1.8
 # created:  2026-02-11
-# updated:  2026-06-17
+# updated:  2026-06-18
 # desc:     Encode Blu-ray .m2ts files
 #           to H.265/HEVC on Windows
 #           using ffmpeg, then create a
@@ -13,7 +13,14 @@
 #           validates metadata, verifies final MKV
 #           language/default/forced tags
 #           remuxes final MKV with real track IDs
-# changes:  v3.1.7 - sample creation no longer fails on PGS subtitles: the
+# changes:  v3.1.8 - subtitle tags now driven by the source .mkv's own per-stream
+#                    language tags (in physical 0:s order) instead of the disc
+#                    sidecar, which over-counts when MakeMKV drops duplicate PGS
+#                    streams (e.g. output=10 vs sidecar=20). Both the encode map
+#                    and the mkvpropedit remux read source tags for .mkv inputs;
+#                    .m2ts inputs keep sidecar tagging. Source-driven subs are
+#                    auto-named "PGS <lang>" and forced is read from forced_track
+#           v3.1.7 - sample creation no longer fails on PGS subtitles: the
 #                    sample maps video + audio only (a PGS sub can't be
 #                    stream-copied from a mid-file seek - "unspecified size"),
 #                    and its ffmpeg call relaxes the script-wide EAP=Stop like
@@ -57,7 +64,7 @@ else {
 $ErrorActionPreference = 'Stop'
 
 $ScriptName    = "Blu-ray Encoder"
-$ScriptVersion = "3.1.0"
+$ScriptVersion = "3.1.8"
 $ScriptAuthor  = "Mike Redd"
 
 # ── Config ────────────────────────────────────────────────────
@@ -1456,8 +1463,24 @@ function Invoke-MKVLanguageRemux {
     $clpiSubLangs = if ($SourcePath) { Read-ClpiSubtitleLanguages -M2tsPath $SourcePath } else { $null }
     $useClpiSubs  = ($clpiSubLangs -and $clpiSubLangs.Count -eq $subOutCount)
 
-    if ($ovrSub.Count -eq 0 -and -not $useClpiSubs -and $subOutCount -ne $SubMeta.Count) {
-        throw "Subtitle validation failed: output=$subOutCount, metadata=$($SubMeta.Count), and no usable .clpi languages or overrides. Refusing unsafe partial tagging."
+    # Source-MKV subtitle languages: when encoding from a MakeMKV/remux .mkv (not
+    # a raw BDMV), the source already carries per-stream ISO-639 tags in the exact
+    # 0:s:0..N order ffmpeg muxed, so they line up 1:1 with the encoded output even
+    # when the disc-level sidecar lists more streams than MakeMKV actually kept.
+    $srcSubLangs = @(); $srcSubForced = @()
+    if ($SourcePath -and ($SourcePath -match '\.mkv$') -and (Test-Path -LiteralPath $SourcePath)) {
+        try {
+            $srcJson = & $Script:MKVMergePath -J $SourcePath 2>$null | Out-String | ConvertFrom-Json
+            $srcSub  = @(@($srcJson.tracks) | Where-Object { $_.type -eq 'subtitles' })
+            $srcSubLangs  = @($srcSub | ForEach-Object { if ($_.properties.language) { [string]$_.properties.language } else { 'und' } })
+            $srcSubForced = @($srcSub | ForEach-Object { [bool]$_.properties.forced_track })
+        } catch { $srcSubLangs = @(); $srcSubForced = @() }
+    }
+    $knownSrcSub = @($srcSubLangs | Where-Object { $_ -ne 'und' }).Count
+    $useSrcSubs  = ($srcSubLangs.Count -eq $subOutCount -and $subOutCount -gt 0 -and $knownSrcSub -gt 0)
+
+    if ($ovrSub.Count -eq 0 -and -not $useClpiSubs -and -not $useSrcSubs -and $subOutCount -ne $SubMeta.Count) {
+        throw "Subtitle validation failed: output=$subOutCount, metadata=$($SubMeta.Count), and no usable .clpi/source languages or overrides. Refusing unsafe partial tagging."
     }
 
     # Default audio = best-sounding English that physically exists: rank lossless
@@ -1562,6 +1585,16 @@ function Invoke-MKVLanguageRemux {
             $isDef  = $false
             $name   = $null
         }
+        elseif ($useSrcSubs) {
+            # Authoritative per-stream tags from the source .mkv, in physical
+            # 0:s order. forced comes from the source forced_track flag so the
+            # encode map and this remux name forced subs identically.
+            $lang   = [string]$srcSubLangs[$i]
+            $forced = [bool]$srcSubForced[$i]
+            $isComm = $false
+            $isDef  = $false
+            $name   = $null
+        }
         elseif ($o) {
             $lang   = Resolve-LanguageCode -Code ([string]$o.lang)
             $forced = [bool]$o.forced
@@ -1594,7 +1627,7 @@ function Invoke-MKVLanguageRemux {
     # Default subtitle: explicit overrides win; otherwise force English (first
     # non-forced English, else first English).
     $subDefaultIndex = 0
-    if ($ovrSub.Count -gt 0 -and -not $useClpiSubs) {
+    if ($ovrSub.Count -gt 0 -and -not $useClpiSubs -and -not $useSrcSubs) {
         for ($di = 0; $di -lt $effSub.Count; $di++) {
             if ($effSub[$di].Default) { $subDefaultIndex = $di + 1; break }
         }
@@ -1610,7 +1643,7 @@ function Invoke-MKVLanguageRemux {
         }
     }
 
-    $langSrc = if ($useClpiSubs) { 'clpi' } elseif ($ovrSub.Count -gt 0) { 'override' } else { 'sidecar' }
+    $langSrc = if ($useClpiSubs) { 'clpi' } elseif ($useSrcSubs) { 'source-mkv' } elseif ($ovrSub.Count -gt 0) { 'override' } else { 'sidecar' }
     for ($i = 0; $i -lt $effSub.Count; $i++) {
         $t = $effSub[$i]
         $propArgs += '--edit'
@@ -1913,9 +1946,14 @@ function New-FFmpegMapArgsFromTrackMetadata {
         Builds explicit ffmpeg -map and metadata arguments from the required sidecar.
 
     .NOTES
-        v3.0 rule: sidecar metadata is the source of truth. ffprobe language tags
-        from the .m2ts are not trusted because some Blu-ray streams lie or are
-        incomplete, which caused subtitle languages to collapse to the wrong value.
+        v3.0 rule: for raw .m2ts sources the sidecar is the source of truth -
+        ffprobe/container language tags on a .m2ts are not trusted because some
+        Blu-ray streams lie or are incomplete, which collapsed subtitle languages
+        to the wrong value.
+        v3.1.8: a MakeMKV/remux .mkv source is the exception - its per-stream tags
+        are authoritative and in physical 0:a/0:s order, so for .mkv inputs the
+        map/metadata is built from the source streams (the disc sidecar can
+        over-count when MakeMKV drops duplicate PGS streams). .m2ts unchanged.
     #>
     param(
         [object]$MetaInfo,
@@ -1938,23 +1976,57 @@ function New-FFmpegMapArgsFromTrackMetadata {
         throw "Track metadata contains no audio or subtitle tracks."
     }
 
+    # When the source is a MakeMKV/remux .mkv, its per-stream language tags are
+    # authoritative and already in physical 0:a/0:s order, so they line up 1:1
+    # with what ffmpeg muxes - even when the disc-level sidecar lists more (or
+    # differently-ordered) streams than the mkv actually kept. Raw .m2ts sources
+    # keep sidecar tagging: their streams carry no/unreliable tags (see NOTES).
+    $srcAudLangs = @(); $srcSubLangs = @()
+    $srcAudNames = @(); $srcSubNames = @()
+    $srcSubForced = @()
+    $useSrcTags = $false
+    if ($SourcePath -and ($SourcePath -match '\.mkv$') -and (Test-Path -LiteralPath $SourcePath)) {
+        try {
+            $sj = & $Script:MKVMergePath -J $SourcePath 2>$null | Out-String | ConvertFrom-Json
+            $sa = @(@($sj.tracks) | Where-Object { $_.type -eq 'audio' })
+            $ss = @(@($sj.tracks) | Where-Object { $_.type -eq 'subtitles' })
+            $srcAudLangs  = @($sa | ForEach-Object { if ($_.properties.language) { [string]$_.properties.language } else { 'und' } })
+            $srcSubLangs  = @($ss | ForEach-Object { if ($_.properties.language) { [string]$_.properties.language } else { 'und' } })
+            $srcAudNames  = @($sa | ForEach-Object { if ($_.properties.track_name) { [string]$_.properties.track_name } else { '' } })
+            $srcSubNames  = @($ss | ForEach-Object { if ($_.properties.track_name) { [string]$_.properties.track_name } else { '' } })
+            $srcSubForced = @($ss | ForEach-Object { [bool]$_.properties.forced_track })
+            $useSrcTags = ($srcAudLangs.Count -gt 0 -or $srcSubLangs.Count -gt 0)
+        } catch { $useSrcTags = $false }
+    }
+
+    $audCount = if ($useSrcTags) { $srcAudLangs.Count } else { $audioMeta.Count }
+    $subCount = if ($useSrcTags) { $srcSubLangs.Count } else { $subMeta.Count }
+    if ($useSrcTags) {
+        Write-Host "  $($global:UI_CYN)Source .mkv tags authoritative: $audCount audio / $subCount subtitle$($global:UI_R)"
+    }
+
     $ffMapArgs = @(
         '-map', '0:v:0'
     )
 
-    for ($i = 0; $i -lt $audioMeta.Count; $i++) {
+    for ($i = 0; $i -lt $audCount; $i++) {
         $ffMapArgs += '-map'
         $ffMapArgs += ("0:a:{0}?" -f $i)
     }
 
-    for ($i = 0; $i -lt $subMeta.Count; $i++) {
+    for ($i = 0; $i -lt $subCount; $i++) {
         $ffMapArgs += '-map'
         $ffMapArgs += ("0:s:{0}?" -f $i)
     }
 
-    for ($i = 0; $i -lt $audioMeta.Count; $i++) {
-        $lang = Get-MetaLanguage -Track $audioMeta[$i]
-        $name = Get-MetaTrackName -Track $audioMeta[$i]
+    for ($i = 0; $i -lt $audCount; $i++) {
+        if ($useSrcTags) {
+            $lang = $srcAudLangs[$i]
+            $name = $srcAudNames[$i]
+        } else {
+            $lang = Get-MetaLanguage -Track $audioMeta[$i]
+            $name = Get-MetaTrackName -Track $audioMeta[$i]
+        }
 
         $ffMapArgs += ("-metadata:s:a:{0}" -f $i)
         $ffMapArgs += "language=$lang"
@@ -1965,9 +2037,24 @@ function New-FFmpegMapArgsFromTrackMetadata {
         }
     }
 
-    for ($i = 0; $i -lt $subMeta.Count; $i++) {
-        $lang = Get-MetaLanguage -Track $subMeta[$i]
-        $name = Get-MetaTrackName -Track $subMeta[$i]
+    for ($i = 0; $i -lt $subCount; $i++) {
+        if ($useSrcTags) {
+            $lang     = $srcSubLangs[$i]
+            $name     = $srcSubNames[$i]
+            $isForced = $srcSubForced[$i]
+            $isDef    = $false
+            if ([string]::IsNullOrWhiteSpace($name)) {
+                $ln = Get-LanguageDisplayName -Code $lang
+                if ($ln) {
+                    $name = if ($isForced) { "PGS $ln (forced only)" } else { "PGS $ln" }
+                }
+            }
+        } else {
+            $lang     = Get-MetaLanguage -Track $subMeta[$i]
+            $name     = Get-MetaTrackName -Track $subMeta[$i]
+            $isForced = [bool]$subMeta[$i].Forced
+            $isDef    = [bool]$subMeta[$i].Default
+        }
 
         $ffMapArgs += ("-metadata:s:s:{0}" -f $i)
         $ffMapArgs += "language=$lang"
@@ -1977,11 +2064,11 @@ function New-FFmpegMapArgsFromTrackMetadata {
             $ffMapArgs += "title=$name"
         }
 
-        if ($subMeta[$i].Forced) {
+        if ($isForced) {
             $ffMapArgs += ("-disposition:s:{0}" -f $i)
             $ffMapArgs += 'forced'
         }
-        elseif ($subMeta[$i].Default) {
+        elseif ($isDef) {
             $ffMapArgs += ("-disposition:s:{0}" -f $i)
             $ffMapArgs += 'default'
         }
@@ -1989,8 +2076,9 @@ function New-FFmpegMapArgsFromTrackMetadata {
 
     return [pscustomobject]@{
         Args       = $ffMapArgs
-        AudioCount = $audioMeta.Count
-        SubCount   = $subMeta.Count
+        AudioCount = $audCount
+        SubCount   = $subCount
+        Source     = if ($useSrcTags) { 'source-mkv' } else { 'sidecar' }
     }
 }
 
@@ -2197,7 +2285,7 @@ function Encode-File {
 
     if ($metadataMap) {
         Write-UiBlankLine
-        Write-Host "  $($global:UI_CYN)Using sidecar-driven stream map:$($global:UI_R)"
+        Write-Host "  $($global:UI_CYN)Using $($metadataMap.Source)-driven stream map:$($global:UI_R)"
         Write-Host "  $($global:UI_DIM)Audio$($global:UI_R)  $($metadataMap.AudioCount) track(s)"
         Write-Host "  $($global:UI_DIM)Subs $($global:UI_R)  $($metadataMap.SubCount) track(s)"
     }
