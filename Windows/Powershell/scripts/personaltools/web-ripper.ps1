@@ -1,14 +1,16 @@
 #--------------------------------------------
 # file:     web-ripper.ps1
 # author:   Mike Redd
-# version:  1.8
+# version:  1.9
 # created:  2026-04-18
-# updated:  2026-04-18
+# updated:  2026-06-17
 # desc:     Web media downloader wrapper for
 #           yt-dlp + ffmpeg
 #           Uses ui.ps1 + core.ps1 helpers
 #           and saves to G:\Rip\web
-#           Output format: MP4
+#           Selectable quality up to 4K, best
+#           audio, embedded + sidecar subtitles
+#           Output format: MKV
 #--------------------------------------------
 
 param()
@@ -41,15 +43,15 @@ if (-not $global:UI_MAG) { $global:UI_MAG = "" }
 
 # ── Script Info ───────────────────────────────────────────────
 $ScriptName    = "Web Ripper"
-$ScriptVersion = "1.8"
+$ScriptVersion = "1.9"
 $ScriptAuthor  = "Mike Redd"
 
 # ── Config ────────────────────────────────────────────────────
 $Script:RootPath    = "G:\Rip"
 $Script:OutputRoot  = Join-Path $Script:RootPath "web"
 $Script:TempRoot    = Join-Path $Script:RootPath "temp"
-$Script:OutputExt   = "mp4"
-$Script:OutputLabel = "MP4"
+$Script:OutputExt   = "mkv"
+$Script:OutputLabel = "MKV"
 
 New-Item -ItemType Directory -Force -Path $Script:OutputRoot | Out-Null
 New-Item -ItemType Directory -Force -Path $Script:TempRoot   | Out-Null
@@ -240,8 +242,21 @@ function Get-CookieArgs {
 }
 
 function Get-FormatArgs {
+    param([int]$MaxHeight = 0)
+
+    # MaxHeight 0 = no cap (best available). Otherwise cap video height.
+    if ($MaxHeight -gt 0) {
+        $fmt = "bv*[height<=$MaxHeight]+ba/b[height<=$MaxHeight]/bv*+ba/b"
+    }
+    else {
+        $fmt = "bv*+ba/b"
+    }
+
+    # Sort by quality, NOT container. No ext pin, so audio is free to pick
+    # the genuinely best track (e.g. Opus on YouTube over 128k AAC).
     return @(
-        "-S", "proto,ext:mp4:m4a,res,br"
+        "-f", $fmt,
+        "-S", "res,fps,hdr,vcodec,br,acodec,asr"
     )
 }
 
@@ -350,22 +365,59 @@ function Select-WebFilename {
     }
 }
 
+function Select-WebQuality {
+    while ($true) {
+        Show-WebRipperHeader
+        Write-DTSection "Video Quality" $global:UI_YLW
+        Write-Host "  1) Best (up to 4K / 2160p)"
+        Write-Host "  2) 2160p  (4K)"
+        Write-Host "  3) 1440p  (2K)"
+        Write-Host "  4) 1080p  (Full HD)"
+        Write-Host "  5) 720p   (HD)"
+        Write-Host "  6) 480p"
+        Write-Host "  Q) Quit"
+        Write-DTBlankLine
+        Write-Host "  $($global:UI_DIM)Audio is always best available; subtitles are pulled when present.$($global:UI_R)"
+        Write-DTBlankLine
+
+        $choice = (Read-DTChoice "Choice:").Trim().ToLower()
+
+        switch ($choice) {
+            '1' { return 2160 }
+            '2' { return 2160 }
+            '3' { return 1440 }
+            '4' { return 1080 }
+            '5' { return 720 }
+            '6' { return 480 }
+            'q' { return $null }
+            default {
+                Write-Host ""
+                Write-Host "  $($global:UI_RED)Invalid selection.$($global:UI_R)"
+                Start-Sleep -Seconds 1
+            }
+        }
+    }
+}
+
 function Invoke-WebDownload {
     param(
         [Parameter(Mandatory)][string]$Url,
         [Parameter(Mandatory)][string]$BaseName,
         [Parameter(Mandatory)][string]$Platform,
-        [string[]]$CookieArgs = @()
+        [string[]]$CookieArgs = @(),
+        [int]$MaxHeight = 0
     )
 
     $outputTemplate = Join-Path $Script:OutputRoot ($BaseName + ".%(ext)s")
-    $formatArgs = Get-FormatArgs
+    $formatArgs = Get-FormatArgs -MaxHeight $MaxHeight
+    $qualityLabel = if ($MaxHeight -gt 0) { "${MaxHeight}p" } else { "Best" }
 
     Show-WebRipperHeader
     Write-DTSection "Download Starting" $global:UI_CYN
     Write-DTRow "Filename" $BaseName
     Write-DTRow "Output"   $Script:OutputRoot $global:UI_GRY
     Write-DTRow "Format"   $Script:OutputLabel $global:UI_GRY
+    Write-DTRow "Quality"  $qualityLabel
     Write-DTRow "Platform" $Platform
     Write-DTBlankLine
 
@@ -373,10 +425,15 @@ function Invoke-WebDownload {
     $args += @("-vU")
     $args += $formatArgs
     $args += @(
-        "--merge-output-format", "mp4",
+        "--merge-output-format", "mkv",
         "--embed-metadata",
         "--embed-thumbnail",
         "--convert-thumbnails", "jpg",
+        "--write-subs",
+        "--write-auto-subs",
+        "--sub-langs", "en.*",
+        "--convert-subs", "srt",
+        "--embed-subs",
         "--no-playlist"
     )
     $args += $CookieArgs
@@ -486,12 +543,19 @@ function Start-WebRipper {
                 continue
             }
 
+            $maxHeight = Select-WebQuality
+            if ($null -eq $maxHeight) {
+                continue
+            }
+            $qualityLabel = if ($maxHeight -gt 0) { "${maxHeight}p" } else { "Best" }
+
             Show-WebRipperHeader
             Write-DTSection "Ready to Download" $global:UI_CYN
             Write-DTRow "Platform" $platform
             Write-DTRow "Title"    $title
             Write-DTRow "Uploader" $uploader
             Write-DTRow "ID"       $id $global:UI_GRY
+            Write-DTRow "Quality"  $qualityLabel
             Write-DTRow "Save As"  "$baseName.$($Script:OutputExt)"
             if ($platform -eq "Instagram" -and $cookieArgs.Count -gt 0) {
                 Write-DTRow "Auth" "Browser Cookies" $global:UI_GRY
@@ -503,7 +567,7 @@ function Start-WebRipper {
                 continue
             }
 
-            Invoke-WebDownload -Url $url -BaseName $baseName -Platform $platform -CookieArgs $cookieArgs
+            Invoke-WebDownload -Url $url -BaseName $baseName -Platform $platform -CookieArgs $cookieArgs -MaxHeight $maxHeight
             Pause-DT
         }
         catch {
@@ -530,4 +594,4 @@ catch {
     Show-WebRipperHeader
     Write-Host "  $($global:UI_RED)Error:$($global:UI_R) $($_.Exception.Message)"
     Pause-DT
-}
+}
