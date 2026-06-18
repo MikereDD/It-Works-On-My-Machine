@@ -1,24 +1,38 @@
 #--------------------------------------------
-# file:     speedtest.ps1
+# file:     speedtest-menu.ps1
 # author:   Mike Redd
-# version:  2.0.0
+# version:  2.1.0
 # created:  2026-03-29
-# updated:  2026-03-29
+# updated:  2026-06-17
 # desc:     Speed test with logging, history,
 #           stats, scheduled runs and color output
+#           (UI / prompts via shared ui.ps1 + core.ps1)
 #--------------------------------------------
 
+# ── Load shared toolkit modules (ui + core) ───────────────────
+# Prefer the profile dir the launcher forwards ($PSProfileDir); then copies next
+# to this script; then $HOME\PS (where the toolkit keeps ui.ps1 / core.ps1).
+$psLib = if ($PSProfileDir -and (Test-Path -LiteralPath (Join-Path $PSProfileDir 'core.ps1'))) {
+    $PSProfileDir
+} elseif (Test-Path -LiteralPath "$PSScriptRoot\core.ps1") {
+    $PSScriptRoot
+} else {
+    "$HOME\PS"
+}
+. (Join-Path $psLib 'ui.ps1')
+. (Join-Path $psLib 'core.ps1')
+
 $ScriptName    = "Speed Test"
-$ScriptVersion = "2.0.0"
+$ScriptVersion = "2.1.0"
 $ScriptAuthor  = "Mike Redd"
 
-$ESC = [char]27
-function C($code) { return "$ESC[${code}m" }
-
-$R   = C "0";  $B   = C "1";  $DIM = C "2"
-$CYN = C "96"; $YLW = C "93"; $GRN = C "92"
-$RED = C "91"; $MAG = C "95"; $GRY = C "90"
-$WHT = C "97"
+# ── Local color aliases ───────────────────────────────────────
+# Colors are defined once in ui.ps1; alias the short names the custom layouts
+# (bars, history/stats tables) below already use so there's a single source.
+$R   = $global:UI_R;   $B   = $global:UI_B;   $DIM = $global:UI_DIM
+$CYN = $global:UI_CYN; $YLW = $global:UI_YLW; $GRN = $global:UI_GRN
+$RED = $global:UI_RED; $MAG = $global:UI_MAG; $GRY = $global:UI_GRY
+$WHT = $global:UI_WHT
 
 # ── Log file — use $HOME so it always resolves correctly ─────
 # $PSScriptRoot is empty when run interactively from a terminal
@@ -26,21 +40,8 @@ $LogDir  = "$HOME\PS\logs"
 $LogFile = "$LogDir\speedtest_log.csv"
 
 # ── Helpers ───────────────────────────────────────────────────
-function Row($label, $value, $color = $GRN) {
-    Write-Host "  $DIM$($label.PadRight(20))$R  $color$value$R"
-}
-
-function Pause-Script {
-    Write-Host ""
-    Write-Host -NoNewline "  ${GRY}  Press Enter to return to menu...${R}"
-    Read-Host | Out-Null
-}
-
-function Confirm-Action($message) {
-    Write-Host ""
-    Write-Host -NoNewline "  ${YLW}  $message (y/n): ${R}"
-    $c = Read-Host
-    return $c -match '^[Yy]$'
+function Show-Banner($title) {
+    Write-UiBoxTitle -Title $title -Width (Get-UiBoxWidth -MaxWidth 72 -MinWidth 48)
 }
 
 function MakeBar($value, $max, $len = 30) {
@@ -81,44 +82,42 @@ function Get-SpeedtestPath {
 #  HEADER & MENU
 # ============================================================
 function Show-Header {
-    Clear-Host
-    Write-Host ""
-    Write-Host "  ${CYN}${B}+====================================================+${R}"
-    Write-Host "  ${CYN}${B}|${R}  ${YLW}${B}$ScriptName${R}$((" " * (48 - $ScriptName.Length)))${CYN}${B}|${R}"
-    Write-Host "  ${CYN}${B}+====================================================+${R}"
-    Write-Host ""
-    Write-Host "  ${DIM}${WHT}User     ${R}  ${GRN}$env:USERNAME${R}${GRY}@${R}${GRN}$env:COMPUTERNAME${R}"
+    Clear-UiScreen
+    $BoxWidth = Get-UiBoxWidth -MaxWidth 72 -MinWidth 48
+
+    Write-UiHeader -Title $ScriptName -Subtitle "v$ScriptVersion  by $ScriptAuthor" -Width $BoxWidth
+
+    Write-UiRow "User" "$env:USERNAME@$env:COMPUTERNAME"
 
     $count = Get-LogCount
     if ($count -gt 0) {
-        Write-Host "  ${DIM}${WHT}Log      ${R}  ${GRY}$count test(s) recorded  --  $LogFile${R}"
+        Write-UiRow "Log" "$count test(s) recorded  --  $LogFile" -ValueColor $global:UI_GRY
     } else {
-        Write-Host "  ${DIM}${WHT}Log      ${R}  ${GRY}No tests recorded yet${R}"
+        Write-UiRow "Log" "No tests recorded yet" -ValueColor $global:UI_GRY
     }
 
     $stPath = Get-SpeedtestPath
     if ($stPath) {
-        Write-Host "  ${DIM}${WHT}CLI      ${R}  ${GRN}Found${R}  ${GRY}$stPath${R}"
+        Write-UiRow "CLI" "Found  -  $stPath" -ValueColor $global:UI_GRN
     } else {
-        Write-Host "  ${DIM}${WHT}CLI      ${R}  ${RED}Not found${R}  ${GRY}(see option 6)${R}"
+        Write-UiRow "CLI" "Not found  (see option 6)" -ValueColor $global:UI_RED
     }
 
-    Write-Host "  ${DIM}${WHT}Version  ${R}  ${GRY}v$ScriptVersion  by $ScriptAuthor${R}"
-    Write-Host ""
+    Write-UiBlankLine
 }
 
 function Show-Menu {
-    Write-Host "  ${GRY}  ----------------------------------------------------${R}"
+    Write-UiDivider
     Write-Host "  ${GRN}  1)${R}  Run Speed Test"
     Write-Host "  ${GRN}  2)${R}  View History"
     Write-Host "  ${GRN}  3)${R}  View Stats  ${GRY}(avg / min / max)${R}"
     Write-Host "  ${GRN}  4)${R}  Scheduled Run  ${GRY}(run N tests with delay)${R}"
-    Write-Host "  ${GRY}  ----------------------------------------------------${R}"
+    Write-UiDivider
     Write-Host "  ${YLW}  5)${R}  Clear Log"
     Write-Host "  ${GRN}  6)${R}  How to Install Speedtest CLI"
-    Write-Host "  ${GRY}  ----------------------------------------------------${R}"
+    Write-UiDivider
     Write-Host "  ${GRY}  Q)${R}  Quit"
-    Write-Host ""
+    Write-UiBlankLine
 }
 
 # ============================================================
@@ -169,16 +168,16 @@ function Invoke-SingleTest($stPath) {
 #  DISPLAY ONE RESULT
 # ============================================================
 function Show-Result($r, $maxDown = 1000, $maxUp = 1000) {
-    Write-Host "  ${GRY}  ----------------------------------------------------${R}"
-    Row "Time"       $r.Time
-    Row "ISP"        $r.ISP
-    Row "Server"     $r.Server
+    Write-UiDivider
+    Write-UiRow "Time"   $r.Time
+    Write-UiRow "ISP"    $r.ISP
+    Write-UiRow "Server" $r.Server
     Write-Host ""
 
     # Ping
     $pingColor = if ($r.Ping_ms -lt 20) { $GRN } elseif ($r.Ping_ms -lt 80) { $YLW } else { $RED }
-    Row "Ping"       "$($r.Ping_ms) ms" $pingColor
-    Row "Jitter"     "$($r.Jitter) ms"  $GRY
+    Write-UiRow "Ping"   "$($r.Ping_ms) ms" -ValueColor $pingColor
+    Write-UiRow "Jitter" "$($r.Jitter) ms"  -ValueColor $global:UI_GRY
 
     Write-Host ""
 
@@ -205,7 +204,7 @@ function Show-Result($r, $maxDown = 1000, $maxUp = 1000) {
     if ($r.URL) {
         Write-Host "  ${DIM}${WHT}$urlLabel${R}  ${CYN}$($r.URL)${R}"
     }
-    Write-Host "  ${GRY}  ----------------------------------------------------${R}"
+    Write-UiDivider
 }
 
 # ============================================================
@@ -236,14 +235,11 @@ function Save-Result($r) {
 # ============================================================
 function Run-Speedtest {
     Show-Header
-    Write-Host "  ${CYN}${B}+====================================================+${R}"
-    Write-Host "  ${CYN}${B}|${R}${YLW}${B}                  RUN SPEED TEST                     ${R}${CYN}${B}|${R}"
-    Write-Host "  ${CYN}${B}+====================================================+${R}"
-    Write-Host ""
+    Show-Banner "RUN SPEED TEST"
 
     $stPath = Get-SpeedtestPath
     if (-not $stPath) {
-        Write-Host "  ${RED}  Speedtest CLI not found.${R}"
+        Write-CoreError "Speedtest CLI not found."
         Write-Host "  ${YLW}  Select option 6 from the menu for install instructions.${R}"
         return
     }
@@ -252,9 +248,9 @@ function Run-Speedtest {
         $r = Invoke-SingleTest $stPath
         Show-Result $r
         Save-Result $r
-        Write-Host "  ${GRN}  Result saved to log.${R}"
+        Write-CoreSuccess "Result saved to log."
     } catch {
-        Write-Host "  ${RED}  Speed test failed: $($_.Exception.Message)${R}"
+        Write-CoreError "Speed test failed: $($_.Exception.Message)"
     }
 }
 
@@ -263,10 +259,7 @@ function Run-Speedtest {
 # ============================================================
 function Show-History {
     Show-Header
-    Write-Host "  ${CYN}${B}+====================================================+${R}"
-    Write-Host "  ${CYN}${B}|${R}${YLW}${B}                 SPEED TEST HISTORY                  ${R}${CYN}${B}|${R}"
-    Write-Host "  ${CYN}${B}+====================================================+${R}"
-    Write-Host ""
+    Show-Banner "SPEED TEST HISTORY"
 
     if (-not (Test-Path $LogFile)) {
         Write-Host "  ${GRY}  No history yet. Run a speed test first.${R}"
@@ -310,10 +303,7 @@ function Show-History {
 # ============================================================
 function Show-Stats {
     Show-Header
-    Write-Host "  ${CYN}${B}+====================================================+${R}"
-    Write-Host "  ${CYN}${B}|${R}${YLW}${B}                   SPEED STATS                       ${R}${CYN}${B}|${R}"
-    Write-Host "  ${CYN}${B}+====================================================+${R}"
-    Write-Host ""
+    Show-Banner "SPEED STATS"
 
     if (-not (Test-Path $LogFile)) {
         Write-Host "  ${GRY}  No data available. Run a speed test first.${R}"
@@ -345,10 +335,10 @@ function Show-Stats {
 
     Write-Host "  ${GRY}  Based on $count test(s)${R}"
     Write-Host ""
-    Write-Host "  ${GRY}  ----------------------------------------------------${R}"
+    Write-UiDivider
     $colHeader = " " * 24
     Write-Host "  ${DIM}${WHT}${colHeader}${R}  ${CYN}Avg${R}          ${GRN}Best${R}         ${RED}Worst${R}"
-    Write-Host "  ${GRY}  ----------------------------------------------------${R}"
+    Write-UiDivider
 
     # Download row + bar
     $dlLabel  = "Download (Mbps)".PadRight(22)
@@ -380,7 +370,7 @@ function Show-Stats {
     Write-Host "  ${DIM}${WHT}$jitterLabel${R}  ${GRY}$avgJit ms${R}"
 
     Write-Host ""
-    Write-Host "  ${GRY}  ----------------------------------------------------${R}"
+    Write-UiDivider
     Write-Host "  ${DIM}  Columns: Avg | Best | Worst${R}"
 }
 
@@ -389,17 +379,15 @@ function Show-Stats {
 # ============================================================
 function Run-Scheduled {
     Show-Header
-    Write-Host "  ${CYN}${B}+====================================================+${R}"
-    Write-Host "  ${CYN}${B}|${R}${YLW}${B}                 SCHEDULED RUN                       ${R}${CYN}${B}|${R}"
-    Write-Host "  ${CYN}${B}+====================================================+${R}"
-    Write-Host ""
+    Show-Banner "SCHEDULED RUN"
+
     Write-Host "  ${GRY}  Runs multiple speed tests with a delay between each.${R}"
     Write-Host "  ${GRY}  All results are logged. Press Ctrl+C to stop early.${R}"
     Write-Host ""
 
     $stPath = Get-SpeedtestPath
     if (-not $stPath) {
-        Write-Host "  ${RED}  Speedtest CLI not found.${R}"
+        Write-CoreError "Speedtest CLI not found."
         Write-Host "  ${YLW}  Select option 6 from the menu for install instructions.${R}"
         return
     }
@@ -407,7 +395,7 @@ function Run-Scheduled {
     Write-Host -NoNewline "  ${YLW}  Number of tests to run: ${R}"
     $countStr = Read-Host
     if ($countStr -notmatch '^\d+$' -or [int]$countStr -lt 1) {
-        Write-Host "  ${RED}  Invalid number.${R}"; return
+        Write-CoreError "Invalid number."; return
     }
     $totalRuns = [int]$countStr
 
@@ -417,7 +405,7 @@ function Run-Scheduled {
     $delaySec = $delayMin * 60
 
     Write-Host ""
-    if (-not (Confirm-Action "Run $totalRuns test(s) every $delayMin minute(s)?")) {
+    if (-not (Confirm-Core "Run $totalRuns test(s) every $delayMin minute(s)?")) {
         Write-Host "  ${GRY}  Cancelled.${R}"; return
     }
 
@@ -431,9 +419,9 @@ function Run-Scheduled {
             $r = Invoke-SingleTest $stPath
             Show-Result $r
             Save-Result $r
-            Write-Host "  ${GRN}  Saved.${R}"
+            Write-CoreSuccess "Saved."
         } catch {
-            Write-Host "  ${RED}  Test $i failed: $($_.Exception.Message)${R}"
+            Write-CoreError "Test $i failed: $($_.Exception.Message)"
         }
 
         if ($i -lt $totalRuns) {
@@ -465,10 +453,7 @@ function Run-Scheduled {
 # ============================================================
 function Clear-Log {
     Show-Header
-    Write-Host "  ${CYN}${B}+====================================================+${R}"
-    Write-Host "  ${CYN}${B}|${R}${RED}${B}                    CLEAR LOG                        ${R}${CYN}${B}|${R}"
-    Write-Host "  ${CYN}${B}+====================================================+${R}"
-    Write-Host ""
+    Show-Banner "CLEAR LOG"
 
     if (-not (Test-Path $LogFile)) {
         Write-Host "  ${GRY}  No log file found. Nothing to clear.${R}"
@@ -479,9 +464,9 @@ function Clear-Log {
     Write-Host "  ${YLW}  Log contains $count test result(s).${R}"
     Write-Host "  ${RED}  This cannot be undone.${R}"
 
-    if (Confirm-Action "Delete all $count log entries?") {
+    if (Confirm-Core "Delete all $count log entries?") {
         Remove-Item $LogFile -Force
-        Write-Host "  ${GRN}  Log cleared.${R}"
+        Write-CoreSuccess "Log cleared."
     } else {
         Write-Host "  ${GRY}  Cancelled.${R}"
     }
@@ -492,10 +477,8 @@ function Clear-Log {
 # ============================================================
 function Show-InstallInfo {
     Show-Header
-    Write-Host "  ${CYN}${B}+====================================================+${R}"
-    Write-Host "  ${CYN}${B}|${R}${YLW}${B}           HOW TO INSTALL SPEEDTEST CLI              ${R}${CYN}${B}|${R}"
-    Write-Host "  ${CYN}${B}+====================================================+${R}"
-    Write-Host ""
+    Show-Banner "HOW TO INSTALL SPEEDTEST CLI"
+
     Write-Host "  ${WHT}  The Ookla Speedtest CLI is required to run tests.${R}"
     Write-Host ""
     Write-Host "  ${MAG}${B}  Option A - winget (easiest, Windows 10/11):${R}"
@@ -530,24 +513,23 @@ while ($true) {
     Show-Header
     Show-Menu
 
-    Write-Host -NoNewline "  ${YLW}  Choice: ${R}"
-    $choice = (Read-Host).Trim().ToUpper()
+    $choice = (Read-UiChoice "Choice:").Trim().ToUpper()
 
     switch ($choice) {
-        "1" { Run-Speedtest;     Pause-Script }
-        "2" { Show-History;      Pause-Script }
-        "3" { Show-Stats;        Pause-Script }
-        "4" { Run-Scheduled;     Pause-Script }
-        "5" { Clear-Log;         Pause-Script }
-        "6" { Show-InstallInfo;  Pause-Script }
+        "1" { Run-Speedtest;     Pause-Core "Press Enter to return to menu..." }
+        "2" { Show-History;      Pause-Core "Press Enter to return to menu..." }
+        "3" { Show-Stats;        Pause-Core "Press Enter to return to menu..." }
+        "4" { Run-Scheduled;     Pause-Core "Press Enter to return to menu..." }
+        "5" { Clear-Log;         Pause-Core "Press Enter to return to menu..." }
+        "6" { Show-InstallInfo;  Pause-Core "Press Enter to return to menu..." }
         "Q" {
-            Write-Host ""
+            Write-UiBlankLine
             Write-Host "  ${CYN}  Bye.${R}"
-            Write-Host ""
+            Write-UiBlankLine
             exit 0
         }
         default {
-            Write-Host "  ${RED}  Invalid option.${R}"
+            Write-CoreError "Invalid option."
             Start-Sleep -Seconds 1
         }
     }
