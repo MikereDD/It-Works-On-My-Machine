@@ -1,9 +1,9 @@
 ﻿#--------------------------------------------
 # file:     tool-menu.ps1
 # author:   Mike Redd
-# version:  3.7
+# version:  3.8
 # created:  2026-03-30
-# updated:  2026-06-17
+# updated:  2026-06-19
 # desc:     Unified script launcher (Admin + Personal + Games)
 #--------------------------------------------
 
@@ -56,7 +56,7 @@ if (Test-Path $corePath) {
 }
 
 $ScriptName    = "Tool Menu"
-$ScriptVersion = "3.7"
+$ScriptVersion = "3.8"
 $ScriptAuthor  = "Mike Redd"
 
 # ── Base script paths ─────────────────────────────────────────
@@ -66,6 +66,7 @@ $GamesPath    = Join-Path $ScriptsRoot "games"
 
 # ── Tool Definitions ──────────────────────────────────────────
 $AdminTools = @(
+    [PSCustomObject]@{ Name="Admin Dashboard (GUI)"; File="admin-menu-gui.ps1" }
     [PSCustomObject]@{ Name="SystemInfo";    File="systeminfo-menu.ps1" }
     [PSCustomObject]@{ Name="PowerMenu";     File="power-menu.ps1" }
     [PSCustomObject]@{ Name="UpdatesMenu";   File="updates-menu.ps1" }
