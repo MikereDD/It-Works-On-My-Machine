@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-06-18
+
+### Added
+- Owner-only `/status` command: reports current log size, cache-dir contents,
+  and the number of in-memory dedup entries.
+- Owner-only `/clean` command: wipes the cache dir, truncates the log through
+  the active logging handler (no sparse-file gap), and clears the dedup cache.
+- `CACHE_DIR` (`Gabriel/cache`) as the single on-disk location for any future
+  artifacts; normally empty, since cards are sent from memory.
+
 ## [0.2.0] - 2026-06-18
 
 ### Added
@@ -57,6 +67,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Card rendering runs in a worker thread to avoid blocking the event loop;
   `HTTPXRequest` timeouts configured for Telegram I/O.
 
-[Unreleased]: https://github.com/MikereDD/It-Works-On-My-Machine/compare/cardbot-v0.2.0...HEAD
+[Unreleased]: https://github.com/MikereDD/It-Works-On-My-Machine/compare/cardbot-v0.3.0...HEAD
+[0.3.0]: https://github.com/MikereDD/It-Works-On-My-Machine/compare/cardbot-v0.2.0...cardbot-v0.3.0
 [0.2.0]: https://github.com/MikereDD/It-Works-On-My-Machine/compare/cardbot-v0.1.0...cardbot-v0.2.0
 [0.1.0]: https://github.com/MikereDD/It-Works-On-My-Machine/releases/tag/cardbot-v0.1.0

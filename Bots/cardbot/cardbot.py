@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file: cardbot.py
 # author: Mike Redd
-# version: 0.2.0
+# version: 0.3.0
 # created: 2026-06-18
 # updated: 2026-06-18
 # desc: "Gabriel" - Telegram link-card bot.
@@ -30,7 +30,7 @@ from urllib.parse import (
 
 # ── Branding ─────────────────────────────────────────────────
 BOT_NAME = "Gabriel"
-BOT_VERSION = "0.2.0"
+BOT_VERSION = "0.3.0"
 
 import httpx
 from bs4 import BeautifulSoup
@@ -89,6 +89,10 @@ if not OWNER_ID:
 LOG_DIR = BASE_DIR / "logs"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 LOG_FILE = LOG_DIR / "cardbot.log"
+
+# Anything Gabriel ever writes to disk goes here (cards are sent from memory,
+# so this is normally empty). /clean wipes it.
+CACHE_DIR = APP_DIR / "cache"
 
 # ── Logging ──────────────────────────────────────────────────
 logging.basicConfig(
@@ -172,6 +176,59 @@ def is_duplicate(chat_id: int, url: str) -> bool:
         return True
     _recent[key] = now
     return False
+
+
+def _human_size(n: int) -> str:
+    size = float(n)
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if size < 1024 or unit == "TB":
+            return f"{int(size)} {unit}" if unit == "B" else f"{size:.1f} {unit}"
+        size /= 1024
+    return f"{size:.1f} TB"
+
+
+def _dir_stats(path: Path) -> tuple[int, int]:
+    """(file_count, total_bytes) under path; (0, 0) if missing."""
+    files = total = 0
+    if path.exists():
+        for p in path.rglob("*"):
+            if p.is_file():
+                files += 1
+                total += p.stat().st_size
+    return files, total
+
+
+def _wipe_dir(path: Path) -> int:
+    """Delete everything under path; return files removed."""
+    removed = 0
+    if not path.exists():
+        return 0
+    for p in sorted(path.rglob("*"), key=lambda x: len(x.parts), reverse=True):
+        try:
+            if p.is_file() or p.is_symlink():
+                p.unlink()
+                removed += 1
+            elif p.is_dir():
+                p.rmdir()
+        except OSError as e:
+            log.warning("clean: could not remove %s: %s", p, e)
+    return removed
+
+
+def _truncate_log() -> int:
+    """Truncate the log through the active handler; return bytes freed."""
+    size = LOG_FILE.stat().st_size if LOG_FILE.exists() else 0
+    for h in logging.getLogger().handlers:
+        if isinstance(h, logging.FileHandler):
+            try:
+                h.acquire()
+                h.stream.seek(0)
+                h.stream.truncate()
+            except OSError as e:
+                log.warning("clean: log truncate failed: %s", e)
+            finally:
+                h.release()
+    return size
 
 # ── Fonts / text helpers ─────────────────────────────────────
 def _load_font(bold: bool, size: int) -> ImageFont.FreeTypeFont:
@@ -368,6 +425,40 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Owner-only: report what Gabriel currently has on disk / in memory."""
+    user = update.effective_user
+    if not user or not is_admin(user.id):
+        return
+    log_size = LOG_FILE.stat().st_size if LOG_FILE.exists() else 0
+    files, total = _dir_stats(CACHE_DIR)
+    await update.effective_message.reply_text(
+        f"<b>{BOT_NAME} v{BOT_VERSION}</b>\n"
+        f"log: {_human_size(log_size)}\n"
+        f"cache: {files} file(s), {_human_size(total)}\n"
+        f"dedup: {len(_recent)} in memory",
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def cmd_clean(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Owner-only: wipe the cache dir, truncate the log, clear the dedup cache."""
+    user = update.effective_user
+    if not user or not is_admin(user.id):
+        return
+    _, cache_bytes = _dir_stats(CACHE_DIR)
+    removed = _wipe_dir(CACHE_DIR)
+    log_freed = _truncate_log()
+    dedup = len(_recent)
+    _recent.clear()
+    await update.effective_message.reply_text(
+        f"Cleaned.\n"
+        f"cache: removed {removed} file(s) ({_human_size(cache_bytes)})\n"
+        f"log: freed {_human_size(log_freed)}\n"
+        f"dedup: cleared {dedup} entr{'y' if dedup == 1 else 'ies'}"
+    )
+
+
 def build_caption(title: str, url: str) -> str:
     title = (title or "").strip()
     if len(title) > MAX_TITLE_CHARS:
@@ -421,6 +512,8 @@ def main():
     request = HTTPXRequest(connect_timeout=20, read_timeout=40, write_timeout=60)
     app = ApplicationBuilder().token(BOT_TOKEN).request(request).build()
     app.add_handler(CommandHandler(["start", "help"], cmd_start))
+    app.add_handler(CommandHandler("status", cmd_status))
+    app.add_handler(CommandHandler("clean", cmd_clean))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_url))
     print(f"{BOT_NAME} v{BOT_VERSION} - starting (debug={DEBUG_MODE})")
     app.run_polling()
