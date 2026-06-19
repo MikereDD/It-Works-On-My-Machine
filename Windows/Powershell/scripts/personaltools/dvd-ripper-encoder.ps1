@@ -1,7 +1,7 @@
 ﻿#--------------------------------------------
 # file:     dvd-ripper-encoder.ps1
 # author:   Mike Redd
-# version:  4.3
+# version:  4.5
 # created:  2026-04-11
 # updated:  2026-06-18
 # desc:     Encode DVDs directly with HandBrakeCLI on Windows
@@ -12,6 +12,8 @@
 #           v4.2: auto-install libdvdcss (version-discovery fetch)
 #                 bitness-matched, cached, self-healing on updates.
 #           v4.3: stream HandBrake output + exit-code check on encode.
+#           v4.4: fix encode binding — allow empty (no) x265 tune.
+#           v4.5: fix HandBrake args — --loose-anamorphic (was --anamorphic loose).
 #--------------------------------------------
 
 param(
@@ -50,7 +52,7 @@ else {
 $ErrorActionPreference = 'Stop'
 
 $ScriptName    = "DVD Ripper Encoder"
-$ScriptVersion = "4.3"
+$ScriptVersion = "4.5"
 $ScriptAuthor  = "Mike Redd"
 
 # ── Config ────────────────────────────────────────────────────
@@ -875,7 +877,7 @@ function Encode-DvdTitle {
         [Parameter(Mandatory)][string]$InputPath,
         [Parameter(Mandatory)][int]$TitleNumber,
         [Parameter(Mandatory)][string]$MovieName,
-        [Parameter(Mandatory)][string]$Tune,
+        [AllowEmptyString()][string]$Tune = '',   # '' = no x265 tune; must allow empty
         [ValidateSet('mkv','mp4')][string]$Container = 'mkv',
         [ValidateRange(16,28)][int]$RF = 20,
         [ValidateSet('slow','slower','veryslow')][string]$Preset = 'slower',
@@ -928,7 +930,7 @@ function Encode-DvdTitle {
         '--markers',
         '--cfr',
         '--crop-mode',      'auto',
-        '--anamorphic',     'loose',
+        '--loose-anamorphic',
         '--modulus',        '2',
         '--comb-detect',
         '--decomb',
