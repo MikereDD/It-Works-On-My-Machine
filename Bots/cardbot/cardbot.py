@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file: cardbot.py
 # author: Mike Redd
-# version: 0.1.0
+# version: 0.2.0
 # created: 2026-06-18
 # updated: 2026-06-18
 # desc: "Gabriel" - Telegram link-card bot.
@@ -17,12 +17,20 @@ import logging
 import os
 import re
 import sys
+import time
 from pathlib import Path
-from urllib.parse import urljoin, urlparse
+from urllib.parse import (
+    parse_qsl,
+    urlencode,
+    urljoin,
+    urlparse,
+    urlsplit,
+    urlunsplit,
+)
 
 # ── Branding ─────────────────────────────────────────────────
 BOT_NAME = "Gabriel"
-BOT_VERSION = "0.1.0"
+BOT_VERSION = "0.2.0"
 
 import httpx
 from bs4 import BeautifulSoup
@@ -106,12 +114,64 @@ FG_BODY = (165, 168, 180)
 FG_META = (110, 200, 255)   # cyan
 ACCENT = (110, 200, 255)
 
+# ── Behaviour tunables ───────────────────────────────────────
+MIN_HERO_PX = 400                      # short side; smaller -> text-only card
+MAX_IMAGE_BYTES = 12 * 1024 * 1024     # skip oversized hero downloads
+MAX_TITLE_CHARS = 250                  # keep caption under Telegram's 1024 limit
+DEDUP_TTL = 30.0                       # seconds; suppress repeat link in a chat
+HTTP_TIMEOUT = 15.0
+
+# Tracking params stripped from the link shown in the caption.
+TRACKING_PARAMS = {
+    "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
+    "fbclid", "gclid", "igshid", "mc_cid", "mc_eid", "_ga", "ref_src",
+}
+
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
 )
 
 URL_RE = re.compile(r"https?://\S+", re.IGNORECASE)
+
+# Recent (chat_id, url) -> monotonic timestamp, for lightweight dedup.
+_recent: dict[tuple[int, str], float] = {}
+
+# ── Small helpers ────────────────────────────────────────────
+def _clean_text(s: str | None) -> str | None:
+    """Collapse runs of whitespace/newlines to single spaces."""
+    if not s:
+        return None
+    s = re.sub(r"\s+", " ", s).strip()
+    return s or None
+
+
+def clean_url(u: str) -> str:
+    """Drop known tracking query params; keep path and fragment intact."""
+    try:
+        parts = urlsplit(u)
+        kept = [
+            (k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True)
+            if k.lower() not in TRACKING_PARAMS
+        ]
+        return urlunsplit(
+            (parts.scheme, parts.netloc, parts.path, urlencode(kept), parts.fragment)
+        )
+    except Exception:  # noqa: BLE001
+        return u
+
+
+def is_duplicate(chat_id: int, url: str) -> bool:
+    """True if this (chat, url) was seen within DEDUP_TTL seconds."""
+    now = time.monotonic()
+    for key, ts in list(_recent.items()):
+        if now - ts > DEDUP_TTL:
+            _recent.pop(key, None)
+    key = (chat_id, url)
+    if key in _recent:
+        return True
+    _recent[key] = now
+    return False
 
 # ── Fonts / text helpers ─────────────────────────────────────
 def _load_font(bold: bool, size: int) -> ImageFont.FreeTypeFont:
@@ -223,10 +283,13 @@ def render_card(title, description, domain, hero: Image.Image | None) -> bytes:
 # ── Fetch / metadata ─────────────────────────────────────────
 async def fetch_html(url: str):
     async with httpx.AsyncClient(
-        headers={"User-Agent": USER_AGENT}, follow_redirects=True, timeout=15.0
+        headers={"User-Agent": USER_AGENT}, follow_redirects=True, timeout=HTTP_TIMEOUT
     ) as client:
         r = await client.get(url)
         r.raise_for_status()
+        ctype = r.headers.get("content-type", "").lower()
+        if "html" not in ctype:
+            raise ValueError(f"unsupported content-type: {ctype or 'unknown'}")
         return r.text, str(r.url)
 
 
@@ -240,13 +303,13 @@ def _meta(soup: BeautifulSoup, *names):
 
 def extract_metadata(html_text: str, base_url: str) -> dict:
     soup = BeautifulSoup(html_text, "html.parser")
-    title = _meta(soup, "og:title", "twitter:title") or (
-        soup.title.string.strip() if soup.title and soup.title.string else None
+    title = _clean_text(_meta(soup, "og:title", "twitter:title")) or _clean_text(
+        soup.title.string if soup.title and soup.title.string else None
     )
-    desc = _meta(soup, "og:description", "twitter:description", "description")
+    desc = _clean_text(_meta(soup, "og:description", "twitter:description", "description"))
     img = _meta(soup, "og:image", "og:image:url", "twitter:image", "twitter:image:src")
     if img:
-        img = urljoin(base_url, img)
+        img = urljoin(base_url, img.strip())
     domain = urlparse(base_url).netloc.replace("www.", "")
     return {"title": title, "description": desc, "image": img, "domain": domain}
 
@@ -256,11 +319,16 @@ async def fetch_image(url: str | None):
         return None
     try:
         async with httpx.AsyncClient(
-            headers={"User-Agent": USER_AGENT}, follow_redirects=True, timeout=15.0
+            headers={"User-Agent": USER_AGENT}, follow_redirects=True, timeout=HTTP_TIMEOUT
         ) as client:
             r = await client.get(url)
             r.raise_for_status()
-            return Image.open(io.BytesIO(r.content))
+            if len(r.content) > MAX_IMAGE_BYTES:
+                log.warning("hero too large (%d bytes), skipping", len(r.content))
+                return None
+            img = Image.open(io.BytesIO(r.content))
+            img.load()                      # force decode now so errors land here
+            return img
     except Exception as e:  # noqa: BLE001
         log.warning("hero image failed: %s", e)
         return None
@@ -300,6 +368,13 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+def build_caption(title: str, url: str) -> str:
+    title = (title or "").strip()
+    if len(title) > MAX_TITLE_CHARS:
+        title = title[: MAX_TITLE_CHARS - 1].rstrip() + "\u2026"
+    return f"<b>{html.escape(title)}</b>\n{url}"
+
+
 async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.effective_message
     chat = update.effective_chat
@@ -318,28 +393,34 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     url = m.group(0).rstrip(").,]\"'")
 
+    if is_duplicate(chat.id, clean_url(url)):
+        return
+
     await context.bot.send_chat_action(msg.chat_id, ChatAction.UPLOAD_PHOTO)
     try:
         page_html, final = await fetch_html(url)
         meta = extract_metadata(page_html, final)
         hero = await fetch_image(meta["image"])
+        if hero is not None and min(hero.size) < MIN_HERO_PX:
+            hero = None             # too small -> clean text card, not a blurry upscale
         png = await asyncio.to_thread(
             render_card, meta["title"], meta["description"], meta["domain"], hero
         )
     except Exception as e:  # noqa: BLE001
         log.warning("card build failed for %s: %s", url, e)
-        await msg.reply_text(f"Couldn't build a card for that link.\n{e}")
+        if chat.type == "private":  # stay quiet in groups; just notify in DMs
+            await msg.reply_text("Couldn't build a card for that link.")
         return
 
     title = meta["title"] or meta["domain"]
-    caption = f"<b>{html.escape(title)}</b>\n{final}"
+    caption = build_caption(title, clean_url(final))
     await msg.reply_photo(photo=png, caption=caption, parse_mode=ParseMode.HTML)
 
 # ── Main ─────────────────────────────────────────────────────
 def main():
     request = HTTPXRequest(connect_timeout=20, read_timeout=40, write_timeout=60)
     app = ApplicationBuilder().token(BOT_TOKEN).request(request).build()
-    app.add_handler(CommandHandler("start", cmd_start))
+    app.add_handler(CommandHandler(["start", "help"], cmd_start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_url))
     print(f"{BOT_NAME} v{BOT_VERSION} - starting (debug={DEBUG_MODE})")
     app.run_polling()

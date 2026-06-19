@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-06-18
+
+### Added
+- `requirements.txt`.
+- `/help` command (alias of `/start`).
+- Lightweight in-memory dedup: the same link in the same chat is ignored if
+  seen again within 30s, so a chatty group can't double-fire a card.
+
+### Changed
+- Titles and descriptions are whitespace-normalized (runs of spaces/newlines
+  collapsed to single spaces) before rendering.
+- Tracking parameters (`utm_*`, `fbclid`, `gclid`, `igshid`, `mc_cid`,
+  `mc_eid`, `_ga`, `ref_src`) are stripped from the link shown in the caption;
+  path and fragment are preserved.
+- `fetch_html` validates the response is HTML before parsing.
+- Hero downloads are size-capped and decoded up front so failures are caught
+  cleanly rather than surfacing later during rendering.
+- Build failures now stay silent in groups (logged only); private chats still
+  get a short notice. The raw exception text is no longer sent to the chat.
+
+### Fixed
+- Tiny / low-resolution OG images (< 400px on the short side) are no longer
+  upscaled into a blurry hero — the card falls back to the clean text layout.
+- Over-long titles are truncated to keep the caption under Telegram's limit.
+
 ## [0.1.0] - 2026-06-18
 
 ### Added
@@ -32,5 +57,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Card rendering runs in a worker thread to avoid blocking the event loop;
   `HTTPXRequest` timeouts configured for Telegram I/O.
 
-[Unreleased]: https://github.com/MikereDD/It-Works-On-My-Machine/compare/cardbot-v0.1.0...HEAD
+[Unreleased]: https://github.com/MikereDD/It-Works-On-My-Machine/compare/cardbot-v0.2.0...HEAD
+[0.2.0]: https://github.com/MikereDD/It-Works-On-My-Machine/compare/cardbot-v0.1.0...cardbot-v0.2.0
 [0.1.0]: https://github.com/MikereDD/It-Works-On-My-Machine/releases/tag/cardbot-v0.1.0
