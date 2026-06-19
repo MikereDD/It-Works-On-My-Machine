@@ -1,19 +1,27 @@
 ﻿#--------------------------------------------
 # file:     minfocreate.ps1
 # author:   Mike Redd
-# version:  1.9
+# version:  2.3
 # created:  2026-04-11
 # updated:  2026-06-17
 # desc:     Create NFO, HTML, and poster data
 #           for a video file using OMDb and
 #           MediaInfo CLI. Optional -Preview pops
 #           the downloaded poster in a window.
+#           v2.0: -Mode series/docu builds per-episode
+#           NFOs + a series index for whole folders.
+#           v2.1: per-episode NFO names mirror source files.
+#           v2.2: index/poster name derived from files, no numbers.
+#           v2.3: main .nfo for the set + local poster fallback.
 #--------------------------------------------
 
 param(
     [string]$VideoDir  = "",
     [string]$VideoFile = "",
     [string]$ApiKey    = "",
+    [ValidateSet('auto','single','series','docu')]
+    [string]$Mode      = 'auto',
+    [string]$SeriesName = "",
     [switch]$Preview
 )
 
@@ -50,7 +58,7 @@ if (Test-Path -LiteralPath $corePath) {
 $ErrorActionPreference = 'Stop'
 
 $ScriptName    = "MiNfoCreate"
-$ScriptVersion = "1.9"
+$ScriptVersion = "2.3"
 $ScriptAuthor  = "Mike Redd"
 
 # ── Config ────────────────────────────────────────────────────
@@ -429,6 +437,364 @@ if ($miCmd) {
     }
 }
 
+# ══ Multi-file (series / documentary) support ═════════════════
+function Get-MinfoVideoFiles {
+    param([string]$Dir)
+    $exts = @('.mkv','.mp4','.avi','.m2ts','.mov','.wmv','.ts')
+    Get-ChildItem -LiteralPath $Dir -File |
+        Where-Object { $exts -contains $_.Extension.ToLower() }
+}
+
+function Get-SeasonEpisode {
+    param([string]$Name)
+    $m = [regex]::Match($Name, '(?i)S\s*(\d{1,2})\s*[-_. ]*\s*E\s*(\d{1,3})')
+    if ($m.Success) {
+        return [pscustomobject]@{ Season = [int]$m.Groups[1].Value; Episode = [int]$m.Groups[2].Value }
+    }
+    $m = [regex]::Match($Name, '(?i)\b(\d{1,2})\s*x\s*(\d{1,3})\b')
+    if ($m.Success) {
+        return [pscustomobject]@{ Season = [int]$m.Groups[1].Value; Episode = [int]$m.Groups[2].Value }
+    }
+    return $null
+}
+
+function Get-MinfoDefaultName {
+    # Derive a show/documentary name from the source filenames: drop a leading
+    # episode/part number ("01 - "), drop a trailing SxxExx or Part N, then take
+    # the common stem. Used only as the default the user can override.
+    param([object[]]$Files)
+    if (-not $Files -or @($Files).Count -lt 1) { return "" }
+
+    $cleaned = New-Object System.Collections.Generic.List[string]
+    foreach ($f in $Files) {
+        $x = [System.IO.Path]::GetFileNameWithoutExtension($f.Name)
+        $x = $x -replace '^\s*\d{1,3}\s*[-_.)\]]\s*', ''
+        $x = $x -replace '(?i)[\s_.\-]+S\d{1,2}[\s_.\-]*E\d{1,3}.*$', ''
+        $x = $x -replace '(?i)[\s_.\-]+(Part|Pt|CD|Disc|Disk)[\s_.\-]*\d+.*$', ''
+        $x = ($x -replace '[\s_.\-]+$', '').Trim()
+        if ($x) { $cleaned.Add($x) }
+    }
+    if ($cleaned.Count -lt 1) { return "" }
+
+    $lcp = $cleaned[0]
+    foreach ($n in $cleaned) {
+        $i = 0
+        $max = [Math]::Min($lcp.Length, $n.Length)
+        while ($i -lt $max -and $lcp[$i] -eq $n[$i]) { $i++ }
+        $lcp = $lcp.Substring(0, $i)
+    }
+    $lcp = ($lcp -replace '[\s_.\-]+$', '').Trim()
+    if ($lcp) { return $lcp }
+    return $cleaned[0]
+}
+
+function Invoke-OmdbQuery {
+    param([hashtable]$Params, [string]$ApiKey, [string]$CurlExe)
+    $qs = @("apikey=$ApiKey")
+    foreach ($k in $Params.Keys) {
+        $qs += ("{0}={1}" -f $k, [System.Uri]::EscapeDataString([string]$Params[$k]))
+    }
+    $url = "http://www.omdbapi.com/?" + ($qs -join '&')
+    try {
+        $raw = & $CurlExe --silent --max-time 15 $url
+        $obj = $raw | ConvertFrom-Json
+        if ($obj.Response -eq 'True') { return $obj }
+    } catch { }
+    return $null
+}
+
+function Get-MinfoTechText {
+    param([string]$File, [string]$MediaInfoExe)
+    if (-not $MediaInfoExe) {
+        return "MediaInfo CLI not installed. Install with: winget install MediaArea.MediaInfo.CLI"
+    }
+    try {
+        $json = & $MediaInfoExe --Output=JSON $File 2>$null
+        $obj  = $json | ConvertFrom-Json
+        return (Format-MediaInfoFromJson -MediaInfoObj $obj)
+    } catch {
+        return "MediaInfo parsing failed."
+    }
+}
+
+function Invoke-MinfoSeries {
+    param(
+        [string]$Mode,
+        [object[]]$Files,
+        [string]$SeriesName,
+        [string]$ApiKey,
+        [string]$CurlExe,
+        [string]$MediaInfoExe,
+        [string]$NfoDir,
+        [switch]$Preview
+    )
+
+    $isSeries = ($Mode -eq 'series')
+    $kindWord = if ($isSeries) { 'TV series' } else { 'documentary' }
+
+    if (-not $SeriesName) {
+        $defaultName = Get-MinfoDefaultName -Files $Files
+        if (-not $defaultName) { $defaultName = Split-Path -Leaf $VideoDir }
+        Write-UiBlankLine
+        Write-Host "  $($global:UI_YLW)$kindWord name:$($global:UI_R)"
+        Write-Host "  $($global:UI_GRN)Default: $defaultName$($global:UI_R)"
+        $inp = Read-Host "  Name (blank = default)"
+        $SeriesName = if ([string]::IsNullOrWhiteSpace($inp)) { $defaultName } else { $inp }
+    }
+    $safeSeries = ($SeriesName -replace '[<>:"/\\|?*]', '').Trim()
+    if (-not $safeSeries) { $safeSeries = 'Series' }
+
+    Write-UiSection "OMDb Lookup ($kindWord)"
+    Write-Host "  $($global:UI_CYN)Enter search title or IMDb ID (blank = '$SeriesName')$($global:UI_R)"
+    $search = Read-Host "  Search"
+    if ([string]::IsNullOrWhiteSpace($search)) { $search = $SeriesName }
+    $year = Read-Host "  Year (optional)"
+
+    $omType = if ($isSeries) { 'series' } else { 'movie' }
+    if ($search -match '^tt\d+') {
+        $showParams = @{ i = $search; plot = 'full' }
+    } else {
+        $showParams = @{ t = $search; type = $omType; plot = 'full' }
+        if ($year) { $showParams['y'] = $year }
+    }
+    $show = Invoke-OmdbQuery -Params $showParams -ApiKey $ApiKey -CurlExe $CurlExe
+    if ($show) {
+        Write-Host "  $($global:UI_GRN)Found: $($show.Title) ($($show.Year))$($global:UI_R)"
+    } else {
+        Write-Host "  $($global:UI_YLW)No OMDb match; continuing with MediaInfo only.$($global:UI_R)"
+    }
+    $seriesImdb = if ($show) { $show.imdbID } else { $null }
+
+    $outDir = Join-Path $NfoDir $safeSeries
+    New-Item -ItemType Directory -Path $outDir -Force | Out-Null
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+
+    $posterRel = ""
+    $posterOut = Join-Path $outDir "$safeSeries.jpg"
+    if ($show -and $show.Poster -and $show.Poster -ne 'N/A') {
+        & $CurlExe --silent --location --max-time 30 --output $posterOut $show.Poster
+        if ((Test-Path -LiteralPath $posterOut) -and (Get-Item -LiteralPath $posterOut).Length -gt 0) {
+            $posterRel = "$safeSeries.jpg"
+            Write-Host "  $($global:UI_GRN)Poster saved: $posterOut$($global:UI_R)"
+        }
+    }
+    if (-not $posterRel) {
+        # No OMDb poster -> reuse local cover art from the source folder if present.
+        foreach ($cand in @('poster.jpg','folder.jpg','cover.jpg','poster.png','folder.png','cover.png')) {
+            $candPath = Join-Path $VideoDir $cand
+            if (Test-Path -LiteralPath $candPath) {
+                try {
+                    Copy-Item -LiteralPath $candPath -Destination $posterOut -Force
+                    $posterRel = "$safeSeries.jpg"
+                    Write-Host "  $($global:UI_GRN)Poster (local):$($global:UI_R) $cand"
+                } catch { }
+                break
+            }
+        }
+    }
+
+    if ($isSeries) {
+        $sorted = $Files | Sort-Object `
+            @{Expression={ $se = Get-SeasonEpisode $_.Name; if ($se) { $se.Season } else { 99 } }}, `
+            @{Expression={ $se = Get-SeasonEpisode $_.Name; if ($se) { $se.Episode } else { 999 } }}, `
+            Name
+    } else {
+        $sorted = $Files | Sort-Object Name
+    }
+
+    $records = New-Object System.Collections.Generic.List[object]
+    $idx = 0
+
+    foreach ($f in $sorted) {
+        $idx++
+        $se = if ($isSeries) { Get-SeasonEpisode $f.Name } else { $null }
+
+        $ep = $null
+        if ($isSeries -and $se -and $seriesImdb) {
+            $ep = Invoke-OmdbQuery -Params @{ i = $seriesImdb; Season = $se.Season; Episode = $se.Episode; plot = 'full' } -ApiKey $ApiKey -CurlExe $CurlExe
+        }
+
+        $tech = Get-MinfoTechText -File $f.FullName -MediaInfoExe $MediaInfoExe
+
+        $epLabel = if ($se) { ("S{0:D2}E{1:D2}" -f $se.Season, $se.Episode) } elseif (-not $isSeries) { "Part {0}" -f $idx } else { "#{0}" -f $idx }
+        $epTitle = if ($ep -and $ep.Title -and $ep.Title -ne 'N/A') { $ep.Title } elseif ($show -and -not $isSeries -and $show.Title) { $show.Title } else { [System.IO.Path]::GetFileNameWithoutExtension($f.Name) }
+        $epPlot  = if ($ep -and $ep.Plot -and $ep.Plot -ne 'N/A') { $ep.Plot } elseif ((-not $isSeries) -and $show -and $show.Plot -and $show.Plot -ne 'N/A') { $show.Plot } else { "" }
+        $epRel   = if ($ep -and $ep.Released -and $ep.Released -ne 'N/A') { $ep.Released } else { "" }
+        $epRun   = if ($ep -and $ep.Runtime -and $ep.Runtime -ne 'N/A') { $ep.Runtime } elseif ($show -and $show.Runtime -and $show.Runtime -ne 'N/A') { $show.Runtime } else { "" }
+        $epRate  = if ($ep -and $ep.imdbRating -and $ep.imdbRating -ne 'N/A') { $ep.imdbRating } else { "" }
+        $epImdb  = if ($ep -and $ep.imdbID -and $ep.imdbID -ne 'N/A') { $ep.imdbID } elseif ($show) { $show.imdbID } else { "" }
+
+        # NFO basename mirrors the SOURCE file so media servers pair them
+        # (e.g. "<video>.mkv" -> "<video>.nfo"). Falls back to series + label.
+        $safeEp = ([System.IO.Path]::GetFileNameWithoutExtension($f.Name) -replace '[<>:"/\\|?*]', '').Trim()
+        if (-not $safeEp) { $safeEp = (("{0} - {1}" -f $safeSeries, $epLabel) -replace '[<>:"/\\|?*]', '').Trim() }
+        $nfoFile = Join-Path $outDir "$safeEp.nfo"
+
+        $nfo = New-Object System.Text.StringBuilder
+        [void]$nfo.AppendLine("================================================================================")
+        [void]$nfo.AppendLine("  $SeriesName")
+        [void]$nfo.AppendLine("  $epLabel  -  $epTitle")
+        [void]$nfo.AppendLine("================================================================================")
+        [void]$nfo.AppendLine("  Generated by $ScriptName v$ScriptVersion  -  $timestamp")
+        [void]$nfo.AppendLine("  Source file: $($f.Name)")
+        [void]$nfo.AppendLine("================================================================================")
+        [void]$nfo.AppendLine("")
+        if ($epTitle -or $epRel -or $epRun -or $epRate) {
+            [void]$nfo.AppendLine("[ EPISODE INFO ]")
+            [void]$nfo.AppendLine("--------------------------------------------------------------------------------")
+            [void]$nfo.AppendLine(("  Title     : {0}" -f $epTitle))
+            if ($epRel)  { [void]$nfo.AppendLine(("  Released  : {0}" -f $epRel)) }
+            if ($epRun)  { [void]$nfo.AppendLine(("  Runtime   : {0}" -f $epRun)) }
+            if ($epRate) { [void]$nfo.AppendLine(("  IMDB      : {0}/10" -f $epRate)) }
+            if ($epImdb) { [void]$nfo.AppendLine(("  IMDB URL  : https://www.imdb.com/title/{0}/" -f $epImdb)) }
+            [void]$nfo.AppendLine("")
+        }
+        if ($epPlot) {
+            [void]$nfo.AppendLine("[ PLOT ]")
+            [void]$nfo.AppendLine("--------------------------------------------------------------------------------")
+            [void]$nfo.AppendLine($epPlot)
+            [void]$nfo.AppendLine("")
+        }
+        [void]$nfo.AppendLine("[ TECHNICAL INFO ]")
+        [void]$nfo.AppendLine("--------------------------------------------------------------------------------")
+        [void]$nfo.AppendLine($tech)
+        [void]$nfo.AppendLine("")
+        [void]$nfo.AppendLine("================================================================================")
+        $nfo.ToString() | Out-File -LiteralPath $nfoFile -Encoding UTF8
+
+        Write-Host "  $($global:UI_GRN)NFO:$($global:UI_R) $safeEp.nfo"
+
+        $records.Add([pscustomobject]@{
+            Label = $epLabel; Title = $epTitle; Released = $epRel
+            Runtime = $epRun; Rating = $epRate; Plot = $epPlot; Tech = $tech; File = $f.Name
+        })
+    }
+
+    # ── Main (series / documentary) NFO ───────────────────────
+    $mainNfo = New-Object System.Text.StringBuilder
+    [void]$mainNfo.AppendLine("================================================================================")
+    [void]$mainNfo.AppendLine("  $SeriesName")
+    [void]$mainNfo.AppendLine("================================================================================")
+    [void]$mainNfo.AppendLine("  Generated by $ScriptName v$ScriptVersion  -  $timestamp")
+    [void]$mainNfo.AppendLine("  $kindWord  -  $($records.Count) entries")
+    [void]$mainNfo.AppendLine("================================================================================")
+    [void]$mainNfo.AppendLine("")
+    if ($show) {
+        [void]$mainNfo.AppendLine("[ INFO ]")
+        [void]$mainNfo.AppendLine("--------------------------------------------------------------------------------")
+        if ($show.Title) { [void]$mainNfo.AppendLine(("  Title     : {0}" -f $show.Title)) }
+        if ($show.Year)  { [void]$mainNfo.AppendLine(("  Year      : {0}" -f $show.Year)) }
+        if ($show.Rated -and $show.Rated -ne 'N/A')  { [void]$mainNfo.AppendLine(("  Rated     : {0}" -f $show.Rated)) }
+        if ($show.Genre -and $show.Genre -ne 'N/A')  { [void]$mainNfo.AppendLine(("  Genre     : {0}" -f $show.Genre)) }
+        if ($show.totalSeasons -and $show.totalSeasons -ne 'N/A') { [void]$mainNfo.AppendLine(("  Seasons   : {0}" -f $show.totalSeasons)) }
+        if ($show.imdbRating -and $show.imdbRating -ne 'N/A') { [void]$mainNfo.AppendLine(("  IMDB      : {0}/10" -f $show.imdbRating)) }
+        if ($show.imdbID -and $show.imdbID -ne 'N/A') { [void]$mainNfo.AppendLine(("  IMDB URL  : https://www.imdb.com/title/{0}/" -f $show.imdbID)) }
+        [void]$mainNfo.AppendLine("")
+        if ($show.Plot -and $show.Plot -ne 'N/A') {
+            [void]$mainNfo.AppendLine("[ PLOT ]")
+            [void]$mainNfo.AppendLine("--------------------------------------------------------------------------------")
+            [void]$mainNfo.AppendLine($show.Plot)
+            [void]$mainNfo.AppendLine("")
+        }
+    }
+    [void]$mainNfo.AppendLine("[ CONTENTS ]")
+    [void]$mainNfo.AppendLine("--------------------------------------------------------------------------------")
+    foreach ($r in $records) {
+        [void]$mainNfo.AppendLine(("  {0,-10} {1}" -f $r.Label, $r.Title))
+    }
+    [void]$mainNfo.AppendLine("")
+    [void]$mainNfo.AppendLine("  Per-entry technical details live in each entry's own .nfo file.")
+    [void]$mainNfo.AppendLine("================================================================================")
+    $mainNfoFile = Join-Path $outDir "$safeSeries.nfo"
+    $mainNfo.ToString() | Out-File -LiteralPath $mainNfoFile -Encoding UTF8
+    Write-Host "  $($global:UI_GRN)Main NFO:$($global:UI_R) $safeSeries.nfo"
+
+    # ── Series index HTML ─────────────────────────────────────
+    $cards = New-Object System.Text.StringBuilder
+    foreach ($r in $records) {
+        $lb   = ConvertTo-HtmlSafe $r.Label
+        $t    = ConvertTo-HtmlSafe $r.Title
+        $pl   = ConvertTo-HtmlSafe $r.Plot
+        $tech = ConvertTo-HtmlSafe $r.Tech
+        $metaParts = @()
+        if ($r.Released) { $metaParts += (ConvertTo-HtmlSafe $r.Released) }
+        if ($r.Runtime)  { $metaParts += (ConvertTo-HtmlSafe $r.Runtime) }
+        if ($r.Rating)   { $metaParts += ("IMDB " + (ConvertTo-HtmlSafe $r.Rating) + "/10") }
+        $metaLine = ($metaParts -join "  &nbsp;|&nbsp;  ")
+        $plotHtml = if ($pl) { "<div class='epplot'>$pl</div>" } else { "" }
+        [void]$cards.AppendLine(@"
+    <div class="ep">
+        <div class="ephead"><span class="eplabel">$lb</span><span class="eptitle">$t</span></div>
+        <div class="epmeta">$metaLine</div>
+        $plotHtml
+        <details><summary>Technical info</summary><div class="mediainfo">$tech</div></details>
+    </div>
+"@)
+    }
+
+    $seriesTitleHtml = ConvertTo-HtmlSafe $SeriesName
+    $cardsText = $cards.ToString()
+    $entryCount = $records.Count
+    $posterBlock = if ($posterRel) { "<img class='poster' src='$posterRel' alt='poster'>" } else { "" }
+    $subLine = if ($show) {
+        ConvertTo-HtmlSafe (($show.Year, $show.Rated, $show.Genre | Where-Object { $_ -and $_ -ne 'N/A' }) -join "  |  ")
+    } else { "$($records.Count) items" }
+
+    $indexFile = Join-Path $outDir "$safeSeries.htm"
+    $page = @"
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>$seriesTitleHtml</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Courier New', monospace; background: #0d0d0d; color: #c8c8c8; padding: 2rem; max-width: 960px; margin: 0 auto; }
+        h1 { color: #00d4ff; font-size: 1.8rem; margin-bottom: 0.25rem; }
+        .sub { color: #888; font-size: 0.95rem; margin-bottom: 1.5rem; }
+        .head { display: flex; gap: 1.5rem; margin-bottom: 2rem; align-items: flex-start; }
+        .poster { width: 200px; border: 2px solid #333; border-radius: 4px; }
+        .ep { background: #111; border: 1px solid #222; border-left: 3px solid #00d4ff; border-radius: 4px; padding: 1rem 1.2rem; margin-bottom: 1rem; }
+        .ephead { margin-bottom: 0.3rem; }
+        .eplabel { color: #f5c518; font-weight: bold; margin-right: 0.8rem; }
+        .eptitle { color: #00d4ff; font-size: 1.05rem; }
+        .epmeta { color: #888; font-size: 0.8rem; margin-bottom: 0.5rem; }
+        .epplot { color: #bbb; line-height: 1.6; margin-bottom: 0.5rem; }
+        details summary { color: #6cf; cursor: pointer; font-size: 0.8rem; margin-top: 0.4rem; }
+        .mediainfo { background: #0a0a0a; border: 1px solid #222; padding: 0.8rem; font-size: 0.8rem; white-space: pre-wrap; overflow-x: auto; color: #bbb; border-radius: 4px; line-height: 1.5; margin-top: 0.5rem; }
+        footer { margin-top: 3rem; font-size: 0.75rem; color: #444; border-top: 1px solid #222; padding-top: 1rem; }
+    </style>
+</head>
+<body>
+<div class="head">
+    $posterBlock
+    <div>
+        <h1>$seriesTitleHtml</h1>
+        <div class="sub">$subLine &nbsp;|&nbsp; $entryCount entries</div>
+    </div>
+</div>
+
+$cardsText
+
+<footer>Generated by $ScriptName v$ScriptVersion &nbsp;|&nbsp; $timestamp &nbsp;|&nbsp; by $ScriptAuthor</footer>
+</body>
+</html>
+"@
+    $page | Out-File -LiteralPath $indexFile -Encoding UTF8
+    Write-Host "  $($global:UI_GRN)Index:$($global:UI_R) $safeSeries.htm"
+
+    if ($Preview -and $posterRel) {
+        if ([System.Threading.Thread]::CurrentThread.GetApartmentState() -eq 'STA') {
+            try { Show-PosterWindow -ImagePath (Join-Path $outDir $posterRel) } catch { }
+        }
+    }
+
+    Write-UiBlankLine
+    Write-UiHeader -Title "Done!" -Subtitle $outDir -Width (Get-UiBoxWidth -MaxWidth 72 -MinWidth 48)
+    Show-ResultTable -Path $outDir
+}
+
 # ── Start screen ──────────────────────────────────────────────
 Show-Header
 Write-UiRow "curl.exe"  "found" $(if ($curlExe) { $global:UI_GRN } else { $global:UI_RED })
@@ -440,6 +806,39 @@ if (-not (Test-Path -LiteralPath $VideoDir)) {
     Write-Host "  $($global:UI_RED)Video directory not found: $VideoDir$($global:UI_R)"
     Write-Host "  $($global:UI_YLW)Pass -VideoDir to specify a different path.$($global:UI_R)"
     Write-UiBlankLine
+    Pause-Script
+    return
+}
+
+# ── Mode dispatch (single vs series/documentary) ──────────────
+$allVids = @(Get-MinfoVideoFiles -Dir $VideoDir)
+$useMode = $Mode
+
+if ($useMode -eq 'auto') {
+    if ($VideoFile -or $allVids.Count -le 1) {
+        $useMode = 'single'
+    } else {
+        Write-Host "  $($global:UI_YLW)$($allVids.Count) video files found in this folder.$($global:UI_R)"
+        Write-Host "  $($global:UI_CYN)[1] Single    [2] TV series    [3] Documentary (multi-part)$($global:UI_R)"
+        $choice = Read-Host "  Choose (1/2/3)"
+        switch ($choice) {
+            '2' { $useMode = 'series' }
+            '3' { $useMode = 'docu' }
+            default { $useMode = 'single' }
+        }
+    }
+}
+
+if ($useMode -eq 'series' -or $useMode -eq 'docu') {
+    if ($allVids.Count -lt 1) {
+        Write-Host "  $($global:UI_RED)No video files found in $VideoDir$($global:UI_R)"
+        Write-UiBlankLine
+        Pause-Script
+        return
+    }
+    Invoke-MinfoSeries -Mode $useMode -Files $allVids -SeriesName $SeriesName `
+        -ApiKey $ApiKey -CurlExe $curlExe -MediaInfoExe $mediaInfoExe `
+        -NfoDir $Script:NfoDir -Preview:$Preview
     Pause-Script
     return
 }
