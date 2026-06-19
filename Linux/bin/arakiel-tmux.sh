@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # file: arakiel-tmux.sh
-# version: 1.6
+# version: 1.7
 # desc: tmux loader for arakiel bots workspace
 
 SESSION="arakiel"
@@ -70,7 +70,7 @@ tmux setw -t "$SESSION:2" pane-border-format " #[fg=#81a1c1]#P#[fg=#d8dee9] #{@l
 tmux set -p -t "$SESSION:2.1" @label "ytbot (Raziel)"
 tmux set -p -t "$SESSION:2.2" @label "musicbot (Sandalphon)"
 tmux set -p -t "$SESSION:2.3" @label "aibot (Zahkiel)"
-tmux set -p -t "$SESSION:2.4" @label "Gabriel (cardbot)"
+tmux set -p -t "$SESSION:2.4" @label "cardbot (Gabriel)"
 tmux set -p -t "$SESSION:2.5" @label "logs"
 
 # ── Window 3: scratch ───────────────────────
