@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # file: arakiel-tmux.sh
-# version: 1.5
+# version: 1.6
 # desc: tmux loader for arakiel bots workspace
 
 SESSION="arakiel"
@@ -63,13 +63,15 @@ tmux send-keys -t "$SESSION:2.5" \
   "cd '$LOGS' && ls -lah" C-m
 
 # ── Label panes on their borders ────────────
+# Use a tmux user option (@label) instead of pane_title: the shell prompt
+# overwrites pane_title on every prompt, but it never touches @label.
 tmux setw -t "$SESSION:2" pane-border-status top
-tmux setw -t "$SESSION:2" pane-border-format " #[fg=#81a1c1]#P#[fg=#d8dee9] #{pane_title} "
-tmux select-pane -t "$SESSION:2.1" -T "ytbot (Raziel)"
-tmux select-pane -t "$SESSION:2.2" -T "musicbot (Sandalphon)"
-tmux select-pane -t "$SESSION:2.3" -T "aibot (Zahkiel)"
-tmux select-pane -t "$SESSION:2.4" -T "Gabriel (cardbot)"
-tmux select-pane -t "$SESSION:2.5" -T "logs"
+tmux setw -t "$SESSION:2" pane-border-format " #[fg=#81a1c1]#P#[fg=#d8dee9] #{@label} "
+tmux set -p -t "$SESSION:2.1" @label "ytbot (Raziel)"
+tmux set -p -t "$SESSION:2.2" @label "musicbot (Sandalphon)"
+tmux set -p -t "$SESSION:2.3" @label "aibot (Zahkiel)"
+tmux set -p -t "$SESSION:2.4" @label "Gabriel (cardbot)"
+tmux set -p -t "$SESSION:2.5" @label "logs"
 
 # ── Window 3: scratch ───────────────────────
 tmux new-window -t "$SESSION:3" -n scratch
