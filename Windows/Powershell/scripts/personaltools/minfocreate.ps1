@@ -1,7 +1,7 @@
 ﻿#--------------------------------------------
 # file:     minfocreate.ps1
 # author:   Mike Redd
-# version:  2.5
+# version:  2.6
 # created:  2026-04-11
 # updated:  2026-06-17
 # desc:     Create NFO, HTML, and poster data
@@ -15,6 +15,7 @@
 #           v2.3: main .nfo for the set + local poster fallback.
 #           v2.4: figlet banner restored in series/episode NFOs.
 #           v2.5: reliable poster download w/ curl --fail + clear logging.
+#           v2.6: index embeds poster (OMDb URL) like single-file mode.
 #--------------------------------------------
 
 param(
@@ -60,7 +61,7 @@ if (Test-Path -LiteralPath $corePath) {
 $ErrorActionPreference = 'Stop'
 
 $ScriptName    = "MiNfoCreate"
-$ScriptVersion = "2.5"
+$ScriptVersion = "2.6"
 $ScriptAuthor  = "Mike Redd"
 
 # Shared NFO banner (figlet) reused by single-file and multi-file output.
@@ -770,7 +771,15 @@ function Invoke-MinfoSeries {
     $seriesTitleHtml = ConvertTo-HtmlSafe $SeriesName
     $cardsText = $cards.ToString()
     $entryCount = $records.Count
-    $posterBlock = if ($posterRel) { "<img class='poster' src='$posterRel' alt='poster'>" } else { "" }
+    # Embed the poster in the index the same way single-file mode does:
+    # OMDb URL first (loads inline like before), then the local jpg, else a placeholder.
+    $posterBlock = if ($show -and $show.Poster -and $show.Poster -ne 'N/A') {
+        "<img class='poster' src='$($show.Poster)' alt='poster'>"
+    } elseif ($posterRel) {
+        "<img class='poster' src='$posterRel' alt='poster'>"
+    } else {
+        "<div class='noposter'>No Poster Available</div>"
+    }
     $subLine = if ($show) {
         ConvertTo-HtmlSafe (($show.Year, $show.Rated, $show.Genre | Where-Object { $_ -and $_ -ne 'N/A' }) -join "  |  ")
     } else { "$($records.Count) items" }
@@ -790,6 +799,7 @@ function Invoke-MinfoSeries {
         .sub { color: #888; font-size: 0.95rem; margin-bottom: 1.5rem; }
         .head { display: flex; gap: 1.5rem; margin-bottom: 2rem; align-items: flex-start; }
         .poster { width: 200px; border: 2px solid #333; border-radius: 4px; }
+        .noposter { width: 200px; height: 300px; background: #1a1a1a; border: 2px solid #333; border-radius: 4px; display: flex; align-items: center; justify-content: center; color: #555; font-size: 0.8rem; }
         .ep { background: #111; border: 1px solid #222; border-left: 3px solid #00d4ff; border-radius: 4px; padding: 1rem 1.2rem; margin-bottom: 1rem; }
         .ephead { margin-bottom: 0.3rem; }
         .eplabel { color: #f5c518; font-weight: bold; margin-right: 0.8rem; }
