@@ -1,84 +1,150 @@
-# Gabriel
+# 📰 Gabriel (CardBot)
 
-`cardbot.py` — a Telegram bot that turns any article or post URL into a clean
-preview **card**. Send it a link; it pulls the page's Open Graph metadata
-(title, description, hero image), renders a card with Pillow, and replies with
-the card plus the original link. Drop it into a group and it watches passively
-for links, same as `ytbot`.
+> A typezerø Project
+> Built for real-world use, not perfection.
 
-**Version:** 0.2.0 — see the [changelog](https://github.com/MikereDD/It-Works-On-My-Machine/blob/main/Bots/cardbot/CHANGELOG.md).
+![Version](https://img.shields.io/badge/version-v0.2.0-blue) ![Python](https://img.shields.io/badge/python-3.10+-blue) ![License](https://img.shields.io/badge/license-WTFPL-lightgrey)
 
-## Features
+---
 
-- OG / Twitter Card extraction with `<title>` + meta-description fallbacks;
-  titles and blurbs are whitespace-normalized before rendering.
-- Pillow card renderer: dark theme, cyan accent, hero cover-crop, wrapped
-  title/blurb with ellipsis. Tiny or missing images fall back to a clean
-  text-only card instead of a blurry upscale.
-- Tracking params (`utm_*`, `fbclid`, `gclid`, …) stripped from the shown link.
-- Group auto-watch: groups open, private chats owner-only, per-chat opt-out,
-  ignores messages that already carry Telegram media, and de-dupes repeat links
-  within 30s. Failures stay silent in groups (logged), notified in DMs.
-- Token from `cardbotrc.py` or the `CARDBOT_TOKEN` env var.
-- File + stream logging; rendering runs off the event loop.
+# 🚀 Overview
 
-## Requirements
+Gabriel is a Telegram-native link-preview bot focused on:
 
-- Python 3.10+
-- See `requirements.txt`: `python-telegram-bot`, `httpx`, `beautifulsoup4`, `pillow`
-- A DejaVu font for rendering (`ttf-dejavu` on Arch); falls back to a basic
-  bitmap font if absent.
+- clean Open Graph card rendering
+- low-noise group interaction
+- metadata-aware previews
+- passive link watching
+- operational reliability
 
-## Install (Arch / Raspberry Pi)
+Gabriel accepts input from:
 
-Three deps are in the official repo; `python-telegram-bot` is AUR-only. The
-cleanest option for a long-running service is a venv:
+- Telegram commands
+- pasted/shared links
+- forwarded links
+- group auto-watch
 
-```sh
-python -m venv venv
+Pipeline:
+
+```
+Link → Fetch → Extract OG → Render Card → Reply
+```
+
+---
+
+# ✨ Features
+
+## 🖼️ Card Rendering
+
+- Open Graph / Twitter Card extraction
+- Pillow-rendered preview card
+- dark theme, cyan accent
+- hero image cover-crop (1.92:1)
+- title and blurb wrapping with ellipsis
+- text-only fallback for tiny or missing images
+
+---
+
+## 🤖 Telegram-Native UX
+
+- automatic group link detection
+- owner-only private chats
+- per-chat auto-watch opt-out
+- native-media skip (won't card a message that already has media)
+- 30s per-chat dedupe
+- silent failure in groups, notify in DMs
+
+---
+
+## 🧠 Metadata Layer
+
+- og:title / og:description / og:image
+- `<title>` and meta-description fallbacks
+- whitespace normalization
+- tracking-param stripping (utm_*, fbclid, gclid, …)
+- relative image URL resolution
+- HTML content-type validation
+
+---
+
+## ⚙️ Config & Ops
+
+- `cardbotrc.py` loader (shared `config/` dir)
+- `CARDBOT_TOKEN` env fallback
+- file + stream logging
+- off-thread card rendering
+- `HTTPXRequest` timeouts
+
+---
+
+# 🎛️ Commands
+
+```
+/start
+/help
+```
+
+---
+
+# 📦 Setup
+
+Install (shared venv on the Pi):
+
+```
 venv/bin/pip install -r requirements.txt
 sudo pacman -S ttf-dejavu
 ```
 
-Or system packages: `sudo pacman -S python-pillow python-beautifulsoup4 python-httpx ttf-dejavu`
-and `paru -S python-telegram-bot`.
+Config — copy the example and fill it in:
 
-## Configuration
-
-1. Get a token from [@BotFather](https://t.me/BotFather): `/newbot`.
-2. For group link-watching, run `/setprivacy` → **Disable** so the bot can see
-   group messages (otherwise it only sees commands and replies/mentions).
-3. Copy the example config and fill it in:
-
-```sh
-cp cardbotrc.example.py ../config/cardbotrc.py   # -> Bots/config/cardbotrc.py
+```
+cp cardbotrc.example.py ../config/cardbotrc.py
 ```
 
-Set `BOT_TOKEN` and `ALLOWED_USER_ID` (your numeric Telegram user ID — DM
-[@userinfobot](https://t.me/userinfobot) to find it). The token can instead be
-supplied via the `CARDBOT_TOKEN` env var, leaving `BOT_TOKEN` blank.
+Set `BOT_TOKEN` (from @BotFather) and `ALLOWED_USER_ID` (your numeric Telegram
+ID — DM @userinfobot). For group watching, set the bot's BotFather privacy to
+**Disable**.
 
-## Running
+Run:
 
-```sh
+```
 venv/bin/python cardbot.py
 ```
 
-Then DM the bot a link, or add it to a group and paste one.
+---
 
-## Repo layout
+# 📚 Notes & Version History
+
+Full release notes:
 
 ```
-Bots/cardbot/cardbot.py
-Bots/cardbot/cardbotrc.example.py
-Bots/cardbot/requirements.txt
-Bots/config/cardbotrc.py      # live config (gitignored), copied from the example
+CHANGELOG.md
 ```
 
-## Notes
+[View the changelog »](https://github.com/MikereDD/It-Works-On-My-Machine/blob/main/Bots/cardbot/CHANGELOG.md)
 
-- News and blog articles work well. **Social posts are the hard case** — X/IG
-  are login-walled and return little or no OG data, the same bot-detection wall
-  `siphon` hits. Per-platform oEmbed is the path for those if needed.
-- Paywalled sites usually expose only their teaser OG image/text, which is the
-  "top portion" you'd want anyway.
+---
+
+# 📌 Philosophy
+
+```
+Make it work
+→ Make it better
+→ Make it clean
+→ Make it smart
+→ Make it disciplined
+→ Give control
+```
+
+---
+
+# 🧑‍💻 Author
+
+Mike Redd  
+typezerø Projects
+
+---
+
+# 📜 License
+
+WTFPL
