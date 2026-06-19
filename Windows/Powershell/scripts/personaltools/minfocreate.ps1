@@ -1,7 +1,7 @@
 ﻿#--------------------------------------------
 # file:     minfocreate.ps1
 # author:   Mike Redd
-# version:  2.3
+# version:  2.5
 # created:  2026-04-11
 # updated:  2026-06-17
 # desc:     Create NFO, HTML, and poster data
@@ -13,6 +13,8 @@
 #           v2.1: per-episode NFO names mirror source files.
 #           v2.2: index/poster name derived from files, no numbers.
 #           v2.3: main .nfo for the set + local poster fallback.
+#           v2.4: figlet banner restored in series/episode NFOs.
+#           v2.5: reliable poster download w/ curl --fail + clear logging.
 #--------------------------------------------
 
 param(
@@ -58,8 +60,23 @@ if (Test-Path -LiteralPath $corePath) {
 $ErrorActionPreference = 'Stop'
 
 $ScriptName    = "MiNfoCreate"
-$ScriptVersion = "2.3"
+$ScriptVersion = "2.5"
 $ScriptAuthor  = "Mike Redd"
+
+# Shared NFO banner (figlet) reused by single-file and multi-file output.
+$Script:MinfoFiglet = @"
+╔════════════════════════════════════════════════════════════════════════════╗
+║                                                                            ║
+║                 ███╗   ███╗██╗███╗   ██╗███████╗ ██████╗                   ║
+║                 ████╗ ████║██║████╗  ██║██╔════╝██╔═══██╗                  ║
+║                 ██╔████╔██║██║██╔██╗ ██║█████╗  ██║   ██║                  ║
+║                 ██║╚██╔╝██║██║██║╚██╗██║██╔══╝  ██║   ██║                  ║
+║                 ██║ ╚═╝ ██║██║██║ ╚████║██║     ╚██████╔╝                  ║
+║                 ╚═╝     ╚═╝╚═╝╚═╝  ╚═══╝╚═╝      ╚═════╝                   ║
+║                                                                            ║
+║                  N F O   C R E A T O R   ·   by Mike Redd                  ║
+╚════════════════════════════════════════════════════════════════════════════╝
+"@
 
 # ── Config ────────────────────────────────────────────────────
 $Script:ConfigPaths = @(
@@ -571,15 +588,25 @@ function Invoke-MinfoSeries {
 
     $posterRel = ""
     $posterOut = Join-Path $outDir "$safeSeries.jpg"
+
+    # 1) OMDb poster (the path TV/movie titles OMDb carries use).
     if ($show -and $show.Poster -and $show.Poster -ne 'N/A') {
-        & $CurlExe --silent --location --max-time 30 --output $posterOut $show.Poster
-        if ((Test-Path -LiteralPath $posterOut) -and (Get-Item -LiteralPath $posterOut).Length -gt 0) {
+        Write-Host "  $($global:UI_CYN)Downloading poster:$($global:UI_R) $($show.Poster)"
+        & $CurlExe --silent --show-error --location --fail --max-time 30 --output $posterOut $show.Poster
+        $curlExit = $LASTEXITCODE
+        if ($curlExit -eq 0 -and (Test-Path -LiteralPath $posterOut) -and (Get-Item -LiteralPath $posterOut).Length -gt 0) {
             $posterRel = "$safeSeries.jpg"
-            Write-Host "  $($global:UI_GRN)Poster saved: $posterOut$($global:UI_R)"
+            Write-Host "  $($global:UI_GRN)Poster saved:$($global:UI_R) $safeSeries.jpg"
+        } else {
+            Write-Host "  $($global:UI_YLW)Poster download failed (curl exit $curlExit).$($global:UI_R)"
+            if (Test-Path -LiteralPath $posterOut) { Remove-Item -LiteralPath $posterOut -Force -ErrorAction SilentlyContinue }
         }
+    } elseif ($show) {
+        Write-Host "  $($global:UI_GRY)OMDb has no poster for this title.$($global:UI_R)"
     }
+
+    # 2) Local cover art fallback from the source folder.
     if (-not $posterRel) {
-        # No OMDb poster -> reuse local cover art from the source folder if present.
         foreach ($cand in @('poster.jpg','folder.jpg','cover.jpg','poster.png','folder.png','cover.png')) {
             $candPath = Join-Path $VideoDir $cand
             if (Test-Path -LiteralPath $candPath) {
@@ -587,10 +614,16 @@ function Invoke-MinfoSeries {
                     Copy-Item -LiteralPath $candPath -Destination $posterOut -Force
                     $posterRel = "$safeSeries.jpg"
                     Write-Host "  $($global:UI_GRN)Poster (local):$($global:UI_R) $cand"
-                } catch { }
+                } catch {
+                    Write-Host "  $($global:UI_YLW)Local poster copy failed: $($_.Exception.Message)$($global:UI_R)"
+                }
                 break
             }
         }
+    }
+
+    if (-not $posterRel) {
+        Write-Host "  $($global:UI_GRY)No poster (no OMDb art, no local cover image).$($global:UI_R)"
     }
 
     if ($isSeries) {
@@ -631,11 +664,12 @@ function Invoke-MinfoSeries {
         $nfoFile = Join-Path $outDir "$safeEp.nfo"
 
         $nfo = New-Object System.Text.StringBuilder
+        [void]$nfo.AppendLine($Script:MinfoFiglet)
         [void]$nfo.AppendLine("================================================================================")
         [void]$nfo.AppendLine("  $SeriesName")
-        [void]$nfo.AppendLine("  $epLabel  -  $epTitle")
+        [void]$nfo.AppendLine("  $epLabel  ·  $epTitle")
         [void]$nfo.AppendLine("================================================================================")
-        [void]$nfo.AppendLine("  Generated by $ScriptName v$ScriptVersion  -  $timestamp")
+        [void]$nfo.AppendLine("  Generated by $ScriptName v$ScriptVersion  ·  $timestamp")
         [void]$nfo.AppendLine("  Source file: $($f.Name)")
         [void]$nfo.AppendLine("================================================================================")
         [void]$nfo.AppendLine("")
@@ -672,11 +706,12 @@ function Invoke-MinfoSeries {
 
     # ── Main (series / documentary) NFO ───────────────────────
     $mainNfo = New-Object System.Text.StringBuilder
+    [void]$mainNfo.AppendLine($Script:MinfoFiglet)
     [void]$mainNfo.AppendLine("================================================================================")
     [void]$mainNfo.AppendLine("  $SeriesName")
     [void]$mainNfo.AppendLine("================================================================================")
-    [void]$mainNfo.AppendLine("  Generated by $ScriptName v$ScriptVersion  -  $timestamp")
-    [void]$mainNfo.AppendLine("  $kindWord  -  $($records.Count) entries")
+    [void]$mainNfo.AppendLine("  Generated by $ScriptName v$ScriptVersion  ·  $timestamp")
+    [void]$mainNfo.AppendLine("  $kindWord  ·  $($records.Count) entries")
     [void]$mainNfo.AppendLine("================================================================================")
     [void]$mainNfo.AppendLine("")
     if ($show) {
