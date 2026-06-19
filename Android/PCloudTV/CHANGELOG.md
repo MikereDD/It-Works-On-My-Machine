@@ -5,6 +5,12 @@ All notable changes to **pCloud TV**. Newest first.
 
 ---
 
+## v4.16 — Selectable, highlighted player controls on TV
+
+- On a TV the D-pad now moves a visible highlight across the transport buttons (start, -10s, play/pause, +10s, end, and prev/next when in a queue), and **OK** presses the highlighted one. Replaces the previous hold-to-jump scheme, which wasn't discoverable. The play/pause button gets a clear white ring when selected; the others get an accent ring + fill. Up opens tracks, Down wakes the controls. Phone touch is unchanged (no highlight).
+
+---
+
 ## v4.15 — Reliable TV remote control (revert focus nav)
 
 - Reverted the v4.13 focus-based navigation, which left the player controls unreachable on a TV (and broke play/pause and seek that previously worked). The D-pad is back to direct control: **OK** play/pause, **Left/Right** seek -/+10s, **Up/Menu** tracks, **Down** wake controls.

@@ -717,18 +717,51 @@ private fun VlcPlayer(
     }
 
     val focus = remember { FocusRequester() }
-    // Seeded on the play/pause button so something inside the player surface holds
-    // focus and the root's key handler receives the remote's D-pad events.
     val transportFocus = remember { FocusRequester() }
-    // True while Left/Right is being held (auto-repeating), so the key-up doesn't
-    // also fire a 10s seek after a hold has already jumped to start/end.
-    var heldSeek by remember { mutableStateOf(false) }
-    LaunchedEffect(controlsVisible, showTracks, hasVideo) {
+    // Keep the player surface focused so the remote's D-pad keys reach the handler.
+    LaunchedEffect(showTracks) {
         if (showTracks) return@LaunchedEffect
         delay(60)
-        runCatching {
-            if (controlsVisible) transportFocus.requestFocus()
-            else focus.requestFocus()
+        runCatching { focus.requestFocus() }
+    }
+
+    // TV: the D-pad moves a selection highlight across the transport buttons and OK
+    // presses the highlighted one. (Phones use touch, so no highlight is shown.)
+    val isTv = remember {
+        context.packageManager.hasSystemFeature(
+            android.content.pm.PackageManager.FEATURE_LEANBACK
+        )
+    }
+    val controlIds = remember(hasPrev, hasNext) {
+        buildList {
+            if (hasPrev) add("prev")
+            add("start"); add("back"); add("play"); add("fwd"); add("end")
+            if (hasNext) add("next")
+        }
+    }
+    var selIdx by remember { mutableStateOf(controlIds.indexOf("play").coerceAtLeast(0)) }
+    LaunchedEffect(controlIds) { selIdx = selIdx.coerceIn(0, controlIds.lastIndex) }
+    // Land back on play/pause each time the controls reappear.
+    LaunchedEffect(controlsVisible) {
+        if (controlsVisible) selIdx = controlIds.indexOf("play").coerceAtLeast(0)
+    }
+    val selectedId = if (isTv && controlsVisible) controlIds.getOrNull(selIdx) else null
+
+    fun dispatchControl(id: String) {
+        when (id) {
+            "prev" -> if (hasPrev) onPrev()
+            "start" -> { player.time = 0; positionMs = 0; reveal() }
+            "back" -> seekBy(-10_000)
+            "play" -> togglePlay()
+            "fwd" -> seekBy(10_000)
+            "end" -> {
+                if (durationMs > 0) {
+                    val t = (durationMs - 1500).coerceAtLeast(0L)
+                    player.time = t; positionMs = t
+                }
+                reveal()
+            }
+            "next" -> if (hasNext) onNext()
         }
     }
 
@@ -776,32 +809,22 @@ private fun VlcPlayer(
                 }
 
                 when {
-                    // OK / Enter -> play/pause.
-                    isCenter -> if (e.type == KeyEventType.KeyUp) togglePlay()
+                    // OK / Enter -> press the highlighted button.
+                    isCenter -> if (e.type == KeyEventType.KeyUp) {
+                        dispatchControl(controlIds.getOrNull(selIdx) ?: "play")
+                        reveal()
+                    }
                     // Up -> audio/subtitle picker. Down -> keep controls awake.
                     isUp -> if (e.type == KeyEventType.KeyUp) {
                         refreshTrackLists(); showTracks = true
                     }
                     isDown -> if (e.type == KeyEventType.KeyDown) reveal()
-                    // Left/Right: tap = seek 10s, hold (auto-repeat) = jump start/end.
-                    isLeft || isRight -> {
-                        if (e.type == KeyEventType.KeyDown) {
-                            if (e.nativeKeyEvent.repeatCount >= 1 && !heldSeek) {
-                                heldSeek = true
-                                if (isLeft) {
-                                    player.time = 0; positionMs = 0
-                                } else if (durationMs > 0) {
-                                    val t = (durationMs - 1500).coerceAtLeast(0L)
-                                    player.time = t; positionMs = t
-                                }
-                                reveal()
-                            }
-                        } else {
-                            if (!heldSeek) {
-                                if (isLeft) seekBy(-10_000) else seekBy(10_000)
-                            }
-                            heldSeek = false
-                        }
+                    // Left/Right -> move the selection highlight across the buttons.
+                    isLeft -> if (e.type == KeyEventType.KeyDown) {
+                        selIdx = (selIdx - 1).coerceAtLeast(0); reveal()
+                    }
+                    isRight -> if (e.type == KeyEventType.KeyDown) {
+                        selIdx = (selIdx + 1).coerceAtMost(controlIds.lastIndex); reveal()
                     }
                 }
                 true
@@ -859,6 +882,7 @@ private fun VlcPlayer(
                     }
                 },
                 playFocus = transportFocus,
+                selectedId = selectedId,
                 onScrub = { fraction ->
                     if (durationMs > 0) {
                         val t = (fraction * durationMs).toLong()
@@ -948,6 +972,7 @@ private fun VlcPlayer(
                     showTracks = true
                 },
                 playFocus = transportFocus,
+                selectedId = selectedId,
                 onScrub = { fraction ->
                     if (durationMs > 0) {
                         val t = (fraction * durationMs).toLong()
@@ -1007,6 +1032,7 @@ private fun AnimatedVisibilityScope.Controls(
     onSeekToEnd: () -> Unit,
     onTracks: () -> Unit,
     playFocus: FocusRequester,
+    selectedId: String?,
     onScrub: (Float) -> Unit
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
@@ -1113,29 +1139,35 @@ private fun AnimatedVisibilityScope.Controls(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 if (hasPrev || hasNext) {
-                    IconButton(onClick = onPrev, enabled = hasPrev) {
+                    SelBox(selected = selectedId == "prev") {
+                        IconButton(onClick = onPrev, enabled = hasPrev) {
+                            Icon(
+                                Icons.Filled.SkipPrevious, contentDescription = "Previous",
+                                tint = if (hasPrev) Color.White else Color(0x55FFFFFF),
+                                modifier = Modifier.size(34.dp)
+                            )
+                        }
+                    }
+                    Spacer(Modifier.width(8.dp))
+                }
+                SelBox(selected = selectedId == "start") {
+                    IconButton(onClick = onSeekToStart) {
                         Icon(
-                            Icons.Filled.SkipPrevious, contentDescription = "Previous",
-                            tint = if (hasPrev) Color.White else Color(0x55FFFFFF),
-                            modifier = Modifier.size(34.dp)
+                            Icons.Filled.FirstPage, contentDescription = "Start from beginning",
+                            tint = Color.White, modifier = Modifier.size(32.dp)
                         )
                     }
-                    Spacer(Modifier.width(16.dp))
                 }
-                IconButton(onClick = onSeekToStart) {
-                    Icon(
-                        Icons.Filled.FirstPage, contentDescription = "Start from beginning",
-                        tint = Color.White, modifier = Modifier.size(32.dp)
-                    )
+                Spacer(Modifier.width(8.dp))
+                SelBox(selected = selectedId == "back") {
+                    IconButton(onClick = onSeekBack) {
+                        Icon(
+                            Icons.Filled.Replay10, contentDescription = "Back 10s",
+                            tint = Color.White, modifier = Modifier.size(38.dp)
+                        )
+                    }
                 }
-                Spacer(Modifier.width(14.dp))
-                IconButton(onClick = onSeekBack) {
-                    Icon(
-                        Icons.Filled.Replay10, contentDescription = "Back 10s",
-                        tint = Color.White, modifier = Modifier.size(38.dp)
-                    )
-                }
-                Spacer(Modifier.width(28.dp))
+                Spacer(Modifier.width(16.dp))
                 Box(
                     modifier = Modifier
                         .size(64.dp)
@@ -1147,6 +1179,11 @@ private fun AnimatedVisibilityScope.Controls(
                         )
                         .clip(CircleShape)
                         .background(Brand.Accent)
+                        .border(
+                            width = if (selectedId == "play") 3.dp else 0.dp,
+                            color = if (selectedId == "play") Color.White else Color.Transparent,
+                            shape = CircleShape
+                        )
                         .focusRequester(playFocus)
                         .clickable(onClick = onTogglePlay),
                     contentAlignment = Alignment.Center
@@ -1158,28 +1195,34 @@ private fun AnimatedVisibilityScope.Controls(
                         modifier = Modifier.size(36.dp)
                     )
                 }
-                Spacer(Modifier.width(28.dp))
-                IconButton(onClick = onSeekForward) {
-                    Icon(
-                        Icons.Filled.Forward10, contentDescription = "Forward 10s",
-                        tint = Color.White, modifier = Modifier.size(38.dp)
-                    )
+                Spacer(Modifier.width(16.dp))
+                SelBox(selected = selectedId == "fwd") {
+                    IconButton(onClick = onSeekForward) {
+                        Icon(
+                            Icons.Filled.Forward10, contentDescription = "Forward 10s",
+                            tint = Color.White, modifier = Modifier.size(38.dp)
+                        )
+                    }
                 }
-                Spacer(Modifier.width(14.dp))
-                IconButton(onClick = onSeekToEnd) {
-                    Icon(
-                        Icons.Filled.LastPage, contentDescription = "Skip to end",
-                        tint = Color.White, modifier = Modifier.size(32.dp)
-                    )
+                Spacer(Modifier.width(8.dp))
+                SelBox(selected = selectedId == "end") {
+                    IconButton(onClick = onSeekToEnd) {
+                        Icon(
+                            Icons.Filled.LastPage, contentDescription = "Skip to end",
+                            tint = Color.White, modifier = Modifier.size(32.dp)
+                        )
+                    }
                 }
                 if (hasPrev || hasNext) {
-                    Spacer(Modifier.width(16.dp))
-                    IconButton(onClick = onNext, enabled = hasNext) {
-                        Icon(
-                            Icons.Filled.SkipNext, contentDescription = "Next",
-                            tint = if (hasNext) Color.White else Color(0x55FFFFFF),
-                            modifier = Modifier.size(34.dp)
-                        )
+                    Spacer(Modifier.width(8.dp))
+                    SelBox(selected = selectedId == "next") {
+                        IconButton(onClick = onNext, enabled = hasNext) {
+                            Icon(
+                                Icons.Filled.SkipNext, contentDescription = "Next",
+                                tint = if (hasNext) Color.White else Color(0x55FFFFFF),
+                                modifier = Modifier.size(34.dp)
+                            )
+                        }
                     }
                 }
             }
@@ -1247,6 +1290,7 @@ private fun AudioNowPlaying(
     onSeekToStart: () -> Unit,
     onSeekToEnd: () -> Unit,
     playFocus: FocusRequester,
+    selectedId: String?,
     onScrub: (Float) -> Unit
 ) {
     // Decode embedded cover art off the main thread; null -> placeholder.
@@ -1326,6 +1370,7 @@ private fun AudioNowPlaying(
                         onSeekToStart = onSeekToStart,
                         onSeekToEnd = onSeekToEnd,
                         playFocus = playFocus,
+                        selectedId = selectedId,
                         modifier = Modifier.fillMaxWidth()
                     )
                     Spacer(Modifier.height(8.dp))
@@ -1398,6 +1443,7 @@ private fun AudioNowPlaying(
                     onSeekToStart = onSeekToStart,
                     onSeekToEnd = onSeekToEnd,
                     playFocus = playFocus,
+                    selectedId = selectedId,
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(Modifier.height(6.dp))
@@ -1444,6 +1490,21 @@ private fun AudioArt(
 }
 
 @Composable
+private fun SelBox(selected: Boolean, content: @Composable () -> Unit) {
+    Box(
+        modifier = Modifier
+            .clip(CircleShape)
+            .background(if (selected) Color(0x40FFFFFF) else Color.Transparent)
+            .border(
+                width = if (selected) 2.dp else 0.dp,
+                color = if (selected) Brand.Accent else Color.Transparent,
+                shape = CircleShape
+            ),
+        contentAlignment = Alignment.Center
+    ) { content() }
+}
+
+@Composable
 private fun AudioTransport(
     isPlaying: Boolean,
     hasPrev: Boolean,
@@ -1456,6 +1517,7 @@ private fun AudioTransport(
     onSeekToStart: () -> Unit,
     onSeekToEnd: () -> Unit,
     playFocus: FocusRequester,
+    selectedId: String?,
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -1464,29 +1526,35 @@ private fun AudioTransport(
         modifier = modifier
     ) {
         if (hasPrev || hasNext) {
-            IconButton(onClick = onPrev, enabled = hasPrev) {
+            SelBox(selected = selectedId == "prev") {
+                IconButton(onClick = onPrev, enabled = hasPrev) {
+                    Icon(
+                        Icons.Filled.SkipPrevious, contentDescription = "Previous",
+                        tint = if (hasPrev) Color.White else Color(0x55FFFFFF),
+                        modifier = Modifier.size(34.dp)
+                    )
+                }
+            }
+            Spacer(Modifier.width(8.dp))
+        }
+        SelBox(selected = selectedId == "start") {
+            IconButton(onClick = onSeekToStart) {
                 Icon(
-                    Icons.Filled.SkipPrevious, contentDescription = "Previous",
-                    tint = if (hasPrev) Color.White else Color(0x55FFFFFF),
-                    modifier = Modifier.size(34.dp)
+                    Icons.Filled.FirstPage, contentDescription = "Start from beginning",
+                    tint = Color.White, modifier = Modifier.size(32.dp)
                 )
             }
-            Spacer(Modifier.width(16.dp))
         }
-        IconButton(onClick = onSeekToStart) {
-            Icon(
-                Icons.Filled.FirstPage, contentDescription = "Start from beginning",
-                tint = Color.White, modifier = Modifier.size(32.dp)
-            )
+        Spacer(Modifier.width(8.dp))
+        SelBox(selected = selectedId == "back") {
+            IconButton(onClick = onSeekBack) {
+                Icon(
+                    Icons.Filled.Replay10, contentDescription = "Back 10s",
+                    tint = Color.White, modifier = Modifier.size(38.dp)
+                )
+            }
         }
-        Spacer(Modifier.width(14.dp))
-        IconButton(onClick = onSeekBack) {
-            Icon(
-                Icons.Filled.Replay10, contentDescription = "Back 10s",
-                tint = Color.White, modifier = Modifier.size(38.dp)
-            )
-        }
-        Spacer(Modifier.width(28.dp))
+        Spacer(Modifier.width(16.dp))
         Box(
             modifier = Modifier
                 .size(64.dp)
@@ -1498,6 +1566,11 @@ private fun AudioTransport(
                 )
                 .clip(CircleShape)
                 .background(Brand.Accent)
+                .border(
+                    width = if (selectedId == "play") 3.dp else 0.dp,
+                    color = if (selectedId == "play") Color.White else Color.Transparent,
+                    shape = CircleShape
+                )
                 .focusRequester(playFocus)
                 .clickable(onClick = onTogglePlay),
             contentAlignment = Alignment.Center
@@ -1509,28 +1582,34 @@ private fun AudioTransport(
                 modifier = Modifier.size(36.dp)
             )
         }
-        Spacer(Modifier.width(28.dp))
-        IconButton(onClick = onSeekForward) {
-            Icon(
-                Icons.Filled.Forward10, contentDescription = "Forward 10s",
-                tint = Color.White, modifier = Modifier.size(38.dp)
-            )
+        Spacer(Modifier.width(16.dp))
+        SelBox(selected = selectedId == "fwd") {
+            IconButton(onClick = onSeekForward) {
+                Icon(
+                    Icons.Filled.Forward10, contentDescription = "Forward 10s",
+                    tint = Color.White, modifier = Modifier.size(38.dp)
+                )
+            }
         }
-        Spacer(Modifier.width(14.dp))
-        IconButton(onClick = onSeekToEnd) {
-            Icon(
-                Icons.Filled.LastPage, contentDescription = "Skip to end",
-                tint = Color.White, modifier = Modifier.size(32.dp)
-            )
+        Spacer(Modifier.width(8.dp))
+        SelBox(selected = selectedId == "end") {
+            IconButton(onClick = onSeekToEnd) {
+                Icon(
+                    Icons.Filled.LastPage, contentDescription = "Skip to end",
+                    tint = Color.White, modifier = Modifier.size(32.dp)
+                )
+            }
         }
         if (hasPrev || hasNext) {
-            Spacer(Modifier.width(16.dp))
-            IconButton(onClick = onNext, enabled = hasNext) {
-                Icon(
-                    Icons.Filled.SkipNext, contentDescription = "Next",
-                    tint = if (hasNext) Color.White else Color(0x55FFFFFF),
-                    modifier = Modifier.size(34.dp)
-                )
+            Spacer(Modifier.width(8.dp))
+            SelBox(selected = selectedId == "next") {
+                IconButton(onClick = onNext, enabled = hasNext) {
+                    Icon(
+                        Icons.Filled.SkipNext, contentDescription = "Next",
+                        tint = if (hasNext) Color.White else Color(0x55FFFFFF),
+                        modifier = Modifier.size(34.dp)
+                    )
+                }
             }
         }
     }
