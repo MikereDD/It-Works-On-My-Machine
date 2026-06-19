@@ -137,7 +137,7 @@ function Get-OpticalDrives {
 #  FORM (dark theme)
 # ════════════════════════════════════════════════════════════════
 $form = New-Object System.Windows.Forms.Form
-$form.Text = 'Media Encoder GUI  v0.3.4  (DVD / Blu-ray / File / Audio CD)'
+$form.Text = 'Media Encoder GUI  v0.3.9  (DVD / Blu-ray / File / Audio CD)'
 $form.Size = New-Object System.Drawing.Size(1240, 920)
 $form.MinimumSize = New-Object System.Drawing.Size(1040, 920)
 $form.StartPosition = 'CenterScreen'
@@ -553,6 +553,10 @@ function Start-Scan {
         $rs.SessionStateProxy.SetVariable('MinDur',  $MinTitleSecs)
         [void]$ps.AddScript({
             $env:DVDENCODER_NOMENU = '1'; . $DvdPath
+            # The engine sets $ErrorActionPreference='Stop' globally; that leaks into
+            # this runspace and turns HandBrake's normal stderr logging (captured via
+            # 2>&1) into a terminating error. Reset it so native stderr stays non-fatal.
+            $ErrorActionPreference = 'Continue'
             Write-Host 'engine: dvd-ripper-encoder loaded (HandBrake title scan)'
             try { Ensure-Dependencies } catch { Write-Host "ERROR: $($_.Exception.Message)"; return [pscustomobject]@{ Titles = @() } }
             Write-Host "HandBrakeCLI: $Script:HandBrakeCLI"
@@ -581,6 +585,24 @@ function Start-Scan {
                 }
             }
             if ($cur) { $titles += [pscustomobject]$cur }
+
+            if ($titles.Count -eq 0) {
+                # Surface what HandBrake actually reported so a zero-title scan is diagnosable.
+                Write-Host 'no titles parsed - HandBrake scan summary:'
+                $hbDir = Split-Path -Parent $Script:HandBrakeCLI
+                $hasCss = @('libdvdcss-2.dll','libdvdcss.dll') | Where-Object { Test-Path -LiteralPath (Join-Path $hbDir $_) }
+                foreach ($l in ($text -split "`r?`n")) {
+                    if ($l -match 'title\(s\)|dvdnav|libdvd|css|encrypt|VTS|\.IFO|unrecognized|invalid|cannot|failed|error') {
+                        Write-Host ('  | ' + ($l.Trim()))
+                    }
+                }
+                if (-not $hasCss) {
+                    Write-Host 'HINT: libdvdcss is missing and auto-install did not complete (see the libdvdcss line above).'
+                    Write-Host "      Install VLC (the GUI will reuse its copy), check your internet, or drop a bitness-matched libdvdcss-2.dll into: $hbDir"
+                    Write-Host "      Alternatively rip VIDEO_TS with MakeMKV first, then use 'Encode from existing folder'."
+                }
+            }
+
             return [pscustomobject]@{ Titles = @($titles) }
         })
     }
@@ -732,15 +754,25 @@ function Start-Encode {
         $ps=[powershell]::Create(); $ps.Runspace=$rs
         [void]$ps.AddScript({
             $env:DVDENCODER_NOMENU='1'; . $CliPath
+            $ErrorActionPreference = 'Continue'   # don't let the engine's global Stop turn HandBrake stderr into a fatal error
             try { Ensure-Dependencies } catch { Write-Host "ERROR: $($_.Exception.Message)"; return }
             Ensure-Directories
             $AutoAccept=$true; $DryRun=[bool]$DoDry; $Script:ArchiveSource=[bool]$DoArchive
             if (-not $DoRemux) { $Script:MkvPropEdit=$null }
             if ($Tune -eq 'auto') { try { $Tune=[string](Get-AutoTune -MovieName $Movie).Tune } catch { $Tune='' } }
             if ($Tune -eq 'none') { $Tune='' }
-            Encode-DvdTitle -InputPath $InputPath -TitleNumber $TitleNum -MovieName $Movie -Tune $Tune `
-                -Container $Container -RF $RF -Preset $Preset -AudioSelection $AudioSel -SubtitleSelection $SubSel `
-                -AudioCodes $AudioCodes -SubtitleCodes $SubCodes
+            Write-Host "encode: entering Encode-DvdTitle (title=$TitleNum, container=$Container, dryrun=$DoDry, archive=$DoArchive, remux=$DoRemux, tune='$Tune')"
+            Write-Host "encode: OutputRoot=$Script:OutputRoot  HandBrake=$Script:HandBrakeCLI"
+            try {
+                Encode-DvdTitle -InputPath $InputPath -TitleNumber $TitleNum -MovieName $Movie -Tune $Tune `
+                    -Container $Container -RF $RF -Preset $Preset -AudioSelection $AudioSel -SubtitleSelection $SubSel `
+                    -AudioCodes $AudioCodes -SubtitleCodes $SubCodes
+                Write-Host "encode: Encode-DvdTitle returned."
+            }
+            catch {
+                Write-Host "ENCODE ERROR: $($_.Exception.Message)"
+                Write-Host "ENCODE ERROR at: $($_.InvocationInfo.ScriptName):$($_.InvocationInfo.ScriptLineNumber)  -> $($_.InvocationInfo.Line.Trim())"
+            }
             try {
                 $newest = Get-ChildItem -LiteralPath $Script:OutputRoot -Filter "*.$Container" -File -ErrorAction SilentlyContinue |
                           Sort-Object LastWriteTime -Descending | Select-Object -First 1
@@ -1126,6 +1158,10 @@ function Start-EncodeTimer {
         try { $ret = $script:Ps.EndInvoke($script:Async) } catch { $threw = $true; Add-Log "    ERROR: $($_.Exception.Message)" }
         $inf = $script:Ps.Streams.Information
         while ($script:InfoIdx -lt $inf.Count) { Add-Log ('    ' + (Strip-Ansi $inf[$script:InfoIdx].ToString())); $script:InfoIdx++ }
+        try {
+            $errs = $script:Ps.Streams.Error
+            foreach ($e in $errs) { Add-Log ('    ERR ' + (Strip-Ansi $e.ToString())) }
+        } catch { }
         $finishedStage = $script:Stage
         try { $script:Ps.Dispose() } catch { }; try { $script:Rs.Dispose() } catch { }
         $script:Ps=$null; $script:Rs=$null; $script:Async=$null; $script:Timer=$null
@@ -1336,7 +1372,7 @@ catch {
 $form.Add_Shown({
     Write-DebugLog 'Add_Shown: fired'
     try {
-        Add-Log 'Media Encoder GUI v0.3.4  (DVD / Blu-ray / File / Audio CD)'
+        Add-Log 'Media Encoder GUI v0.3.9  (DVD / Blu-ray / File / Audio CD)'
         Add-Log 'Engines:'
         $engineMap = [ordered]@{
             'dvd-ripper-encoder.ps1' = $DvdEncoderPath

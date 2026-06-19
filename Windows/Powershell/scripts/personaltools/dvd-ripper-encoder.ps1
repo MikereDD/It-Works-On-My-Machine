@@ -1,14 +1,17 @@
 ﻿#--------------------------------------------
 # file:     dvd-ripper-encoder.ps1
 # author:   Mike Redd
-# version:  4.0
+# version:  4.3
 # created:  2026-04-11
-# updated:  2026-06-16
+# updated:  2026-06-18
 # desc:     Encode DVDs directly with HandBrakeCLI on Windows
 #           using high-quality x265 defaults. Sibling pipeline
 #           to BRencoder.ps1: DVDTrackMeta sidecars, mkvpropedit
 #           language remux, source archiving, and -AutoAccept
 #           for unattended encodes.
+#           v4.2: auto-install libdvdcss (version-discovery fetch)
+#                 bitness-matched, cached, self-healing on updates.
+#           v4.3: stream HandBrake output + exit-code check on encode.
 #--------------------------------------------
 
 param(
@@ -47,7 +50,7 @@ else {
 $ErrorActionPreference = 'Stop'
 
 $ScriptName    = "DVD Ripper Encoder"
-$ScriptVersion = "4.0"
+$ScriptVersion = "4.3"
 $ScriptAuthor  = "Mike Redd"
 
 # ── Config ────────────────────────────────────────────────────
@@ -189,6 +192,130 @@ function Ensure-Directories {
     }
 }
 
+# Read the PE "Machine" field of a Windows binary so we never pair a 32-bit
+# libdvdcss with a 64-bit HandBrake (or vice-versa). Returns 0x8664 (x64),
+# 0x14c (x86), or 0 if it can't be read.
+function Get-PEMachine {
+    param([Parameter(Mandatory)][string]$Path)
+    try {
+        $fs = [System.IO.File]::OpenRead($Path)
+        try {
+            $br = New-Object System.IO.BinaryReader($fs)
+            $fs.Position = 0x3C
+            $peOff = $br.ReadInt32()
+            if ($peOff -le 0 -or $peOff -gt ($fs.Length - 6)) { return 0 }
+            $fs.Position = $peOff
+            if ($br.ReadUInt32() -ne 0x00004550) { return 0 }   # 'PE\0\0'
+            return [int]$br.ReadUInt16()
+        }
+        finally { $fs.Dispose() }
+    }
+    catch { return 0 }
+}
+
+# Build an ordered list of libdvdcss download URLs, newest-first. VideoLAN has
+# no '/last/' symlink — versions live under /<x.y.z>/<arch>/ — so we read the
+# directory index to find the newest build, then append known-good fallbacks.
+function Get-LibDvdCssUrls {
+    param([Parameter(Mandatory)][string]$Arch)   # 'win64' | 'win32'
+
+    $base     = 'https://download.videolan.org/pub/libdvdcss'
+    $versions = @()
+    try {
+        try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 } catch { }
+        $idx = (Invoke-WebRequest -Uri "$base/" -UseBasicParsing -TimeoutSec 30).Content
+        $versions = @([regex]::Matches($idx, 'href="(\d+\.\d+\.\d+)/"') | ForEach-Object { $_.Groups[1].Value }) |
+                    Sort-Object { [version]$_ } -Descending
+    }
+    catch { }
+
+    # Versions known to ship prebuilt Windows binaries (newest-first), used if the
+    # index can't be read or as a backstop after it.
+    $fallback = @('1.4.3', '1.4.2', '1.4.0', '1.3.0', '1.2.13', '1.2.12', '1.2.11')
+
+    $ordered = @($versions + $fallback) | Select-Object -Unique
+    return $ordered | ForEach-Object { "$base/$_/$Arch/libdvdcss-2.dll" }
+}
+
+# HandBrake removed its built-in CSS support long ago, so a retail (CSS) DVD
+# scans as zero titles unless libdvdcss-2.dll sits next to HandBrakeCLI.exe.
+# This makes that self-healing:
+#   1. already present            -> done
+#   2. cached from a prior run    -> copy into place (survives WinGet upgrades cheaply)
+#   3. VLC's bundled copy         -> cache + copy (bitness-matched)
+#   4. download from VideoLAN     -> tries newest build first, falls through versions
+# Never throws; a retail DVD just stays unreadable if every source fails.
+function Ensure-LibDvdCss {
+    param([Parameter(Mandatory)][string]$HandBrakeExe)
+
+    if ([string]::IsNullOrWhiteSpace($HandBrakeExe) -or -not (Test-Path -LiteralPath $HandBrakeExe)) {
+        return [pscustomobject]@{ Status = 'no-handbrake' }
+    }
+
+    $hbDir  = Split-Path -Parent $HandBrakeExe
+    $target = Join-Path $hbDir 'libdvdcss-2.dll'
+    if (Test-Path -LiteralPath $target) {
+        return [pscustomobject]@{ Status = 'present'; Path = $target }
+    }
+
+    $hbMachine = Get-PEMachine -Path $HandBrakeExe
+    if ($hbMachine -ne 0x8664 -and $hbMachine -ne 0x14c) { $hbMachine = 0x8664 }  # assume x64 if unreadable
+    $arch = if ($hbMachine -eq 0x14c) { 'win32' } else { 'win64' }
+
+    $cacheDir = Join-Path $env:LOCALAPPDATA 'MediaEncoderGUI'
+    $cache    = Join-Path $cacheDir "libdvdcss-2.$arch.dll"
+    if (-not (Test-Path -LiteralPath $cacheDir)) {
+        try { [void](New-Item -ItemType Directory -Force -Path $cacheDir) } catch { }
+    }
+
+    function Copy-Css { param($from, $to) try { Copy-Item -LiteralPath $from -Destination $to -Force; return (Test-Path -LiteralPath $to) } catch { return $false } }
+    function Test-CssDll { param($p) (Test-Path -LiteralPath $p) -and ((Get-Item -LiteralPath $p).Length -gt 20000) -and ((Get-PEMachine -Path $p) -eq $hbMachine) }
+
+    # 2) cache hit
+    if (Test-Path -LiteralPath $cache) {
+        if (Copy-Css $cache $target) {
+            return [pscustomobject]@{ Status = 'restored-from-cache'; Path = $target }
+        }
+    }
+
+    # 3) VLC's bundled copy (only if its bitness matches HandBrake)
+    $vlc = @(
+        (Join-Path $env:ProgramFiles 'VideoLAN\VLC\libdvdcss-2.dll'),
+        (Join-Path ${env:ProgramFiles(x86)} 'VideoLAN\VLC\libdvdcss-2.dll')
+    ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) -and (Get-PEMachine -Path $_) -eq $hbMachine } | Select-Object -First 1
+    if ($vlc) {
+        [void](Copy-Css $vlc $cache)
+        if (Copy-Css $vlc $target) {
+            return [pscustomobject]@{ Status = 'copied-from-vlc'; Path = $target; Source = $vlc }
+        }
+    }
+
+    # 4) download from VideoLAN — try newest build first, fall through versions
+    try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 } catch { }
+    $urls    = Get-LibDvdCssUrls -Arch $arch
+    $tmp     = Join-Path $cacheDir "libdvdcss-2.$arch.tmp"
+    $lastErr = 'no candidate URLs'
+    foreach ($u in $urls) {
+        try {
+            if (Test-Path -LiteralPath $tmp) { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue }
+            Invoke-WebRequest -Uri $u -OutFile $tmp -UseBasicParsing -TimeoutSec 60
+            if (Test-CssDll $tmp) {
+                Move-Item -LiteralPath $tmp -Destination $cache -Force
+                if (Copy-Css $cache $target) {
+                    return [pscustomobject]@{ Status = 'downloaded'; Path = $target; Source = $u }
+                }
+                $lastErr = "downloaded but could not place into $hbDir"
+            }
+            else {
+                $lastErr = "validation failed (size/bitness) for $u"
+                try { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue } catch { }
+            }
+        }
+        catch { $lastErr = "$($_.Exception.Message)  [$u]" }
+    }
+    return [pscustomobject]@{ Status = 'failed'; Arch = $arch; Error = $lastErr }
+}
+
 function Ensure-Dependencies {
     $resolvedCli = Get-HandBrakeCLIPath
     if (-not $resolvedCli) {
@@ -196,6 +323,20 @@ function Ensure-Dependencies {
     }
 
     $Script:HandBrakeCLI = $resolvedCli
+
+    # Make sure HandBrake can actually decrypt retail DVDs (auto-install libdvdcss).
+    $css = Ensure-LibDvdCss -HandBrakeExe $Script:HandBrakeCLI
+    switch ($css.Status) {
+        'present'             { Write-Host "  $($global:UI_GRY)libdvdcss present — retail DVDs OK.$($global:UI_R)" }
+        'restored-from-cache' { Write-Host "  $($global:UI_GRN)libdvdcss restored from cache (post-update).$($global:UI_R)" }
+        'copied-from-vlc'     { Write-Host "  $($global:UI_GRN)libdvdcss installed from VLC.$($global:UI_R)" }
+        'downloaded'          { Write-Host "  $($global:UI_GRN)libdvdcss downloaded from VideoLAN and installed.$($global:UI_R)" }
+        'failed'              {
+            Write-Host "  $($global:UI_YLW)Could not auto-install libdvdcss ($($css.Arch)).$($global:UI_R)"
+            Write-Host "  $($global:UI_GRY)Reason: $($css.Error)$($global:UI_R)"
+            Write-Host "  $($global:UI_GRY)Retail DVDs will scan as 0 titles. Install VLC, or drop $($css.Arch) libdvdcss-2.dll next to HandBrakeCLI.exe.$($global:UI_R)"
+        }
+    }
 
     # mkvpropedit is optional — only needed for the language remux step.
     $resolvedMkv = Get-MkvPropEditPath
@@ -831,10 +972,23 @@ function Encode-DvdTitle {
         return
     }
 
-    & $Script:HandBrakeCLI @encodeArgs
+    Write-Host "  $($global:UI_GRN)HandBrake encode starting — output streams below.$($global:UI_R)"
+    Write-Host ("  {0}Cmd{1} {2} {3}" -f $global:UI_DIM, $global:UI_R, $Script:HandBrakeCLI, ($encodeArgs -join ' '))
 
+    # Merge stderr (where HandBrake logs + progress) into the pipeline and echo each
+    # line via Write-Host so it surfaces in the GUI log (and the console). Without this
+    # the encode runs blind: native output lands in streams the GUI never reads.
+    & $Script:HandBrakeCLI @encodeArgs 2>&1 | ForEach-Object {
+        Write-Host ("  HB| " + (($_ | Out-String).TrimEnd() -replace "\x1b\[[0-9;]*[A-Za-z]", ''))
+    }
+    $hbExit = $LASTEXITCODE
+    Write-Host "  $($global:UI_DIM)HandBrake exit code:$($global:UI_R) $hbExit"
+
+    if ($hbExit -ne 0) {
+        throw "HandBrake exited with code $hbExit — no usable output. See the HB| lines above."
+    }
     if (-not (Test-Path -LiteralPath $outputFile)) {
-        throw "Encode appears to have failed. Output file not found."
+        throw "Encode finished (exit 0) but no output file at: $outputFile"
     }
 
     Write-UiBlankLine
