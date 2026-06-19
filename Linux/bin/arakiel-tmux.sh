@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # file: arakiel-tmux.sh
-# version: 1.4
+# version: 1.5
 # desc: tmux loader for arakiel bots workspace
 
 SESSION="arakiel"
@@ -61,6 +61,15 @@ tmux send-keys -t "$SESSION:2.4" \
 # Pane 5 → logs shell
 tmux send-keys -t "$SESSION:2.5" \
   "cd '$LOGS' && ls -lah" C-m
+
+# ── Label panes on their borders ────────────
+tmux setw -t "$SESSION:2" pane-border-status top
+tmux setw -t "$SESSION:2" pane-border-format " #[fg=#81a1c1]#P#[fg=#d8dee9] #{pane_title} "
+tmux select-pane -t "$SESSION:2.1" -T "ytbot (Raziel)"
+tmux select-pane -t "$SESSION:2.2" -T "musicbot (Sandalphon)"
+tmux select-pane -t "$SESSION:2.3" -T "aibot (Zahkiel)"
+tmux select-pane -t "$SESSION:2.4" -T "Gabriel (cardbot)"
+tmux select-pane -t "$SESSION:2.5" -T "logs"
 
 # ── Window 3: scratch ───────────────────────
 tmux new-window -t "$SESSION:3" -n scratch
