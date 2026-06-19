@@ -717,11 +717,12 @@ private fun VlcPlayer(
     }
 
     val focus = remember { FocusRequester() }
-    // Focus target for the on-screen transport (seeded on the play/pause button)
-    // so a TV remote can move across the control buttons.
+    // Seeded on the play/pause button so something inside the player surface holds
+    // focus and the root's key handler receives the remote's D-pad events.
     val transportFocus = remember { FocusRequester() }
-    // When controls are visible, put focus on the transport so the D-pad can move
-    // between buttons; when hidden, the root surface catches the first press.
+    // True while Left/Right is being held (auto-repeating), so the key-up doesn't
+    // also fire a 10s seek after a hold has already jumped to start/end.
+    var heldSeek by remember { mutableStateOf(false) }
     LaunchedEffect(controlsVisible, showTracks, hasVideo) {
         if (showTracks) return@LaunchedEffect
         delay(60)
@@ -740,8 +741,7 @@ private fun VlcPlayer(
                 // While the track picker is open, let the dialog handle navigation.
                 if (showTracks) return@onPreviewKeyEvent false
 
-                // Hardware media keys + the options/Menu key act directly,
-                // regardless of where focus currently sits.
+                // Hardware media keys + the options/Menu key act directly (on key-up).
                 val direct = when (e.key) {
                     Key.MediaPlayPause, Key.MediaRewind, Key.MediaFastForward,
                     Key.MediaNext, Key.MediaPrevious, Key.Menu -> true
@@ -760,31 +760,51 @@ private fun VlcPlayer(
                     return@onPreviewKeyEvent true
                 }
 
-                val dpad = when (e.key) {
-                    Key.DirectionCenter, Key.Enter, Key.Spacebar,
-                    Key.DirectionLeft, Key.DirectionRight,
-                    Key.DirectionUp, Key.DirectionDown -> true
-                    else -> false
-                }
-                if (!dpad) return@onPreviewKeyEvent false
-                if (e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                val isLeft = e.key == Key.DirectionLeft
+                val isRight = e.key == Key.DirectionRight
+                val isCenter = e.key == Key.DirectionCenter ||
+                    e.key == Key.Enter || e.key == Key.Spacebar
+                val isUp = e.key == Key.DirectionUp
+                val isDown = e.key == Key.DirectionDown
+                if (!(isLeft || isRight || isCenter || isUp || isDown))
+                    return@onPreviewKeyEvent false
 
-                // Controls hidden: first press just brings them up and lands focus
-                // on the transport.
+                // Controls hidden: the first press only wakes them.
                 if (!controlsVisible) {
-                    reveal()
-                    runCatching { transportFocus.requestFocus() }
+                    if (e.type == KeyEventType.KeyDown) reveal()
                     return@onPreviewKeyEvent true
                 }
-                // Up opens the audio/subtitle picker as a shortcut.
-                if (e.key == Key.DirectionUp) {
-                    refreshTrackLists(); showTracks = true
-                    return@onPreviewKeyEvent true
+
+                when {
+                    // OK / Enter -> play/pause.
+                    isCenter -> if (e.type == KeyEventType.KeyUp) togglePlay()
+                    // Up -> audio/subtitle picker. Down -> keep controls awake.
+                    isUp -> if (e.type == KeyEventType.KeyUp) {
+                        refreshTrackLists(); showTracks = true
+                    }
+                    isDown -> if (e.type == KeyEventType.KeyDown) reveal()
+                    // Left/Right: tap = seek 10s, hold (auto-repeat) = jump start/end.
+                    isLeft || isRight -> {
+                        if (e.type == KeyEventType.KeyDown) {
+                            if (e.nativeKeyEvent.repeatCount >= 1 && !heldSeek) {
+                                heldSeek = true
+                                if (isLeft) {
+                                    player.time = 0; positionMs = 0
+                                } else if (durationMs > 0) {
+                                    val t = (durationMs - 1500).coerceAtLeast(0L)
+                                    player.time = t; positionMs = t
+                                }
+                                reveal()
+                            }
+                        } else {
+                            if (!heldSeek) {
+                                if (isLeft) seekBy(-10_000) else seekBy(10_000)
+                            }
+                            heldSeek = false
+                        }
+                    }
                 }
-                // Everything else flows to the focusable buttons (Left/Right move
-                // focus, Center activates). Keep the bar from auto-hiding mid-use.
-                reveal()
-                false
+                true
             }
             .pointerInput(Unit) {
                 detectTapGestures(onTap = { if (controlsVisible) controlsVisible = false else reveal() })
