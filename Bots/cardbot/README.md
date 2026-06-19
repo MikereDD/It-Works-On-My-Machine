@@ -3,7 +3,7 @@
 > A typezerø Project
 > Built for real-world use, not perfection.
 
-![Version](https://img.shields.io/badge/version-v0.3.0-blue) ![Python](https://img.shields.io/badge/python-3.10+-blue) ![License](https://img.shields.io/badge/license-WTFPL-lightgrey)
+![Version](https://img.shields.io/badge/version-v0.4.0-blue) ![Python](https://img.shields.io/badge/python-3.10+-blue) ![License](https://img.shields.io/badge/license-WTFPL-lightgrey)
 
 ---
 
@@ -38,8 +38,9 @@ Link → Fetch → Extract OG → Render Card → Reply
 
 - Open Graph / Twitter Card extraction
 - Pillow-rendered preview card
-- dark theme, cyan accent
-- hero image cover-crop (1.92:1)
+- dark theme, cyan→teal accent
+- favicon source-chip next to the domain
+- hero image cover-crop with gradient blend into the body (1.92:1)
 - title and blurb wrapping with ellipsis
 - text-only fallback for tiny or missing images
 

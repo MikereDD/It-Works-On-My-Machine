@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file: cardbot.py
 # author: Mike Redd
-# version: 0.3.0
+# version: 0.4.0
 # created: 2026-06-18
 # updated: 2026-06-18
 # desc: "Gabriel" - Telegram link-card bot.
@@ -30,7 +30,7 @@ from urllib.parse import (
 
 # ── Branding ─────────────────────────────────────────────────
 BOT_NAME = "Gabriel"
-BOT_VERSION = "0.3.0"
+BOT_VERSION = "0.4.0"
 
 import httpx
 from bs4 import BeautifulSoup
@@ -106,21 +106,24 @@ logging.basicConfig(
 log = logging.getLogger("cardbot")
 log.setLevel(logging.INFO if DEBUG_MODE else logging.WARNING)
 
-# ── Card layout / theme  (dark, cyan accent) ─────────────────
+# ── Card layout / theme  (dark, cyan->teal accent) ───────────
 CARD_W = 1000
-HERO_H = 520            # 1000x520 ~= 1.92:1, the standard OG image ratio
-PAD = 48
-LINE_GAP = 10
+HERO_H = 540
+FADE_H = 190           # hero -> body gradient blend height
+PAD_X = 56
 
-BG = (18, 18, 22)
-FG_TITLE = (240, 240, 245)
-FG_BODY = (165, 168, 180)
-FG_META = (110, 200, 255)   # cyan
-ACCENT = (110, 200, 255)
+BG_TOP = (23, 24, 31)
+BG_BOT = (14, 14, 18)
+FG_TITLE = (243, 244, 248)
+FG_BODY = (165, 169, 182)
+FG_META = (122, 206, 255)
+ACCENT_A = (110, 200, 255)   # cyan
+ACCENT_B = (78, 222, 200)    # teal
 
 # ── Behaviour tunables ───────────────────────────────────────
 MIN_HERO_PX = 400                      # short side; smaller -> text-only card
 MAX_IMAGE_BYTES = 12 * 1024 * 1024     # skip oversized hero downloads
+MAX_FAVICON_BYTES = 2 * 1024 * 1024
 MAX_TITLE_CHARS = 250                  # keep caption under Telegram's 1024 limit
 DEDUP_TTL = 30.0                       # seconds; suppress repeat link in a chat
 HTTP_TIMEOUT = 15.0
@@ -294,47 +297,115 @@ def _cover(img: Image.Image, w: int, h: int) -> Image.Image:
     return img.crop((left, top, left + w, top + h))
 
 # ── Card rendering ───────────────────────────────────────────
-def render_card(title, description, domain, hero: Image.Image | None) -> bytes:
-    title_font = _load_font(True, 46)
+def _vgrad(w: int, h: int, top, bot) -> Image.Image:
+    """Vertical gradient (top -> bot)."""
+    col = Image.new("RGB", (1, h))
+    for y in range(h):
+        t = y / max(1, h - 1)
+        col.putpixel((0, y), tuple(int(top[i] + (bot[i] - top[i]) * t) for i in range(3)))
+    return col.resize((w, h))
+
+
+def _hgrad_bar(w: int, h: int, a, b, radius: int) -> Image.Image:
+    """Horizontal gradient bar (a -> b), rounded corners, transparent outside."""
+    col = Image.new("RGB", (w, 1))
+    for x in range(w):
+        t = x / max(1, w - 1)
+        col.putpixel((x, 0), tuple(int(a[i] + (b[i] - a[i]) * t) for i in range(3)))
+    col = col.resize((w, h)).convert("RGBA")
+    mask = Image.new("L", (w, h), 0)
+    ImageDraw.Draw(mask).rounded_rectangle([0, 0, w - 1, h - 1], radius=radius, fill=255)
+    bar = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    bar.paste(col, (0, 0), mask)
+    return bar
+
+
+def _round_icon(img: Image.Image, size: int, radius: int) -> Image.Image:
+    """Square favicon -> rounded-rect chip."""
+    img = img.convert("RGBA").resize((size, size), Image.LANCZOS)
+    mask = Image.new("L", (size, size), 0)
+    ImageDraw.Draw(mask).rounded_rectangle([0, 0, size - 1, size - 1], radius=radius, fill=255)
+    out = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    out.paste(img, (0, 0), mask)
+    return out
+
+
+def _tracked(draw, xy, text, font, fill, tracking):
+    """Draw text with letter-spacing; return the end x."""
+    x, y = xy
+    for ch in text:
+        draw.text((x, y), ch, font=font, fill=fill)
+        x += draw.textlength(ch, font=font) + tracking
+    return x
+
+
+def render_card(title, description, domain,
+                hero: Image.Image | None = None,
+                favicon: Image.Image | None = None) -> bytes:
+    title_font = _load_font(True, 48)
     body_font = _load_font(False, 30)
-    meta_font = _load_font(True, 26)
+    meta_font = _load_font(True, 25)
+    inner_w = CARD_W - 2 * PAD_X
 
-    measure = ImageDraw.Draw(Image.new("RGB", (CARD_W, 10)))
-    inner_w = CARD_W - 2 * PAD
-
+    measure = ImageDraw.Draw(Image.new("RGB", (CARD_W, 4)))
     title_lines = _wrap(measure, title or "(untitled)", title_font, inner_w, 3)
     body_lines = _wrap(measure, description, body_font, inner_w, 4) if description else []
 
-    th = len(title_lines) * _line_h(title_font) + LINE_GAP * (len(title_lines) - 1)
-    bh = (len(body_lines) * _line_h(body_font) + LINE_GAP * (len(body_lines) - 1)) if body_lines else 0
-    meta_h = _line_h(meta_font)
+    title_lh = int(_line_h(title_font) * 0.98)
+    body_lh = int(_line_h(body_font) * 1.18)
+    src_h = 40
+    accent_gap, accent_h = 18, 4
 
-    top = HERO_H if hero is not None else 8
-    content_h = meta_h + 18 + th + ((24 + bh) if bh else 0)
-    card_h = top + PAD + content_h + PAD
+    body_top = (HERO_H + 30) if hero is not None else 64
+    th = len(title_lines) * title_lh
+    bh = (len(body_lines) * body_lh + 18) if body_lines else 0
+    content_h = src_h + accent_gap + accent_h + 22 + th + bh
+    card_h = body_top + content_h + 56
 
-    card = Image.new("RGB", (CARD_W, card_h), BG)
-    draw = ImageDraw.Draw(card)
+    card = _vgrad(CARD_W, card_h, BG_TOP, BG_BOT).convert("RGBA")
 
     if hero is not None:
         card.paste(_cover(hero, CARD_W, HERO_H), (0, 0))
+        ov = Image.new("RGBA", card.size, (0, 0, 0, 0))
+        od = ImageDraw.Draw(ov)
+        for i in range(FADE_H):              # blend hero bottom into the body
+            a = int(255 * (i / (FADE_H - 1)) ** 1.45)
+            yb = HERO_H - FADE_H + i
+            od.line([(0, yb), (CARD_W, yb)], fill=(BG_TOP[0], BG_TOP[1], BG_TOP[2], a))
+        card = Image.alpha_composite(card, ov)
     else:
-        draw.rectangle([0, 0, CARD_W, 8], fill=ACCENT)   # accent band when no image
+        card.alpha_composite(_hgrad_bar(CARD_W, 8, ACCENT_A, ACCENT_B, 0), (0, 0))
 
-    y = top + PAD
-    draw.text((PAD, y), domain.upper(), font=meta_font, fill=FG_META)
-    y += meta_h + 18
+    draw = ImageDraw.Draw(card)
+    y = body_top
+
+    # source row: favicon chip + tracked domain
+    x = PAD_X
+    if favicon is not None:
+        card.alpha_composite(_round_icon(favicon, 36, 9), (x, y + (src_h - 36) // 2 - 2))
+        x += 36 + 16
+    dom_y = y + (src_h - _line_h(meta_font)) // 2 - 2
+    _tracked(draw, (x, dom_y), domain.upper(), meta_font, FG_META, 2)
+    y += src_h + accent_gap
+
+    # accent bar
+    card.alpha_composite(_hgrad_bar(64, accent_h, ACCENT_A, ACCENT_B, accent_h // 2), (PAD_X, y))
+    y += accent_h + 22
+
+    # title
     for ln in title_lines:
-        draw.text((PAD, y), ln, font=title_font, fill=FG_TITLE)
-        y += _line_h(title_font) + LINE_GAP
+        draw.text((PAD_X, y), ln, font=title_font, fill=FG_TITLE)
+        y += title_lh
+
+    # description
     if body_lines:
-        y += 14
+        y += 18
         for ln in body_lines:
-            draw.text((PAD, y), ln, font=body_font, fill=FG_BODY)
-            y += _line_h(body_font) + LINE_GAP
+            draw.text((PAD_X, y), ln, font=body_font, fill=FG_BODY)
+            y += body_lh
 
     buf = io.BytesIO()
-    card.save(buf, format="PNG")
+    card.convert("RGB").save(buf, format="PNG")
     return buf.getvalue()
 
 # ── Fetch / metadata ─────────────────────────────────────────
@@ -358,6 +429,25 @@ def _meta(soup: BeautifulSoup, *names):
     return None
 
 
+def _icon_url(soup: BeautifulSoup, base_url: str) -> str:
+    """Best favicon: apple-touch-icon > any icon link > /favicon.ico."""
+    best = None
+    for link in soup.find_all("link"):
+        rel = link.get("rel") or []
+        rel = " ".join(rel).lower() if isinstance(rel, list) else str(rel).lower()
+        href = link.get("href")
+        if "icon" not in rel or not href:
+            continue
+        url = urljoin(base_url, href.strip())
+        if "apple-touch-icon" in rel:
+            return url
+        best = best or url
+    if best:
+        return best
+    p = urlsplit(base_url)
+    return urlunsplit((p.scheme, p.netloc, "/favicon.ico", "", ""))
+
+
 def extract_metadata(html_text: str, base_url: str) -> dict:
     soup = BeautifulSoup(html_text, "html.parser")
     title = _clean_text(_meta(soup, "og:title", "twitter:title")) or _clean_text(
@@ -368,7 +458,9 @@ def extract_metadata(html_text: str, base_url: str) -> dict:
     if img:
         img = urljoin(base_url, img.strip())
     domain = urlparse(base_url).netloc.replace("www.", "")
-    return {"title": title, "description": desc, "image": img, "domain": domain}
+    favicon = _icon_url(soup, base_url)
+    return {"title": title, "description": desc, "image": img,
+            "favicon": favicon, "domain": domain}
 
 
 async def fetch_image(url: str | None):
@@ -388,6 +480,25 @@ async def fetch_image(url: str | None):
             return img
     except Exception as e:  # noqa: BLE001
         log.warning("hero image failed: %s", e)
+        return None
+
+
+async def fetch_favicon(url: str | None):
+    if not url:
+        return None
+    try:
+        async with httpx.AsyncClient(
+            headers={"User-Agent": USER_AGENT}, follow_redirects=True, timeout=HTTP_TIMEOUT
+        ) as client:
+            r = await client.get(url)
+            r.raise_for_status()
+            if len(r.content) > MAX_FAVICON_BYTES:
+                return None
+            img = Image.open(io.BytesIO(r.content))
+            img.load()
+            return img
+    except Exception as e:  # noqa: BLE001
+        log.warning("favicon failed: %s", e)
         return None
 
 # ── Access control  (mirrors ytbot's group auto-watch model) ─
@@ -494,8 +605,9 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
         hero = await fetch_image(meta["image"])
         if hero is not None and min(hero.size) < MIN_HERO_PX:
             hero = None             # too small -> clean text card, not a blurry upscale
+        favicon = await fetch_favicon(meta.get("favicon"))
         png = await asyncio.to_thread(
-            render_card, meta["title"], meta["description"], meta["domain"], hero
+            render_card, meta["title"], meta["description"], meta["domain"], hero, favicon
         )
     except Exception as e:  # noqa: BLE001
         log.warning("card build failed for %s: %s", url, e)

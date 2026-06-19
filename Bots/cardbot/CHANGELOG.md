@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-06-18
+
+### Added
+- Favicon source-chip: the site's icon (`apple-touch-icon` > `icon` link >
+  `/favicon.ico`) is fetched and shown as a rounded chip next to the domain.
+
+### Changed
+- Redesigned card: the hero image now gradient-blends into the body (no hard
+  seam), a subtle vertical background gradient adds depth, a cyan→teal accent
+  runs as a top bar on text-only cards and a short bar under the source row,
+  the domain is letter-spaced uppercase, and title/description spacing is
+  tightened up.
+
 ## [0.3.0] - 2026-06-18
 
 ### Added
@@ -67,7 +80,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Card rendering runs in a worker thread to avoid blocking the event loop;
   `HTTPXRequest` timeouts configured for Telegram I/O.
 
-[Unreleased]: https://github.com/MikereDD/It-Works-On-My-Machine/compare/cardbot-v0.3.0...HEAD
+[Unreleased]: https://github.com/MikereDD/It-Works-On-My-Machine/compare/cardbot-v0.4.0...HEAD
+[0.4.0]: https://github.com/MikereDD/It-Works-On-My-Machine/compare/cardbot-v0.3.0...cardbot-v0.4.0
 [0.3.0]: https://github.com/MikereDD/It-Works-On-My-Machine/compare/cardbot-v0.2.0...cardbot-v0.3.0
 [0.2.0]: https://github.com/MikereDD/It-Works-On-My-Machine/compare/cardbot-v0.1.0...cardbot-v0.2.0
 [0.1.0]: https://github.com/MikereDD/It-Works-On-My-Machine/releases/tag/cardbot-v0.1.0
