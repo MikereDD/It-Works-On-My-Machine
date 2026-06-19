@@ -1,11 +1,11 @@
-🤖 Bots
+# 🤖 Bots
 
-«Raziel. Zaphkiel. Sandalphon.
-Three bots. One workflow.»
+«Raziel. Zaphkiel. Sandalphon. Gabriel.
+Four bots. One workflow.»
 
 ---
 
-🧠 Overview
+# 🧠 Overview
 
 This directory contains my personal Telegram bots.
 
@@ -17,30 +17,37 @@ They are built for real use, not polish.
 
 ---
 
-⚔️ The Lineup
+# ⚔️ The Lineup
 
-🔴 Raziel — YTBot
+## 🔴 Raziel — YTBot
 
 «YouTube download & media handler
-📂 ""ytbot/"" (./ytbot/)»
+📂 [`ytbot/`](./ytbot/)»
 
 ---
 
-🔵 Zaphkiel — AIBot
+## 🔵 Zaphkiel — AIBot
 
 «AI assistant & automation brain
-📂 ""aibot/"" (./aibot/)»
+📂 [`aibot/`](./aibot/)»
 
 ---
 
-🟣 Sandalphon — MusicBot
+## 🟣 Sandalphon — MusicBot
 
 «Music streaming & audio control
-📂 ""musicbot/"" (./musicbot/)»
+📂 [`musicbot/`](./musicbot/)»
 
 ---
 
-⚙️ Notes
+## 🟢 Gabriel — CardBot
+
+«Open Graph link-preview card renderer
+📂 [`cardbot/`](./cardbot/)»
+
+---
+
+# ⚙️ Notes
 
 - Bots are independent
 - Each has its own config
@@ -49,11 +56,13 @@ They are built for real use, not polish.
 
 ---
 
-🔐 Config
+# 🔐 Config
 
 Each bot expects a config file (not included):
 
+```
 config.py / config.sh / environment variables
+```
 
 Typical values:
 
@@ -64,30 +73,36 @@ Typical values:
 
 ---
 
-🚀 Running
+# 🚀 Running
 
 Each bot can be run manually or via tmux/systemd:
 
+```
 python ytbot.py
 python aibot.py
 python musicbot.py
+python cardbot.py
+```
 
 Or your custom launcher (arakiel 👀).
 
 ---
 
-📊 Logging (recommended)
+# 📊 Logging (recommended)
 
+```
 logs/
   ytbot.log
   aibot.log
   musicbot.log
+  cardbot.log
+```
 
 Keep logs centralized. It will save you time when debugging.
 
 ---
 
-⚠️ Reality Check
+# ⚠️ Reality Check
 
 - These are not polished projects
 - They are not plug-and-play
@@ -103,7 +118,7 @@ If something breaks:
 
 ---
 
-🧩 Future
+# 🧩 Future
 
 - Unified control panel (CLI first, maybe web later)
 - Shared logging system
@@ -112,7 +127,7 @@ If something breaks:
 
 ---
 
-🧠 Final
+# 🧠 Final
 
 These bots exist because doing things manually is boring.
 
