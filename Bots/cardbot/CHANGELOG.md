@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-06-19
+
+### Added
+- Post captions now include the post text in quotes — under the title line and
+  above the link — so the words are selectable and searchable in Telegram (the
+  card image isn't). Applies to X and Telegram posts; article captions are
+  unchanged.
+
 ## [0.7.0] - 2026-06-19
 
 ### Added
@@ -136,7 +144,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Card rendering runs in a worker thread to avoid blocking the event loop;
   `HTTPXRequest` timeouts configured for Telegram I/O.
 
-[Unreleased]: https://github.com/MikereDD/It-Works-On-My-Machine/compare/cardbot-v0.7.0...HEAD
+[Unreleased]: https://github.com/MikereDD/It-Works-On-My-Machine/compare/cardbot-v0.7.1...HEAD
+[0.7.1]: https://github.com/MikereDD/It-Works-On-My-Machine/compare/cardbot-v0.7.0...cardbot-v0.7.1
 [0.7.0]: https://github.com/MikereDD/It-Works-On-My-Machine/compare/cardbot-v0.6.0...cardbot-v0.7.0
 [0.6.0]: https://github.com/MikereDD/It-Works-On-My-Machine/compare/cardbot-v0.5.0...cardbot-v0.6.0
 [0.5.0]: https://github.com/MikereDD/It-Works-On-My-Machine/compare/cardbot-v0.4.0...cardbot-v0.5.0

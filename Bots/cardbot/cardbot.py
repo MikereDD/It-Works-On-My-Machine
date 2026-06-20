@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file: cardbot.py
 # author: Mike Redd
-# version: 0.7.0
+# version: 0.7.1
 # created: 2026-06-18
 # updated: 2026-06-18
 # desc: "Gabriel" - Telegram link-card bot.
@@ -31,7 +31,7 @@ from urllib.parse import (
 
 # ── Branding ─────────────────────────────────────────────────
 BOT_NAME = "Gabriel"
-BOT_VERSION = "0.7.0"
+BOT_VERSION = "0.7.1"
 
 import httpx
 from bs4 import BeautifulSoup
@@ -1027,6 +1027,21 @@ def build_caption(title: str, url: str) -> str:
     return f"<b>{html.escape(title)}</b>\n{url}"
 
 
+def build_post_caption(title: str, text: str, url: str) -> str:
+    """Caption for posts: title line, the post text in quotes, then the link."""
+    parts = []
+    title = (title or "").strip()
+    if title:
+        parts.append(f"<b>{html.escape(title)}</b>")
+    text = (text or "").strip()
+    if text:
+        if len(text) > 600:                       # keep caption under Telegram's limit
+            text = text[:599].rstrip() + "\u2026"
+        parts.append(f"\u201c{html.escape(text)}\u201d")
+    parts.append(url)
+    return "\n".join(parts)
+
+
 async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.effective_message
     chat = update.effective_chat
@@ -1054,6 +1069,7 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
         meta = extract_metadata(page_html, final)
         og = await fetch_image(meta["image"])
         big = og is not None and min(og.size) >= MIN_HERO_PX
+        post_text = None
 
         if is_social_post(meta["domain"], meta["title"]):
             syn = None
@@ -1061,6 +1077,7 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 syn = parse_syndication(await fetch_x_syndication(_extract_tweet_id(final)))
 
             if syn:                              # richer X path: real avatars, verified, quote
+                post_text = syn["text"]
                 main_av = await fetch_image(syn["main"]["avatar"])
                 media = await fetch_image(syn["media"])
                 if syn["quoted"]:
@@ -1078,6 +1095,7 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     )
             else:                                # OG fallback (X without syndication, or t.me)
                 author, handle, text = parse_post(meta, final)
+                post_text = text
                 png = await asyncio.to_thread(
                     render_post_card, author, handle, text, meta["domain"],
                     None if big else og, og if big else None,
@@ -1095,7 +1113,8 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     title = meta["title"] or meta["domain"]
-    caption = build_caption(title, clean_url(final))
+    link = clean_url(final)
+    caption = build_post_caption(title, post_text, link) if post_text else build_caption(title, link)
     await msg.reply_photo(photo=png, caption=caption, parse_mode=ParseMode.HTML)
 
 # ── Main ─────────────────────────────────────────────────────
