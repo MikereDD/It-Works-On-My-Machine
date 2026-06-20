@@ -26,7 +26,7 @@ import androidx.compose.ui.unit.sp
 import com.typezero.atomicclock.BuildConfig
 import com.typezero.atomicclock.R
 
-private const val REPO_URL = "https://github.com/MikereDD/It-Works-On-My-Machine/tree/main/AtomicClock"
+private const val REPO_URL = "https://github.com/MikereDD/It-Works-On-My-Machine/tree/main/Android/AtomicClock"
 
 @Composable
 fun AboutDialog(onDismiss: () -> Unit) {

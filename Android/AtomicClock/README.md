@@ -10,7 +10,7 @@
 ![Kotlin](https://img.shields.io/badge/Kotlin-2.1-7F52FF?style=flat-square&logo=kotlin&logoColor=white)
 ![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4?style=flat-square&logo=jetpackcompose&logoColor=white)
 
-[**⬇️ Download APK**](https://github.com/MikereDD/It-Works-On-My-Machine/raw/refs/heads/main/Android/AtomicClock/releases/atomic-clock-v0.3.0.apk) &nbsp;·&nbsp; [**📜 Changelog**](https://github.com/MikereDD/It-Works-On-My-Machine/blob/main/AtomicClock/CHANGELOG.md)
+[**⬇️ Download APK**](https://github.com/MikereDD/It-Works-On-My-Machine/raw/refs/heads/main/Android/AtomicClock/releases/atomic-clock-v0.3.0.apk) &nbsp;·&nbsp; [**📜 Changelog**](https://github.com/MikereDD/It-Works-On-My-Machine/blob/main/Android/AtomicClock/CHANGELOG.md)
 
 </div>
 
@@ -75,6 +75,6 @@ app/src/main/java/com/typezero/atomicclock/
 
 ## 📜 Changelog
 
-See the [**full changelog**](https://github.com/MikereDD/It-Works-On-My-Machine/blob/main/AtomicClock/CHANGELOG.md) for version history.
+See the [**full changelog**](https://github.com/MikereDD/It-Works-On-My-Machine/blob/main/Android/AtomicClock/CHANGELOG.md) for version history.
 
 <div align="center"><sub>Built by <b>typezero</b> · It-Works-On-My-Machine</sub></div>
