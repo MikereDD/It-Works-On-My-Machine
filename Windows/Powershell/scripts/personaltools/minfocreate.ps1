@@ -1,7 +1,7 @@
 ﻿#--------------------------------------------
 # file:     minfocreate.ps1
 # author:   Mike Redd
-# version:  2.6
+# version:  2.8
 # created:  2026-04-11
 # updated:  2026-06-17
 # desc:     Create NFO, HTML, and poster data
@@ -16,6 +16,8 @@
 #           v2.4: figlet banner restored in series/episode NFOs.
 #           v2.5: reliable poster download w/ curl --fail + clear logging.
 #           v2.6: index embeds poster (OMDb URL) like single-file mode.
+#           v2.7: -ImdbId + -NonInteractive for scripted/GUI use.
+#           v2.8: cursor-free UI under -NonInteractive (GUI runspace safe).
 #--------------------------------------------
 
 param(
@@ -25,6 +27,8 @@ param(
     [ValidateSet('auto','single','series','docu')]
     [string]$Mode      = 'auto',
     [string]$SeriesName = "",
+    [string]$ImdbId     = "",
+    [switch]$NonInteractive,
     [switch]$Preview
 )
 
@@ -60,8 +64,40 @@ if (Test-Path -LiteralPath $corePath) {
 
 $ErrorActionPreference = 'Stop'
 
+# ── Console-less safety (GUI runspace) ────────────────────────
+# The shared UI helpers in ui.ps1 position the console cursor to draw boxes,
+# which throws ("setting CursorPosition") in a host with no real console such
+# as the GUI's background runspace. For non-interactive runs, override just
+# those helpers with plain, cursor-free equivalents. Interactive console runs
+# keep the full boxed UI untouched.
+if ($NonInteractive) {
+    function Write-UiBlankLine { Write-Host '' }
+    function Write-UiDivider   { Write-Host ('-' * 60) }
+    function Write-UiHeader {
+        param([string]$Title, [string]$Subtitle, [int]$Width)
+        Write-Host ''
+        Write-Host ("=== {0} ===" -f $Title)
+        if ($Subtitle) { Write-Host ("    {0}" -f $Subtitle) }
+    }
+    function Write-UiSection {
+        param([string]$Text)
+        Write-Host ''
+        Write-Host ("-- {0} --" -f $Text)
+    }
+    function Write-UiRow {
+        param([string]$Label, [string]$Value, [string]$Color)
+        Write-Host ("  {0,-12} {1}" -f $Label, $Value)
+    }
+    function Get-UiBoxWidth {
+        param([int]$MaxWidth = 60, [int]$MinWidth = 44)
+        return $MinWidth
+    }
+    function Pause-Core { param([string]$Message) }
+    function Pause-UiReturn { param([string]$Message) }
+}
+
 $ScriptName    = "MiNfoCreate"
-$ScriptVersion = "2.6"
+$ScriptVersion = "2.8"
 $ScriptAuthor  = "Mike Redd"
 
 # Shared NFO banner (figlet) reused by single-file and multi-file output.
@@ -205,6 +241,7 @@ function Show-Header {
 }
 
 function Pause-Script {
+    if ($NonInteractive) { return }
     Pause-Core "Press Enter to return..."
 }
 
@@ -556,17 +593,28 @@ function Invoke-MinfoSeries {
         Write-UiBlankLine
         Write-Host "  $($global:UI_YLW)$kindWord name:$($global:UI_R)"
         Write-Host "  $($global:UI_GRN)Default: $defaultName$($global:UI_R)"
-        $inp = Read-Host "  Name (blank = default)"
-        $SeriesName = if ([string]::IsNullOrWhiteSpace($inp)) { $defaultName } else { $inp }
+        if ($NonInteractive) {
+            $SeriesName = $defaultName
+        } else {
+            $inp = Read-Host "  Name (blank = default)"
+            $SeriesName = if ([string]::IsNullOrWhiteSpace($inp)) { $defaultName } else { $inp }
+        }
     }
     $safeSeries = ($SeriesName -replace '[<>:"/\\|?*]', '').Trim()
     if (-not $safeSeries) { $safeSeries = 'Series' }
 
     Write-UiSection "OMDb Lookup ($kindWord)"
-    Write-Host "  $($global:UI_CYN)Enter search title or IMDb ID (blank = '$SeriesName')$($global:UI_R)"
-    $search = Read-Host "  Search"
-    if ([string]::IsNullOrWhiteSpace($search)) { $search = $SeriesName }
-    $year = Read-Host "  Year (optional)"
+    if ($ImdbId -and $ImdbId -match '^tt\d+') {
+        $search = $ImdbId; $year = ""
+        Write-Host "  $($global:UI_GRN)Using IMDb ID: $ImdbId$($global:UI_R)"
+    } elseif ($NonInteractive) {
+        $search = $SeriesName; $year = ""
+    } else {
+        Write-Host "  $($global:UI_CYN)Enter search title or IMDb ID (blank = '$SeriesName')$($global:UI_R)"
+        $search = Read-Host "  Search"
+        if ([string]::IsNullOrWhiteSpace($search)) { $search = $SeriesName }
+        $year = Read-Host "  Year (optional)"
+    }
 
     $omType = if ($isSeries) { 'series' } else { 'movie' }
     if ($search -match '^tt\d+') {
@@ -927,16 +975,17 @@ $defaultTitle = [System.IO.Path]::GetFileNameWithoutExtension($VideoFile) -repla
 Write-Host "  $($global:UI_YLW)Name your NFO/HTML files:$($global:UI_R)"
 Write-Host "  $($global:UI_GRN)Default: $defaultTitle$($global:UI_R)"
 Write-UiBlankLine
-Write-Host -NoNewline "  $($global:UI_YLW)Keep default? (y/n): $($global:UI_R)"
-$keepTitle = Read-Host
-
-if ($keepTitle -match '^[Yy]$') {
+if ($NonInteractive -or $ImdbId) {
     $title = $defaultTitle
 } else {
-    Write-Host -NoNewline "  $($global:UI_CYN)Enter title: $($global:UI_R)"
-    $title = Read-Host
-    if ([string]::IsNullOrWhiteSpace($title)) {
+    Write-Host -NoNewline "  $($global:UI_YLW)Keep default? (y/n): $($global:UI_R)"
+    $keepTitle = Read-Host
+    if ($keepTitle -match '^[Yy]$') {
         $title = $defaultTitle
+    } else {
+        Write-Host -NoNewline "  $($global:UI_CYN)Enter title: $($global:UI_R)"
+        $title = Read-Host
+        if ([string]::IsNullOrWhiteSpace($title)) { $title = $defaultTitle }
     }
 }
 
@@ -952,9 +1001,17 @@ Write-UiBlankLine
 
 # ── OMDb lookup ───────────────────────────────────────────────
 Write-UiSection "OMDb Lookup"
-Write-Host "  $($global:UI_CYN)Enter search title or IMDb ID (example: tt0083907)$($global:UI_R)"
-$searchInput = Read-Host "  Search"
-$searchYear  = Read-Host "  Year (optional)"
+if ($ImdbId -and $ImdbId -match '^tt\d+') {
+    $searchInput = $ImdbId; $searchYear = ""
+    Write-Host "  $($global:UI_GRN)Using IMDb ID: $ImdbId$($global:UI_R)"
+} elseif ($NonInteractive) {
+    $searchInput = ""; $searchYear = ""
+    Write-Host "  $($global:UI_GRY)No IMDb ID supplied; MediaInfo only.$($global:UI_R)"
+} else {
+    Write-Host "  $($global:UI_CYN)Enter search title or IMDb ID (example: tt0083907)$($global:UI_R)"
+    $searchInput = Read-Host "  Search"
+    $searchYear  = Read-Host "  Year (optional)"
+}
 
 $baseUrl = "http://www.omdbapi.com/"
 $omdbOK  = $false
