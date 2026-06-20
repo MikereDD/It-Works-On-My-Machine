@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-06-19
+
+### Added
+- X quote-tweet support via the syndication endpoint
+  (`cdn.syndication.twimg.com/tweet-result`): for X/Twitter links Gabriel now
+  pulls the real author name, avatar, and verified badge, the quoted /
+  replied-to tweet (rendered as a nested card with its own author, avatar,
+  verified badge, and text), and post media.
+- Verified badges — blue, gold (business), gray (government) — on post and
+  quote cards.
+- `render_quote_card`: nested quoted-tweet layout with a bordered inner box and
+  an optional media thumbnail.
+
+### Changed
+- X posts prefer syndication data; if it's unavailable (rate-limited, deleted,
+  or the endpoint changes) they fall back to the previous OG-based post card.
+  Telegram (`t.me`) posts and non-social links are unchanged.
+
+### Notes
+- The syndication endpoint is unofficial and can change without notice; the OG
+  fallback keeps Gabriel working if it does.
+
 ## [0.6.0] - 2026-06-18
 
 ### Added
@@ -114,7 +136,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Card rendering runs in a worker thread to avoid blocking the event loop;
   `HTTPXRequest` timeouts configured for Telegram I/O.
 
-[Unreleased]: https://github.com/MikereDD/It-Works-On-My-Machine/compare/cardbot-v0.6.0...HEAD
+[Unreleased]: https://github.com/MikereDD/It-Works-On-My-Machine/compare/cardbot-v0.7.0...HEAD
+[0.7.0]: https://github.com/MikereDD/It-Works-On-My-Machine/compare/cardbot-v0.6.0...cardbot-v0.7.0
 [0.6.0]: https://github.com/MikereDD/It-Works-On-My-Machine/compare/cardbot-v0.5.0...cardbot-v0.6.0
 [0.5.0]: https://github.com/MikereDD/It-Works-On-My-Machine/compare/cardbot-v0.4.0...cardbot-v0.5.0
 [0.4.0]: https://github.com/MikereDD/It-Works-On-My-Machine/compare/cardbot-v0.3.0...cardbot-v0.4.0

@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file: cardbot.py
 # author: Mike Redd
-# version: 0.6.0
+# version: 0.7.0
 # created: 2026-06-18
 # updated: 2026-06-18
 # desc: "Gabriel" - Telegram link-card bot.
@@ -14,6 +14,7 @@ import asyncio
 import html
 import io
 import logging
+import math
 import os
 import re
 import sys
@@ -30,7 +31,7 @@ from urllib.parse import (
 
 # ── Branding ─────────────────────────────────────────────────
 BOT_NAME = "Gabriel"
-BOT_VERSION = "0.6.0"
+BOT_VERSION = "0.7.0"
 
 import httpx
 from bs4 import BeautifulSoup
@@ -536,7 +537,8 @@ FG_FOOT = (120, 128, 146)
 
 def render_post_card(author, handle, text, domain,
                      avatar: Image.Image | None = None,
-                     hero: Image.Image | None = None) -> bytes:
+                     hero: Image.Image | None = None,
+                     verified=None) -> bytes:
     """Tweet/quote layout: author + @handle byline, post text as the focus."""
     name_font = _load_font(True, 32)
     handle_font = _load_font(False, 25)
@@ -577,7 +579,9 @@ def render_post_card(author, handle, text, domain,
     if avatar is not None:
         card.alpha_composite(_round_icon(avatar, av, 20), (PAD_X, head_top))
         tx = PAD_X + av + 22
-    _draw_rich(card, draw, tx, head_top + 6, author or domain, name_font, FG_TITLE, name_eh)
+    end_x = _draw_rich(card, draw, tx, head_top + 6, author or domain, name_font, FG_TITLE, name_eh)
+    if verified:
+        _badge(draw, int(end_x + 20), int(head_top + 6 + _line_h(name_font) // 2 - 2), 12, verified)
     if handle:
         draw.text((tx, head_top + 46), handle, font=handle_font, fill=FG_META)
 
@@ -592,6 +596,115 @@ def render_post_card(author, handle, text, domain,
 
     # footer source
     _tracked(draw, (PAD_X, foot_top), domain.upper(), foot_font, FG_FOOT, 2)
+
+    buf = io.BytesIO()
+    card.convert("RGB").save(buf, format="PNG")
+    return buf.getvalue()
+
+
+QBG = (28, 30, 38)
+QBORDER = (64, 68, 80)
+FG_HANDLE = (130, 138, 154)
+FG_TEXT = FG_TWEET
+
+
+def _badge(draw, cx, cy, r, color):
+    draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=color)
+    draw.line(
+        [(cx - r * 0.45, cy + r * 0.05), (cx - r * 0.08, cy + r * 0.42), (cx + r * 0.5, cy - r * 0.4)],
+        fill="white", width=max(2, int(r * 0.28)), joint="curve",
+    )
+
+
+def render_quote_card(main, text, quoted, domain,
+                      main_avatar=None, quoted_avatar=None,
+                      media=None, quoted_media=None) -> bytes:
+    """Quote-tweet layout: main header + comment, then a nested quoted tweet."""
+    nf = _load_font(True, 30); hf = _load_font(False, 24); mf = _load_font(False, 36)
+    qnf = _load_font(True, 26); qhf = _load_font(False, 22); qtf = _load_font(False, 28)
+    ff = _load_font(True, 22)
+    inner = CARD_W - 2 * PAD_X
+    main_eh = int(_line_h(mf) * 0.82); q_eh = int(_line_h(qtf) * 0.82)
+
+    measure = ImageDraw.Draw(Image.new("RGB", (CARD_W, 4)))
+    mlines = _wrap(measure, text, mf, inner, 5, main_eh)
+    qpad = 28
+    qinner = inner - 2 * qpad
+    qlines = _wrap(measure, quoted["text"], qtf, qinner, 7, q_eh) if quoted else []
+    mlh = int(_line_h(mf) * 1.28); qtlh = int(_line_h(qtf) * 1.28)
+
+    av, qav = 72, 44
+    qmedia_h = 0
+    qm = _cover(quoted_media, qinner, int(qinner * 9 / 16)) if quoted_media is not None else None
+    if qm is not None:
+        qmedia_h = qm.height + 16
+
+    top = HERO_H if media is not None else 0
+    head_top = top + (30 if media is not None else 44)
+    main_top = head_top + av + 26
+    main_h = len(mlines) * mlh
+    qbox_top = main_top + main_h + 26
+    qbox_h = qpad + qav + 16 + len(qlines) * qtlh + qmedia_h + qpad
+    foot_top = qbox_top + qbox_h + 26
+    card_h = foot_top + _line_h(ff) + 44
+
+    card = _vgrad(CARD_W, card_h, BG_TOP, BG_BOT).convert("RGBA")
+    if media is not None:
+        card.paste(_cover(media, CARD_W, HERO_H), (0, 0))
+        ov = Image.new("RGBA", card.size, (0, 0, 0, 0)); od = ImageDraw.Draw(ov)
+        for i in range(FADE_H):
+            a = int(255 * (i / (FADE_H - 1)) ** 1.45)
+            yb = HERO_H - FADE_H + i
+            od.line([(0, yb), (CARD_W, yb)], fill=(BG_TOP[0], BG_TOP[1], BG_TOP[2], a))
+        card = Image.alpha_composite(card, ov)
+    else:
+        card.alpha_composite(_hgrad_bar(CARD_W, 8, ACCENT_A, ACCENT_B, 0), (0, 0))
+
+    draw = ImageDraw.Draw(card)
+
+    # main header
+    tx = PAD_X
+    if main_avatar is not None:
+        card.alpha_composite(_round_icon(main_avatar, av, 18), (PAD_X, head_top))
+        tx = PAD_X + av + 20
+    end_x = _draw_rich(card, draw, tx, head_top + 2, main["name"] or domain, nf, FG_TITLE, int(_line_h(nf) * 0.82))
+    if main.get("verified"):
+        _badge(draw, int(end_x + 20), int(head_top + 2 + _line_h(nf) // 2 - 4), 12, main["verified"])
+    if main.get("handle"):
+        draw.text((tx, head_top + 2 + 40), main["handle"], font=hf, fill=FG_HANDLE)
+
+    # main comment
+    y = main_top
+    for ln in mlines:
+        _draw_rich(card, draw, PAD_X, y, ln, mf, FG_TEXT, main_eh)
+        y += mlh
+
+    # nested quoted tweet
+    if quoted:
+        draw.rounded_rectangle([PAD_X, qbox_top, PAD_X + inner, qbox_top + qbox_h],
+                               radius=22, fill=QBG, outline=QBORDER, width=2)
+        qx, qy = PAD_X + qpad, qbox_top + qpad
+        qtx = qx
+        if quoted_avatar is not None:
+            card.alpha_composite(_round_icon(quoted_avatar, qav, 12), (qx, qy))
+            qtx = qx + qav + 16
+        qend = _draw_rich(card, draw, qtx, qy + 2, quoted["name"], qnf, FG_TITLE, int(_line_h(qnf) * 0.82))
+        bx = qend + 18
+        if quoted.get("verified"):
+            _badge(draw, int(bx), int(qy + 2 + _line_h(qnf) // 2 - 2), 11, quoted["verified"]); bx += 24
+        if quoted.get("handle"):
+            draw.text((bx, qy + 4), quoted["handle"], font=qhf, fill=FG_HANDLE)
+        qty = qy + qav + 16
+        for ln in qlines:
+            _draw_rich(card, draw, qx, qty, ln, qtf, FG_TEXT, q_eh)
+            qty += qtlh
+        if qm is not None:
+            mask = Image.new("L", qm.size, 0)
+            ImageDraw.Draw(mask).rounded_rectangle([0, 0, qm.width - 1, qm.height - 1], radius=14, fill=255)
+            card.paste(qm, (qx, qty + 4), mask)
+
+    # footer
+    _tracked(draw, (PAD_X, foot_top), domain.upper(), ff, FG_FOOT, 2)
 
     buf = io.BytesIO()
     card.convert("RGB").save(buf, format="PNG")
@@ -677,6 +790,127 @@ def parse_post(meta: dict, url: str):
     if handle and text.rstrip().endswith(handle):   # drop redundant trailing @handle
         text = text.rstrip()[: -len(handle)].rstrip(" \u2014-\u00b7|")
     return author, handle, text
+
+
+# ── X syndication (richer than OG: quoted tweet, avatars, verified, media) ──
+X_HOSTS = ("x.com", "twitter.com", "mobile.twitter.com",
+           "fxtwitter.com", "vxtwitter.com", "fixupx.com")
+TWEET_ID_RE = re.compile(r"/status(?:es)?/(\d+)")
+BADGE_BLUE = (29, 155, 240)
+BADGE_GOLD = (216, 166, 30)
+BADGE_GOV = (130, 140, 156)
+
+
+def is_x_host(domain: str) -> bool:
+    d = (domain or "").lower()
+    return any(d == h or d.endswith("." + h) for h in X_HOSTS)
+
+
+def _extract_tweet_id(url: str):
+    m = TWEET_ID_RE.search(url or "")
+    return m.group(1) if m else None
+
+
+def _js_base36(num: float) -> str:
+    """Mimic JS Number.prototype.toString(36) for the syndication token."""
+    digits = "0123456789abcdefghijklmnopqrstuvwxyz"
+    if num == 0:
+        return "0"
+    neg, num = num < 0, abs(num)
+    ipart = int(num)
+    frac = num - ipart
+    out = ""
+    if ipart == 0:
+        out = "0"
+    else:
+        n = ipart
+        while n:
+            out = digits[n % 36] + out
+            n //= 36
+    if frac > 0:
+        out += "."
+        for _ in range(20):
+            frac *= 36
+            d = int(frac)
+            out += digits[d]
+            frac -= d
+            if frac == 0:
+                break
+    return ("-" if neg else "") + out
+
+
+def _x_token(tweet_id: str) -> str:
+    return re.sub(r"(0+|\.)", "", _js_base36((int(tweet_id) / 1e15) * math.pi))
+
+
+def _verified_color(u: dict):
+    vt = (u.get("verified_type") or "").lower()
+    if vt == "business":
+        return BADGE_GOLD
+    if vt == "government":
+        return BADGE_GOV
+    if u.get("is_blue_verified") or u.get("verified"):
+        return BADGE_BLUE
+    return None
+
+
+def _user_fields(u: dict) -> dict:
+    u = u or {}
+    sn = u.get("screen_name") or ""
+    return {
+        "name": u.get("name") or "",
+        "handle": ("@" + sn) if sn else "",
+        "avatar": u.get("profile_image_url_https") or u.get("profile_image_url"),
+        "verified": _verified_color(u),
+    }
+
+
+def _first_media(node: dict):
+    for m in (node.get("mediaDetails") or []):
+        if m.get("media_url_https"):
+            return m["media_url_https"]
+    vid = node.get("video") or {}
+    return vid.get("poster")
+
+
+async def fetch_x_syndication(tweet_id: str):
+    if not tweet_id:
+        return None
+    url = ("https://cdn.syndication.twimg.com/tweet-result"
+           f"?id={tweet_id}&token={_x_token(tweet_id)}&lang=en")
+    try:
+        async with httpx.AsyncClient(
+            headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
+            follow_redirects=True, timeout=HTTP_TIMEOUT,
+        ) as client:
+            r = await client.get(url)
+            if r.status_code != 200:
+                log.warning("x syndication %s -> %s", tweet_id, r.status_code)
+                return None
+            return r.json()
+    except Exception as e:  # noqa: BLE001
+        log.warning("x syndication failed: %s", e)
+        return None
+
+
+def parse_syndication(data: dict):
+    """Normalize a tweet-result payload into the fields the cards need."""
+    if not data or not (data.get("text") or data.get("full_text")):
+        return None
+    out = {
+        "main": _user_fields(data.get("user")),
+        "text": data.get("text") or data.get("full_text") or "",
+        "media": _first_media(data),
+        "quoted": None,
+    }
+    q = data.get("quoted_tweet")
+    if q:
+        out["quoted"] = {
+            **_user_fields(q.get("user")),
+            "text": q.get("text") or q.get("full_text") or "",
+            "media": _first_media(q),
+        }
+    return out
 
 
 async def fetch_image(url: str | None):
@@ -822,12 +1056,32 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
         big = og is not None and min(og.size) >= MIN_HERO_PX
 
         if is_social_post(meta["domain"], meta["title"]):
-            author, handle, text = parse_post(meta, final)
-            # big og:image = post media (hero); small = the avatar (chip)
-            png = await asyncio.to_thread(
-                render_post_card, author, handle, text, meta["domain"],
-                None if big else og, og if big else None,
-            )
+            syn = None
+            if is_x_host(meta["domain"]):
+                syn = parse_syndication(await fetch_x_syndication(_extract_tweet_id(final)))
+
+            if syn:                              # richer X path: real avatars, verified, quote
+                main_av = await fetch_image(syn["main"]["avatar"])
+                media = await fetch_image(syn["media"])
+                if syn["quoted"]:
+                    q_av = await fetch_image(syn["quoted"]["avatar"])
+                    q_media = await fetch_image(syn["quoted"]["media"])
+                    png = await asyncio.to_thread(
+                        render_quote_card, syn["main"], syn["text"], syn["quoted"],
+                        meta["domain"], main_av, q_av, media, q_media,
+                    )
+                else:
+                    png = await asyncio.to_thread(
+                        render_post_card, syn["main"]["name"], syn["main"]["handle"],
+                        syn["text"], meta["domain"], main_av, media,
+                        syn["main"]["verified"],
+                    )
+            else:                                # OG fallback (X without syndication, or t.me)
+                author, handle, text = parse_post(meta, final)
+                png = await asyncio.to_thread(
+                    render_post_card, author, handle, text, meta["domain"],
+                    None if big else og, og if big else None,
+                )
         else:
             favicon = await fetch_favicon(meta.get("favicon"))
             png = await asyncio.to_thread(

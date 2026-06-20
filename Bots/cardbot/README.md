@@ -3,7 +3,7 @@
 > A typezerø Project
 > Built for real-world use, not perfection.
 
-![Version](https://img.shields.io/badge/version-v0.6.0-blue) ![Python](https://img.shields.io/badge/python-3.10+-blue) ![License](https://img.shields.io/badge/license-WTFPL-lightgrey)
+![Version](https://img.shields.io/badge/version-v0.7.0-blue) ![Python](https://img.shields.io/badge/python-3.10+-blue) ![License](https://img.shields.io/badge/license-WTFPL-lightgrey)
 
 ---
 
@@ -45,6 +45,7 @@ Link → Fetch → Extract OG → Render Card → Reply
 - text-only fallback for tiny or missing images
 - post-aware layout for X/Twitter and Telegram (t.me): post text as the focus, author/channel byline, avatar chip
 - inline color emoji (flags, etc.) via Noto Color Emoji
+- X quote tweets: nested quoted/replied-to tweet, real avatars, and verified badges (via X syndication, with OG fallback)
 
 ---
 
