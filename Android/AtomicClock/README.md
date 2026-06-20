@@ -10,7 +10,7 @@
 ![Kotlin](https://img.shields.io/badge/Kotlin-2.1-7F52FF?style=flat-square&logo=kotlin&logoColor=white)
 ![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4?style=flat-square&logo=jetpackcompose&logoColor=white)
 
-[**⬇️ Download APK**](https://github.com/MikereDD/It-Works-On-My-Machine/releases/download/atomic-clock-v0.3.0/atomic-clock-v0.3.0.apk) &nbsp;·&nbsp; [**📜 Changelog**](https://github.com/MikereDD/It-Works-On-My-Machine/blob/main/AtomicClock/CHANGELOG.md)
+[**⬇️ Download APK**](https://github.com/MikereDD/It-Works-On-My-Machine/raw/refs/heads/main/Android/AtomicClock/releases/atomic-clock-v0.3.0.apk) &nbsp;·&nbsp; [**📜 Changelog**](https://github.com/MikereDD/It-Works-On-My-Machine/blob/main/AtomicClock/CHANGELOG.md)
 
 </div>
 
@@ -46,7 +46,7 @@ A polished Android clock that syncs to internet time servers over **SNTP/NTP** a
 
 ## 📲 Install
 
-[**Download the APK**](https://github.com/MikereDD/It-Works-On-My-Machine/releases/download/atomic-clock-v0.3.0/atomic-clock-v0.3.0.apk) and open it on your device (allow install from unknown sources), or build from source below.
+[**Download the APK**](https://github.com/MikereDD/It-Works-On-My-Machine/raw/refs/heads/main/Android/AtomicClock/releases/atomic-clock-v0.3.0.apk) and open it on your device (allow install from unknown sources), or build from source below.
 
 > **Permissions:** `INTERNET`; `ACCESS_COARSE_LOCATION` (optional — weather only).
 
