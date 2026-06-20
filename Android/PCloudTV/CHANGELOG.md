@@ -5,6 +5,12 @@ All notable changes to **pCloud TV**. Newest first.
 
 ---
 
+## v4.18 — scrub the time bar with the remote
+
+- On a TV, you can now reach the time/scrub bar with the remote. From the control row press **Down** to drop onto the bar (it highlights), then **Left/Right** to scrub back and forth (about a thirtieth of the runtime per press, so holding the key sweeps quickly). **Up** returns to the buttons and **OK** on the bar toggles play/pause. Applies to both the video and audio players.
+
+---
+
 ## v4.17 — .nfo / .htm viewer works on shared links too
 
 - Opening a .nfo or .htm file from a public shared link (no account) now works. The shared-link browser is a separate screen that had no document viewer and fetched files via the authenticated `getfilelink`, which a public link can't use. It now fetches the bytes through `getpublinkdownload` (no auth) and opens the same viewer. The shared-link list also shows the correct document/image icons instead of labelling everything as audio.
