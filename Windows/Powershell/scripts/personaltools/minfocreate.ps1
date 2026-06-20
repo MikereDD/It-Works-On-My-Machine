@@ -1,7 +1,7 @@
 ﻿#--------------------------------------------
 # file:     minfocreate.ps1
 # author:   Mike Redd
-# version:  2.8
+# version:  2.9
 # created:  2026-04-11
 # updated:  2026-06-17
 # desc:     Create NFO, HTML, and poster data
@@ -18,6 +18,7 @@
 #           v2.6: index embeds poster (OMDb URL) like single-file mode.
 #           v2.7: -ImdbId + -NonInteractive for scripted/GUI use.
 #           v2.8: cursor-free UI under -NonInteractive (GUI runspace safe).
+#           v2.9: also no-op Clear-UiScreen (Show-Header) in that mode.
 #--------------------------------------------
 
 param(
@@ -94,10 +95,11 @@ if ($NonInteractive) {
     }
     function Pause-Core { param([string]$Message) }
     function Pause-UiReturn { param([string]$Message) }
+    function Clear-UiScreen { }
 }
 
 $ScriptName    = "MiNfoCreate"
-$ScriptVersion = "2.8"
+$ScriptVersion = "2.9"
 $ScriptAuthor  = "Mike Redd"
 
 # Shared NFO banner (figlet) reused by single-file and multi-file output.
