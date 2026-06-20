@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center_vertical"
+    android:background="@drawable/widget_background"
+    android:padding="18dp">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:fontFamily="sans-serif-light"
+        android:textColor="@color/widget_text"
+        android:textSize="46sp"
+        android:text="08:12" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textColor="@color/widget_muted"
+        android:textSize="13sp"
+        android:text="Sat 20 Jun" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_marginTop="10dp">
+
+        <ImageView
+            android:layout_width="18dp"
+            android:layout_height="18dp"
+            android:layout_marginEnd="6dp"
+            android:src="@drawable/ic_widget_cloud" />
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textColor="@color/widget_text"
+            android:textSize="14sp"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:text="72°F · Partly cloudy" />
+
+        <ImageView
+            android:layout_width="14dp"
+            android:layout_height="14dp"
+            android:layout_marginStart="8dp"
+            android:layout_marginEnd="3dp"
+            android:src="@drawable/ic_widget_humidity" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="@color/widget_text"
+            android:textSize="14sp"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:text="64% · Baytown" />
+    </LinearLayout>
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:textColor="@color/widget_accent"
+        android:textSize="12sp"
+        android:maxLines="1"
+        android:ellipsize="end"
+        android:text="Drift +42 ms · Google · S1" />
+</LinearLayout>

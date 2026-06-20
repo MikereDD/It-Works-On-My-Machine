@@ -1,0 +1,32 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Nucleus -->
+    <path
+        android:fillColor="#39E0D0"
+        android:pathData="M54,54m-6,0a6,6 0,1 1,12 0a6,6 0,1 1,-12 0" />
+    <!-- Electron orbits -->
+    <group android:pivotX="54" android:pivotY="54" android:rotation="0">
+        <path
+            android:strokeColor="#39E0D0"
+            android:strokeWidth="3"
+            android:fillColor="#00000000"
+            android:pathData="M54,54m-26,0a26,11 0,1 1,52 0a26,11 0,1 1,-52 0" />
+    </group>
+    <group android:pivotX="54" android:pivotY="54" android:rotation="60">
+        <path
+            android:strokeColor="#6CA6FF"
+            android:strokeWidth="3"
+            android:fillColor="#00000000"
+            android:pathData="M54,54m-26,0a26,11 0,1 1,52 0a26,11 0,1 1,-52 0" />
+    </group>
+    <group android:pivotX="54" android:pivotY="54" android:rotation="120">
+        <path
+            android:strokeColor="#9B7CFF"
+            android:strokeWidth="3"
+            android:fillColor="#00000000"
+            android:pathData="M54,54m-26,0a26,11 0,1 1,52 0a26,11 0,1 1,-52 0" />
+    </group>
+</vector>

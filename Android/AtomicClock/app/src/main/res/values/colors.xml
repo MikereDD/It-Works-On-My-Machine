@@ -1,0 +1,13 @@
+<resources>
+    <color name="atomic_background">@color/atomic_background_dark</color>
+    <color name="atomic_background_dark">#FF05070D</color>
+    <color name="atomic_background_light">#FFF4F6FB</color>
+
+    <color name="widget_surface">#E60C111C</color>
+    <color name="widget_surface_solid">#F20C111C</color>
+    <color name="widget_surface_translucent">#A60C111C</color>
+    <color name="widget_text">#FFE4E9F2</color>
+    <color name="widget_muted">#FF93A0B8</color>
+    <color name="widget_accent">#FF39E0D0</color>
+    <color name="widget_stroke">#1FFFFFFF</color>
+</resources>

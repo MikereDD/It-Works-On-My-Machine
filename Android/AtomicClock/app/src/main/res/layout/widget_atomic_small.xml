@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:background="@drawable/widget_background"
+    android:padding="10dp">
+
+    <TextClock
+        android:id="@+id/widget_clock"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:format24Hour="HH:mm"
+        android:format12Hour="h:mm"
+        android:fontFamily="sans-serif-light"
+        android:textColor="@color/widget_text"
+        android:textSize="30sp" />
+
+    <TextClock
+        android:id="@+id/widget_date"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:format24Hour="EEE d MMM"
+        android:format12Hour="EEE d MMM"
+        android:textColor="@color/widget_muted"
+        android:textSize="11sp" />
+
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_marginTop="1dp">
+
+        <ImageView
+            android:id="@+id/widget_cond_icon"
+            android:layout_width="13dp"
+            android:layout_height="13dp"
+            android:layout_marginEnd="4dp"
+            android:src="@drawable/ic_widget_cloud" />
+
+        <TextView
+            android:id="@+id/widget_accent"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="@color/widget_accent"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:text="" />
+    </LinearLayout>
+</LinearLayout>
