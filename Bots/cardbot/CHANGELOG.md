@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-06-18
+
+### Added
+- Color emoji rendering via Noto Color Emoji, RAQM-shaped so flag and ZWJ
+  sequences render as single glyphs. Emoji now appear inline in titles,
+  descriptions, post text, and author names instead of as tofu boxes. Falls
+  back to plain text glyphs if no color-emoji font is installed.
+- Telegram channel posts (`t.me` / `telegram.me`) now use the post layout —
+  channel name as the byline, message text as the focus.
+
+### Changed
+- The redundant trailing `@handle` is stripped from post text (it already
+  appears in the byline).
+
+### Dependencies
+- Adds `regex` (in `requirements.txt`) and needs a color-emoji font
+  (`noto-fonts-emoji` on Arch). Pillow must be built with RAQM for flags and
+  ZWJ sequences to shape correctly.
+
+## [0.5.0] - 2026-06-18
+
+### Added
+- Post mode: X/Twitter links (and the fx/vx/fixupx mirrors) now render a
+  tweet-style card — author + `@handle` byline with the avatar as a chip, and
+  the post text as the focus — instead of the article card's inverted
+  hierarchy (author-as-title, tweet-as-blurb).
+- Social-post detection by host or the `(@handle) on X` title pattern; author
+  and `@handle` parsed from `og:title`, with the handle recovered from the URL
+  path as a fallback.
+
+### Changed
+- For posts, the `og:image` is treated as a media hero when large or the avatar
+  chip when small, using the same size check as the article card.
+
 ## [0.4.0] - 2026-06-18
 
 ### Added
@@ -80,7 +114,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Card rendering runs in a worker thread to avoid blocking the event loop;
   `HTTPXRequest` timeouts configured for Telegram I/O.
 
-[Unreleased]: https://github.com/MikereDD/It-Works-On-My-Machine/compare/cardbot-v0.4.0...HEAD
+[Unreleased]: https://github.com/MikereDD/It-Works-On-My-Machine/compare/cardbot-v0.6.0...HEAD
+[0.6.0]: https://github.com/MikereDD/It-Works-On-My-Machine/compare/cardbot-v0.5.0...cardbot-v0.6.0
+[0.5.0]: https://github.com/MikereDD/It-Works-On-My-Machine/compare/cardbot-v0.4.0...cardbot-v0.5.0
 [0.4.0]: https://github.com/MikereDD/It-Works-On-My-Machine/compare/cardbot-v0.3.0...cardbot-v0.4.0
 [0.3.0]: https://github.com/MikereDD/It-Works-On-My-Machine/compare/cardbot-v0.2.0...cardbot-v0.3.0
 [0.2.0]: https://github.com/MikereDD/It-Works-On-My-Machine/compare/cardbot-v0.1.0...cardbot-v0.2.0

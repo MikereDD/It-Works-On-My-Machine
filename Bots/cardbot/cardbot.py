@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file: cardbot.py
 # author: Mike Redd
-# version: 0.4.0
+# version: 0.6.0
 # created: 2026-06-18
 # updated: 2026-06-18
 # desc: "Gabriel" - Telegram link-card bot.
@@ -30,11 +30,11 @@ from urllib.parse import (
 
 # ── Branding ─────────────────────────────────────────────────
 BOT_NAME = "Gabriel"
-BOT_VERSION = "0.4.0"
+BOT_VERSION = "0.6.0"
 
 import httpx
 from bs4 import BeautifulSoup
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, features
 
 from telegram import Update
 from telegram.constants import ChatAction, ParseMode
@@ -140,6 +140,17 @@ USER_AGENT = (
 )
 
 URL_RE = re.compile(r"https?://\S+", re.IGNORECASE)
+
+# ── Social-post detection ────────────────────────────────────
+SOCIAL_HOSTS = (
+    "x.com", "twitter.com", "mobile.twitter.com",
+    "fxtwitter.com", "vxtwitter.com", "fixupx.com",
+    "t.me", "telegram.me",
+)
+POST_TITLE_RE = re.compile(
+    r"^(?P<author>.+?)\s*\((?P<handle>@[\w]+)\)\s*on\s+(?:X|Twitter)\b",
+    re.IGNORECASE,
+)
 
 # Recent (chat_id, url) -> monotonic timestamp, for lightweight dedup.
 _recent: dict[tuple[int, str], float] = {}
@@ -260,13 +271,120 @@ def _line_h(font: ImageFont.FreeTypeFont) -> int:
     return asc + desc
 
 
-def _wrap(draw, text, font, max_w, max_lines):
-    """Word-wrap to max_lines, appending an ellipsis if text is truncated."""
+# ── Color emoji support (Noto Color Emoji + RAQM, with fallbacks) ──
+_EMOJI_FONT_PATHS = [
+    "/usr/share/fonts/noto/NotoColorEmoji.ttf",           # Arch (arakiel)
+    "/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf",  # Debian/Ubuntu
+    "C:/Windows/Fonts/seguiemj.ttf",                      # Windows
+]
+_EMOJI_STRIKE = 109
+_emoji_font = None
+for _p in _EMOJI_FONT_PATHS:
+    try:
+        _layout = ImageFont.Layout.RAQM if features.check("raqm") else ImageFont.Layout.BASIC
+        _emoji_font = ImageFont.truetype(_p, _EMOJI_STRIKE, layout_engine=_layout)
+        break
+    except OSError:
+        continue
+if _emoji_font is None:
+    log.warning("no color-emoji font found; emoji will fall back to text glyphs")
+
+try:
+    import regex as _regex
+    def _graphemes(text):
+        return _regex.findall(r"\X", text or "")
+except Exception:  # noqa: BLE001 — fallback grapheme splitter (handles flags/ZWJ/VS)
+    def _graphemes(text):
+        out, i, n = [], 0, len(text or "")
+        while i < n:
+            cl = text[i]; cp = ord(text[i]); i += 1
+            if 0x1F1E6 <= cp <= 0x1F1FF and i < n and 0x1F1E6 <= ord(text[i]) <= 0x1F1FF:
+                cl += text[i]; i += 1
+            else:
+                while i < n and (ord(text[i]) in (0x200D, 0xFE0F, 0xFE0E)
+                                 or 0x1F3FB <= ord(text[i]) <= 0x1F3FF
+                                 or (cl and cl[-1] == "\u200d")):
+                    cl += text[i]; i += 1
+            out.append(cl)
+        return out
+
+
+def _is_emoji_cp(cp: int) -> bool:
+    return (0x1F1E6 <= cp <= 0x1F1FF or 0x1F300 <= cp <= 0x1FAFF
+            or 0x2600 <= cp <= 0x27BF or 0x2B00 <= cp <= 0x2BFF
+            or 0x2300 <= cp <= 0x23FF or 0x1F000 <= cp <= 0x1F0FF
+            or cp in (0x200D, 0xFE0F, 0x2122, 0x2139))
+
+
+def _segments(text):
+    """Split into (is_emoji, str) runs; text runs merged, emoji clusters kept apart."""
+    segs = []
+    for cl in _graphemes(text):
+        em = _emoji_font is not None and any(_is_emoji_cp(ord(c)) for c in cl)
+        if not em and segs and not segs[-1][0]:
+            segs[-1] = (False, segs[-1][1] + cl)
+        else:
+            segs.append((em, cl))
+    return segs
+
+
+_emoji_cache: dict = {}
+def _emoji_glyph(cluster: str, h: int):
+    key = (cluster, h)
+    if key in _emoji_cache:
+        return _emoji_cache[key]
+    g = None
+    try:
+        tmp = Image.new("RGBA", (_EMOJI_STRIKE * 3, _EMOJI_STRIKE * 2), (0, 0, 0, 0))
+        ImageDraw.Draw(tmp).text((0, 0), cluster, font=_emoji_font, embedded_color=True)
+        bb = tmp.getbbox()
+        if bb:
+            gl = tmp.crop(bb)
+            w = max(1, int(gl.width * h / gl.height))
+            g = gl.resize((w, h), Image.LANCZOS)
+    except Exception:  # noqa: BLE001
+        g = None
+    _emoji_cache[key] = g
+    return g
+
+
+def _measure_rich(draw, text, font, eh) -> float:
+    w = 0.0
+    for em, val in _segments(text):
+        if em:
+            g = _emoji_glyph(val, eh)
+            w += (g.width + 3) if g else eh
+        else:
+            w += draw.textlength(val, font=font)
+    return w
+
+
+def _draw_rich(card, draw, x, y, text, font, fill, eh):
+    """Draw a line mixing text and color emoji; return the end x."""
+    base = int((_line_h(font) - eh) / 2) + 2
+    for em, val in _segments(text):
+        if em:
+            g = _emoji_glyph(val, eh)
+            if g is not None:
+                card.alpha_composite(g, (int(x), int(y + base)))
+                x += g.width + 3
+            else:
+                x += eh
+        else:
+            draw.text((x, y), val, font=font, fill=fill)
+            x += draw.textlength(val, font=font)
+    return x
+
+
+def _wrap(draw, text, font, max_w, max_lines, eh=0):
+    """Word-wrap to max_lines (emoji-width aware), ellipsizing if truncated."""
+    def width(s):
+        return _measure_rich(draw, s, font, eh) if eh else draw.textlength(s, font=font)
     words = (text or "").split()
     lines, cur, i = [], "", 0
     while i < len(words):
         trial = f"{cur} {words[i]}".strip()
-        if draw.textlength(trial, font=font) <= max_w:
+        if width(trial) <= max_w:
             cur, i = trial, i + 1
         else:
             if not cur:                     # one word longer than the line
@@ -280,7 +398,7 @@ def _wrap(draw, text, font, max_w, max_lines):
 
     if i < len(words) and lines:            # truncated -> ellipsize last line
         last = lines[-1]
-        while last and draw.textlength(last + " \u2026", font=font) > max_w:
+        while last and width(last + " \u2026") > max_w:
             last = last.rsplit(" ", 1)[0] if " " in last else last[:-1]
         lines[-1] = (last + " \u2026").strip()
     return lines
@@ -348,8 +466,10 @@ def render_card(title, description, domain,
     inner_w = CARD_W - 2 * PAD_X
 
     measure = ImageDraw.Draw(Image.new("RGB", (CARD_W, 4)))
-    title_lines = _wrap(measure, title or "(untitled)", title_font, inner_w, 3)
-    body_lines = _wrap(measure, description, body_font, inner_w, 4) if description else []
+    title_eh = int(_line_h(title_font) * 0.82)
+    body_eh = int(_line_h(body_font) * 0.82)
+    title_lines = _wrap(measure, title or "(untitled)", title_font, inner_w, 3, title_eh)
+    body_lines = _wrap(measure, description, body_font, inner_w, 4, body_eh) if description else []
 
     title_lh = int(_line_h(title_font) * 0.98)
     body_lh = int(_line_h(body_font) * 1.18)
@@ -394,15 +514,84 @@ def render_card(title, description, domain,
 
     # title
     for ln in title_lines:
-        draw.text((PAD_X, y), ln, font=title_font, fill=FG_TITLE)
+        _draw_rich(card, draw, PAD_X, y, ln, title_font, FG_TITLE, title_eh)
         y += title_lh
 
     # description
     if body_lines:
         y += 18
         for ln in body_lines:
-            draw.text((PAD_X, y), ln, font=body_font, fill=FG_BODY)
+            _draw_rich(card, draw, PAD_X, y, ln, body_font, FG_BODY, body_eh)
             y += body_lh
+
+    buf = io.BytesIO()
+    card.convert("RGB").save(buf, format="PNG")
+    return buf.getvalue()
+
+
+POST_TWEET_LINES = 9
+FG_TWEET = (229, 231, 238)
+FG_FOOT = (120, 128, 146)
+
+
+def render_post_card(author, handle, text, domain,
+                     avatar: Image.Image | None = None,
+                     hero: Image.Image | None = None) -> bytes:
+    """Tweet/quote layout: author + @handle byline, post text as the focus."""
+    name_font = _load_font(True, 32)
+    handle_font = _load_font(False, 25)
+    tweet_font = _load_font(False, 38)
+    foot_font = _load_font(True, 22)
+    inner_w = CARD_W - 2 * PAD_X
+
+    measure = ImageDraw.Draw(Image.new("RGB", (CARD_W, 4)))
+    tweet_eh = int(_line_h(tweet_font) * 0.82)
+    name_eh = int(_line_h(name_font) * 0.82)
+    tlines = _wrap(measure, text, tweet_font, inner_w, POST_TWEET_LINES, tweet_eh) or ["(no text)"]
+    tweet_lh = int(_line_h(tweet_font) * 1.26)
+
+    av = 76
+    top = HERO_H if hero is not None else 0
+    head_top = top + (30 if hero is not None else 46)
+    tweet_top = head_top + av + 30
+    foot_top = tweet_top + len(tlines) * tweet_lh + 30
+    card_h = foot_top + _line_h(foot_font) + 44
+
+    card = _vgrad(CARD_W, card_h, BG_TOP, BG_BOT).convert("RGBA")
+    if hero is not None:
+        card.paste(_cover(hero, CARD_W, HERO_H), (0, 0))
+        ov = Image.new("RGBA", card.size, (0, 0, 0, 0))
+        od = ImageDraw.Draw(ov)
+        for i in range(FADE_H):
+            a = int(255 * (i / (FADE_H - 1)) ** 1.45)
+            yb = HERO_H - FADE_H + i
+            od.line([(0, yb), (CARD_W, yb)], fill=(BG_TOP[0], BG_TOP[1], BG_TOP[2], a))
+        card = Image.alpha_composite(card, ov)
+    else:
+        card.alpha_composite(_hgrad_bar(CARD_W, 8, ACCENT_A, ACCENT_B, 0), (0, 0))
+
+    draw = ImageDraw.Draw(card)
+
+    # header: avatar chip + author + @handle
+    tx = PAD_X
+    if avatar is not None:
+        card.alpha_composite(_round_icon(avatar, av, 20), (PAD_X, head_top))
+        tx = PAD_X + av + 22
+    _draw_rich(card, draw, tx, head_top + 6, author or domain, name_font, FG_TITLE, name_eh)
+    if handle:
+        draw.text((tx, head_top + 46), handle, font=handle_font, fill=FG_META)
+
+    # accent rule
+    card.alpha_composite(_hgrad_bar(64, 4, ACCENT_A, ACCENT_B, 2), (PAD_X, tweet_top - 18))
+
+    # post text (the focus)
+    y = tweet_top
+    for ln in tlines:
+        _draw_rich(card, draw, PAD_X, y, ln, tweet_font, FG_TWEET, tweet_eh)
+        y += tweet_lh
+
+    # footer source
+    _tracked(draw, (PAD_X, foot_top), domain.upper(), foot_font, FG_FOOT, 2)
 
     buf = io.BytesIO()
     card.convert("RGB").save(buf, format="PNG")
@@ -461,6 +650,33 @@ def extract_metadata(html_text: str, base_url: str) -> dict:
     favicon = _icon_url(soup, base_url)
     return {"title": title, "description": desc, "image": img,
             "favicon": favicon, "domain": domain}
+
+
+def is_social_post(domain: str, title: str | None) -> bool:
+    d = (domain or "").lower()
+    if any(d == h or d.endswith("." + h) for h in SOCIAL_HOSTS) or "nitter" in d:
+        return True
+    return bool(title and POST_TITLE_RE.match(title))
+
+
+def parse_post(meta: dict, url: str):
+    """Pull (author, handle, text) out of a social post's OG metadata."""
+    title = meta.get("title") or ""
+    m = POST_TITLE_RE.match(title)
+    if m:
+        author, handle = m.group("author").strip(), m.group("handle")
+    else:
+        author = re.sub(r"\s*on\s+(?:X|Twitter)\b.*$", "", title, flags=re.IGNORECASE).strip()
+        author = author or meta.get("domain") or ""
+        handle = ""
+    if not handle:                       # recover @handle from the URL path
+        parts = [p for p in urlsplit(url).path.split("/") if p]
+        if parts and parts[0].lower() not in ("i", "status", "home", "intent", "s"):
+            handle = "@" + parts[0]
+    text = meta.get("description") or ""
+    if handle and text.rstrip().endswith(handle):   # drop redundant trailing @handle
+        text = text.rstrip()[: -len(handle)].rstrip(" \u2014-\u00b7|")
+    return author, handle, text
 
 
 async def fetch_image(url: str | None):
@@ -602,13 +818,22 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         page_html, final = await fetch_html(url)
         meta = extract_metadata(page_html, final)
-        hero = await fetch_image(meta["image"])
-        if hero is not None and min(hero.size) < MIN_HERO_PX:
-            hero = None             # too small -> clean text card, not a blurry upscale
-        favicon = await fetch_favicon(meta.get("favicon"))
-        png = await asyncio.to_thread(
-            render_card, meta["title"], meta["description"], meta["domain"], hero, favicon
-        )
+        og = await fetch_image(meta["image"])
+        big = og is not None and min(og.size) >= MIN_HERO_PX
+
+        if is_social_post(meta["domain"], meta["title"]):
+            author, handle, text = parse_post(meta, final)
+            # big og:image = post media (hero); small = the avatar (chip)
+            png = await asyncio.to_thread(
+                render_post_card, author, handle, text, meta["domain"],
+                None if big else og, og if big else None,
+            )
+        else:
+            favicon = await fetch_favicon(meta.get("favicon"))
+            png = await asyncio.to_thread(
+                render_card, meta["title"], meta["description"], meta["domain"],
+                og if big else None, favicon,
+            )
     except Exception as e:  # noqa: BLE001
         log.warning("card build failed for %s: %s", url, e)
         if chat.type == "private":  # stay quiet in groups; just notify in DMs

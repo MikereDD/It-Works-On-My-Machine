@@ -3,7 +3,7 @@
 > A typezerø Project
 > Built for real-world use, not perfection.
 
-![Version](https://img.shields.io/badge/version-v0.4.0-blue) ![Python](https://img.shields.io/badge/python-3.10+-blue) ![License](https://img.shields.io/badge/license-WTFPL-lightgrey)
+![Version](https://img.shields.io/badge/version-v0.6.0-blue) ![Python](https://img.shields.io/badge/python-3.10+-blue) ![License](https://img.shields.io/badge/license-WTFPL-lightgrey)
 
 ---
 
@@ -43,6 +43,8 @@ Link → Fetch → Extract OG → Render Card → Reply
 - hero image cover-crop with gradient blend into the body (1.92:1)
 - title and blurb wrapping with ellipsis
 - text-only fallback for tiny or missing images
+- post-aware layout for X/Twitter and Telegram (t.me): post text as the focus, author/channel byline, avatar chip
+- inline color emoji (flags, etc.) via Noto Color Emoji
 
 ---
 
@@ -95,7 +97,7 @@ Install (shared venv on the Pi):
 
 ```
 venv/bin/pip install -r requirements.txt
-sudo pacman -S ttf-dejavu
+sudo pacman -S ttf-dejavu noto-fonts-emoji
 ```
 
 Config — copy the example and fill it in:
