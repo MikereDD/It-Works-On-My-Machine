@@ -1,5 +1,5 @@
 #--------------------------------------------
-# file:     clip-mkv.ps1
+# file:     clip-video.ps1
 # author:   Mike Redd
 # version:  0.1
 # created:  2026-06-20
@@ -8,7 +8,7 @@
 
 <#
 .SYNOPSIS
-    clip-mkv.ps1 - Menu-driven video clipper (ffmpeg front-end). Outputs MKV or MP4.
+    clip-video.ps1 - Menu-driven video clipper (ffmpeg front-end). Outputs MKV or MP4.
 
 .DESCRIPTION
     Cuts a segment out of a local video between two timestamps. Two cut modes:
