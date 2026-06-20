@@ -887,6 +887,31 @@ class PCloudClient {
         }
     }
 
+    /** Download a small document's bytes from a public link (.nfo / .htm viewer). */
+    suspend fun fetchPublinkDocument(
+        apiHost: String,
+        code: String,
+        fileId: Long
+    ): ApiResult<ByteArray> = withContext(Dispatchers.IO) {
+        try {
+            when (val link = getPublinkStreamUrl(apiHost, code, fileId)) {
+                is ApiResult.Error -> ApiResult.Error(link.message)
+                is ApiResult.Ok -> {
+                    val req = Request.Builder().url(link.value).build()
+                    http.newCall(req).execute().use { resp ->
+                        if (!resp.isSuccessful) {
+                            ApiResult.Error("Could not load file (HTTP ${resp.code})")
+                        } else {
+                            ApiResult.Ok(resp.body?.bytes() ?: ByteArray(0))
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            ApiResult.Error(e.message ?: "Network error")
+        }
+    }
+
     /**
      * Generate a simple .m3u from the given files and upload it into [folderId].
      * Entries are bare filenames (resolved against the same folder on playback),

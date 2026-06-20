@@ -33,6 +33,7 @@ fun App(vm: AppViewModel = viewModel()) {
         } else {
             PublicBrowseScreen(
                 link = publicLink,
+                client = vm.client,
                 onPlayQueue = { pubQueue = it },
                 onClose = { vm.closePublicLink() }
             )

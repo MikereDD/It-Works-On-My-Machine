@@ -27,6 +27,9 @@ import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.rounded.CloudQueue
 import androidx.compose.material3.CircularProgressIndicator
@@ -53,6 +56,7 @@ import androidx.compose.ui.unit.sp
 import com.typezero.pcloudtv.data.MediaItem
 import com.typezero.pcloudtv.data.PItem
 import com.typezero.pcloudtv.data.Publink
+import com.typezero.pcloudtv.data.PCloudClient
 import com.typezero.pcloudtv.ui.theme.Brand
 
 /**
@@ -62,6 +66,7 @@ import com.typezero.pcloudtv.ui.theme.Brand
 @Composable
 fun PublicBrowseScreen(
     link: Publink,
+    client: PCloudClient,
     onPlayQueue: (List<MediaItem>) -> Unit,
     onClose: () -> Unit
 ) {
@@ -84,6 +89,7 @@ fun PublicBrowseScreen(
     }
     val current = stack.last()
     val items = link.children[current.first].orEmpty()
+    var viewingDoc by remember { mutableStateOf<PItem?>(null) }
 
     BackHandler { if (stack.size > 1) stack.removeAt(stack.lastIndex) else onClose() }
 
@@ -151,6 +157,7 @@ fun PublicBrowseScreen(
                                             onPlayQueue(siblings.map { MediaItem(it.name, it.fileId, null) })
                                         }
                                     }
+                                    pItem.isViewableDoc -> viewingDoc = pItem
                                     pItem.isPlayable && pItem.fileId != null ->
                                         onPlayQueue(listOf(MediaItem(pItem.name, pItem.fileId, null)))
                                 }
@@ -159,6 +166,14 @@ fun PublicBrowseScreen(
                     }
                 }
             }
+        }
+
+        viewingDoc?.let { doc ->
+            DocViewer(
+                item = doc,
+                onClose = { viewingDoc = null },
+                fetchBytes = { id -> client.fetchPublinkDocument(link.apiHost, link.code, id) }
+            )
         }
     }
 }
@@ -177,17 +192,25 @@ private fun PublicRow(
         item.isFolder -> Brand.Folder
         item.isPlaylist -> Brand.Glow
         item.isVideo -> Brand.Video
-        else -> Brand.Audio
+        item.isImage -> Brand.Accent
+        item.isViewableDoc -> Brand.Accent
+        item.isAudio -> Brand.Audio
+        else -> Brand.TextMid
     }
     val icon = when {
         item.isFolder -> Icons.Filled.Folder
         item.isPlaylist -> Icons.Filled.QueueMusic
         item.isVideo -> Icons.Filled.Movie
-        else -> Icons.Filled.MusicNote
+        item.isImage -> Icons.Filled.Image
+        item.isViewableDoc -> Icons.Filled.Description
+        item.isAudio -> Icons.Filled.MusicNote
+        else -> Icons.Filled.InsertDriveFile
     }
     val subtitle = when {
         item.isFolder -> "Folder"
         item.isPlaylist -> "Playlist"
+        item.isNfo -> "Info · ${humanSize(item.size)}"
+        item.isHtmlDoc -> "Web page · ${humanSize(item.size)}"
         else -> humanSize(item.size)
     }
     Row(

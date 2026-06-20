@@ -843,20 +843,18 @@ fun BrowseScreen(
         viewingDoc?.let { doc ->
             DocViewer(
                 item = doc,
-                client = client,
-                session = session,
-                onClose = { viewingDoc = null }
+                onClose = { viewingDoc = null },
+                fetchBytes = { id -> client.fetchDocument(session, id) }
             )
         }
     }
 }
 
 @Composable
-private fun DocViewer(
+internal fun DocViewer(
     item: PItem,
-    client: PCloudClient,
-    session: Session,
-    onClose: () -> Unit
+    onClose: () -> Unit,
+    fetchBytes: suspend (Long) -> ApiResult<ByteArray>
 ) {
     // Intercept Back (phone gesture / TV remote) so it closes the viewer instead
     // of falling through to the folder navigation behind the overlay.
@@ -871,7 +869,7 @@ private fun DocViewer(
         loading = true; error = null
         val id = item.fileId
         if (id == null) { error = "No file id"; loading = false; return@LaunchedEffect }
-        when (val r = client.fetchDocument(session, id)) {
+        when (val r = fetchBytes(id)) {
             is ApiResult.Ok -> {
                 val bytes = r.value
                 if (item.isHtmlDoc) {
