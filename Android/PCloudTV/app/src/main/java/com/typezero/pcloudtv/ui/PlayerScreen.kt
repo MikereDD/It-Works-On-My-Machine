@@ -740,12 +740,19 @@ private fun VlcPlayer(
         }
     }
     var selIdx by remember { mutableStateOf(controlIds.indexOf("play").coerceAtLeast(0)) }
+    // When true, the time/scrub bar is selected (Left/Right scrub it).
+    var onBar by remember { mutableStateOf(false) }
     LaunchedEffect(controlIds) { selIdx = selIdx.coerceIn(0, controlIds.lastIndex) }
     // Land back on play/pause each time the controls reappear.
     LaunchedEffect(controlsVisible) {
-        if (controlsVisible) selIdx = controlIds.indexOf("play").coerceAtLeast(0)
+        if (controlsVisible) {
+            selIdx = controlIds.indexOf("play").coerceAtLeast(0)
+            onBar = false
+        }
     }
-    val selectedId = if (isTv && controlsVisible) controlIds.getOrNull(selIdx) else null
+    val selectedId =
+        if (isTv && controlsVisible && !onBar) controlIds.getOrNull(selIdx) else null
+    val barSelected = isTv && controlsVisible && onBar
 
     fun dispatchControl(id: String) {
         when (id) {
@@ -808,23 +815,35 @@ private fun VlcPlayer(
                     return@onPreviewKeyEvent true
                 }
 
-                when {
-                    // OK / Enter -> press the highlighted button.
-                    isCenter -> if (e.type == KeyEventType.KeyUp) {
-                        dispatchControl(controlIds.getOrNull(selIdx) ?: "play")
-                        reveal()
+                if (onBar) {
+                    // Scrub mode: Left/Right move the playhead; Up returns to buttons.
+                    val step = (durationMs / 30).coerceAtLeast(5_000L)
+                    when {
+                        isLeft -> if (e.type == KeyEventType.KeyDown) { seekBy(-step); reveal() }
+                        isRight -> if (e.type == KeyEventType.KeyDown) { seekBy(step); reveal() }
+                        isUp -> if (e.type == KeyEventType.KeyDown) { onBar = false; reveal() }
+                        isDown -> if (e.type == KeyEventType.KeyDown) reveal()
+                        isCenter -> if (e.type == KeyEventType.KeyUp) { togglePlay(); reveal() }
                     }
-                    // Up -> audio/subtitle picker. Down -> keep controls awake.
-                    isUp -> if (e.type == KeyEventType.KeyUp) {
-                        refreshTrackLists(); showTracks = true
-                    }
-                    isDown -> if (e.type == KeyEventType.KeyDown) reveal()
-                    // Left/Right -> move the selection highlight across the buttons.
-                    isLeft -> if (e.type == KeyEventType.KeyDown) {
-                        selIdx = (selIdx - 1).coerceAtLeast(0); reveal()
-                    }
-                    isRight -> if (e.type == KeyEventType.KeyDown) {
-                        selIdx = (selIdx + 1).coerceAtMost(controlIds.lastIndex); reveal()
+                } else {
+                    when {
+                        // OK / Enter -> press the highlighted button.
+                        isCenter -> if (e.type == KeyEventType.KeyUp) {
+                            dispatchControl(controlIds.getOrNull(selIdx) ?: "play")
+                            reveal()
+                        }
+                        // Up -> audio/subtitle picker. Down -> drop onto the scrub bar.
+                        isUp -> if (e.type == KeyEventType.KeyUp) {
+                            refreshTrackLists(); showTracks = true
+                        }
+                        isDown -> if (e.type == KeyEventType.KeyDown) { onBar = true; reveal() }
+                        // Left/Right -> move the selection highlight across the buttons.
+                        isLeft -> if (e.type == KeyEventType.KeyDown) {
+                            selIdx = (selIdx - 1).coerceAtLeast(0); reveal()
+                        }
+                        isRight -> if (e.type == KeyEventType.KeyDown) {
+                            selIdx = (selIdx + 1).coerceAtMost(controlIds.lastIndex); reveal()
+                        }
                     }
                 }
                 true
@@ -883,6 +902,7 @@ private fun VlcPlayer(
                 },
                 playFocus = transportFocus,
                 selectedId = selectedId,
+                barSelected = barSelected,
                 onScrub = { fraction ->
                     if (durationMs > 0) {
                         val t = (fraction * durationMs).toLong()
@@ -973,6 +993,7 @@ private fun VlcPlayer(
                 },
                 playFocus = transportFocus,
                 selectedId = selectedId,
+                barSelected = barSelected,
                 onScrub = { fraction ->
                     if (durationMs > 0) {
                         val t = (fraction * durationMs).toLong()
@@ -1033,6 +1054,7 @@ private fun AnimatedVisibilityScope.Controls(
     onTracks: () -> Unit,
     playFocus: FocusRequester,
     selectedId: String?,
+    barSelected: Boolean,
     onScrub: (Float) -> Unit
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
@@ -1230,7 +1252,16 @@ private fun AnimatedVisibilityScope.Controls(
             Spacer(Modifier.height(6.dp))
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .then(
+                        if (barSelected) Modifier
+                            .background(Color(0x22FFFFFF))
+                            .border(2.dp, Brand.Accent, RoundedCornerShape(12.dp))
+                        else Modifier
+                    )
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
             ) {
                 Text(
                     formatTime(positionMs),
@@ -1291,6 +1322,7 @@ private fun AudioNowPlaying(
     onSeekToEnd: () -> Unit,
     playFocus: FocusRequester,
     selectedId: String?,
+    barSelected: Boolean,
     onScrub: (Float) -> Unit
 ) {
     // Decode embedded cover art off the main thread; null -> placeholder.
@@ -1378,6 +1410,7 @@ private fun AudioNowPlaying(
                         positionMs = positionMs,
                         durationMs = durationMs,
                         onScrub = onScrub,
+                        barSelected = barSelected,
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
@@ -1451,6 +1484,7 @@ private fun AudioNowPlaying(
                     positionMs = positionMs,
                     durationMs = durationMs,
                     onScrub = onScrub,
+                    barSelected = barSelected,
                     modifier = Modifier.fillMaxWidth()
                 )
             }
@@ -1621,9 +1655,21 @@ private fun AudioSeekbar(
     positionMs: Long,
     durationMs: Long,
     onScrub: (Float) -> Unit,
+    barSelected: Boolean = false,
     modifier: Modifier = Modifier
 ) {
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = modifier) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .then(
+                if (barSelected) Modifier
+                    .background(Color(0x22FFFFFF))
+                    .border(2.dp, Brand.Accent, RoundedCornerShape(12.dp))
+                else Modifier
+            )
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+    ) {
         Text(
             formatTime(positionMs),
             color = Brand.TextHi,
