@@ -1,0 +1,2 @@
+# Release artifacts via Git LFS
+releases/*.apk filter=lfs diff=lfs merge=lfs -text
