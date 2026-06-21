@@ -99,6 +99,7 @@ $PersonalTools = @(
 	[PSCustomObject]@{ Name="Clip Video";            File="clip-video.ps1" }
 	[PSCustomObject]@{ Name="Media Encoder (GUI)";     File="media-encoder-gui.ps1" }
     [PSCustomObject]@{ Name="WebRipper";             File="web-ripper.ps1" }
+	[PSCustomObject]@{ Name="Atomic Clock";     File="AtomicClock.ps1" }
 )
 
 $GameTools = @(
