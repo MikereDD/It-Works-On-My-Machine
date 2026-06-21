@@ -3,7 +3,7 @@
 # author:   Mike Redd
 # version:  2.9
 # created:  2026-04-11
-# updated:  2026-06-17
+# updated:  2026-06-21
 # desc:     Create NFO, HTML, and poster data
 #           for a video file using OMDb and
 #           MediaInfo CLI. Optional -Preview pops
@@ -19,6 +19,9 @@
 #           v2.7: -ImdbId + -NonInteractive for scripted/GUI use.
 #           v2.8: cursor-free UI under -NonInteractive (GUI runspace safe).
 #           v2.9: also no-op Clear-UiScreen (Show-Header) in that mode.
+#           v2.10: -VideoFile accepts a full path (split to dir+name)
+#                  for GUI/scripted callers; auto-mode resolves to
+#                  single under -NonInteractive (no console prompt).
 #--------------------------------------------
 
 param(
@@ -99,7 +102,7 @@ if ($NonInteractive) {
 }
 
 $ScriptName    = "MiNfoCreate"
-$ScriptVersion = "2.9"
+$ScriptVersion = "2.10"
 $ScriptAuthor  = "Mike Redd"
 
 # Shared NFO banner (figlet) reused by single-file and multi-file output.
@@ -145,6 +148,14 @@ if (-not $ApiKey -or $ApiKey -eq "your_api_key_here") {
     Write-UiBlankLine
     Pause-UiReturn "Press Enter to return..."
     return
+}
+
+# Accept an absolute path in -VideoFile: split it into directory + file
+# name so GUI/scripted callers can hand us a full target path without also
+# setting -VideoDir. Bare filenames fall through to the -VideoDir logic below.
+if ($VideoFile -and [System.IO.Path]::IsPathRooted($VideoFile)) {
+    $VideoDir  = [System.IO.Path]::GetDirectoryName($VideoFile)
+    $VideoFile = [System.IO.Path]::GetFileName($VideoFile)
 }
 
 if (-not $VideoDir) {
@@ -911,6 +922,10 @@ $useMode = $Mode
 
 if ($useMode -eq 'auto') {
     if ($VideoFile -or $allVids.Count -le 1) {
+        $useMode = 'single'
+    } elseif ($NonInteractive) {
+        # No console to prompt on (GUI runspace); default to single.
+        # Pass -Mode series/docu explicitly for multi-file folders.
         $useMode = 'single'
     } else {
         Write-Host "  $($global:UI_YLW)$($allVids.Count) video files found in this folder.$($global:UI_R)"
