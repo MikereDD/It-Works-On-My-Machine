@@ -1,9 +1,9 @@
 ﻿#--------------------------------------------
 # file:     dvd-ripper-encoder.ps1
 # author:   Mike Redd
-# version:  4.5
+# version:  4.6
 # created:  2026-04-11
-# updated:  2026-06-18
+# updated:  2026-06-21
 # desc:     Encode DVDs directly with HandBrakeCLI on Windows
 #           using high-quality x265 defaults. Sibling pipeline
 #           to BRencoder.ps1: DVDTrackMeta sidecars, mkvpropedit
@@ -14,6 +14,10 @@
 #           v4.3: stream HandBrake output + exit-code check on encode.
 #           v4.4: fix encode binding — allow empty (no) x265 tune.
 #           v4.5: fix HandBrake args — --loose-anamorphic (was --anamorphic loose).
+#           v4.6: best-quality MKV defaults — detelecine + decomb for
+#                 film DVDs, VFR (was CFR) so 3:2 film resolves to
+#                 23.976p, and FLAC audio fallback (was eac3) to keep
+#                 LPCM tracks lossless.
 #--------------------------------------------
 
 param(
@@ -52,7 +56,7 @@ else {
 $ErrorActionPreference = 'Stop'
 
 $ScriptName    = "DVD Ripper Encoder"
-$ScriptVersion = "4.5"
+$ScriptVersion = "4.6"
 $ScriptAuthor  = "Mike Redd"
 
 # ── Config ────────────────────────────────────────────────────
@@ -928,15 +932,17 @@ function Encode-DvdTitle {
         '--encoder-preset', $Preset,
 
         '--markers',
-        '--cfr',
+        '--vfr',
         '--crop-mode',      'auto',
         '--loose-anamorphic',
         '--modulus',        '2',
+        '--detelecine',
         '--comb-detect',
         '--decomb',
 
-        '--aencoder',       'copy',
-        '--audio-fallback', 'eac3'
+        '--aencoder',         'copy',
+        '--audio-copy-mask',  'aac,ac3,eac3,dts,dtshd,truehd,flac,mp3',
+        '--audio-fallback',   'flac'
     )
 
     # Audio selection: language tags carry through from the DVD either way.
