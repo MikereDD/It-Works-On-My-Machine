@@ -5,6 +5,26 @@ All notable changes to Atomic Clock are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-06-21
+
+### Added
+- **Background refresh** for the widget via WorkManager: the tile re-syncs time
+  and re-fetches weather on its own roughly every 15 minutes, so it stays current
+  without opening the app. Scheduled when a widget is placed and on app launch,
+  and stopped when the last tile is removed.
+
+### Changed
+- Widget weather line now reads `temp · condition … humidity · city` — the city
+  trails the humidity, and the line is packed to the left rather than split to
+  opposite edges.
+
+### Fixed
+- The widget no longer blanks to "Weather unavailable" after a transient
+  background failure. Snapshot writes now merge over the previous values, so a
+  failed time sync or weather fetch keeps the last known reading.
+- About dialog "View on GitHub" link corrected to the `Android/AtomicClock` path
+  (it previously pointed at the old root path and 404'd).
+
 ## [0.3.0] - 2026-06-20
 
 ### Added

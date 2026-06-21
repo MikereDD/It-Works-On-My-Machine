@@ -13,8 +13,9 @@ import com.typezero.atomicclock.weather.WeatherRepository
 import com.typezero.atomicclock.weather.WeatherState
 import com.typezero.atomicclock.widget.AtomicClockWidget
 import com.typezero.atomicclock.widget.WidgetBackground
-import com.typezero.atomicclock.widget.WidgetSnapshot
 import com.typezero.atomicclock.widget.WidgetStore
+import com.typezero.atomicclock.widget.WidgetUpdater
+import com.typezero.atomicclock.widget.WidgetWork
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -62,6 +63,7 @@ class ClockViewModel(app: Application) : AndroidViewModel(app) {
     private var lastSyncAt = 0L
 
     init {
+        WidgetWork.ensureScheduled(app)
         sync()
         refreshWeather()
         viewModelScope.launch {
@@ -137,34 +139,17 @@ class ClockViewModel(app: Application) : AndroidViewModel(app) {
     /** Writes the current state to the widget store and re-renders placed widgets. */
     private fun updateWidget() {
         val app = getApplication<Application>()
-        val s = settings.value
-        val sync = activeResult
         val weather = (_weatherState.value as? WeatherState.Available)?.weather
-        WidgetStore.save(
-            app,
-            WidgetSnapshot(
-                hasSync = sync != null,
-                driftMs = sync?.clockOffsetMillis ?: 0L,
-                sourceShort = sync?.let { shortSource(it.server) } ?: "—",
-                stratum = sync?.stratum ?: 0,
-                lastSyncEpoch = lastSyncAt,
-                hasWeather = weather != null,
-                tempC = weather?.temperatureC ?: 0.0,
-                humidity = weather?.humidity ?: -1,
-                label = weather?.label ?: "",
-                iconName = weather?.icon?.name ?: "CLOUD",
-                city = weather?.city,
-                use24 = s.use24Hour,
-                fahrenheit = s.fahrenheit,
-                windMph = s.windMph,
-                bgLevel = s.widgetBackground.ordinal,
-            ),
+        val snapshot = WidgetUpdater.buildSnapshot(
+            prev = WidgetStore.load(app),
+            settings = settings.value,
+            sync = activeResult,
+            syncEpoch = lastSyncAt,
+            weather = weather,
         )
+        WidgetStore.save(app, snapshot)
         AtomicClockWidget.refresh(app)
     }
-
-    private fun shortSource(host: String): String =
-        host.removePrefix("time.").substringBefore('.').replaceFirstChar { it.uppercase() }
 
     /**
      * Corrected UTC time right now, in Unix millis. When synced this is anchored

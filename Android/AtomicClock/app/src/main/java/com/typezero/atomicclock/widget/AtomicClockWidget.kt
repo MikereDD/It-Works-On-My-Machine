@@ -28,6 +28,22 @@ open class AtomicClockWidget : AppWidgetProvider() {
         ids.forEach { render(context, manager, it) }
     }
 
+    override fun onEnabled(context: Context) {
+        // First instance of this tile placed — make sure background refresh runs.
+        WidgetWork.ensureScheduled(context)
+    }
+
+    override fun onDisabled(context: Context) {
+        // Last instance of this tile removed; stop the worker only if no tile of
+        // either size remains on the home screen.
+        val manager = AppWidgetManager.getInstance(context)
+        val anyLeft = listOf(
+            AtomicClockWidgetSmall::class.java,
+            AtomicClockWidgetLarge::class.java,
+        ).any { manager.getAppWidgetIds(ComponentName(context, it)).isNotEmpty() }
+        if (!anyLeft) WidgetWork.cancel(context)
+    }
+
     override fun onAppWidgetOptionsChanged(
         context: Context,
         manager: AppWidgetManager,
