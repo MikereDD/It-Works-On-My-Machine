@@ -518,6 +518,7 @@ $FontUiMedSB   = New-Font 'Segoe UI' 11.0 1
 $FontWeatherSB = New-Font 'Segoe UI Semibold' 12.5 0
 
 # Face fonts are rebuilt on resize.
+$script:FaceDiaFactor = 0.90
 $script:FaceFonts = $null
 $script:FaceFontSize = -1
 function Rebuild-FaceFonts([int]$w, [int]$h) {
@@ -527,13 +528,22 @@ function Rebuild-FaceFonts([int]$w, [int]$h) {
     if ($script:FaceFonts) {
         foreach ($k in $script:FaceFonts.Keys) { try { $script:FaceFonts[$k].Dispose() } catch { } }
     }
-    $timeSize = [math]::Max(22.0, [math]::Min(76.0, $d * 0.155))
+    $dia = $d * $script:FaceDiaFactor
+    $timeSize = [math]::Max(22.0, [math]::Min(80.0, $d * 0.165))
+
+    # Shrink to fit so "HH:MM:SS" + ".mmm" always sits well inside the ring.
+    $trial = New-Font 'Segoe UI Light' $timeSize 0
+    $mainW = $script:MeasureGfx.MeasureString('00:00:00', $trial).Width
+    $trial.Dispose()
+    $budget = $dia * 0.66
+    if ($mainW -gt $budget) { $timeSize = $timeSize * $budget / $mainW }
+
     $script:FaceFonts = @{
         Time   = (New-Font 'Segoe UI Light' $timeSize 0)
-        Millis = (New-Font 'Segoe UI' ($timeSize * 0.30) 0)
+        Millis = (New-Font 'Segoe UI' ($timeSize * 0.26) 0)
         AmPm   = (New-Font 'Segoe UI Semibold' ($timeSize * 0.20) 0)
-        Date   = (New-Font 'Segoe UI' ([math]::Max(10.0, $d * 0.034)) 0)
-        Zone   = (New-Font 'Segoe UI' ([math]::Max(9.0,  $d * 0.030)) 0)
+        Date   = (New-Font 'Segoe UI' ([math]::Max(10.0, $d * 0.036)) 0)
+        Zone   = (New-Font 'Segoe UI' ([math]::Max(9.0,  $d * 0.031)) 0)
     }
 }
 
@@ -693,14 +703,20 @@ foreach ($def in $cardDefs) {
         param($s, $e)
         $g = $e.Graphics
         $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
-        $path = New-RoundRectPath 0 0 ($s.Width - 1) ($s.Height - 1) 16
+        $path = New-RoundRectPath 0.5 0.5 ($s.Width - 2) ($s.Height - 2) 16
         $bg = New-Object System.Drawing.SolidBrush($Theme.Surface)
-        $g.FillPath($bg, $path); $bg.Dispose(); $path.Dispose()
+        $g.FillPath($bg, $path); $bg.Dispose()
+        $border = New-Object System.Drawing.Pen((CA 60 $Theme.SurfaceHigh), 1)
+        $g.DrawPath($border, $path); $border.Dispose(); $path.Dispose()
+        # accent tick before the label
+        $tick = New-Object System.Drawing.SolidBrush($s.CardAccent)
+        $tp = New-RoundRectPath 14 14 3 11 1.5
+        $g.FillPath($tick, $tp); $tp.Dispose(); $tick.Dispose()
         $lblBrush = New-Object System.Drawing.SolidBrush($Theme.OnSurfaceVariant)
-        $g.DrawString($s.CardLabel.ToUpper(), $FontUiTiny, $lblBrush, 14, 12)
+        $g.DrawString($s.CardLabel.ToUpper(), $FontUiTiny, $lblBrush, 23, 13)
         $lblBrush.Dispose()
         $valBrush = New-Object System.Drawing.SolidBrush($s.CardAccent)
-        $g.DrawString($s.CardValue, $FontUiMedSB, $valBrush, 13, 32)
+        $g.DrawString($s.CardValue, $FontUiMedSB, $valBrush, 14, 33)
         $valBrush.Dispose()
     })
     [void]$cardsHost.Controls.Add($card)
@@ -743,26 +759,55 @@ $face.Add_Paint({
     $w = $s.Width; $h = $s.Height
     Rebuild-FaceFonts $w $h
     $cx = $w / 2.0; $cy = $h / 2.0
-    $dia = [math]::Min($w, $h) * 0.86
+    $dia = [math]::Min($w, $h) * $script:FaceDiaFactor
     $rad = $dia / 2.0
-    $stroke = [math]::Max(4.0, $dia * 0.017)
+    $stroke = [math]::Max(4.0, $dia * 0.018)
     $rect = New-Object System.Drawing.RectangleF(($cx - $rad), ($cy - $rad), ($rad * 2), ($rad * 2))
 
+    # Soft radial glow behind the dial for depth
+    $vR = $rad * 1.08
+    $vpath = New-Object System.Drawing.Drawing2D.GraphicsPath
+    $vpath.AddEllipse(($cx - $vR), ($cy - $vR), ($vR * 2), ($vR * 2))
+    $pgb = New-Object System.Drawing.Drawing2D.PathGradientBrush($vpath)
+    $pgb.CenterPoint = New-Object System.Drawing.PointF($cx, $cy)
+    $pgb.CenterColor = (CA 22 $Theme.Teal)
+    $pgb.SurroundColors = @([System.Drawing.Color]::FromArgb(0, 5, 7, 13))
+    $g.FillPath($pgb, $vpath)
+    $pgb.Dispose(); $vpath.Dispose()
+
     # Faint full track
-    $trackPen = New-Object System.Drawing.Pen((CA 20 $Theme.OnSurface), $stroke)
+    $trackPen = New-Object System.Drawing.Pen((CA 22 $Theme.OnSurface), $stroke)
     $trackPen.StartCap = [System.Drawing.Drawing2D.LineCap]::Round
     $trackPen.EndCap = [System.Drawing.Drawing2D.LineCap]::Round
     $g.DrawArc($trackPen, $rect, 0, 360)
     $trackPen.Dispose()
 
-    # Bright sweeping second arc
+    # Bright sweeping second arc, with a soft bloom and a glowing leading dot
     $sweep = 360.0 * [math]::Max(0.0, [math]::Min(1.0, $script:Frac))
     if ($sweep -gt 0.01) {
+        $bloomPen = New-Object System.Drawing.Pen((CA 34 $Theme.Teal), ($stroke * 2.6))
+        $bloomPen.StartCap = [System.Drawing.Drawing2D.LineCap]::Round
+        $bloomPen.EndCap = [System.Drawing.Drawing2D.LineCap]::Round
+        $g.DrawArc($bloomPen, $rect, -90, $sweep)
+        $bloomPen.Dispose()
+
         $arcPen = New-Object System.Drawing.Pen($Accent, $stroke)
         $arcPen.StartCap = [System.Drawing.Drawing2D.LineCap]::Round
         $arcPen.EndCap = [System.Drawing.Drawing2D.LineCap]::Round
         $g.DrawArc($arcPen, $rect, -90, $sweep)
         $arcPen.Dispose()
+
+        if ($sweep -gt 3.0) {
+            $tipRad = [math]::PI * (-90.0 + $sweep) / 180.0
+            $tx = $cx + [math]::Cos($tipRad) * $rad
+            $ty = $cy + [math]::Sin($tipRad) * $rad
+            $halo = New-Object System.Drawing.SolidBrush((CA 70 $Theme.Teal))
+            $hr = $stroke * 1.9
+            $g.FillEllipse($halo, ($tx - $hr), ($ty - $hr), ($hr * 2), ($hr * 2)); $halo.Dispose()
+            $core = New-Object System.Drawing.SolidBrush($Theme.Teal)
+            $cr = $stroke * 0.95
+            $g.FillEllipse($core, ($tx - $cr), ($ty - $cr), ($cr * 2), ($cr * 2)); $core.Dispose()
+        }
     }
 
     # --- Centered text stack ---
@@ -778,8 +823,8 @@ $face.Add_Paint({
     $ampmH = if ($p.AmPm -ne '') { $g.MeasureString($p.AmPm, $ff.AmPm).Height } else { 0 }
     $dateH = $g.MeasureString('Xy', $ff.Date).Height
     $zoneH = $g.MeasureString('Xy', $ff.Zone).Height
-    $gap1 = $dia * 0.02; $gap2 = $dia * 0.015
-    $total = $ampmH + $mainSize.Height + $gap1 + $dateH + 2 + $zoneH
+    $gap1 = $dia * 0.028
+    $total = $ampmH + $mainSize.Height + $gap1 + $dateH + 4 + $zoneH
     $y = $cy - $total / 2.0
 
     $onBrush = New-Object System.Drawing.SolidBrush($Theme.OnSurface)
@@ -790,17 +835,18 @@ $face.Add_Paint({
             $g.DrawString($p.AmPm, $ff.AmPm, $accBrush, $cx, ($y + $ampmH / 2.0), $SfCenterMid)
             $y += $ampmH
         }
-        # main time centered (millis reserved to the right so it doesn't shift the time)
-        $blockW = $mainSize.Width + $milW + ($dia * 0.012)
+        # main time centered; millis reserved to the right so it never shifts the time
+        $milGap = $dia * 0.010
+        $blockW = $mainSize.Width + $milW + $milGap
         $mainLeft = $cx - $blockW / 2.0
         $g.DrawString($p.Main, $ff.Time, $onBrush, $mainLeft, $y)
         if ($hasMil) {
-            $milY = $y + $mainSize.Height - $milSize.Height - ($mainSize.Height * 0.12)
-            $g.DrawString($p.Millis, $ff.Millis, $accBrush, ($mainLeft + $mainSize.Width + ($dia * 0.006)), $milY)
+            $milY = $y + $mainSize.Height - $milSize.Height - ($mainSize.Height * 0.16)
+            $g.DrawString($p.Millis, $ff.Millis, $accBrush, ($mainLeft + $mainSize.Width + $milGap), $milY)
         }
         $y += $mainSize.Height + $gap1
         $g.DrawString($p.Date, $ff.Date, $subBrush, $cx, ($y + $dateH / 2.0), $SfCenterMid)
-        $y += $dateH + 2
+        $y += $dateH + 4
         $g.DrawString($p.Zone, $ff.Zone, $subBrush, $cx, ($y + $zoneH / 2.0), $SfCenterMid)
     } finally {
         $onBrush.Dispose(); $accBrush.Dispose(); $subBrush.Dispose()
