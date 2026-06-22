@@ -1,9 +1,9 @@
 ﻿#--------------------------------------------
 # file:     brEncoder.ps1
 # author:   Mike Redd
-# version:  3.1.8
+# version:  3.1.9
 # created:  2026-02-11
-# updated:  2026-06-18
+# updated:  2026-06-21
 # desc:     Encode Blu-ray .m2ts files
 #           to H.265/HEVC on Windows
 #           using ffmpeg, then create a
@@ -13,7 +13,12 @@
 #           validates metadata, verifies final MKV
 #           language/default/forced tags
 #           remuxes final MKV with real track IDs
-# changes:  v3.1.8 - subtitle tags now driven by the source .mkv's own per-stream
+# changes:  v3.1.9 - a post-encode tagging failure no longer discards the
+#                    finished MKV: the encode is kept and the job continues
+#                    with a warning (tags left at ffmpeg defaults). Also logs
+#                    the .clpi reader status so count-mismatch refusals are
+#                    diagnosable.
+#           v3.1.8 - subtitle tags now driven by the source .mkv's own per-stream
 #                    language tags (in physical 0:s order) instead of the disc
 #                    sidecar, which over-counts when MakeMKV drops duplicate PGS
 #                    streams (e.g. output=10 vs sidecar=20). Both the encode map
@@ -64,7 +69,7 @@ else {
 $ErrorActionPreference = 'Stop'
 
 $ScriptName    = "Blu-ray Encoder"
-$ScriptVersion = "3.1.8"
+$ScriptVersion = "3.1.9"
 $ScriptAuthor  = "Mike Redd"
 
 # ── Config ────────────────────────────────────────────────────
@@ -1453,9 +1458,11 @@ function Invoke-MKVLanguageRemux {
     $clpiAllLangs = if ($SourcePath) { Read-ClpiStreamLanguages -M2tsPath $SourcePath } else { $null }
     $clpiAudLangs = if ($clpiAllLangs) { @($clpiAllLangs.Audio) } else { @() }
     $useClpiAudio = ($clpiAudLangs.Count -eq $audOutCount -and $audOutCount -gt 0)
+    if ($clpiAllLangs) { Write-Host "  $($global:UI_DIM)clpi$($global:UI_R)    $($clpiAllLangs.Status)" }
 
     if ($ovrAudio.Count -eq 0 -and -not $useClpiAudio -and $audOutCount -ne $AudioMeta.Count) {
-        throw "Audio validation failed: output=$audOutCount, metadata=$($AudioMeta.Count), and no usable .clpi languages. Refusing unsafe partial tagging."
+        $clpiNote = if ($clpiAllLangs) { $clpiAllLangs.Status } else { 'clpi: not read (no source path)' }
+        throw "Audio validation failed: output=$audOutCount, metadata=$($AudioMeta.Count); $clpiNote. Refusing unsafe partial tagging."
     }
     # Prefer authoritative subtitle languages from the Blu-ray clip info; the
     # sidecar's subtitle order/count then no longer gates tagging.
@@ -2349,11 +2356,24 @@ function Encode-File {
 
     $encodedInfo = Wait-ForOutputFile -Path $outputFile
 
-    $appliedMeta = Apply-TrackMetadata -OutputFile $encodedInfo.FullName -SourceFile $SourceFile -MovieName $MovieName -PreselectedMetaInfo $preselectedMeta
-    if ($appliedMeta) {
-        # Guard against stray pipeline output: keep only the last value and force to string.
-        if ($appliedMeta -is [array]) { $appliedMeta = $appliedMeta[-1] }
-        $trackMetaPath = [string]$appliedMeta
+    # The encode is the expensive artifact and has already succeeded here
+    # (ffmpeg exit 0, output verified). Track metadata is a best-effort
+    # enhancement, so a tagging failure must NOT discard a finished encode.
+    # Keep the file and continue; the validation step refuses to write
+    # mislabeled tags, so the worst case is a playable MKV with ffmpeg-default
+    # ('und') tags that can be re-tagged later via the standalone remux.
+    try {
+        $appliedMeta = Apply-TrackMetadata -OutputFile $encodedInfo.FullName -SourceFile $SourceFile -MovieName $MovieName -PreselectedMetaInfo $preselectedMeta
+        if ($appliedMeta) {
+            # Guard against stray pipeline output: keep only the last value and force to string.
+            if ($appliedMeta -is [array]) { $appliedMeta = $appliedMeta[-1] }
+            $trackMetaPath = [string]$appliedMeta
+        }
+    }
+    catch {
+        Write-Host "  $($global:UI_YLW)Track tagging skipped:$($global:UI_R) $($_.Exception.Message)"
+        Write-Host "  $($global:UI_GRY)Encode is complete and kept; tags left at ffmpeg defaults. Re-tag later via the standalone language remux once track languages are known.$($global:UI_R)"
+        $trackMetaPath = ""
     }
 
     Create-SampleFromFinishedMkv -FinishedMkvPath $encodedInfo.FullName -MovieName $MovieName
