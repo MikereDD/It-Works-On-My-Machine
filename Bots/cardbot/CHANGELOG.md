@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.2] - 2026-06-19
+
+### Fixed
+- Tweet text no longer shows raw `t.co` links. The auto-appended link to the
+  quoted tweet and the post's own media links are stripped, and real external
+  links are expanded to their readable form (e.g. `youtube.com/...`). A quote
+  like "and now we wait https://t.co/..." now renders as just "and now we wait".
+
+## [0.8.1] - 2026-06-19
+
+### Changed
+- Telegram (`t.me`) post captions no longer repeat the t.me link — the pasted
+  link already gets a native Telegram preview. X and article captions still
+  include the source link.
+
 ## [0.8.0] - 2026-06-19
 
 ### Changed
@@ -152,7 +167,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Card rendering runs in a worker thread to avoid blocking the event loop;
   `HTTPXRequest` timeouts configured for Telegram I/O.
 
-[Unreleased]: https://github.com/MikereDD/It-Works-On-My-Machine/compare/cardbot-v0.8.0...HEAD
+[Unreleased]: https://github.com/MikereDD/It-Works-On-My-Machine/compare/cardbot-v0.8.2...HEAD
+[0.8.2]: https://github.com/MikereDD/It-Works-On-My-Machine/compare/cardbot-v0.8.1...cardbot-v0.8.2
+[0.8.1]: https://github.com/MikereDD/It-Works-On-My-Machine/compare/cardbot-v0.8.0...cardbot-v0.8.1
 [0.8.0]: https://github.com/MikereDD/It-Works-On-My-Machine/compare/cardbot-v0.7.1...cardbot-v0.8.0
 [0.7.1]: https://github.com/MikereDD/It-Works-On-My-Machine/compare/cardbot-v0.7.0...cardbot-v0.7.1
 [0.7.0]: https://github.com/MikereDD/It-Works-On-My-Machine/compare/cardbot-v0.6.0...cardbot-v0.7.0

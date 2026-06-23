@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file: cardbot.py
 # author: Mike Redd
-# version: 0.8.0
+# version: 0.8.2
 # created: 2026-06-18
 # updated: 2026-06-18
 # desc: "Gabriel" - Telegram link-card bot.
@@ -31,7 +31,7 @@ from urllib.parse import (
 
 # ── Branding ─────────────────────────────────────────────────
 BOT_NAME = "Gabriel"
-BOT_VERSION = "0.8.0"
+BOT_VERSION = "0.8.2"
 
 import httpx
 from bs4 import BeautifulSoup
@@ -901,13 +901,30 @@ async def fetch_x_syndication(tweet_id: str):
         return None
 
 
+def _clean_tweet_text(node: dict) -> str:
+    """Strip/expand t.co links: drop self-media and quoted-tweet links,
+    replace real links with their readable display_url."""
+    text = node.get("text") or node.get("full_text") or ""
+    ents = node.get("entities") or {}
+    for u in ents.get("urls", []):
+        tco, disp = u.get("url"), u.get("display_url")
+        exp = u.get("expanded_url") or ""
+        if not tco:
+            continue
+        text = text.replace(tco, "" if "/status/" in exp else (disp or ""))
+    for m in (node.get("mediaDetails") or []) + (ents.get("media") or []):
+        if m.get("url"):
+            text = text.replace(m["url"], "")
+    return re.sub(r"\s+", " ", text).strip()
+
+
 def parse_syndication(data: dict):
     """Normalize a tweet-result payload into the fields the cards need."""
     if not data or not (data.get("text") or data.get("full_text")):
         return None
     out = {
         "main": _user_fields(data.get("user")),
-        "text": data.get("text") or data.get("full_text") or "",
+        "text": _clean_tweet_text(data),
         "media": _first_media(data),
         "quoted": None,
     }
@@ -915,7 +932,7 @@ def parse_syndication(data: dict):
     if q:
         out["quoted"] = {
             **_user_fields(q.get("user")),
-            "text": q.get("text") or q.get("full_text") or "",
+            "text": _clean_tweet_text(q),
             "media": _first_media(q),
         }
     return out
@@ -1032,7 +1049,10 @@ def build_caption(title: str, url: str) -> str:
     title = (title or "").strip()
     if len(title) > MAX_TITLE_CHARS:
         title = title[: MAX_TITLE_CHARS - 1].rstrip() + "\u2026"
-    return f"<b>{html.escape(title)}</b>\n{url}"
+    parts = [f"<b>{html.escape(title)}</b>"]
+    if url:
+        parts.append(url)
+    return "\n".join(parts)
 
 
 def build_post_caption(title: str, text: str, url: str) -> str:
@@ -1046,8 +1066,14 @@ def build_post_caption(title: str, text: str, url: str) -> str:
         if len(text) > 600:                       # keep caption under Telegram's limit
             text = text[:599].rstrip() + "\u2026"
         parts.append(f"\u201c{html.escape(text)}\u201d")
-    parts.append(url)
+    if url:
+        parts.append(url)
     return "\n".join(parts)
+
+
+def _is_telegram_host(domain: str) -> bool:
+    d = (domain or "").lower()
+    return d in ("t.me", "telegram.me") or d.endswith(".t.me")
 
 
 async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1121,7 +1147,7 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     title = meta["title"] or meta["domain"]
-    link = clean_url(final)
+    link = "" if _is_telegram_host(meta["domain"]) else clean_url(final)
     caption = build_post_caption(title, post_text, link) if post_text else build_caption(title, link)
     await msg.reply_photo(photo=png, caption=caption, parse_mode=ParseMode.HTML)
 
