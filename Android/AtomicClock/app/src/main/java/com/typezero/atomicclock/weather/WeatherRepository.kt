@@ -14,10 +14,10 @@ class WeatherRepository(
 ) {
     fun hasLocationPermission(): Boolean = location.hasPermission()
 
-    suspend fun fetch(): CurrentWeather? = withContext(Dispatchers.IO) {
-        val loc = location.current() ?: return@withContext null
+    suspend fun fetch(forceFresh: Boolean = false): CurrentWeather? = withContext(Dispatchers.IO) {
+        val loc = location.current(forceFresh) ?: return@withContext null
         val raw = client.current(loc.latitude, loc.longitude) ?: return@withContext null
-        val (label, icon) = wmoToCondition(raw.code, raw.isDay)
+        val (label, icon) = resolveCondition(raw.code, raw.isDay, raw.precipitation, raw.cloudCover)
         CurrentWeather(
             temperatureC = raw.tempC,
             apparentC = raw.apparentC,

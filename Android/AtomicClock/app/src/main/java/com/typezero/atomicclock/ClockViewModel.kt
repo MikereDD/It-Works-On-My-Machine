@@ -116,7 +116,7 @@ class ClockViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Refreshes current conditions. Safe to call before/without location permission. */
-    fun refreshWeather() {
+    fun refreshWeather(force: Boolean = false) {
         viewModelScope.launch {
             if (!weatherRepo.hasLocationPermission()) {
                 _weatherState.value =
@@ -126,7 +126,7 @@ class ClockViewModel(app: Application) : AndroidViewModel(app) {
             if (_weatherState.value !is WeatherState.Available) {
                 _weatherState.value = WeatherState.Loading
             }
-            val weather = weatherRepo.fetch()
+            val weather = weatherRepo.fetch(forceFresh = force)
             _weatherState.value = if (weather != null) {
                 WeatherState.Available(weather)
             } else {

@@ -30,6 +30,7 @@ import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -45,8 +46,11 @@ import androidx.compose.ui.unit.dp
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.core.content.ContextCompat
 import com.typezero.atomicclock.ClockViewModel
 import com.typezero.atomicclock.SyncState
@@ -84,6 +88,22 @@ fun AtomicClockScreen(vm: ClockViewModel = viewModel()) {
         else permissionLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
     }
     LaunchedEffect(Unit) { requestWeather() }
+
+    // Re-pull weather each time the app comes back to the foreground, so reopening
+    // it after a drive shows current conditions instead of the last fetch.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                val granted = ContextCompat.checkSelfPermission(
+                    context, Manifest.permission.ACCESS_COARSE_LOCATION,
+                ) == PackageManager.PERMISSION_GRANTED
+                if (granted) vm.refreshWeather()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     // Drive the display at the frame rate for a perfectly smooth tick.
     val nowMillis by produceState(initialValue = vm.correctedTimeMillis(), syncState) {
@@ -182,10 +202,16 @@ fun AtomicClockScreen(vm: ClockViewModel = viewModel()) {
                 )
             }
 
-            // Re-sync button.
+            // Refresh button — re-syncs time and pulls fresh weather.
             ResyncButton(
                 syncing = syncState is SyncState.Syncing,
-                onClick = vm::sync,
+                onClick = {
+                    vm.sync()
+                    val granted = ContextCompat.checkSelfPermission(
+                        context, Manifest.permission.ACCESS_COARSE_LOCATION,
+                    ) == PackageManager.PERMISSION_GRANTED
+                    if (granted) vm.refreshWeather(force = true) else requestWeather()
+                },
                 modifier = Modifier.padding(vertical = 20.dp),
             )
         }

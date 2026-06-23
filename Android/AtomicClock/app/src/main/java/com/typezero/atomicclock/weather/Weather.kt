@@ -15,6 +15,8 @@ data class RawWeather(
     val windDir: Int,
     val code: Int,
     val isDay: Boolean,
+    val cloudCover: Int = -1,
+    val precipitation: Double = 0.0,
 )
 
 /** Fully resolved current conditions for display. */
@@ -57,6 +59,38 @@ fun wmoToCondition(code: Int, isDay: Boolean): Pair<String, WeatherIcon> {
         95 -> "Thunderstorm" to WeatherIcon.STORM
         96, 99 -> "Thunderstorm" to WeatherIcon.STORM
         else -> "—" to WeatherIcon.CLOUD
+    }
+}
+
+/**
+ * Resolves the condition to display *now*. Open-Meteo's [code] is the forecast
+ * for the whole grid cell over the current hour, so it can announce a
+ * "Thunderstorm" while nothing is actually falling and the sky is merely cloudy.
+ * When there's no current precipitation we describe the observed sky from
+ * [cloudCover] instead, which tracks what you can see far more honestly. When it
+ * really is precipitating, the WMO mapping (drizzle/rain/snow/storm) stands.
+ */
+fun resolveCondition(
+    code: Int,
+    isDay: Boolean,
+    precipitationMm: Double,
+    cloudCover: Int,
+): Pair<String, WeatherIcon> {
+    val isPrecipForecast = code >= 51 // drizzle, rain, snow, showers, thunderstorm
+    if (isPrecipForecast && precipitationMm <= 0.0 && cloudCover >= 0) {
+        return skyFromCloudCover(cloudCover, isDay)
+    }
+    return wmoToCondition(code, isDay)
+}
+
+/** Describes the sky purely from cloud-cover percentage. */
+private fun skyFromCloudCover(cloudCover: Int, isDay: Boolean): Pair<String, WeatherIcon> {
+    val clearIcon = if (isDay) WeatherIcon.SUN else WeatherIcon.MOON
+    return when {
+        cloudCover < 12 -> "Clear" to clearIcon
+        cloudCover < 50 -> "Partly cloudy" to clearIcon
+        cloudCover < 85 -> "Cloudy" to WeatherIcon.CLOUD
+        else -> "Overcast" to WeatherIcon.CLOUD
     }
 }
 

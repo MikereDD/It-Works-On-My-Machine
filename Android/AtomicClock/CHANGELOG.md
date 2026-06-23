@@ -5,7 +5,7 @@ All notable changes to Atomic Clock are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.4.0] - 2026-06-21
+## [0.4.1] - 2026-06-22
 
 ### Added
 - **Background refresh** for the widget via WorkManager: the tile re-syncs time
@@ -14,11 +14,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and stopped when the last tile is removed.
 
 ### Changed
+- The refresh button now also re-fetches weather (forcing a fresh location fix),
+  and weather re-pulls whenever the app returns to the foreground. Previously the
+  button only re-synced the clock and weather refreshed only every 15 minutes, so
+  a reading could lag well behind real conditions.
 - Widget weather line now reads `temp · condition … humidity · city` — the city
   trails the humidity, and the line is packed to the left rather than split to
   opposite edges.
 
 ### Fixed
+- Current condition now reflects what's actually happening rather than the
+  hour's forecast. Open-Meteo's `weather_code` covers a whole grid-cell hour, so
+  it could announce a "Thunderstorm" while nothing was falling; when there's no
+  current precipitation the app now shows the observed sky (clear / partly cloudy
+  / cloudy / overcast) from cloud cover instead. Real precipitation still reads
+  as drizzle/rain/snow/storm.
+- Weather now resolves a **fresh location** instead of reusing a stale cached
+  fix, so conditions and city update as you travel. Previously an old fix could
+  make a reading like "Thunderstorm" persist from city to city while the actual
+  sky had changed.
 - The widget no longer blanks to "Weather unavailable" after a transient
   background failure. Snapshot writes now merge over the previous values, so a
   failed time sync or weather fetch keeps the last known reading.

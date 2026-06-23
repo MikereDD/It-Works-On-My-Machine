@@ -17,7 +17,7 @@ class OpenMeteoClient(
             val url = URL(
                 "https://api.open-meteo.com/v1/forecast" +
                     "?latitude=$latitude&longitude=$longitude" +
-                    "&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,is_day,wind_speed_10m,wind_direction_10m" +
+                    "&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,is_day,wind_speed_10m,wind_direction_10m,cloud_cover,precipitation" +
                     "&timezone=auto",
             )
             conn = (url.openConnection() as HttpURLConnection).apply {
@@ -37,6 +37,8 @@ class OpenMeteoClient(
                 windDir = current.optInt("wind_direction_10m", -1),
                 code = current.getInt("weather_code"),
                 isDay = current.optInt("is_day", 1) == 1,
+                cloudCover = current.optInt("cloud_cover", -1),
+                precipitation = current.optDouble("precipitation", 0.0),
             )
         } catch (_: Exception) {
             null
