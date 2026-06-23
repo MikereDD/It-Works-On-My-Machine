@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file: cardbot.py
 # author: Mike Redd
-# version: 0.8.2
+# version: 0.8.3
 # created: 2026-06-18
 # updated: 2026-06-18
 # desc: "Gabriel" - Telegram link-card bot.
@@ -31,7 +31,7 @@ from urllib.parse import (
 
 # ── Branding ─────────────────────────────────────────────────
 BOT_NAME = "Gabriel"
-BOT_VERSION = "0.8.2"
+BOT_VERSION = "0.8.3"
 
 import httpx
 from bs4 import BeautifulSoup
@@ -539,7 +539,7 @@ def render_post_card(author, handle, text, domain,
                      avatar: Image.Image | None = None,
                      hero: Image.Image | None = None,
                      verified=None) -> bytes:
-    """Tweet/quote layout: author + @handle byline, post text as the focus."""
+    """Post layout: author + @handle byline, post text, then the whole image."""
     name_font = _load_font(True, 32)
     handle_font = _load_font(False, 25)
     tweet_font = _load_font(False, 38)
@@ -549,29 +549,21 @@ def render_post_card(author, handle, text, domain,
     measure = ImageDraw.Draw(Image.new("RGB", (CARD_W, 4)))
     tweet_eh = int(_line_h(tweet_font) * 0.82)
     name_eh = int(_line_h(name_font) * 0.82)
-    tlines = _wrap(measure, text, tweet_font, inner_w, POST_TWEET_LINES, tweet_eh) or ["(no text)"]
+    tlines = _wrap(measure, text, tweet_font, inner_w, POST_TWEET_LINES, tweet_eh)
     tweet_lh = int(_line_h(tweet_font) * 1.26)
 
     av = 76
-    top = HERO_H if hero is not None else 0
-    head_top = top + (30 if hero is not None else 46)
+    mimg = _fit_box(hero, inner_w, 820) if hero is not None else None
+
+    head_top = 44
     tweet_top = head_top + av + 30
-    foot_top = tweet_top + len(tlines) * tweet_lh + 30
+    text_bottom = tweet_top + len(tlines) * tweet_lh
+    img_block = (20 + mimg.height) if mimg is not None else 0
+    foot_top = text_bottom + img_block + 30
     card_h = foot_top + _line_h(foot_font) + 44
 
     card = _vgrad(CARD_W, card_h, BG_TOP, BG_BOT).convert("RGBA")
-    if hero is not None:
-        card.paste(_cover(hero, CARD_W, HERO_H), (0, 0))
-        ov = Image.new("RGBA", card.size, (0, 0, 0, 0))
-        od = ImageDraw.Draw(ov)
-        for i in range(FADE_H):
-            a = int(255 * (i / (FADE_H - 1)) ** 1.45)
-            yb = HERO_H - FADE_H + i
-            od.line([(0, yb), (CARD_W, yb)], fill=(BG_TOP[0], BG_TOP[1], BG_TOP[2], a))
-        card = Image.alpha_composite(card, ov)
-    else:
-        card.alpha_composite(_hgrad_bar(CARD_W, 8, ACCENT_A, ACCENT_B, 0), (0, 0))
-
+    card.alpha_composite(_hgrad_bar(CARD_W, 8, ACCENT_A, ACCENT_B, 0), (0, 0))
     draw = ImageDraw.Draw(card)
 
     # header: avatar chip + author + @handle
@@ -588,11 +580,15 @@ def render_post_card(author, handle, text, domain,
     # accent rule
     card.alpha_composite(_hgrad_bar(64, 4, ACCENT_A, ACCENT_B, 2), (PAD_X, tweet_top - 18))
 
-    # post text (the focus)
+    # post text
     y = tweet_top
     for ln in tlines:
         _draw_rich(card, draw, PAD_X, y, ln, tweet_font, FG_TWEET, tweet_eh)
         y += tweet_lh
+
+    # whole image, under the post
+    if mimg is not None:
+        _paste_rounded(card, mimg, PAD_X + (inner_w - mimg.width) // 2, text_bottom + 20, 16)
 
     # footer source
     _tracked(draw, (PAD_X, foot_top), domain.upper(), foot_font, FG_FOOT, 2)

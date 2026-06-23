@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.3] - 2026-06-19
+
+### Changed
+- Single (non-quote) image posts now show the whole image under the post,
+  matching the quote-card treatment, instead of a cover-cropped hero at the
+  top. Image-only posts no longer render a "(no text)" placeholder — the card
+  goes straight from the header to the image.
+
 ## [0.8.2] - 2026-06-19
 
 ### Fixed
@@ -167,7 +175,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Card rendering runs in a worker thread to avoid blocking the event loop;
   `HTTPXRequest` timeouts configured for Telegram I/O.
 
-[Unreleased]: https://github.com/MikereDD/It-Works-On-My-Machine/compare/cardbot-v0.8.2...HEAD
+[Unreleased]: https://github.com/MikereDD/It-Works-On-My-Machine/compare/cardbot-v0.8.3...HEAD
+[0.8.3]: https://github.com/MikereDD/It-Works-On-My-Machine/compare/cardbot-v0.8.2...cardbot-v0.8.3
 [0.8.2]: https://github.com/MikereDD/It-Works-On-My-Machine/compare/cardbot-v0.8.1...cardbot-v0.8.2
 [0.8.1]: https://github.com/MikereDD/It-Works-On-My-Machine/compare/cardbot-v0.8.0...cardbot-v0.8.1
 [0.8.0]: https://github.com/MikereDD/It-Works-On-My-Machine/compare/cardbot-v0.7.1...cardbot-v0.8.0
