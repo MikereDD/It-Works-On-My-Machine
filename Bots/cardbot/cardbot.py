@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file: cardbot.py
 # author: Mike Redd
-# version: 0.7.1
+# version: 0.8.0
 # created: 2026-06-18
 # updated: 2026-06-18
 # desc: "Gabriel" - Telegram link-card bot.
@@ -31,7 +31,7 @@ from urllib.parse import (
 
 # ── Branding ─────────────────────────────────────────────────
 BOT_NAME = "Gabriel"
-BOT_VERSION = "0.7.1"
+BOT_VERSION = "0.8.0"
 
 import httpx
 from bs4 import BeautifulSoup
@@ -616,10 +616,25 @@ def _badge(draw, cx, cy, r, color):
     )
 
 
+def _fit_box(img: Image.Image, max_w: int, max_h: int) -> Image.Image:
+    """Scale the WHOLE image to fit within max_w x max_h (no crop)."""
+    img = img.convert("RGB")
+    sw, sh = img.size
+    s = min(max_w / sw, max_h / sh)
+    return img.resize((max(1, int(sw * s)), max(1, int(sh * s))), Image.LANCZOS)
+
+
+def _paste_rounded(card, img, x, y, radius=16):
+    mask = Image.new("L", img.size, 0)
+    ImageDraw.Draw(mask).rounded_rectangle([0, 0, img.width - 1, img.height - 1], radius=radius, fill=255)
+    card.paste(img, (int(x), int(y)), mask)
+
+
 def render_quote_card(main, text, quoted, domain,
                       main_avatar=None, quoted_avatar=None,
                       media=None, quoted_media=None) -> bytes:
-    """Quote-tweet layout: main header + comment, then a nested quoted tweet."""
+    """Quote layout: main user + comment + their full image, then the quoted
+    user + text + their full image, each image under its own author."""
     nf = _load_font(True, 30); hf = _load_font(False, 24); mf = _load_font(False, 36)
     qnf = _load_font(True, 26); qhf = _load_font(False, 22); qtf = _load_font(False, 28)
     ff = _load_font(True, 22)
@@ -627,39 +642,29 @@ def render_quote_card(main, text, quoted, domain,
     main_eh = int(_line_h(mf) * 0.82); q_eh = int(_line_h(qtf) * 0.82)
 
     measure = ImageDraw.Draw(Image.new("RGB", (CARD_W, 4)))
-    mlines = _wrap(measure, text, mf, inner, 5, main_eh)
+    mlines = _wrap(measure, text, mf, inner, 6, main_eh)
     qpad = 28
     qinner = inner - 2 * qpad
-    qlines = _wrap(measure, quoted["text"], qtf, qinner, 7, q_eh) if quoted else []
+    qlines = _wrap(measure, quoted["text"], qtf, qinner, 8, q_eh) if quoted else []
     mlh = int(_line_h(mf) * 1.28); qtlh = int(_line_h(qtf) * 1.28)
 
     av, qav = 72, 44
-    qmedia_h = 0
-    qm = _cover(quoted_media, qinner, int(qinner * 9 / 16)) if quoted_media is not None else None
-    if qm is not None:
-        qmedia_h = qm.height + 16
+    # whole images, scaled to fit (not cropped)
+    mimg = _fit_box(media, inner, 760) if media is not None else None
+    qimg = _fit_box(quoted_media, qinner, 600) if quoted_media is not None else None
 
-    top = HERO_H if media is not None else 0
-    head_top = top + (30 if media is not None else 44)
+    head_top = 44
     main_top = head_top + av + 26
     main_h = len(mlines) * mlh
-    qbox_top = main_top + main_h + 26
-    qbox_h = qpad + qav + 16 + len(qlines) * qtlh + qmedia_h + qpad
+    main_img_block = (20 + mimg.height) if mimg is not None else 0
+    qbox_top = main_top + main_h + main_img_block + 26
+    qimg_block = (16 + qimg.height) if qimg is not None else 0
+    qbox_h = qpad + qav + 16 + len(qlines) * qtlh + qimg_block + qpad
     foot_top = qbox_top + qbox_h + 26
     card_h = foot_top + _line_h(ff) + 44
 
     card = _vgrad(CARD_W, card_h, BG_TOP, BG_BOT).convert("RGBA")
-    if media is not None:
-        card.paste(_cover(media, CARD_W, HERO_H), (0, 0))
-        ov = Image.new("RGBA", card.size, (0, 0, 0, 0)); od = ImageDraw.Draw(ov)
-        for i in range(FADE_H):
-            a = int(255 * (i / (FADE_H - 1)) ** 1.45)
-            yb = HERO_H - FADE_H + i
-            od.line([(0, yb), (CARD_W, yb)], fill=(BG_TOP[0], BG_TOP[1], BG_TOP[2], a))
-        card = Image.alpha_composite(card, ov)
-    else:
-        card.alpha_composite(_hgrad_bar(CARD_W, 8, ACCENT_A, ACCENT_B, 0), (0, 0))
-
+    card.alpha_composite(_hgrad_bar(CARD_W, 8, ACCENT_A, ACCENT_B, 0), (0, 0))
     draw = ImageDraw.Draw(card)
 
     # main header
@@ -678,6 +683,10 @@ def render_quote_card(main, text, quoted, domain,
     for ln in mlines:
         _draw_rich(card, draw, PAD_X, y, ln, mf, FG_TEXT, main_eh)
         y += mlh
+
+    # main user's image (whole image, under their comment)
+    if mimg is not None:
+        _paste_rounded(card, mimg, PAD_X + (inner - mimg.width) // 2, y + 20, 16)
 
     # nested quoted tweet
     if quoted:
@@ -698,10 +707,9 @@ def render_quote_card(main, text, quoted, domain,
         for ln in qlines:
             _draw_rich(card, draw, qx, qty, ln, qtf, FG_TEXT, q_eh)
             qty += qtlh
-        if qm is not None:
-            mask = Image.new("L", qm.size, 0)
-            ImageDraw.Draw(mask).rounded_rectangle([0, 0, qm.width - 1, qm.height - 1], radius=14, fill=255)
-            card.paste(qm, (qx, qty + 4), mask)
+        # quoted user's image (whole image, under their text)
+        if qimg is not None:
+            _paste_rounded(card, qimg, qx + (qinner - qimg.width) // 2, qty + 4, 14)
 
     # footer
     _tracked(draw, (PAD_X, foot_top), domain.upper(), ff, FG_FOOT, 2)

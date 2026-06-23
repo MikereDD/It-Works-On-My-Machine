@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-06-19
+
+### Changed
+- Quote-tweet layout now places each image under its own author at full size:
+  main user → comment → their full image, then the quoted user → text → their
+  full image. Images are scaled to fit whole (no cropping) instead of being
+  cover-cropped into a top hero strip.
+
 ## [0.7.1] - 2026-06-19
 
 ### Added
@@ -144,7 +152,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Card rendering runs in a worker thread to avoid blocking the event loop;
   `HTTPXRequest` timeouts configured for Telegram I/O.
 
-[Unreleased]: https://github.com/MikereDD/It-Works-On-My-Machine/compare/cardbot-v0.7.1...HEAD
+[Unreleased]: https://github.com/MikereDD/It-Works-On-My-Machine/compare/cardbot-v0.8.0...HEAD
+[0.8.0]: https://github.com/MikereDD/It-Works-On-My-Machine/compare/cardbot-v0.7.1...cardbot-v0.8.0
 [0.7.1]: https://github.com/MikereDD/It-Works-On-My-Machine/compare/cardbot-v0.7.0...cardbot-v0.7.1
 [0.7.0]: https://github.com/MikereDD/It-Works-On-My-Machine/compare/cardbot-v0.6.0...cardbot-v0.7.0
 [0.6.0]: https://github.com/MikereDD/It-Works-On-My-Machine/compare/cardbot-v0.5.0...cardbot-v0.6.0
