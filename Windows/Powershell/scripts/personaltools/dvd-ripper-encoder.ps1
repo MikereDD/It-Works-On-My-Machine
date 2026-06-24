@@ -1,7 +1,7 @@
 ﻿#--------------------------------------------
 # file:     dvd-ripper-encoder.ps1
 # author:   Mike Redd
-# version:  4.6
+# version:  4.6.1
 # created:  2026-04-11
 # updated:  2026-06-21
 # desc:     Encode DVDs directly with HandBrakeCLI on Windows
@@ -18,6 +18,8 @@
 #                 film DVDs, VFR (was CFR) so 3:2 film resolves to
 #                 23.976p, and FLAC audio fallback (was eac3) to keep
 #                 LPCM tracks lossless.
+#           v4.6.1: fix invalid HandBrake fallback codec (flac -> flac24)
+#                   that failed job init; drop redundant --audio-copy-mask.
 #--------------------------------------------
 
 param(
@@ -56,7 +58,7 @@ else {
 $ErrorActionPreference = 'Stop'
 
 $ScriptName    = "DVD Ripper Encoder"
-$ScriptVersion = "4.6"
+$ScriptVersion = "4.6.1"
 $ScriptAuthor  = "Mike Redd"
 
 # ── Config ────────────────────────────────────────────────────
@@ -940,9 +942,8 @@ function Encode-DvdTitle {
         '--comb-detect',
         '--decomb',
 
-        '--aencoder',         'copy',
-        '--audio-copy-mask',  'aac,ac3,eac3,dts,dtshd,truehd,flac,mp3',
-        '--audio-fallback',   'flac'
+        '--aencoder',       'copy',
+        '--audio-fallback', 'flac24'
     )
 
     # Audio selection: language tags carry through from the DVD either way.
