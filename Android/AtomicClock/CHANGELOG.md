@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.4.1] - 2026-06-22
 
 ### Added
+- **Background widget updates** (opt-in, in Settings). With "Allow all the time"
+  location granted, the 15-minute worker can refresh weather and city for a new
+  location while the app is closed — so the widget keeps up as you travel instead
+  of only updating when you open the app. Without it, the widget still updates on
+  open and keeps its last good reading.
 - **Background refresh** for the widget via WorkManager: the tile re-syncs time
   and re-fetches weather on its own roughly every 15 minutes, so it stays current
   without opening the app. Scheduled when a widget is placed and on app launch,

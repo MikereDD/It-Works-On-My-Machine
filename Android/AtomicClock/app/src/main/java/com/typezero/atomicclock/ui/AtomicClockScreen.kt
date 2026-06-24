@@ -1,7 +1,12 @@
 package com.typezero.atomicclock.ui
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
+import android.widget.Toast
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -88,6 +93,45 @@ fun AtomicClockScreen(vm: ClockViewModel = viewModel()) {
         else permissionLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
     }
     LaunchedEffect(Unit) { requestWeather() }
+
+    // Opt-in for background widget updates: needs "Allow all the time" location.
+    val backgroundLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        val msg = if (granted) "Background updates enabled." else "Background updates not enabled."
+        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+    }
+    val enableBackgroundUpdates: () -> Unit = {
+        val foreground = ContextCompat.checkSelfPermission(
+            context, Manifest.permission.ACCESS_COARSE_LOCATION,
+        ) == PackageManager.PERMISSION_GRANTED
+        val background = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q ||
+            ContextCompat.checkSelfPermission(
+                context, Manifest.permission.ACCESS_BACKGROUND_LOCATION,
+            ) == PackageManager.PERMISSION_GRANTED
+        when {
+            background ->
+                Toast.makeText(context, "Background updates are on.", Toast.LENGTH_SHORT).show()
+            !foreground ->
+                permissionLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
+            Build.VERSION.SDK_INT == Build.VERSION_CODES.Q ->
+                backgroundLauncher.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+            else -> {
+                // Android 11+ requires choosing "Allow all the time" from settings.
+                Toast.makeText(
+                    context,
+                    "Set Location to \"Allow all the time\".",
+                    Toast.LENGTH_LONG,
+                ).show()
+                context.startActivity(
+                    Intent(
+                        Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        Uri.fromParts("package", context.packageName, null),
+                    ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                )
+            }
+        }
+    }
 
     // Re-pull weather each time the app comes back to the foreground, so reopening
     // it after a drive shows current conditions instead of the last fetch.
@@ -225,6 +269,7 @@ fun AtomicClockScreen(vm: ClockViewModel = viewModel()) {
                 onSelectWind = { vm.setWindMph(it) },
                 onSelectWidgetBg = { vm.setWidgetBackground(WidgetBackground.entries[it]) },
                 onSelectServer = { vm.setServer(it) },
+                onBackgroundUpdates = enableBackgroundUpdates,
                 onAbout = {
                     showSettings = false
                     showAbout = true
