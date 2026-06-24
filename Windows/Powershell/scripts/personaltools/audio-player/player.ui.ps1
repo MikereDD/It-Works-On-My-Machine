@@ -322,12 +322,13 @@ function Vis-BandColor {
 }
 
 function New-Visualizer {
-    param($Width, $Height = 64, $BandCount = 64)
+    param($Width, $Height = 64, $BandCount = 56)
     $vis = [System.Windows.Forms.Panel]::new()
     $vis.Width = $Width; $vis.Height = $Height
     $vis.BackColor = $script:Theme.Bg
     Set-DoubleBuffered $vis
-    $vis | Add-Member -NotePropertyName Bars -NotePropertyValue (New-Object 'double[]' $BandCount) -Force
+    $vis | Add-Member -NotePropertyName Bars  -NotePropertyValue (New-Object 'double[]' $BandCount) -Force
+    $vis | Add-Member -NotePropertyName Peaks -NotePropertyValue (New-Object 'double[]' $BandCount) -Force
 
     $vis.Add_Paint({
         param($s, $e)
@@ -339,34 +340,64 @@ function New-Visualizer {
         # recessed well
         $well = New-RoundedRect 1 1 ($w - 2) ($h - 2) 10
         $wb = [System.Drawing.SolidBrush]::new($script:Theme.Well); $g.FillPath($wb, $well); $wb.Dispose()
+        $g.SetClip($well)
 
         $n = $s.Bars.Length
         if ($n -gt 0) {
-            $pad = 8.0
-            $iw = $w - $pad * 2
-            $cell = [double]$iw / $n
-            $bw = [single]([Math]::Max(2.0, $cell * 0.46))
-            $base = [double]$h * 0.60
-            $g.SetClip($well)
+            $pad    = 10.0
+            $iw     = $w - $pad * 2
+            $cell   = [double]$iw / $n
+            $bw     = [single]([Math]::Max(2.0, $cell * 0.62))   # wider bars + gaps
+            $base   = [double]$h * 0.72                           # bars rise to here
+            $topPad = 6.0
+            $usable = $base - $topPad
+            $baseCol  = [System.Drawing.Color]::FromArgb(0x2C, 0x30, 0x38)   # dark bar foot
+            $capWhite = [System.Drawing.Color]::FromArgb(0xF4, 0xF6, 0xFA)
+            $hasPeaks = ($s.PSObject.Properties['Peaks'] -and $s.Peaks.Length -eq $n)
+
             for ($i = 0; $i -lt $n; $i++) {
                 $mag = [double]$s.Bars[$i]
                 if ($mag -lt 0) { $mag = 0 } elseif ($mag -gt 1) { $mag = 1 }
-                if ($mag -le 0.004) { continue }
-                $f  = if ($n -gt 1) { [double]$i / ($n - 1) } else { 0 }
-                $cx = [single]($pad + $i * $cell + $cell / 2)
-                $x  = [single]($cx - $bw / 2)
-                $col = Vis-BandColor $f $mag
-                $mainH = [single]($mag * ($base - 6))
-                $reflH = [single]($mag * ($h - $base - 4) * 0.55)
-                $h1 = [System.Drawing.SolidBrush]::new([System.Drawing.Color]::FromArgb(60, $col.R, $col.G, $col.B))
-                $g.FillRectangle($h1, [single]($cx - $bw * 0.9), [single]($base - $mainH), [single]($bw * 1.8), [single]$mainH); $h1.Dispose()
-                $cb = [System.Drawing.SolidBrush]::new($col)
-                $g.FillRectangle($cb, $x, [single]($base - $mainH), $bw, $mainH); $cb.Dispose()
-                $rb = [System.Drawing.SolidBrush]::new([System.Drawing.Color]::FromArgb(70, $col.R, $col.G, $col.B))
-                $g.FillRectangle($rb, $x, [single]$base, $bw, $reflH); $rb.Dispose()
+                $f   = if ($n -gt 1) { [double]$i / ($n - 1) } else { 0 }
+                $cx  = [single]($pad + $i * $cell + $cell / 2)
+                $x   = [single]($cx - $bw / 2)
+                $tip = Vis-BandColor $f $mag
+                $barH = [single]($mag * $usable)
+
+                if ($barH -ge 1.2) {
+                    $topY = [single]($base - $barH)
+                    $rad  = [single]([Math]::Min([double]($bw / 2), 3.0))
+                    # bar body: bright freq-tinted tip fading down to a dark foot
+                    $barRect = New-RoundedRect $x $topY $bw $barH $rad
+                    $grad = [System.Drawing.Drawing2D.LinearGradientBrush]::new(
+                        [System.Drawing.RectangleF]::new($x, $topY, $bw, [single]([Math]::Max(1.0, $barH))),
+                        $tip, $baseCol, 90.0)
+                    $g.FillPath($grad, $barRect); $grad.Dispose(); $barRect.Dispose()
+
+                    # subtle mirrored reflection below the baseline
+                    $reflH = [single]($mag * ($h - $base) * 0.5)
+                    if ($reflH -ge 1) {
+                        $rb = [System.Drawing.SolidBrush]::new([System.Drawing.Color]::FromArgb(42, $tip.R, $tip.G, $tip.B))
+                        $g.FillRectangle($rb, $x, [single]($base + 1), $bw, $reflH); $rb.Dispose()
+                    }
+                }
+
+                # floating peak-hold cap
+                if ($hasPeaks) {
+                    $pk = [double]$s.Peaks[$i]
+                    if ($pk -lt 0) { $pk = 0 } elseif ($pk -gt 1) { $pk = 1 }
+                    $pkH = [single]($pk * $usable)
+                    if ($pkH -ge 1) {
+                        $py = [single]($base - $pkH - 2.5)
+                        $capCol = Blend-Color $tip $capWhite 0.55
+                        $cb = [System.Drawing.SolidBrush]::new($capCol)
+                        $cap = New-RoundedRect $x $py $bw 2.5 1.2
+                        $g.FillPath($cb, $cap); $cb.Dispose(); $cap.Dispose()
+                    }
+                }
             }
-            $g.ResetClip()
         }
+        $g.ResetClip()
 
         # light-grey hairline border on top
         $bp = [System.Drawing.Pen]::new($script:Theme.VisBorder, 1.2); $g.DrawPath($bp, $well); $bp.Dispose()

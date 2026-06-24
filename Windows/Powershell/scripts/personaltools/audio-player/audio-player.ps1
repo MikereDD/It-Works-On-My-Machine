@@ -1,19 +1,25 @@
 # ============================================================================
-#  audio-player.ps1  -  Cadence  v0.1.0
+#  audio-player.ps1  -  Cadence  v0.2.0
 #  A sleek local audio player (WinForms, owner-drawn, NAudio backend).
 #  Part of personaltools/ - mirrors the media-encoder-gui.ps1 layout:
 #    main GUI  +  dot-sourced engine/ui modules.
 # ============================================================================
 
 # --- STA relaunch guard -----------------------------------------------------
-#  WinForms needs STA. pwsh 7 consoles are MTA and REJECT -STA, so relaunch via
-#  Windows PowerShell 5.1 (STA-capable, always present). -NoProfile dodges the
+#  WinForms requires an STA thread. PowerShell 7 (pwsh) runs `-File` scripts in
+#  an MTA -- only its interactive console is STA -- so the GUI can't host under
+#  `pwsh -File`. The reliable STA host that still runs our PowerShell paint
+#  handlers is Windows PowerShell (-STA). When we're not already STA, relaunch
+#  HIDDEN into powershell.exe -STA so ONLY the player window shows (no stray
+#  console). The -Relaunched sentinel prevents any loop; -NoProfile dodges the
 #  profile-injected strict mode that otherwise crashes control construction.
+param([switch]$Relaunched)
+
 if ([System.Threading.Thread]::CurrentThread.GetApartmentState() -ne 'STA') {
-    $ps = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
-    if (-not (Test-Path $ps)) { $ps = (Get-Process -Id $PID).Path }
-    Start-Process -FilePath $ps -ArgumentList @(
-        '-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File', "`"$PSCommandPath`""
+    $winps = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
+    if (-not (Test-Path $winps)) { $winps = (Get-Process -Id $PID).Path }
+    Start-Process -FilePath $winps -WindowStyle Hidden -ArgumentList @(
+        '-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File', "`"$PSCommandPath`"", '-Relaunched'
     )
     return
 }
@@ -730,13 +736,14 @@ $timer.Add_Tick({
 })
 $timer.Start()
 
-# Resolution-aware bar count: thin spikes at any width (~8px pitch).
+# Resolution-aware bar count: chunkier bars with gaps (~14px pitch).
 function Set-VisResolution {
     $w = $vis.ClientSize.Width
     if ($w -lt 1) { return }
-    $bands = [Math]::Max(24, [Math]::Min(180, [int]($w / 8)))
+    $bands = [Math]::Max(20, [Math]::Min(64, [int]($w / 14)))
     if ($vis.Bars.Length -ne $bands) {
-        $vis.Bars = New-Object 'double[]' $bands
+        $vis.Bars  = New-Object 'double[]' $bands
+        $vis.Peaks = New-Object 'double[]' $bands
         $vis.Invalidate()
     }
 }
@@ -750,14 +757,25 @@ $visTimer.Interval = 40
 $visTimer.Add_Tick({
   try {
     $playing = ($script:State.Active -and (Get-PlaybackState) -eq 'Playing')
-    $bars = if ($playing) { Get-SpectrumBars $vis.Bars.Length } else { $null }
+    $raw = if ($playing) { Get-SpectrumBars $vis.Bars.Length } else { $null }
+    $n = $vis.Bars.Length
+    if ($vis.Peaks.Length -ne $n) { $vis.Peaks = New-Object 'double[]' $n }
     $changed = $false
-    for ($i = 0; $i -lt $vis.Bars.Length; $i++) {
+    for ($i = 0; $i -lt $n; $i++) {
         $cur = [double]$vis.Bars[$i]
-        $target = if ($bars) { [double]$bars[$i] } else { 0.0 }
-        $new = if ($target -gt $cur) { $target } else { $cur * 0.80 + $target * 0.20 }
-        if ([Math]::Abs($new - $cur) -gt 0.002) { $changed = $true }
+        $t = if ($raw) { [double]$raw[$i] } else { 0.0 }
+        if ($t -lt 0) { $t = 0 } elseif ($t -gt 1) { $t = 1 }
+        # Expand dynamic range: gamma pushes the mid-band wash down so loud
+        # bands tower and quiet ones drop -- the silhouette actually moves.
+        $target = [Math]::Pow($t, 1.7)
+        # Snappy attack, slow decay -> musical motion.
+        $new = if ($target -gt $cur) { $cur * 0.35 + $target * 0.65 } else { $cur * 0.82 + $target * 0.18 }
         $vis.Bars[$i] = $new
+        # Peak-hold cap: jumps up instantly, then falls under gravity.
+        $pk = [double]$vis.Peaks[$i]
+        if ($new -ge $pk) { $vis.Peaks[$i] = $new }
+        else { $np = $pk - 0.028; $vis.Peaks[$i] = if ($np -gt $new) { $np } else { $new } }
+        if ([Math]::Abs($new - $cur) -gt 0.002 -or $vis.Peaks[$i] -ne $pk) { $changed = $true }
     }
     if ($changed) { $vis.Invalidate() }
   } catch {}

@@ -1,0 +1,6 @@
+# Cadence - runtime/output, not source
+cadence.config.json
+cadence-startup.log
+
+# Fetched dependencies (run setup-naudio.ps1 to regenerate)
+lib/
