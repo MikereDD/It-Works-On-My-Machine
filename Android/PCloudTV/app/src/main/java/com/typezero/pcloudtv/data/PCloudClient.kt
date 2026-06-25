@@ -449,16 +449,22 @@ class PCloudClient {
 
         val out = mutableListOf<MediaItem>()
         var pendingTitle: String? = null
+        var pendingId: Long? = null
         for (raw in lines) {
             val line = raw.trim()
             if (line.isEmpty()) continue
             if (line.startsWith("#")) {
                 if (line.startsWith("#EXTINF", ignoreCase = true)) {
                     pendingTitle = line.substringAfter(",", "").trim().ifBlank { null }
+                } else if (line.startsWith("#PCLOUDID:", ignoreCase = true)) {
+                    pendingId = line.substringAfter(":").trim().toLongOrNull()
                 }
                 continue
             }
-            if (line.startsWith("http://", true) || line.startsWith("https://", true)) {
+            if (pendingId != null) {
+                // Embedded pCloud fileid — the reliable path, immune to renames/moves.
+                out += MediaItem(pendingTitle ?: line.substringAfterLast('/'), pendingId, null)
+            } else if (line.startsWith("http://", true) || line.startsWith("https://", true)) {
                 out += MediaItem(
                     pendingTitle ?: line.substringAfterLast('/').ifBlank { line },
                     null, line
@@ -477,6 +483,7 @@ class PCloudClient {
                 }
             }
             pendingTitle = null
+            pendingId = null
         }
 
         if (out.isEmpty()) {
@@ -529,6 +536,47 @@ class PCloudClient {
                 for ((title, path) in entries) {
                     append("#EXTINF:-1,").append(title).append('\n')
                     append(path).append('\n')
+                }
+            }
+            val url = "https://${session.apiHost}/uploadfile".toHttpUrl().newBuilder()
+                .addQueryParameter("auth", session.authToken)
+                .addQueryParameter("folderid", folderId.toString())
+                .addQueryParameter("nopartial", "1")
+                .build()
+            val part = RequestBody.create("audio/x-mpegurl".toMediaTypeOrNull(), content)
+            val body = MultipartBody.Builder()
+                .setType(MultipartBody.FORM)
+                .addFormDataPart("file", fileName, part)
+                .build()
+            val json = http.newCall(Request.Builder().url(url).post(body).build()).execute()
+                .use { JSONObject(it.body?.string().orEmpty()) }
+            if (json.optInt("result", -1) == 0) ApiResult.Ok(Unit)
+            else ApiResult.Error(json.optString("error", "Upload failed (code ${json.optInt("result")})"))
+        } catch (e: Exception) {
+            ApiResult.Error(e.message ?: "Network error")
+        }
+    }
+
+    /**
+     * Save a cross-folder playlist from in-app items, embedding each track's
+     * pCloud fileid as a `#PCLOUDID:` comment alongside its absolute path. On
+     * playback we prefer the fileid (stable, immune to path-reconstruction
+     * mistakes); the path line keeps the .m3u valid for other players.
+     */
+    suspend fun savePlaylistFromItems(
+        session: Session,
+        folderId: Long,
+        fileName: String,
+        items: List<MediaItem>
+    ): ApiResult<Unit> = withContext(Dispatchers.IO) {
+        if (items.isEmpty()) return@withContext ApiResult.Error("No tracks selected")
+        try {
+            val content = buildString {
+                append("#EXTM3U\n")
+                for (mi in items) {
+                    append("#EXTINF:-1,").append(mi.title).append('\n')
+                    mi.fileId?.let { id -> append("#PCLOUDID:").append(id).append('\n') }
+                    append(mi.path ?: mi.title).append('\n')
                 }
             }
             val url = "https://${session.apiHost}/uploadfile".toHttpUrl().newBuilder()

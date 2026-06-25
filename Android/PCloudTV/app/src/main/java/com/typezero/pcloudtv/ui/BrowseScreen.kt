@@ -296,18 +296,18 @@ fun BrowseScreen(
 
     fun saveSelected(name: String) {
         showNameDialog = false
-        val entries = selectedItems.mapNotNull { mi -> mi.path?.let { mi.title to it } }
-        if (entries.isEmpty()) { selecting = false; selectedItems.clear(); return }
+        val items = selectedItems.filter { it.path != null }.toList()
+        if (items.isEmpty()) { selecting = false; selectedItems.clear(); return }
         saving = true; saveMessage = null; genDone = 0; genTotal = 0; genName = ""
         scope.launch {
             val pname = (name.ifBlank { "Playlist" }).removeSuffix(".m3u") + ".m3u"
             // Built playlists always live in a dedicated /Music/playlists folder.
             when (val folder = client.ensureFolder(session, PLAYLIST_DIR)) {
                 is ApiResult.Ok -> {
-                    val res = client.savePlaylistAbsolute(session, folder.value, pname, entries)
+                    val res = client.savePlaylistFromItems(session, folder.value, pname, items)
                     saving = false
                     saveMessage = when (res) {
-                        is ApiResult.Ok -> "Saved \"$pname\" to $PLAYLIST_DIR (${entries.size} tracks)"
+                        is ApiResult.Ok -> "Saved \"$pname\" to $PLAYLIST_DIR (${items.size} tracks)"
                         is ApiResult.Error -> "Couldn't save: ${res.message}"
                     }
                 }
