@@ -5,6 +5,12 @@ All notable changes to **pCloud TV**. Newest first.
 
 ---
 
+## v4.19 — generated playlists sit beside their audio
+
+- Generating playlists now writes each folder's .m3u into that same folder, next to its tracks (with bare filenames), instead of funnelling them all into a central /Music/playlists folder. Custom, hand-built playlists still save to the Playlists folder. The "Replace existing" option still clears old per-folder .m3u files first.
+
+---
+
 ## v4.18 — scrub the time bar with the remote
 
 - On a TV, you can now reach the time/scrub bar with the remote. From the control row press **Down** to drop onto the bar (it highlights), then **Left/Right** to scrub back and forth (about a thirtieth of the runtime per press, so holding the key sweeps quickly). **Up** returns to the buttons and **OK** on the bar toggles play/pause. Applies to both the video and audio players.
