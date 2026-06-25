@@ -200,39 +200,23 @@ fun BrowseScreen(
             when (scan) {
                 is ApiResult.Ok -> {
                     val folders = scan.value
-                    // All generated playlists land in the central /Music/playlists
-                    // folder (so they show up under Playlists), with absolute track
-                    // paths since the .m3u no longer sits beside the audio.
-                    val dir = client.ensureFolder(session, PLAYLIST_DIR)
-                    if (dir is ApiResult.Error) {
-                        saving = false
-                        saveMessage = "Couldn't open $PLAYLIST_DIR: ${dir.message}"
-                        return@launch
-                    }
-                    val dirId = (dir as ApiResult.Ok).value
-                    val rootRel = ("/" + path.trim().trim('/'))
+                    // Auto-generated playlists are written beside their own audio,
+                    // inside the same folder, with bare filenames. (Custom, hand-built
+                    // playlists are the ones that live in the central Playlists folder.)
                     genTotal = folders.size
                     var ok = 0
                     for ((i, fol) in folders.withIndex()) {
                         genName = fol.name
                         genDone = i + 1
-                        val entries = fol.files.map { f ->
-                            f.name to (fol.path.trimEnd('/') + "/" + f.name)
-                        }
-                        // Name by the folder's path under the scan root so playlists
-                        // from same-named folders don't collide in one directory.
-                        val under = fol.path.removePrefix(rootRel).trim('/')
-                        val label = if (under.isBlank()) fol.name.ifBlank { "Playlist" }
-                                    else under.replace("/", " - ")
-                        val pname = "$label.m3u"
-                        if (client.savePlaylistAbsolute(session, dirId, pname, entries) is ApiResult.Ok) ok++
+                        val pname = fol.name.ifBlank { "Playlist" } + ".m3u"
+                        if (client.savePlaylist(session, fol.folderId, pname, fol.files) is ApiResult.Ok) ok++
                     }
                     saving = false
                     val cleaned = if (replaceExisting) "Removed $removed old, " else ""
                     saveMessage = if (folders.isEmpty()) {
                         "${cleaned}no folders with audio found under \"$path\"."
                     } else {
-                        "${cleaned}saved $ok playlist(s) to $PLAYLIST_DIR from ${folders.size} folder(s)."
+                        "${cleaned}saved $ok playlist(s) beside the audio in ${folders.size} folder(s)."
                     }
                     reloadKey++
                 }
@@ -1163,7 +1147,7 @@ private fun GeneratePlaylistsDialog(
             Spacer(Modifier.height(6.dp))
             Text(
                 "For every folder with audio under this pCloud path (including " +
-                    "subfolders), writes one .m3u into /Music/playlists.",
+                    "subfolders), writes one .m3u into that same folder, beside its tracks.",
                 color = Brand.TextLow, fontSize = 12.sp
             )
             Spacer(Modifier.height(14.dp))
