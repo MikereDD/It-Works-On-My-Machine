@@ -5,6 +5,12 @@ All notable changes to **pCloud TV**. Newest first.
 
 ---
 
+## v4.20 — custom playlists resolve by file id (fixes "File not found")
+
+- Custom (hand-built) playlists now embed each track's pCloud file id in the .m3u (as a `#PCLOUDID:` comment) and play back by id instead of by reconstructed path. This fixes "Couldn't play …: File not found" caused by a saved path not exactly matching the file's real location. The absolute path is still written too, so the .m3u stays valid in other players. Note: playlists saved before this build are path-only — re-save them to pick up the fix.
+
+---
+
 ## v4.19 — generated playlists sit beside their audio
 
 - Generating playlists now writes each folder's .m3u into that same folder, next to its tracks (with bare filenames), instead of funnelling them all into a central /Music/playlists folder. Custom, hand-built playlists still save to the Playlists folder. The "Replace existing" option still clears old per-folder .m3u files first.
