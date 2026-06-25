@@ -301,6 +301,10 @@ private fun VlcPlayer(
     fun resumeIfNeeded() {
         if (resumed) return
         resumed = true
+        // Only a single, deliberately-reopened file (a long video or audiobook)
+        // resumes where you left off. In a playlist/queue every track starts from
+        // the beginning, even on reopen.
+        if (queue.size > 1) return
         val key = currentKey() ?: return
         val saved = store.getPosition(key)
         if (saved > 3_000) player.time = saved
