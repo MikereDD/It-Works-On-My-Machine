@@ -5,6 +5,12 @@ All notable changes to **pCloud TV**. Newest first.
 
 ---
 
+## v4.21 — playlist tracks always start from the beginning
+
+- Within-track resume now applies only to a single, deliberately-reopened file (a long video or audiobook). In a playlist or folder queue, every track starts from the beginning instead of jumping to a saved position from a previous play — fixes songs after the first playing only a shortened portion.
+
+---
+
 ## v4.20 — custom playlists resolve by file id (fixes "File not found")
 
 - Custom (hand-built) playlists now embed each track's pCloud file id in the .m3u (as a `#PCLOUDID:` comment) and play back by id instead of by reconstructed path. This fixes "Couldn't play …: File not found" caused by a saved path not exactly matching the file's real location. The absolute path is still written too, so the .m3u stays valid in other players. Note: playlists saved before this build are path-only — re-save them to pick up the fix.
