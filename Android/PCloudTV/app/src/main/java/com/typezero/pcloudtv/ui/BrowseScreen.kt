@@ -105,7 +105,6 @@ import com.typezero.pcloudtv.ui.theme.Brand
 private const val PLAYLIST_DIR = "/Music/playlists"
 
 /** Only these top-level folders are shown at the pCloud root (lowercased). */
-private val ROOT_FOLDERS = setOf("music", "video")
 
 // Synthetic "Recently-Played" tree. Negative ids never collide with real pCloud
 // folder ids, so these ride the normal folder navigation without hitting the API.
@@ -589,13 +588,15 @@ fun BrowseScreen(
                 else -> {
                     val atRoot = stack.size == 1
                     val visible = remember(items, query, atRoot, recents) {
-                        // At the pCloud root, show the synthetic Recently-Played
-                        // folder plus the curated top-level folders (Music / Video);
-                        // everything else is hidden.
+                        // At the pCloud root, surface the synthetic shortcuts
+                        // (Recently-Played, Playlists, Audiobooks) alongside the
+                        // user's actual top-level folders and any playable files.
                         val base =
                             if (atRoot) {
+                                val reserved = setOf("recently-played", "playlists", "audiobooks")
                                 val real = items.filter {
-                                    it.isFolder && it.name.trim().lowercase() in ROOT_FOLDERS
+                                    (it.isFolder || it.isPlayable || it.isViewableDoc) &&
+                                        it.name.trim().lowercase() !in reserved
                                 }
                                 val rp = if (recents.isNotEmpty())
                                     listOf(PItem("Recently-Played", true, RP_ROOT, null, "", 0, 0L))
