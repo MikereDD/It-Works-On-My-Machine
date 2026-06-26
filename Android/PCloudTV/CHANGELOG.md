@@ -5,6 +5,12 @@ All notable changes to **pCloud TV**. Newest first.
 
 ---
 
+## v4.27 — show all real top-level folders at the root
+
+- The pCloud root no longer hides folders. Previously it only showed top-level folders literally named "Music" or "Video" (plus the Recently-Played / Playlists / Audiobooks shortcuts), so on accounts whose root folders are named anything else, none of them appeared. The root now lists every real folder (and any playable files) alongside the shortcuts.
+
+---
+
 ## v4.26 — hide visualizer mic prompt on TV
 
 - The "Tap to sync to audio" hint no longer appears on Android TV / Google TV, where there's no pointer to tap it. On a TV the visualizer just runs the synthetic bars; the opt-in real-audio mode remains available on touch devices.
