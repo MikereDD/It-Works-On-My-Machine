@@ -7,6 +7,10 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Real audio-spectrum visualizer attaches android.media.audiofx.Visualizer
+         to LibVLC's AudioTrack session. A specific (non-zero) session requires
+         RECORD_AUDIO; denial falls back to a synthetic animation. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <!-- This is a TV app: touchscreen not required, leanback launcher required -->
     <uses-feature

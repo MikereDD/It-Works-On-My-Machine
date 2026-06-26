@@ -5,6 +5,13 @@ All notable changes to **pCloud TV**. Newest first.
 
 ---
 
+## v4.23 — real audio-reactive visualizer
+
+- The audio visualizer now follows the actual music. LibVLC is told to create its AudioTrack in a generated audio session (via `--audiotrack-session-id`), and Android's `Visualizer` taps that session for a live FFT that drives the bars and peak-hold caps — the same mechanism the official VLC app uses.
+- Requires the microphone permission (a specific, non-zero audio session needs RECORD_AUDIO; no audio is recorded or stored). If the permission is denied, or a device returns no data, the bars fall back to the previous synthetic animation so they never look dead. Audio output is now forced through AudioTrack so the tap applies.
+
+---
+
 ## v4.22 — Cadence-style audio now-playing
 
 - Reworked the audio now-playing screen into a monochrome Material 3 look (à la Cadence): near-black gradient, grayscale art frame, near-white play control and scrub bar.
