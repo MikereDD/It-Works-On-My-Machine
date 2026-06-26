@@ -1392,7 +1392,9 @@ private fun AudioVisualizer(isPlaying: Boolean, modifier: Modifier = Modifier) {
     val lastFftAt = remember { longArrayOf(0L) }       // when real data last arrived
     var frame by remember { mutableStateOf(0) }
     val context = LocalContext.current
-
+    val isTv = remember {
+        context.packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
+    }
     var hasMic by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
@@ -1402,7 +1404,6 @@ private fun AudioVisualizer(isPlaying: Boolean, modifier: Modifier = Modifier) {
     val askMic = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted -> hasMic = granted }
-    LaunchedEffect(Unit) { if (!hasMic) askMic.launch(Manifest.permission.RECORD_AUDIO) }
 
     // Attach/detach the real spectrum tap as permission/session availability changes.
     DisposableEffect(hasMic, VizSession.id) {
@@ -1461,33 +1462,55 @@ private fun AudioVisualizer(isPlaying: Boolean, modifier: Modifier = Modifier) {
         }
     }
 
-    Canvas(modifier) {
-        if (frame < 0) return@Canvas  // read `frame` so each tick re-runs the draw
-        val n = barCount
-        val gap = size.width * 0.012f
-        val bw = ((size.width - gap * (n - 1)) / n).coerceAtLeast(1f)
-        val maxH = size.height
-        val capH = bw * 0.18f
-        for (i in 0 until n) {
-            val x = i * (bw + gap)
-            val lvl = levels[i].coerceIn(0f, 1f)
-            val h = lvl * maxH
-            val top = maxH - h
-            if (h > 0.5f) {
+    Box(modifier) {
+        Canvas(Modifier.fillMaxSize()) {
+            if (frame < 0) return@Canvas  // read `frame` so each tick re-runs the draw
+            val n = barCount
+            val gap = size.width * 0.012f
+            val bw = ((size.width - gap * (n - 1)) / n).coerceAtLeast(1f)
+            val maxH = size.height
+            val capH = bw * 0.18f
+            for (i in 0 until n) {
+                val x = i * (bw + gap)
+                val lvl = levels[i].coerceIn(0f, 1f)
+                val h = lvl * maxH
+                val top = maxH - h
+                if (h > 0.5f) {
+                    drawRoundRect(
+                        brush = Brush.verticalGradient(listOf(CadBarHi, CadBarLo), startY = top, endY = maxH),
+                        topLeft = Offset(x, top),
+                        size = Size(bw, h),
+                        cornerRadius = CornerRadius(bw * 0.4f, bw * 0.4f)
+                    )
+                }
+                val capY = (maxH - caps[i].coerceIn(0f, 1f) * maxH - capH).coerceIn(0f, maxH - capH)
                 drawRoundRect(
-                    brush = Brush.verticalGradient(listOf(CadBarHi, CadBarLo), startY = top, endY = maxH),
-                    topLeft = Offset(x, top),
-                    size = Size(bw, h),
-                    cornerRadius = CornerRadius(bw * 0.4f, bw * 0.4f)
+                    color = CadCap,
+                    topLeft = Offset(x, capY),
+                    size = Size(bw, capH),
+                    cornerRadius = CornerRadius(capH, capH)
                 )
             }
-            val capY = (maxH - caps[i].coerceIn(0f, 1f) * maxH - capH).coerceIn(0f, maxH - capH)
-            drawRoundRect(
-                color = CadCap,
-                topLeft = Offset(x, capY),
-                size = Size(bw, capH),
-                cornerRadius = CornerRadius(capH, capH)
-            )
+        }
+        // Opt-in: only ask for the mic permission if the user taps to enable the
+        // real audio-reactive mode. The hint is touch-only, so it's never shown on
+        // a TV (no pointer) — there the bars simply run on the synthetic motion.
+        if (!hasMic && !isTv) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(Color(0x66000000))
+                    .clickable { askMic.launch(Manifest.permission.RECORD_AUDIO) }
+                    .padding(horizontal = 14.dp, vertical = 6.dp)
+            ) {
+                Text(
+                    "Tap to sync to audio",
+                    color = CadTextHi,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
         }
     }
 }
