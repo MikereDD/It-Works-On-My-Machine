@@ -5,6 +5,24 @@ All notable changes to **pCloud TV**. Newest first.
 
 ---
 
+## v4.26 — hide visualizer mic prompt on TV
+
+- The "Tap to sync to audio" hint no longer appears on Android TV / Google TV, where there's no pointer to tap it. On a TV the visualizer just runs the synthetic bars; the opt-in real-audio mode remains available on touch devices.
+
+---
+
+## v4.25 — monochrome Cadence theme app-wide
+
+- Extended the Cadence-style monochrome Material 3 look to the whole app — the video player, browse screen, dialogs, and sign-in now share the same near-black surfaces, neutral grays, and near-white accent that the audio now-playing screen uses. File-type icon accents are desaturated to subtle grays. Error states stay red.
+
+---
+
+## v4.24 — reactive visualizer is now opt-in
+
+- The real audio-reactive visualizer no longer requests the microphone permission on its own. The bars run on the synthetic animation by default, with a small "Tap to sync to audio" hint over them; the RECORD_AUDIO request only fires if you tap it. Once granted (now or previously), the bars follow the live FFT automatically and the hint disappears. Nothing is recorded — the permission is only what Android requires to read the playback session's spectrum.
+
+---
+
 ## v4.23 — real audio-reactive visualizer
 
 - The audio visualizer now follows the actual music. LibVLC is told to create its AudioTrack in a generated audio session (via `--audiotrack-session-id`), and Android's `Visualizer` taps that session for a live FFT that drives the bars and peak-hold caps — the same mechanism the official VLC app uses.
