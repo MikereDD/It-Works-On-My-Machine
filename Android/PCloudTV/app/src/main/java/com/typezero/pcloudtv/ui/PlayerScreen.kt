@@ -90,6 +90,15 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import kotlin.math.PI
 import kotlin.math.sin
+import kotlin.math.sqrt
+import android.Manifest
+import android.media.audiofx.Visualizer
+import android.os.SystemClock
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
+import android.content.pm.PackageManager
+import android.content.Context
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.graphics.Color
@@ -232,6 +241,16 @@ private fun VlcPlayer(
 
     var loadError by remember { mutableStateOf<String?>(null) }
 
+    // Generate an audio session id and make LibVLC create its AudioTrack in it,
+    // so the spectrum Visualizer can attach to exactly this app's output. (Same
+    // mechanism the official VLC-Android app uses for its equalizer/visualizer.)
+    val audioSessionId = remember {
+        runCatching {
+            val am = context.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
+            am.generateAudioSessionId()
+        }.getOrDefault(0).also { VizSession.id = it }
+    }
+
     val libVlc = remember {
         LibVLC(
             context,
@@ -243,7 +262,11 @@ private fun VlcPlayer(
                 // whenever decode or network can't keep pace.
                 // Prefer English by language metadata (ISO codes), not display name.
                 "--audio-language=eng,en,english",
-                "--sub-language=eng,en,english"
+                "--sub-language=eng,en,english",
+                // Route audio through AudioTrack in our session so the visualizer can
+                // tap it (the session-id option only applies to the audiotrack output).
+                "--aout=audiotrack",
+                "--audiotrack-session-id=$audioSessionId"
             )
         )
     }
@@ -1323,17 +1346,89 @@ private val CadBarHi = Color(0xFFE9E9EF)
 private val CadCap = Color(0xFFFFFFFF)
 private val CadTrackInactive = Color(0x22FFFFFF)
 
+/** Holds the LibVLC AudioTrack session id so the visualizer can tap it. */
+private object VizSession {
+    @Volatile var id: Int = 0
+}
+
+/** Collapse an 8-bit FFT (real/imag interleaved) into [out.size] log-spaced bands. */
+private fun fftToBands(fft: ByteArray, out: FloatArray) {
+    val points = fft.size / 2          // complex points (0..Fs/2)
+    if (points < 4) return
+    val bands = out.size
+    val minBin = 1
+    val maxBin = points - 1
+    val ratio = maxBin.toDouble() / minBin
+    for (b in 0 until bands) {
+        val lo = (minBin * Math.pow(ratio, b.toDouble() / bands)).toInt().coerceIn(minBin, maxBin)
+        val hi = (minBin * Math.pow(ratio, (b + 1.0) / bands)).toInt().coerceIn(lo + 1, maxBin)
+        var mag = 0f
+        var k = lo
+        while (k < hi) {
+            val re = fft[2 * k].toFloat()
+            val im = fft[2 * k + 1].toFloat()
+            val m = sqrt(re * re + im * im)
+            if (m > mag) mag = m
+            k++
+        }
+        // Compress the range (sqrt) so quiet detail still moves the bars.
+        out[b] = sqrt((mag / 110f)).coerceIn(0f, 1f)
+    }
+}
+
 /**
- * Cadence-style spectrum bars with falling peak-hold caps. LibVLC doesn't hand
- * us PCM on Android, so the motion is a smoothed synthetic envelope rather than
- * a true FFT — it runs while playing and settles to flat on pause.
+ * Cadence-style spectrum bars with falling peak-hold caps. When the mic
+ * permission is granted and a device returns data, the bars follow the real
+ * audio FFT (android.media.audiofx.Visualizer on LibVLC's AudioTrack session);
+ * otherwise they fall back to a smoothed synthetic envelope so they never look
+ * dead. Either way they run while playing and settle flat on pause.
  */
 @Composable
 private fun AudioVisualizer(isPlaying: Boolean, modifier: Modifier = Modifier) {
     val barCount = 28
     val levels = remember { FloatArray(barCount) }
     val caps = remember { FloatArray(barCount) }
+    val targets = remember { FloatArray(barCount) }   // latest real FFT bands
+    val lastFftAt = remember { longArrayOf(0L) }       // when real data last arrived
     var frame by remember { mutableStateOf(0) }
+    val context = LocalContext.current
+
+    var hasMic by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+                PackageManager.PERMISSION_GRANTED
+        )
+    }
+    val askMic = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted -> hasMic = granted }
+    LaunchedEffect(Unit) { if (!hasMic) askMic.launch(Manifest.permission.RECORD_AUDIO) }
+
+    // Attach/detach the real spectrum tap as permission/session availability changes.
+    DisposableEffect(hasMic, VizSession.id) {
+        var viz: Visualizer? = null
+        if (hasMic && VizSession.id != 0) {
+            viz = runCatching {
+                Visualizer(VizSession.id).apply {
+                    captureSize = Visualizer.getCaptureSizeRange()[1]
+                    setDataCaptureListener(
+                        object : Visualizer.OnDataCaptureListener {
+                            override fun onWaveFormDataCapture(v: Visualizer?, w: ByteArray?, r: Int) {}
+                            override fun onFftDataCapture(v: Visualizer?, data: ByteArray?, rate: Int) {
+                                if (data != null) {
+                                    fftToBands(data, targets)
+                                    lastFftAt[0] = SystemClock.uptimeMillis()
+                                }
+                            }
+                        },
+                        Visualizer.getMaxCaptureRate(), false, true   // FFT only
+                    )
+                    enabled = true
+                }
+            }.getOrNull()
+        }
+        onDispose { viz?.let { runCatching { it.enabled = false; it.release() } } }
+    }
 
     LaunchedEffect(isPlaying) {
         var t = 0f
@@ -1344,21 +1439,24 @@ private fun AudioVisualizer(isPlaying: Boolean, modifier: Modifier = Modifier) {
                          else ((now - last) / 1_000_000_000f).coerceIn(0f, 0.05f)
                 last = now
                 t += dt
+                val real = isPlaying && (SystemClock.uptimeMillis() - lastFftAt[0]) < 400
                 for (i in 0 until barCount) {
-                    val target = if (isPlaying) {
-                        val a = 0.5f + 0.5f * sin(t * (2.1f + i * 0.13f) + i)
-                        val b = 0.5f + 0.5f * sin(t * (3.7f - i * 0.05f) + i * 0.5f)
-                        // Gentle bell so the middle bands sit taller, like a real mix.
-                        val env = 0.45f + 0.55f * sin((i.toFloat() / barCount) * PI.toFloat())
-                        (0.12f + 0.88f * (a * 0.6f + b * 0.4f)) * env
-                    } else 0f
-                    val speed = if (target > levels[i]) 0.55f else 0.18f  // fast attack, slow decay
+                    val target = when {
+                        real -> targets[i]
+                        isPlaying -> {
+                            val a = 0.5f + 0.5f * sin(t * (2.1f + i * 0.13f) + i)
+                            val b = 0.5f + 0.5f * sin(t * (3.7f - i * 0.05f) + i * 0.5f)
+                            val env = 0.45f + 0.55f * sin((i.toFloat() / barCount) * PI.toFloat())
+                            (0.12f + 0.88f * (a * 0.6f + b * 0.4f)) * env
+                        }
+                        else -> 0f
+                    }
+                    val speed = if (target > levels[i]) 0.6f else 0.2f  // fast attack, slow decay
                     levels[i] += (target - levels[i]) * speed
                     caps[i] = maxOf(caps[i] - dt * 0.9f, levels[i])
                 }
                 frame++
             }
-            // Stop ticking once fully settled on pause (saves battery).
             if (!isPlaying && (0 until barCount).all { levels[it] < 0.002f && caps[it] < 0.002f }) break
         }
     }
