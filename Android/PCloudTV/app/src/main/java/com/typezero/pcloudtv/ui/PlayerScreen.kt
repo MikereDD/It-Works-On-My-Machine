@@ -83,6 +83,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.foundation.Canvas
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import kotlin.math.PI
+import kotlin.math.sin
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.graphics.Color
@@ -1100,7 +1107,7 @@ private fun AnimatedVisibilityScope.Controls(
             if (queueCount > 1) {
                 Text(
                     "TRACK $queuePos / $queueCount",
-                    color = Brand.Accent,
+                    color = CadTextMid,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold
                 )
@@ -1304,6 +1311,89 @@ private fun AnimatedVisibilityScope.Controls(
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
+// ---- Cadence-style monochrome palette (audio now-playing screen only) ----
+private val CadBgTop = Color(0xFF17181C)
+private val CadBgBot = Color(0xFF0A0A0C)
+private val CadStroke = Color(0xFF2B2C32)
+private val CadTextHi = Color(0xFFF3F3F6)
+private val CadTextMid = Color(0xFF97979F)
+private val CadAccent = Color(0xFFEAEAEE)
+private val CadBarLo = Color(0xFF4C4D55)
+private val CadBarHi = Color(0xFFE9E9EF)
+private val CadCap = Color(0xFFFFFFFF)
+private val CadTrackInactive = Color(0x22FFFFFF)
+
+/**
+ * Cadence-style spectrum bars with falling peak-hold caps. LibVLC doesn't hand
+ * us PCM on Android, so the motion is a smoothed synthetic envelope rather than
+ * a true FFT — it runs while playing and settles to flat on pause.
+ */
+@Composable
+private fun AudioVisualizer(isPlaying: Boolean, modifier: Modifier = Modifier) {
+    val barCount = 28
+    val levels = remember { FloatArray(barCount) }
+    val caps = remember { FloatArray(barCount) }
+    var frame by remember { mutableStateOf(0) }
+
+    LaunchedEffect(isPlaying) {
+        var t = 0f
+        var last = 0L
+        while (true) {
+            withFrameNanos { now ->
+                val dt = if (last == 0L) 0.016f
+                         else ((now - last) / 1_000_000_000f).coerceIn(0f, 0.05f)
+                last = now
+                t += dt
+                for (i in 0 until barCount) {
+                    val target = if (isPlaying) {
+                        val a = 0.5f + 0.5f * sin(t * (2.1f + i * 0.13f) + i)
+                        val b = 0.5f + 0.5f * sin(t * (3.7f - i * 0.05f) + i * 0.5f)
+                        // Gentle bell so the middle bands sit taller, like a real mix.
+                        val env = 0.45f + 0.55f * sin((i.toFloat() / barCount) * PI.toFloat())
+                        (0.12f + 0.88f * (a * 0.6f + b * 0.4f)) * env
+                    } else 0f
+                    val speed = if (target > levels[i]) 0.55f else 0.18f  // fast attack, slow decay
+                    levels[i] += (target - levels[i]) * speed
+                    caps[i] = maxOf(caps[i] - dt * 0.9f, levels[i])
+                }
+                frame++
+            }
+            // Stop ticking once fully settled on pause (saves battery).
+            if (!isPlaying && (0 until barCount).all { levels[it] < 0.002f && caps[it] < 0.002f }) break
+        }
+    }
+
+    Canvas(modifier) {
+        if (frame < 0) return@Canvas  // read `frame` so each tick re-runs the draw
+        val n = barCount
+        val gap = size.width * 0.012f
+        val bw = ((size.width - gap * (n - 1)) / n).coerceAtLeast(1f)
+        val maxH = size.height
+        val capH = bw * 0.18f
+        for (i in 0 until n) {
+            val x = i * (bw + gap)
+            val lvl = levels[i].coerceIn(0f, 1f)
+            val h = lvl * maxH
+            val top = maxH - h
+            if (h > 0.5f) {
+                drawRoundRect(
+                    brush = Brush.verticalGradient(listOf(CadBarHi, CadBarLo), startY = top, endY = maxH),
+                    topLeft = Offset(x, top),
+                    size = Size(bw, h),
+                    cornerRadius = CornerRadius(bw * 0.4f, bw * 0.4f)
+                )
+            }
+            val capY = (maxH - caps[i].coerceIn(0f, 1f) * maxH - capH).coerceIn(0f, maxH - capH)
+            drawRoundRect(
+                color = CadCap,
+                topLeft = Offset(x, capY),
+                size = Size(bw, capH),
+                cornerRadius = CornerRadius(capH, capH)
+            )
+        }
+    }
+}
+
 @Composable
 private fun AudioNowPlaying(
     title: String,
@@ -1344,7 +1434,7 @@ private fun AudioNowPlaying(
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
-            .background(Brush.verticalGradient(listOf(Brand.Surface, Brand.Bg)))
+            .background(Brush.verticalGradient(listOf(CadBgTop, CadBgBot)))
     ) {
         if (maxWidth > maxHeight) {
             // Landscape: art on the left, info + controls on the right, so nothing
@@ -1369,7 +1459,7 @@ private fun AudioNowPlaying(
                     if (queueCount > 1) {
                         Text(
                             "TRACK $queuePos / $queueCount",
-                            color = Brand.Accent,
+                            color = CadTextMid,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -1377,7 +1467,7 @@ private fun AudioNowPlaying(
                     }
                     Text(
                         title,
-                        color = Brand.TextHi,
+                        color = CadTextHi,
                         fontSize = 20.sp,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 2,
@@ -1387,13 +1477,18 @@ private fun AudioNowPlaying(
                         Spacer(Modifier.height(6.dp))
                         Text(
                             subtitle,
-                            color = Brand.TextMid,
+                            color = CadTextMid,
                             fontSize = 14.sp,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
                     }
-                    Spacer(Modifier.height(20.dp))
+                    Spacer(Modifier.height(18.dp))
+                    AudioVisualizer(
+                        isPlaying = isPlaying,
+                        modifier = Modifier.fillMaxWidth().height(44.dp)
+                    )
+                    Spacer(Modifier.height(18.dp))
                     AudioTransport(
                         isPlaying = isPlaying,
                         hasPrev = hasPrev,
@@ -1434,7 +1529,7 @@ private fun AudioNowPlaying(
                 if (queueCount > 1) {
                     Text(
                         "TRACK $queuePos / $queueCount",
-                        color = Brand.Accent,
+                        color = CadTextMid,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold
                     )
@@ -1442,7 +1537,7 @@ private fun AudioNowPlaying(
                 }
                 Text(
                     title,
-                    color = Brand.TextHi,
+                    color = CadTextHi,
                     fontSize = 20.sp,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 2,
@@ -1453,7 +1548,7 @@ private fun AudioNowPlaying(
                     Spacer(Modifier.height(6.dp))
                     Text(
                         subtitle,
-                        color = Brand.TextMid,
+                        color = CadTextMid,
                         fontSize = 14.sp,
                         maxLines = 1,
                         textAlign = TextAlign.Center,
@@ -1468,6 +1563,11 @@ private fun AudioNowPlaying(
                     .fillMaxWidth()
                     .padding(horizontal = 24.dp, vertical = 22.dp)
             ) {
+                AudioVisualizer(
+                    isPlaying = isPlaying,
+                    modifier = Modifier.fillMaxWidth().height(60.dp)
+                )
+                Spacer(Modifier.height(18.dp))
                 AudioTransport(
                     isPlaying = isPlaying,
                     hasPrev = hasPrev,
@@ -1505,8 +1605,8 @@ private fun AudioArt(
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(28.dp))
-            .background(Brand.Bg)
-            .border(1.dp, Brand.Stroke, RoundedCornerShape(28.dp)),
+            .background(CadBgBot)
+            .border(1.dp, CadStroke, RoundedCornerShape(28.dp)),
         contentAlignment = Alignment.Center
     ) {
         when {
@@ -1516,11 +1616,11 @@ private fun AudioArt(
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(28.dp))
             )
-            buffering -> CircularProgressIndicator(color = Brand.Accent)
+            buffering -> CircularProgressIndicator(color = CadAccent)
             else -> Icon(
                 Icons.Filled.MusicNote,
                 contentDescription = null,
-                tint = Brand.Accent,
+                tint = CadTextMid,
                 modifier = Modifier.fillMaxSize(0.46f)
             )
         }
@@ -1599,11 +1699,11 @@ private fun AudioTransport(
                 .shadow(
                     elevation = 14.dp,
                     shape = CircleShape,
-                    ambientColor = Brand.Accent,
-                    spotColor = Brand.Accent
+                    ambientColor = CadAccent,
+                    spotColor = CadAccent
                 )
                 .clip(CircleShape)
-                .background(Brand.Accent)
+                .background(CadAccent)
                 .border(
                     width = if (selectedId == "play") 3.dp else 0.dp,
                     color = if (selectedId == "play") Color.White else Color.Transparent,
@@ -1616,7 +1716,7 @@ private fun AudioTransport(
             Icon(
                 if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
                 contentDescription = if (isPlaying) "Pause" else "Play",
-                tint = MaterialTheme.colorScheme.onPrimary,
+                tint = CadBgBot,
                 modifier = Modifier.size(36.dp)
             )
         }
@@ -1669,14 +1769,14 @@ private fun AudioSeekbar(
             .then(
                 if (barSelected) Modifier
                     .background(Color(0x22FFFFFF))
-                    .border(2.dp, Brand.Accent, RoundedCornerShape(12.dp))
+                    .border(2.dp, CadAccent, RoundedCornerShape(12.dp))
                 else Modifier
             )
             .padding(horizontal = 8.dp, vertical = 4.dp)
     ) {
         Text(
             formatTime(positionMs),
-            color = Brand.TextHi,
+            color = CadTextHi,
             fontSize = 13.sp,
             style = TextStyle(fontFeatureSettings = "tnum")
         )
@@ -1685,23 +1785,23 @@ private fun AudioSeekbar(
             onValueChange = onScrub,
             enabled = durationMs > 0,
             colors = SliderDefaults.colors(
-                thumbColor = Brand.Accent,
-                activeTrackColor = Brand.Accent,
-                inactiveTrackColor = Color(0x33FFFFFF)
+                thumbColor = CadAccent,
+                activeTrackColor = CadAccent,
+                inactiveTrackColor = CadTrackInactive
             ),
             thumb = {
                 Box(
                     modifier = Modifier
                         .size(10.dp)
                         .clip(CircleShape)
-                        .background(Brand.Accent)
+                        .background(CadAccent)
                 )
             },
             modifier = Modifier.weight(1f).padding(horizontal = 12.dp)
         )
         Text(
             formatTime(durationMs),
-            color = Brand.TextMid,
+            color = CadTextMid,
             fontSize = 13.sp,
             style = TextStyle(fontFeatureSettings = "tnum")
         )

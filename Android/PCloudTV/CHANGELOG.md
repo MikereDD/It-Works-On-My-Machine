@@ -5,6 +5,13 @@ All notable changes to **pCloud TV**. Newest first.
 
 ---
 
+## v4.22 — Cadence-style audio now-playing
+
+- Reworked the audio now-playing screen into a monochrome Material 3 look (à la Cadence): near-black gradient, grayscale art frame, near-white play control and scrub bar.
+- Added a Cadence-style spectrum visualizer with falling peak-hold caps that runs while playing and settles flat on pause. Note: LibVLC doesn't expose PCM on Android, so the motion is a smoothed synthetic envelope, not a true FFT. Video playback styling is unchanged.
+
+---
+
 ## v4.21 — playlist tracks always start from the beginning
 
 - Within-track resume now applies only to a single, deliberately-reopened file (a long video or audiobook). In a playlist or folder queue, every track starts from the beginning instead of jumping to a saved position from a previous play — fixes songs after the first playing only a shortened portion.
