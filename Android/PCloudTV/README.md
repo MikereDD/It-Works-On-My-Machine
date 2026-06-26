@@ -1,41 +1,155 @@
-# 🧰 It-Works-On-My-Machine
+<p align="center">
+  <img src="./icon.png" width="112" alt="pCloud TV icon">
+</p>
 
-> Everything in here works. On my machine.
+<h1 align="center">pCloud TV</h1>
 
-A personal archive of scripts, projects, and experiments across Windows, Linux, Android, and a Raspberry Pi. Each side is independent — no attempt is made to keep them in sync.
+<p align="center"><strong>v4.25</strong></p>
 
-## 📁 Projects
+<p align="center">
+A minimal <strong>Google TV / Android TV</strong> app (also runs on phones), built with
+<strong>Kotlin + Jetpack Compose</strong>. Sign into pCloud, browse your folders with the remote,
+and stream your <strong>video and audio</strong> straight from pCloud — played through the
+<strong>VLC (LibVLC)</strong> engine for wide codec support, in a monochrome Material 3 interface.
+</p>
 
-### 🪟 [Windows/](https://github.com/MikereDD/It-Works-On-My-Machine/blob/main/Windows) — PowerShell
-Media & encoding: **media-encoder-gui**, **BRencoder** (+ GUI), **dvd-ripper-encoder** (+ GUI), **web-ripper**, **clip-video**, **generate-playlists**, **minfocreate**, `imdbdump` / `imdbthumbgrab`
-Audio: **Cadence** (Material 3 audio player), `cd-tracks-flac` / `cd-image-flac` / `cd-ripper-gui`
-Utilities: **AtomicClock** (SNTP clock + weather), `bluray-backup` / `bluray-trackdump`, `speedtest-menu`, `weatherfetch-menu`
-Admin: **admin-menu-gui** + console menus (disk, events, logs, network, power, procs, services, systeminfo, updates, watch), `tool-menu` dispatcher
+<p align="center">
+  <a href="https://github.com/MikereDD/It-Works-On-My-Machine/releases/download/pCloudTV-v4.25/pCloudTV-v4.25.apk"><strong>Download the APK (v4.25)</strong></a>
+</p>
 
-### 🐧 [Linux/](https://github.com/MikereDD/It-Works-On-My-Machine/blob/main/Linux) — Bash (arakiel · Raspberry Pi 5)
-Pi & system: `pi-fan`, `pi-power`, `pi-throttle`, `pi-overclock`, `pi-eeprom`, `pi-fw`, `nvme-health`, `rp5-systeminfo`, `system-info`, `backup`, `disk-cleanup`, `update-manager`
-Network & security: `net-monitor`, `open-ports`, `login-audit`, `logview`, `vpn-menu`, `wifi-menu`
-Media: `bluray-backup` / `bluray-trackdump`, `brencoder`, `dvd-ripper-encoder`, `minfocreate`, `imdbdump`, `transcode-queue`
-Shell: `tool-menu.sh`, `arakiel-tmux.sh`, dotfiles (`vimrc`, `tmux.conf`, `bashrc`, `Xresources`)
+---
 
-### 🤖 [Android/](https://github.com/MikereDD/It-Works-On-My-Machine/blob/main/Android) — Kotlin / Jetpack Compose
-* **pCloud TV** — streams pCloud video & audio to Google TV / Android via LibVLC. Plays **MKV** and virtually any format LibVLC handles; recursive search, per-folder & custom playlists, in-app `.nfo` / `.htm` viewer, and an audio-reactive visualizer.
-* **CloudTV** — M3U / IPTV live-TV player (Media3 / ExoPlayer) with background DVR.
-* **AtomicClock** — RFC 4330 SNTP clock with Open-Meteo weather and a home-screen widget.
-* **Resound** — multitrack audio editor / mixer (FFmpeg) with per-clip trim and voice recording.
-* **Seraph** — MusicBrainz audio tagger with album-level matching.
-* **Siphon** — audio extractor for local video files and remote links.
+## Install
 
-### 🔌 [Bots/](https://github.com/MikereDD/It-Works-On-My-Machine/blob/main/Bots) — Telegram (arakiel)
-`ytbot`, `musicbot`, `aibot`, `cardbot` (URL → preview cards), `forwardbot`
+1. Download **[pCloudTV-v4.25.apk](https://github.com/MikereDD/It-Works-On-My-Machine/releases/download/pCloudTV-v4.25/pCloudTV-v4.25.apk)** and copy it to your phone or Android TV device.
+2. Open it with a file manager and install. You'll see Google **Play Protect**'s "unknown developer" notice — tap **More details -> Install anyway**. That's expected for a sideloaded personal build.
+3. Launch **pCloud TV**, tap **Sign in with pCloud**, and log in (two-factor authentication is handled on pCloud's own page).
 
-### 🎮 [Games/](https://github.com/MikereDD/It-Works-On-My-Machine/blob/main/Games)
-Android: **Road Pursuit**, **TacoBros**, **TetBlockRis**
-PowerShell terminal: `2048`, `breakout`, `minesweeper`, `pacman`, `pong`, `snake`, `tetris`
+> On Android TV, sideload via a file manager (e.g. "Downloader") or `adb install PCloudTV.apk`.
 
-### 🧊 [3D-Printing/](https://github.com/MikereDD/It-Works-On-My-Machine/blob/main/3D-Printing)
-OpenSCAD projects, STL files, and prototypes — desktop hardware stands, Poop Tray.
+---
 
-## 📜 License
+## Screenshots
 
-[WTFPL](./LICENSE) — do what the fuck you want.
+<p align="center">
+  <img src="./screenshots/screenshot-1.jpg" width="24%">
+  <img src="./screenshots/screenshot-2.jpg" width="24%">
+  <img src="./screenshots/screenshot-3.jpg" width="24%">
+</p>
+<p align="center">
+  <img src="./screenshots/screenshot-4.jpg" width="24%">
+  <img src="./screenshots/screenshot-5.jpg" width="24%">
+  <img src="./screenshots/screenshot-6.jpg" width="24%">
+</p>
+<p align="center">
+  <img src="./screenshots/screenshot-7.jpg" width="60%">
+</p>
+
+
+---
+
+## Features
+
+- Sign in through pCloud's own web login (**two-factor authentication supported**); token stored until sign-out.
+- Browse folders on TV (D-pad) or phone (touch), with file-type icons and sizes.
+- **VLC playback** with wide codec support; auto-hiding controls (play/pause, +/-10s, scrub bar).
+- Auto-selects **English audio + subtitles** with a manual **Tracks** picker. A single video or audiobook **resumes where you left off**; playlist tracks always start from the beginning.
+- **Background audio** — music/audiobooks keep playing with the screen off or when you leave the app; video stops on leave.
+- **Playlists** — play `.m3u`/`.m3u8` as a queue (auto-advance, skip, HLS), build one by tapping tracks across folders (saved to `/Music/playlists`, resolved by pCloud file id), or bulk-generate one **per folder, saved beside its own tracks**.
+- **Shared links** — open a pCloud public link (file or folder) with no account.
+- **In-app document viewer** — open `.nfo` / `.htm` files (embedded art and all) right in the app, including from shared links.
+- **Monochrome theme** — a Cadence-style monochrome Material 3 look across browse, video, and the audio now-playing screen.
+- **Audio visualizer** — the now-playing screen shows a spectrum with falling peak-hold caps; opt in with one tap to make it follow the real audio (FFT).
+- **Wide format support** — **MKV**, MP4, and virtually anything LibVLC decodes.
+- **Chromecast** — cast to a Chromecast / Google TV (audio + MP4/H.264; MKV/HEVC not supported by the stock receiver).
+
+See the **[changelog](https://github.com/MikereDD/It-Works-On-My-Machine/blob/main/Android/PCloudTV/CHANGELOG.md)** for the full, version-by-version release history.
+
+---
+
+## Controls
+
+**Player (TV remote):** **Left / Right** move the highlight across the control buttons - **OK** press the highlighted button (play/pause, -/+10s, start, end) - **Up / Menu** audio & subtitle tracks - **Down** drop onto the scrub bar (then **Left / Right** to scrub, **Up** to return) - **Back** exit.
+
+**Player (touch):** tap to show/hide controls, tap the buttons, drag the seek bar, tap **Tracks** (top-right) for audio/subtitles.
+
+---
+
+## How sign-in works
+
+pCloud has **disabled new OAuth app registration**, and its API does **not** support password login on accounts with **two-factor authentication**. So the app signs in via pCloud's own web login:
+
+1. Tap **Sign in with pCloud** — the app opens **my.pcloud.com** in an in-app WebView.
+2. Log in with your email + password + 2FA (all handled by pCloud).
+3. The app captures the account's **access token** from the authenticated session, validates it against both regions (US `api.pcloud.com` / EU `eapi.pcloud.com`), and stores it.
+
+The token is kept until you **Sign out** (which also clears the WebView session). Your **password is never seen or stored** — only the token. A manual *paste-a-token* field is included as a fallback.
+
+---
+
+## Build from source
+
+1. Open the **PCloudTV** folder in **Android Studio** (Hedgehog/Iguana or newer): *File -> Open* -> select the folder containing `settings.gradle.kts`.
+2. Let Gradle **sync** (first sync downloads Gradle 8.4 + dependencies, including the LibVLC native libraries — give it a few minutes).
+3. **Build -> Generate App Bundles or APKs -> Build APK(s)** -> output at `app/build/outputs/apk/debug/app-debug.apk`.
+
+> **APK size:** the build ships **arm64-v8a + armeabi-v7a** native libs (set in `app/build.gradle.kts` → `defaultConfig` → `ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }`), so it installs on modern phones, Android TVs, **and 32-bit ARM devices like the Chromecast with Google TV**. This makes the APK roughly **~110 MB**. To trim it for a single known device, drop the ABI you don't need. If you need an **x86_64 emulator**, comment out the `abiFilters` block and rebuild.
+
+### Toolchain
+
+| Component | Version |
+|---|---|
+| Gradle | 8.4 |
+| Android Gradle Plugin | 8.2.2 |
+| Kotlin | 1.9.22 |
+| Compose Compiler extension | 1.5.10 |
+| Compose BOM | 2024.02.00 |
+| LibVLC (`org.videolan.android:libvlc-all`) | 3.6.0 |
+| OkHttp | 4.12.0 |
+| min / target SDK | 26 / 34 |
+| JDK (Gradle) | 17 |
+
+---
+
+## Project layout
+
+```
+app/src/main/java/com/typezero/pcloudtv/
++- MainActivity.kt          # hosts the Compose UI
++- data/
+|  +- Models.kt             # PItem, Session, ApiResult
+|  +- PCloudClient.kt       # listFolder / getStreamUrl / token validate (OkHttp + org.json)
+|  +- SessionStore.kt       # token + region persistence (never the password)
++- ui/
+   +- App.kt                # routing: login -> web login -> browse -> player
+   +- AppViewModel.kt       # session state
+   +- LoginScreen.kt        # "Sign in with pCloud" + token fallback
+   +- WebLoginScreen.kt     # pCloud web login in a WebView (captures the token)
+   +- BrowseScreen.kt       # folder stack + focusable cards
+   +- PlayerScreen.kt       # LibVLC playback, controls, track picker
+   +- theme/Theme.kt        # palette + design tokens
+```
+
+---
+
+## Troubleshooting
+
+- **`Unsupported class file major version` / JVM target mismatch** — set the Gradle JDK to **17**: *Settings -> Build, Execution, Deployment -> Build Tools -> Gradle -> Gradle JDK* (the bundled `jbr-17` works), then re-sync.
+- **Gradle can't resolve `libvlc-all:3.6.0`** — that exact version may not be on Maven Central; open the LibVLC page on Maven Central and bump to the latest `3.6.x`. (Avoid the `4.0.0-eap` builds; the API differs.)
+- **Subtitles show the wrong language** — open **Tracks** (Up/Menu on TV, or the top-right button on touch) and pick the track you want, or set subtitles to **Off**.
+- **Video won't decode** — LibVLC handles most formats; if one misbehaves, try toggling hardware decoding in `PlayerScreen.kt` (`setHWDecoderEnabled`).
+- **"Directory does not contain a Gradle build"** — you opened the wrong folder; open the one that directly contains `settings.gradle.kts` and `app/`.
+
+---
+
+## Notes
+
+- Stream URLs from `getfilelink` are bound to the requesting device's IP, so the app resolves them immediately before playback on the same device.
+- Token storage is plain app-private prefs. For encryption, wrap `SessionStore` with `EncryptedSharedPreferences` (`androidx.security:security-crypto`).
+- pCloud also offers `getvideolink` / `gethlslink` for transcoded/adaptive streaming if you ever need it — `PCloudClient` is where to add it.
+
+---
+
+## License
+
+Personal project — do whatever you want with it.
