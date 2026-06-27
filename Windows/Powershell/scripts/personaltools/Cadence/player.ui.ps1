@@ -312,13 +312,51 @@ function Update-PillVisual { param($b) $b.Invalidate() }
 # --- Visualizer -------------------------------------------------------------
 #  Dark recessed well, light-grey hairline border, grey spikes (dark->white by
 #  frequency), with a dim mirrored reflection.
+function Hsv-Color {
+    param($H, $S, $V)
+    $h = ((([double]$H) % 360) + 360) % 360
+    $c = $V * $S
+    $x = $c * (1 - [Math]::Abs((($h / 60.0) % 2) - 1))
+    $m = $V - $c
+    switch ([int][Math]::Floor($h / 60)) {
+        0 { $r = $c; $g = $x; $b = 0 }
+        1 { $r = $x; $g = $c; $b = 0 }
+        2 { $r = 0; $g = $c; $b = $x }
+        3 { $r = 0; $g = $x; $b = $c }
+        4 { $r = $x; $g = 0; $b = $c }
+        default { $r = $c; $g = 0; $b = $x }
+    }
+    [System.Drawing.Color]::FromArgb(
+        [int]([Math]::Max(0.0, [Math]::Min(1.0, $r + $m)) * 255),
+        [int]([Math]::Max(0.0, [Math]::Min(1.0, $g + $m)) * 255),
+        [int]([Math]::Max(0.0, [Math]::Min(1.0, $b + $m)) * 255))
+}
+
 function Vis-BandColor {
     param($F, $Mag)
-    $low  = [System.Drawing.Color]::FromArgb(0x5E, 0x62, 0x6B)   # bass: mid grey
-    $mid  = [System.Drawing.Color]::FromArgb(0x9A, 0x9E, 0xA8)
-    $high = [System.Drawing.Color]::FromArgb(0xDE, 0xE1, 0xE8)   # treble: near-white
-    $base = if ($F -lt 0.5) { Blend-Color $low $mid ($F * 2) } else { Blend-Color $mid $high (($F - 0.5) * 2) }
-    Blend-Color $base ([System.Drawing.Color]::FromArgb(0xF2, 0xF4, 0xF8)) ([Math]::Min(1.0, [double]$Mag) * 0.4)
+    $m = [Math]::Min(1.0, [double]$Mag)
+    $pal = 'mono'
+    try { if ($script:State -and $script:State.VisPalette) { $pal = $script:State.VisPalette } } catch {}
+    switch ($pal) {
+        'spectrum' {
+            # blue (bass) -> red (treble), brighter with magnitude
+            return (Hsv-Color (240.0 - ($F * 240.0)) 0.72 (0.55 + 0.45 * $m))
+        }
+        'indigo' {
+            $low  = [System.Drawing.Color]::FromArgb(0x3B, 0x33, 0x8A)
+            $mid  = [System.Drawing.Color]::FromArgb(0x6A, 0x5A, 0xE0)
+            $high = [System.Drawing.Color]::FromArgb(0xB9, 0xB0, 0xFF)
+            $base = if ($F -lt 0.5) { Blend-Color $low $mid ($F * 2) } else { Blend-Color $mid $high (($F - 0.5) * 2) }
+            return (Blend-Color $base ([System.Drawing.Color]::FromArgb(0xEC, 0xEA, 0xFF)) ($m * 0.4))
+        }
+        default {
+            $low  = [System.Drawing.Color]::FromArgb(0x5E, 0x62, 0x6B)   # bass: mid grey
+            $mid  = [System.Drawing.Color]::FromArgb(0x9A, 0x9E, 0xA8)
+            $high = [System.Drawing.Color]::FromArgb(0xDE, 0xE1, 0xE8)   # treble: near-white
+            $base = if ($F -lt 0.5) { Blend-Color $low $mid ($F * 2) } else { Blend-Color $mid $high (($F - 0.5) * 2) }
+            return (Blend-Color $base ([System.Drawing.Color]::FromArgb(0xF2, 0xF4, 0xF8)) ($m * 0.4))
+        }
+    }
 }
 
 function New-Visualizer {
