@@ -14,6 +14,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Optional visualizer palettes (full-spectrum / indigo) as an alternative to
   the default monochrome.
 
+## [0.3.0] - 2026-06-24
+
+Search, a much better visualizer, and a pwsh-native launch.
+
+### Added
+- Queue search: a live filter box above the queue narrows it to matching
+  tracks as you type. A view-to-model map keeps playback correct while filtered
+  (double-click still plays the right track and the now-playing row follows),
+  `Esc` clears it, and typing is shortcut-safe (Space/M go to the box, not the
+  transport).
+- App icon: a visualizer-bars mark (`assets/cadence.ico`) — the recessed well,
+  gradient bars, and peak caps from the spectrum view — on the window title bar,
+  taskbar, and alt-tab.
+
+### Changed
+- Visualizer reworked for real motion and depth: a gamma curve expands the
+  dynamic range so loud bands tower and quiet ones drop (no more uniform wall),
+  with fewer/wider gradient bars (bright tip fading to a dark foot), rounded
+  tops, and floating peak-hold caps that snap up and fall under gravity.
+- Renamed the entry script `audio-player.ps1` -> `cadence.ps1` (the folder stays
+  `audio-player/`).
+- Launch hardening: when the launching shell isn't already STA, the player
+  relaunches HIDDEN into Windows PowerShell `-STA` -- the reliable STA host for
+  the owner-draw paint handlers, since `pwsh -File` runs MTA in practice -- so
+  only the player window shows, with no stray console. A `-Relaunched` sentinel
+  prevents relaunch loops, and a new `cadence.cmd` gives a fire-and-forget
+  launch.
+
+### Fixed
+- Native scrollbars on the library tree and queue now use the Windows dark theme
+  (`SetWindowTheme` / `DarkMode_Explorer`) instead of rendering as light strips.
+
 ## [0.2.0] - 2026-06-23
 
 A large pass turning the v0.1.0 scaffold into a usable player: a live
@@ -95,5 +127,6 @@ visualizer, a real library browser, playlist plumbing, the Windows PowerShell
 - `New-Visualizer` stub with the FFT integration recipe documented inline.
 
 [Unreleased]: https://github.com/MikereDD/It-Works-On-My-Machine/commits/main
+[0.3.0]: https://github.com/MikereDD/It-Works-On-My-Machine/tree/main/personaltools/audio-player
 [0.2.0]: https://github.com/MikereDD/It-Works-On-My-Machine/tree/main/personaltools/audio-player
 [0.1.0]: https://github.com/MikereDD/It-Works-On-My-Machine/tree/main/personaltools/audio-player

@@ -1,5 +1,5 @@
 # ============================================================================
-#  audio-player.ps1  -  Cadence  v0.2.0
+#  cadence.ps1  -  Cadence  v0.3.0
 #  A sleek local audio player (WinForms, owner-drawn, NAudio backend).
 #  Part of personaltools/ - mirrors the media-encoder-gui.ps1 layout:
 #    main GUI  +  dot-sourced engine/ui modules.
@@ -104,6 +104,8 @@ try {
 $script:State = @{
     Items   = New-Object System.Collections.Generic.List[string]   # full paths
     Seen    = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    ViewMap = New-Object System.Collections.Generic.List[int]       # list row -> Items index
+    Filter  = ''          # active search text (filters the queue)
     Index   = -1
     Active  = $false      # true while a track is meant to be playing/paused
     Shuffle = $false
@@ -116,6 +118,11 @@ $script:State = @{
 # ============================================================================
 $form = [System.Windows.Forms.Form]::new()
 $form.Text = "$APP_NAME"
+# Window/taskbar/alt-tab icon (optional; ignored if the .ico isn't present).
+try {
+    $icoPath = Join-Path $PSScriptRoot 'assets\cadence.ico'
+    if (Test-Path $icoPath) { $form.Icon = [System.Drawing.Icon]::new($icoPath) }
+} catch {}
 $form.Size = [System.Drawing.Size]::new(540, 760)
 $form.MinimumSize = [System.Drawing.Size]::new(460, 680)
 $form.StartPosition = 'CenterScreen'
@@ -292,6 +299,23 @@ $list.DrawMode = 'OwnerDrawFixed'
 $list.ItemHeight = 30
 $split.Panel2.Controls.Add($list)
 
+# Search box: live-filters the queue (docks above the list; added after the
+# Fill list so it claims the top edge).
+$search = [System.Windows.Forms.TextBox]::new()
+$search.Dock        = 'Top'
+$search.BorderStyle = 'FixedSingle'
+$search.BackColor   = $script:Theme.SurfaceHi
+$search.ForeColor   = $script:Theme.Text
+$search.Font        = [System.Drawing.Font]::new('Segoe UI', 10)
+try { $search.PlaceholderText = 'Search queue...' } catch {}
+$search.Add_TextChanged({ $script:State.Filter = $search.Text; Sync-List })
+$search.Add_KeyDown({
+    param($s, $e)
+    if ($e.KeyCode -eq 'Escape') { $search.Text = ''; $e.Handled = $true; $e.SuppressKeyPress = $true }
+})
+$split.Panel2.Controls.Add($search)
+$script:SearchBox = $search
+
 $list.Add_DrawItem({
     param($s, $e)
     $e.DrawBackground()
@@ -356,7 +380,9 @@ function Invoke-PlayIndex {
     param($i)
     if ($i -lt 0 -or $i -ge $script:State.Items.Count) { return }
     $script:State.Index = $i
-    if ($list.SelectedIndex -ne $i) { $list.SelectedIndex = $i }
+    # Highlight in the (possibly filtered) list via the view->model map.
+    $vr = $script:State.ViewMap.IndexOf($i)
+    if ($list.SelectedIndex -ne $vr) { $list.SelectedIndex = $vr }
     $path = $script:State.Items[$i]
     try {
         Open-Track -Path $path
@@ -429,12 +455,46 @@ function Import-M3U {
     return ,$out
 }
 
+# Does a display name pass the active search filter?
+function Test-FilterMatch {
+    param($Name)
+    $f = $script:State.Filter
+    if ([string]::IsNullOrEmpty($f)) { return $true }
+    return ($Name.IndexOf($f, [System.StringComparison]::OrdinalIgnoreCase) -ge 0)
+}
+
+# Rebuild the visible queue from Items applying the current filter, and rebuild
+# the view->model map. Used when the search text changes.
+function Sync-List {
+    $list.BeginUpdate()
+    try {
+        $list.Items.Clear()
+        $script:State.ViewMap.Clear()
+        for ($i = 0; $i -lt $script:State.Items.Count; $i++) {
+            $name = [IO.Path]::GetFileNameWithoutExtension($script:State.Items[$i])
+            if (Test-FilterMatch $name) {
+                $list.Items.Add($name) | Out-Null
+                $script:State.ViewMap.Add($i)
+            }
+        }
+    } finally { $list.EndUpdate() }
+    if ($script:State.Index -ge 0) {
+        $vr = $script:State.ViewMap.IndexOf($script:State.Index)
+        if ($vr -ge 0) { $list.SelectedIndex = $vr }
+    }
+}
+
 function Add-One {
     param($p)
     if ($AUDIO_EXT -notcontains [IO.Path]::GetExtension($p).ToLower()) { return }
     if (-not $script:State.Seen.Add($p)) { return }   # already in list
+    $idx = $script:State.Items.Count
     $script:State.Items.Add($p)
-    $list.Items.Add([IO.Path]::GetFileNameWithoutExtension($p)) | Out-Null
+    $name = [IO.Path]::GetFileNameWithoutExtension($p)
+    if (Test-FilterMatch $name) {                     # respect an active search
+        $list.Items.Add($name) | Out-Null
+        $script:State.ViewMap.Add($idx)
+    }
 }
 
 function Add-Paths {
@@ -626,7 +686,10 @@ $pillRepeat.Add_Click({
     $pillRepeat.Active = $script:State.Repeat; Update-PillVisual $pillRepeat
 })
 
-$list.Add_DoubleClick({ if ($list.SelectedIndex -ge 0) { Invoke-PlayIndex $list.SelectedIndex } })
+$list.Add_DoubleClick({
+    $vr = $list.SelectedIndex
+    if ($vr -ge 0 -and $vr -lt $script:State.ViewMap.Count) { Invoke-PlayIndex $script:State.ViewMap[$vr] }
+})
 
 $btnAddFiles.Add_Click({
     $dlg = [System.Windows.Forms.OpenFileDialog]::new()
@@ -703,6 +766,8 @@ $miAddFolder.Add_Click({
 $btnClear.Add_Click({
     Stop-Playback; Close-Track
     $script:State.Items.Clear(); $script:State.Seen.Clear(); $list.Items.Clear()
+    $script:State.ViewMap.Clear(); $script:State.Filter = ''
+    if ($script:SearchBox) { $script:SearchBox.Text = '' }
     $script:State.Index = -1; $script:State.Active = $false
     $lblTitle.Text = 'Nothing playing'; $lblArtist.Text = ''; $lblAlbum.Text = ''
     $art.Image = $null; $lblPos.Text = '0:00'; $lblDur.Text = '0:00'
@@ -714,6 +779,8 @@ $btnClear.Add_Click({
 $script:lastVol = $script:Engine.Volume
 $form.Add_KeyDown({
     param($s, $e)
+    # Don't hijack typing while the search box has focus.
+    if ($script:SearchBox -and $script:SearchBox.Focused) { return }
     switch ($e.KeyCode) {
         'Space'      { Toggle-PlayPause; $e.Handled = $true }
         'MediaPlayPause' { Toggle-PlayPause; $e.Handled = $true }
