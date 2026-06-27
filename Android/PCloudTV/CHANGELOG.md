@@ -5,7 +5,17 @@ All notable changes to **pCloud TV**. Newest first.
 
 ---
 
-## v4.35 — Monochrome media notification
+## v4.37 — Embedded cover art for pCloud streams
+
+- Album art now shows for streamed tracks. LibVLC rarely surfaces embedded art from a network source, so the app now reads the **ID3v2 `APIC`** frame itself with a small ranged GET of the file's tag, and feeds the cover into the now-playing screen, the notification/lock-screen, and the Android Auto card. Applies to the in-app player (phone + TV), the public-link player, and the headless Auto/service player.
+- Front-cover picture type is preferred; handles ID3v2.2/2.3/2.4. Non-MP3 or art-less files fall back to LibVLC's art, then the monochrome placeholder, as before. (Global unsynchronisation isn't handled — uncommon; Mp3tag doesn't apply it by default.)
+
+
+
+- The now-playing spectrum now follows the **real audio (FFT)** by default on both phone and TV, instead of the synthetic motion. The app auto-requests the `RECORD_AUDIO` permission once when the audio screen first opens (the `android.media.audiofx.Visualizer` tap on LibVLC's AudioTrack session requires it). Previously the request was a touch-only opt-in, which the TV could never trigger — so TV always ran the fake motion.
+- Prompt fires once per launch (no re-prompt spam). If the permission is denied, it still falls back to the synthetic animation; on phone the "Tap to sync to audio" hint remains as a manual retry.
+
+
 
 - The lock-screen / Quick Settings media card now reads as monochrome instead of the default blue when a track has **no embedded cover**: the same monochrome vinyl fallback is supplied as the notification/session art, so SystemUI derives a dark/neutral card from it. Tracks *with* embedded art still theme the card from the real cover (as before). Also sets a dark colorized tint for older Android versions where that still applies.
 - Note: the system media player is rendered by Android's SystemUI and themes itself from the album art on Android 12+, so the artwork is the only lever — the card's exact colors aren't directly settable by the app.

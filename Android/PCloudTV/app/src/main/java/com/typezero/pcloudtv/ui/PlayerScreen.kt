@@ -136,6 +136,7 @@ fun PlayerScreen(
     resolveUrl: suspend (MediaItem) -> ApiResult<String>,
     startIndex: Int = 0,
     playlistKey: String? = null,
+    fetchArt: suspend (String) -> ByteArray? = { null },
     onExit: () -> Unit
 ) {
     BackHandler { onExit() }
@@ -172,6 +173,7 @@ fun PlayerScreen(
         resolveUrl = resolveUrl,
         startIndex = startIndex.coerceIn(0, queue.size - 1),
         playlistKey = playlistKey,
+        fetchArt = fetchArt,
         onExit = onExit
     )
 }
@@ -207,6 +209,7 @@ private fun VlcPlayer(
     resolveUrl: suspend (com.typezero.pcloudtv.data.MediaItem) -> ApiResult<String>,
     startIndex: Int,
     playlistKey: String? = null,
+    fetchArt: suspend (String) -> ByteArray? = { null },
     onExit: () -> Unit
 ) {
     val context = LocalContext.current
@@ -596,6 +599,19 @@ private fun VlcPlayer(
         when (val r = resolveUrl(item)) {
             is ApiResult.Ok -> resolvedUrl = r.value
             is ApiResult.Error -> loadError = r.message
+        }
+    }
+
+    // Embedded cover art. LibVLC rarely surfaces it for network streams, so pull
+    // the ID3v2 APIC ourselves, cache it to a file, and feed that into the same
+    // metaArtPath the rest of the UI (and the notification via the bridge) reads.
+    LaunchedEffect(resolvedUrl) {
+        val url = resolvedUrl ?: return@LaunchedEffect
+        val bytes = runCatching { fetchArt(url) }.getOrNull() ?: return@LaunchedEffect
+        runCatching {
+            val f = java.io.File(context.cacheDir, "cover-${url.hashCode()}.img")
+            f.writeBytes(bytes)
+            metaArtPath = f.absolutePath
         }
     }
 
@@ -1352,6 +1368,9 @@ private val CadTrackInactive = Color(0x22FFFFFF)
 /** Holds the LibVLC AudioTrack session id so the visualizer can tap it. */
 private object VizSession {
     @Volatile var id: Int = 0
+    // Whether we've already auto-requested RECORD_AUDIO this process, so the real
+    // FFT tap engages without a tap (incl. on TV) but we never re-prompt-spam.
+    @Volatile var asked: Boolean = false
 }
 
 /** Collapse an 8-bit FFT (real/imag interleaved) into [out.size] log-spaced bands. */
@@ -1407,6 +1426,16 @@ private fun AudioVisualizer(isPlaying: Boolean, modifier: Modifier = Modifier) {
     val askMic = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted -> hasMic = granted }
+
+    // Make the real audio-reactive spectrum the default on BOTH phone and TV:
+    // auto-request the mic permission once per launch (TV has no tap hint, so this
+    // is the only way it can go real there). Denial falls back to synthetic motion.
+    LaunchedEffect(Unit) {
+        if (!hasMic && !VizSession.asked) {
+            VizSession.asked = true
+            askMic.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
 
     // Attach/detach the real spectrum tap as permission/session availability changes.
     DisposableEffect(hasMic, VizSession.id) {
@@ -1495,9 +1524,9 @@ private fun AudioVisualizer(isPlaying: Boolean, modifier: Modifier = Modifier) {
                 )
             }
         }
-        // Opt-in: only ask for the mic permission if the user taps to enable the
-        // real audio-reactive mode. The hint is touch-only, so it's never shown on
-        // a TV (no pointer) — there the bars simply run on the synthetic motion.
+        // We auto-request the mic once on open (see above), so this is just a
+        // manual retry on phones where it was denied. Touch-only, so it never
+        // shows on a TV — there the one-time auto-request is the path to real audio.
         if (!hasMic && !isTv) {
             Box(
                 modifier = Modifier
