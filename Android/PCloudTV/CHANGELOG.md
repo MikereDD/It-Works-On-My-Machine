@@ -5,6 +5,13 @@ All notable changes to **pCloud TV**. Newest first.
 
 ---
 
+## v4.31 — Android Auto: app appears + browsable folders (B2a)
+
+- The playback service is now a `MediaBrowserServiceCompat`, so pCloud TV appears in Android Auto's media app list and your pCloud tree is browsable on the car screen: top-level folders, a Playlists node, and an Audiobooks node, drilling into subfolders, tracks, and playlists. Added the Android Auto app declaration (`xml/automotive_app_desc.xml`) and exported the service with the media-browser intent filter.
+- Note: picking a track in Android Auto does not play it *yet* — in-service playback (so the car can start playback with no phone UI) is the next step (B2b). This build is the "appears + browsable" checkpoint.
+
+---
+
 ## v4.30 — proper media session: lock screen / Bluetooth / car now-playing + controls
 
 - Migrated from an in-screen framework MediaSession to a `MediaSessionCompat` owned by the foreground playback service, which now posts a real **MediaStyle** media notification. This is what surfaces "now playing" (title, artist, album, cover art) on the lock screen, the Quick Settings media player, Bluetooth, and a car's media display — and routes the transport buttons (play/pause, skip next/previous, seek), including hardware/steering-wheel/Bluetooth buttons, to playback.
