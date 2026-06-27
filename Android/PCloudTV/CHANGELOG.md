@@ -5,7 +5,11 @@ All notable changes to **pCloud TV**. Newest first.
 
 ---
 
-## v4.37 — Embedded cover art for pCloud streams
+## v4.38 — Fix: TV playback wouldn't start (disable cover-art fetch on TV)
+
+- Fixed audio and video failing to start on Android TV (loaded but stuck at 0:00). The v4.37 embedded-art fetch opens a second connection to the IP-bound pCloud `getfilelink` URL right as playback begins; on the TV that disrupts LibVLC's stream before it establishes. The art fetch is now **skipped on Android TV** (FEATURE_LEANBACK) — the TV uses the monochrome placeholder, while phone and Android Auto keep real embedded covers.
+
+
 
 - Album art now shows for streamed tracks. LibVLC rarely surfaces embedded art from a network source, so the app now reads the **ID3v2 `APIC`** frame itself with a small ranged GET of the file's tag, and feeds the cover into the now-playing screen, the notification/lock-screen, and the Android Auto card. Applies to the in-app player (phone + TV), the public-link player, and the headless Auto/service player.
 - Front-cover picture type is preferred; handles ID3v2.2/2.3/2.4. Non-MP3 or art-less files fall back to LibVLC's art, then the monochrome placeholder, as before. (Global unsynchronisation isn't handled — uncommon; Mp3tag doesn't apply it by default.)

@@ -605,7 +605,14 @@ private fun VlcPlayer(
     // Embedded cover art. LibVLC rarely surfaces it for network streams, so pull
     // the ID3v2 APIC ourselves, cache it to a file, and feed that into the same
     // metaArtPath the rest of the UI (and the notification via the bridge) reads.
+    // Skipped on Android TV: the extra connection to the IP-bound pCloud stream URL
+    // can disrupt LibVLC's playback there, and the cover is barely visible from the
+    // couch anyway — the TV falls back to the placeholder.
+    val isTvDevice = remember {
+        context.packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
+    }
     LaunchedEffect(resolvedUrl) {
+        if (isTvDevice) return@LaunchedEffect
         val url = resolvedUrl ?: return@LaunchedEffect
         val bytes = runCatching { fetchArt(url) }.getOrNull() ?: return@LaunchedEffect
         runCatching {
