@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.support.v4.media.MediaBrowserCompat.MediaItem
@@ -21,25 +22,36 @@ import com.typezero.pcloudtv.MainActivity
 import com.typezero.pcloudtv.data.ApiResult
 import com.typezero.pcloudtv.data.PCloudClient
 import com.typezero.pcloudtv.data.PItem
+import com.typezero.pcloudtv.data.Session
 import com.typezero.pcloudtv.data.SessionStore
+import com.typezero.pcloudtv.data.MediaItem as Track
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.videolan.libvlc.LibVLC
+import org.videolan.libvlc.Media
+import org.videolan.libvlc.MediaPlayer
 
 /**
  * Foreground media service AND Android Auto browser.
  *
  * - Owns a MediaSessionCompat and posts a MediaStyle notification so the lock
  *   screen, headset, Bluetooth, and the car show "now playing" and route the
- *   transport buttons (the session callback forwards to the UI via PlaybackBridge;
- *   the LibVLC player still lives in the UI for now).
+ *   transport buttons.
  * - Exposes the pCloud tree to Android Auto via onLoadChildren so the app appears
  *   in Auto and the folders/playlists/tracks are browsable on the car screen.
+ * - Owns a HEADLESS audio-only LibVLC player so a track picked in the car
+ *   (onPlayFromMediaId) plays even when the Compose UI is not on screen (phone
+ *   locked, app backgrounded — the normal Android Auto case).
  *
- * NOTE: playing a track picked in Android Auto (onPlayFromMediaId) is the next
- * step — this build makes the app appear + browsable.
+ * Two playback surfaces, one session: the in-app PlayerScreen owns its own LibVLC
+ * player for the on-phone experience; this service owns a separate headless player
+ * for Android Auto. They never play at once — whoever starts tells the other to
+ * stop via [PlaybackBridge], and [PlaybackBridge.serviceOwnsPlayback] records who
+ * is the current source of truth for the session state.
  */
 class PlaybackService : MediaBrowserServiceCompat() {
 
@@ -47,32 +59,66 @@ class PlaybackService : MediaBrowserServiceCompat() {
     private val client = PCloudClient()
     private val browseScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
+    // Headless audio player for Android Auto. Created on first car play, released
+    // when the in-app player takes over or the service is destroyed.
+    private var libVlc: LibVLC? = null
+    private var player: MediaPlayer? = null
+
+    // The Auto-initiated queue.
+    private var queue: List<Track> = emptyList()
+    private var queueIndex: Int = 0
+    private var pendingTitle: String = ""
+
     override fun onCreate() {
         super.onCreate()
         ensureChannel(this)
         session = MediaSessionCompat(this, "pCloudTV").apply {
             setCallback(object : MediaSessionCompat.Callback() {
-                override fun onPlay() { PlaybackBridge.onPlay?.invoke() }
-                override fun onPause() { PlaybackBridge.onPause?.invoke() }
-                override fun onSkipToNext() { PlaybackBridge.onNext?.invoke() }
-                override fun onSkipToPrevious() { PlaybackBridge.onPrev?.invoke() }
-                override fun onSeekTo(pos: Long) { PlaybackBridge.onSeekTo?.invoke(pos) }
+                override fun onPlay() {
+                    if (serviceOwns()) resumeService() else PlaybackBridge.onPlay?.invoke()
+                }
+                override fun onPause() {
+                    if (serviceOwns()) pauseService() else PlaybackBridge.onPause?.invoke()
+                }
+                override fun onSkipToNext() {
+                    if (serviceOwns()) skipService(+1) else PlaybackBridge.onNext?.invoke()
+                }
+                override fun onSkipToPrevious() {
+                    if (serviceOwns()) skipService(-1) else PlaybackBridge.onPrev?.invoke()
+                }
+                override fun onSeekTo(pos: Long) {
+                    if (serviceOwns()) player?.time = pos else PlaybackBridge.onSeekTo?.invoke(pos)
+                }
                 override fun onStop() {
-                    PlaybackBridge.onStop?.invoke()
+                    if (serviceOwns()) {
+                        releasePlayer()
+                        PlaybackBridge.serviceOwnsPlayback = false
+                    } else {
+                        PlaybackBridge.onStop?.invoke()
+                    }
                     stopForegroundCompat()
                     stopSelf()
+                }
+                override fun onPlayFromMediaId(mediaId: String?, extras: Bundle?) {
+                    if (mediaId != null) startFromMediaId(mediaId)
                 }
             })
             isActive = true
         }
         setSessionToken(session.sessionToken)
-        PlaybackBridge.onChanged = { runCatching { refresh() } }
+
+        // The in-app player asks the service to refresh the session/notification
+        // after it pushes state; ignore those while the car owns playback.
+        PlaybackBridge.onChanged = { if (!serviceOwns()) runCatching { refresh() } }
+        // The in-app player calls this when the user starts playback on the phone,
+        // so the headless car player yields cleanly.
+        PlaybackBridge.onYieldToUi = { runCatching { releasePlayer() } }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         MediaButtonReceiver.handleIntent(session, intent)
         try {
-            refresh()
+            if (!serviceOwns()) refresh()
         } catch (e: Throwable) {
             runCatching { stopSelf() }
         }
@@ -81,6 +127,8 @@ class PlaybackService : MediaBrowserServiceCompat() {
 
     override fun onDestroy() {
         PlaybackBridge.onChanged = null
+        PlaybackBridge.onYieldToUi = null
+        runCatching { releasePlayer() }
         runCatching { browseScope.cancel() }
         runCatching {
             session.isActive = false
@@ -88,6 +136,8 @@ class PlaybackService : MediaBrowserServiceCompat() {
         }
         super.onDestroy()
     }
+
+    private fun serviceOwns(): Boolean = PlaybackBridge.serviceOwnsPlayback
 
     // ---------------------------------------------------------------------------
     // Android Auto browser
@@ -121,31 +171,37 @@ class PlaybackService : MediaBrowserServiceCompat() {
                 out += browsable("Playlists", "path:/Music/playlists")
                 out += browsable("Audiobooks", "path:/Books/Audiobooks")
                 val res = client.listFolder(acct, 0L)
-                if (res is ApiResult.Ok) addItems(out, res.value)
+                if (res is ApiResult.Ok) addItems(out, res.value, "folder:0")
             }
             parentId.startsWith("folder:") -> {
                 val id = parentId.removePrefix("folder:").toLongOrNull()
                 if (id != null) {
                     val res = client.listFolder(acct, id)
-                    if (res is ApiResult.Ok) addItems(out, res.value)
+                    if (res is ApiResult.Ok) addItems(out, res.value, parentId)
                 }
             }
             parentId.startsWith("path:") -> {
                 val path = parentId.removePrefix("path:")
                 val res = client.listFolderByPath(acct, path)
-                if (res is ApiResult.Ok) addItems(out, res.value)
+                if (res is ApiResult.Ok) addItems(out, res.value, parentId)
             }
         }
         return out
     }
 
-    private fun addItems(out: MutableList<MediaItem>, items: List<PItem>) {
+    /**
+     * @param parentLocator the browse id of the folder these items live in
+     *        ("folder:<id>" or "path:<p>"). Baked into playlist media ids so the
+     *        service can re-list the folder at play time to resolve relative
+     *        filename entries inside the .m3u.
+     */
+    private fun addItems(out: MutableList<MediaItem>, items: List<PItem>, parentLocator: String) {
         for (it in items) {
             when {
                 it.isFolder && it.folderId != null ->
                     out += browsable(it.name, "folder:${it.folderId}")
                 it.isPlaylist && it.fileId != null ->
-                    out += playable(it.name, "playlist:${it.fileId}")
+                    out += playable(it.name, "playlist:${it.fileId}|$parentLocator")
                 it.isPlayable && it.fileId != null ->
                     out += playable(it.name, "file:${it.fileId}")
             }
@@ -167,7 +223,283 @@ class PlaybackService : MediaBrowserServiceCompat() {
         )
 
     // ---------------------------------------------------------------------------
-    // Foreground playback notification + session state
+    // Headless playback (Android Auto)
+    // ---------------------------------------------------------------------------
+
+    /**
+     * Resolve a tapped browse id into a queue and start playing. Posts a BUFFERING
+     * state immediately so Android Auto's "Getting your selection..." spinner is
+     * replaced as soon as the user taps, rather than hanging until the link
+     * resolves and the first frame decodes.
+     */
+    private fun startFromMediaId(mediaId: String) {
+        // Take over from the in-app player (no-op if it isn't running / on screen).
+        PlaybackBridge.serviceOwnsPlayback = true
+        runCatching { PlaybackBridge.onStop?.invoke() }
+
+        queue = emptyList()
+        queueIndex = 0
+        pendingTitle = ""
+        postBuffering("Loading\u2026")
+
+        browseScope.launch {
+            val session = SessionStore(this@PlaybackService).load()
+            if (session == null) {
+                postError()
+                return@launch
+            }
+            val built = runCatching { buildQueue(session, mediaId) }.getOrDefault(emptyList())
+            if (built.isEmpty()) {
+                postError()
+                return@launch
+            }
+            queue = built
+            queueIndex = 0
+            withContext(Dispatchers.Main) { playCurrent() }
+        }
+    }
+
+    private suspend fun buildQueue(session: Session, mediaId: String): List<Track> = when {
+        mediaId.startsWith("file:") -> {
+            val id = mediaId.removePrefix("file:").toLongOrNull()
+            if (id != null) listOf(Track(title = "", fileId = id, directUrl = null)) else emptyList()
+        }
+        mediaId.startsWith("playlist:") -> {
+            // playlist:<fileId>|<parentLocator>
+            val rest = mediaId.removePrefix("playlist:")
+            val fileId = rest.substringBefore('|').toLongOrNull()
+            val parent = rest.substringAfter('|', "")
+            if (fileId == null) emptyList() else {
+                val folderItems = listFolderItems(session, parent)
+                val pl = folderItems.firstOrNull { it.fileId == fileId }
+                    ?: PItem(
+                        name = "Playlist", isFolder = false, folderId = null,
+                        fileId = fileId, contentType = "", category = 0, size = 0L
+                    )
+                when (val r = client.resolvePlaylist(session, pl, folderItems)) {
+                    is ApiResult.Ok -> r.value
+                    is ApiResult.Error -> emptyList()
+                }
+            }
+        }
+        else -> emptyList()
+    }
+
+    private suspend fun listFolderItems(session: Session, parentLocator: String): List<PItem> = when {
+        parentLocator.startsWith("folder:") -> {
+            val id = parentLocator.removePrefix("folder:").toLongOrNull()
+            if (id == null) emptyList()
+            else (client.listFolder(session, id) as? ApiResult.Ok)?.value ?: emptyList()
+        }
+        parentLocator.startsWith("path:") -> {
+            val p = parentLocator.removePrefix("path:")
+            (client.listFolderByPath(session, p) as? ApiResult.Ok)?.value ?: emptyList()
+        }
+        else -> emptyList()
+    }
+
+    /** Mirror of the in-app resolveUrl: direct URL, else pCloud path, else file id. */
+    private suspend fun resolveUrl(session: Session, item: Track): String? = when {
+        item.directUrl != null -> item.directUrl
+        item.path != null -> (client.getStreamUrlByPath(session, item.path) as? ApiResult.Ok)?.value
+        item.fileId != null -> (client.getStreamUrl(session, item.fileId) as? ApiResult.Ok)?.value
+        else -> null
+    }
+
+    private fun ensurePlayer(): MediaPlayer {
+        player?.let { return it }
+        val vlc = LibVLC(
+            this,
+            arrayListOf(
+                "--network-caching=1500",
+                "--http-reconnect",
+                "--no-video",
+                "--aout=audiotrack"
+            )
+        )
+        val mp = MediaPlayer(vlc)
+        mp.setEventListener { e ->
+            when (e.type) {
+                MediaPlayer.Event.Playing -> pushServiceState(playing = true)
+                MediaPlayer.Event.Paused -> pushServiceState(playing = false)
+                MediaPlayer.Event.LengthChanged -> pushServiceState(playing = mp.isPlaying)
+                MediaPlayer.Event.TimeChanged -> pushPosition(playing = mp.isPlaying)
+                MediaPlayer.Event.EndReached -> skipService(+1)
+                MediaPlayer.Event.EncounteredError -> postError()
+            }
+        }
+        libVlc = vlc
+        player = mp
+        return mp
+    }
+
+    private fun playCurrent() {
+        val item = queue.getOrNull(queueIndex) ?: run { postError(); return }
+        pendingTitle = item.title
+        postBuffering(item.title.ifBlank { "Loading\u2026" })
+        browseScope.launch {
+            val session = SessionStore(this@PlaybackService).load() ?: run { postError(); return@launch }
+            val url = resolveUrl(session, item) ?: run { postError(); return@launch }
+            withContext(Dispatchers.Main) {
+                val mp = ensurePlayer()
+                val vlc = libVlc ?: return@withContext
+                val media = Media(vlc, Uri.parse(url)).apply { setHWDecoderEnabled(false, false) }
+                mp.media = media
+                media.release()
+                mp.play()
+            }
+        }
+    }
+
+    private fun resumeService() { player?.play() }
+    private fun pauseService() { player?.pause() }
+
+    private fun skipService(delta: Int) {
+        val next = queueIndex + delta
+        if (next in queue.indices) {
+            queueIndex = next
+            playCurrent()
+        } else if (delta > 0) {
+            // End of queue.
+            releasePlayer()
+            PlaybackBridge.serviceOwnsPlayback = false
+            stopForegroundCompat()
+            stopSelf()
+        }
+    }
+
+    private fun releasePlayer() {
+        runCatching { player?.stop() }
+        runCatching { player?.release() }
+        runCatching { libVlc?.release() }
+        player = null
+        libVlc = null
+        queue = emptyList()
+        queueIndex = 0
+    }
+
+    private fun currentMeta(): MediaMetadataCompat {
+        val mp = player
+        var vlcTitle = ""
+        var vlcArtist = ""
+        var vlcAlbum = ""
+        val m = runCatching { mp?.media }.getOrNull()
+        if (m != null) {
+            try {
+                vlcTitle = m.getMeta(META_TITLE).orEmpty()
+                vlcArtist = m.getMeta(META_ARTIST).orEmpty()
+                vlcAlbum = m.getMeta(META_ALBUM).orEmpty()
+            } finally {
+                runCatching { m.release() }
+            }
+        }
+        val title = pendingTitle.ifBlank { vlcTitle }.ifBlank { "pCloud TV" }
+        val dur = (mp?.length ?: 0L).coerceAtLeast(0L)
+        return MediaMetadataCompat.Builder()
+            .putString(MediaMetadataCompat.METADATA_KEY_TITLE, title)
+            .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, vlcArtist)
+            .putString(MediaMetadataCompat.METADATA_KEY_ALBUM, vlcAlbum)
+            .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, dur)
+            .build()
+    }
+
+    private val serviceActions = PlaybackStateCompat.ACTION_PLAY or
+        PlaybackStateCompat.ACTION_PAUSE or
+        PlaybackStateCompat.ACTION_PLAY_PAUSE or
+        PlaybackStateCompat.ACTION_SKIP_TO_NEXT or
+        PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS or
+        PlaybackStateCompat.ACTION_SEEK_TO or
+        PlaybackStateCompat.ACTION_STOP
+
+    private fun postBuffering(title: String) {
+        if (!serviceOwns()) return
+        session.setMetadata(
+            MediaMetadataCompat.Builder()
+                .putString(MediaMetadataCompat.METADATA_KEY_TITLE, title)
+                .build()
+        )
+        session.setPlaybackState(
+            PlaybackStateCompat.Builder()
+                .setActions(serviceActions)
+                .setState(PlaybackStateCompat.STATE_BUFFERING, 0L, 1f)
+                .build()
+        )
+        mirrorToBridge(isPlaying = false, title = title, position = 0L, duration = 0L)
+        runCatching { startForeground(NOTIF_ID, buildNotification()) }
+    }
+
+    private fun postError() {
+        if (!serviceOwns()) return
+        session.setPlaybackState(
+            PlaybackStateCompat.Builder()
+                .setActions(serviceActions)
+                .setState(PlaybackStateCompat.STATE_ERROR, 0L, 1f)
+                .setErrorMessage(
+                    PlaybackStateCompat.ERROR_CODE_APP_ERROR,
+                    "Could not play this item"
+                )
+                .build()
+        )
+    }
+
+    private fun pushServiceState(playing: Boolean) {
+        if (!serviceOwns()) return
+        val mp = player ?: return
+        val meta = currentMeta()
+        session.setMetadata(meta)
+        session.setPlaybackState(
+            PlaybackStateCompat.Builder()
+                .setActions(serviceActions)
+                .setState(
+                    if (playing) PlaybackStateCompat.STATE_PLAYING
+                    else PlaybackStateCompat.STATE_PAUSED,
+                    mp.time.coerceAtLeast(0L),
+                    1f
+                )
+                .build()
+        )
+        mirrorToBridge(
+            isPlaying = playing,
+            title = meta.getString(MediaMetadataCompat.METADATA_KEY_TITLE).orEmpty(),
+            position = mp.time.coerceAtLeast(0L),
+            duration = mp.length.coerceAtLeast(0L)
+        )
+        runCatching { startForeground(NOTIF_ID, buildNotification()) }
+    }
+
+    /** Lightweight position tick — no metadata rebuild, no notification churn. */
+    private fun pushPosition(playing: Boolean) {
+        if (!serviceOwns()) return
+        val mp = player ?: return
+        session.setPlaybackState(
+            PlaybackStateCompat.Builder()
+                .setActions(serviceActions)
+                .setState(
+                    if (playing) PlaybackStateCompat.STATE_PLAYING
+                    else PlaybackStateCompat.STATE_PAUSED,
+                    mp.time.coerceAtLeast(0L),
+                    1f
+                )
+                .build()
+        )
+        PlaybackBridge.positionMs = mp.time.coerceAtLeast(0L)
+    }
+
+    /** Keep the shared now-playing snapshot in sync so buildNotification() works. */
+    private fun mirrorToBridge(isPlaying: Boolean, title: String, position: Long, duration: Long) {
+        PlaybackBridge.title = title
+        PlaybackBridge.artist = null
+        PlaybackBridge.album = null
+        PlaybackBridge.art = null
+        PlaybackBridge.isPlaying = isPlaying
+        PlaybackBridge.positionMs = position
+        PlaybackBridge.durationMs = duration
+        PlaybackBridge.hasNext = queueIndex < queue.size - 1
+        PlaybackBridge.hasPrev = queueIndex > 0
+    }
+
+    // ---------------------------------------------------------------------------
+    // Foreground playback notification + session state (in-app mirror)
     // ---------------------------------------------------------------------------
 
     private fun stopForegroundCompat() {
@@ -277,6 +609,11 @@ class PlaybackService : MediaBrowserServiceCompat() {
         const val CHANNEL_ID = "pcloudtv_playback"
         const val NOTIF_ID = 1001
         const val ROOT_ID = "__root__"
+
+        // libvlc_meta_t indices (stable ABI values used by VLC for getMeta()).
+        private const val META_TITLE = 0
+        private const val META_ARTIST = 1
+        private const val META_ALBUM = 4
 
         fun ensureChannel(ctx: Context) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

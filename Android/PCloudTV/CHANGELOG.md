@@ -5,7 +5,14 @@ All notable changes to **pCloud TV**. Newest first.
 
 ---
 
-## v4.31 — Android Auto: app appears + browsable folders (B2a)
+## v4.32 — Android Auto: play a track picked in the car (B2b)
+
+- The playback service now owns a **headless audio-only LibVLC player**, so tapping a track or playlist in Android Auto actually plays — no phone UI required (app backgrounded / phone locked). This fixes the "Getting your selection…" hang, which was `onPlayFromMediaId` never being implemented and there being no player in the service to honor it.
+- `onPlayFromMediaId` resolves the tapped browse id into a queue: a single file (`file:<id>`), or a playlist (`playlist:<id>`) — playlist ids now carry their parent folder locator so the service can re-list the folder and resolve relative `.m3u` entries at play time. Per-track URL resolution mirrors the in-app path (direct URL → pCloud path → `getfilelink` by file id).
+- Car transport controls (play/pause, next/previous, seek) drive the headless player; EndReached auto-advances the queue; end of queue tears down the foreground service.
+- Single-source-of-truth handshake: whoever starts playback (in-app player or the car's headless player) tells the other to stop, via `PlaybackBridge.serviceOwnsPlayback` + `onYieldToUi`. The session-mirror refresh is skipped while the car owns playback so AA metadata/state isn't clobbered by stale in-app state.
+
+
 
 - The playback service is now a `MediaBrowserServiceCompat`, so pCloud TV appears in Android Auto's media app list and your pCloud tree is browsable on the car screen: top-level folders, a Playlists node, and an Audiobooks node, drilling into subfolders, tracks, and playlists. Added the Android Auto app declaration (`xml/automotive_app_desc.xml`) and exported the service with the media-browser intent filter.
 - Note: picking a track in Android Auto does not play it *yet* — in-service playback (so the car can start playback with no phone UI) is the next step (B2b). This build is the "appears + browsable" checkpoint.
