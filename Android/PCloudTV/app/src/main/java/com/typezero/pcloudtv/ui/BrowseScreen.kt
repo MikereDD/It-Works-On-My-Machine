@@ -61,6 +61,8 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Check
@@ -151,6 +153,11 @@ fun BrowseScreen(
     val browseContext = LocalContext.current
     val browseStore = remember { com.typezero.pcloudtv.data.SessionStore(browseContext) }
     var recents by remember { mutableStateOf(browseStore.getRecents()) }
+
+    // Per-account hidden folders (curated view) + a toggle to reveal them.
+    val accountId = session.email ?: session.authToken
+    var hidden by remember { mutableStateOf(browseStore.getHidden(accountId)) }
+    var showHidden by remember { mutableStateOf(false) }
 
     var items by remember { mutableStateOf<List<PItem>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
@@ -456,6 +463,8 @@ fun BrowseScreen(
                                     showGenDialog = true
                                 }
                             },
+                            showHidden = showHidden,
+                            onToggleHidden = { showHidden = !showHidden },
                             onSwitchAccount = onSwitchAccount,
                             onAddAccount = onAddAccount,
                             onAbout = { showAbout = true },
@@ -498,6 +507,8 @@ fun BrowseScreen(
                                 showGenDialog = true
                             }
                         },
+                        showHidden = showHidden,
+                        onToggleHidden = { showHidden = !showHidden },
                         onSwitchAccount = onSwitchAccount,
                         onAddAccount = onAddAccount,
                         onAbout = { showAbout = true },
@@ -587,7 +598,7 @@ fun BrowseScreen(
 
                 else -> {
                     val atRoot = stack.size == 1
-                    val visible = remember(items, query, atRoot, recents) {
+                    val visible = remember(items, query, atRoot, recents, hidden, showHidden) {
                         // At the pCloud root, surface the synthetic shortcuts
                         // (Recently-Played, Playlists, Audiobooks) alongside the
                         // user's actual top-level folders and any playable files.
@@ -610,8 +621,11 @@ fun BrowseScreen(
                                 rp + pl + real + ab
                             } else items
                         val q = query.trim()
-                        if (q.isBlank()) base
-                        else base.filter { it.name.contains(q, ignoreCase = true) }
+                        val matched = if (q.isBlank()) base
+                            else base.filter { it.name.contains(q, ignoreCase = true) }
+                        // Hide curated-away folders unless "Show hidden" is on.
+                        if (showHidden) matched
+                        else matched.filterNot { it.folderId?.let { id -> id in hidden } == true }
                     }
                     LaunchedEffect(items) { runCatching { firstRow.requestFocus() } }
                     LazyColumn(
@@ -716,6 +730,15 @@ fun BrowseScreen(
                                     onManage = if (current.first == PLAYLISTS_ROOT && pItem.isPlaylist) {
                                         { managePlaylist = pItem }
                                     } else null,
+                                    onHide = if (pItem.isFolder && pItem.folderId != null && !selecting) {
+                                        {
+                                            val id = pItem.folderId!!
+                                            if (id in hidden) browseStore.unhideFolder(accountId, id)
+                                            else browseStore.hideFolder(accountId, id)
+                                            hidden = browseStore.getHidden(accountId)
+                                        }
+                                    } else null,
+                                    hidden = pItem.folderId?.let { id -> id in hidden } == true,
                                     onClick = {
                                         if (selecting) {
                                             when {
@@ -1524,6 +1547,8 @@ private fun ItemCard(
     selected: Boolean = false,
     modifier: Modifier = Modifier,
     onManage: (() -> Unit)? = null,
+    onHide: (() -> Unit)? = null,
+    hidden: Boolean = false,
     subtitleOverride: String? = null,
     onClick: () -> Unit
 ) {
@@ -1666,6 +1691,24 @@ private fun ItemCard(
                 )
             }
         }
+        if (onHide != null && !selecting) {
+            Spacer(Modifier.width(6.dp))
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(Brand.Bg.copy(alpha = 0.6f))
+                    .clickable(onClick = onHide),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    if (hidden) Icons.Filled.Visibility else Icons.Filled.VisibilityOff,
+                    contentDescription = if (hidden) "Unhide folder" else "Hide folder",
+                    tint = if (hidden) Brand.Accent else Brand.TextMid,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
     }
 }
 
@@ -1748,6 +1791,8 @@ private fun HeaderActions(
     onCancelSelect: () -> Unit,
     onSaveSelected: () -> Unit,
     onGenerate: () -> Unit,
+    showHidden: Boolean,
+    onToggleHidden: () -> Unit,
     onSwitchAccount: (String) -> Unit,
     onAddAccount: () -> Unit,
     onAbout: () -> Unit,
@@ -1797,6 +1842,17 @@ private fun HeaderActions(
                             onClick = { menuOpen = false; onGenerate() }
                         )
                     }
+                    DropdownMenuItem(
+                        text = { Text(if (showHidden) "Hide hidden folders" else "Show hidden folders") },
+                        leadingIcon = {
+                            Icon(
+                                if (showHidden) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                                contentDescription = null,
+                                tint = if (showHidden) Brand.Accent else Brand.TextMid
+                            )
+                        },
+                        onClick = { menuOpen = false; onToggleHidden() }
+                    )
                     accounts.forEach { acc ->
                         DropdownMenuItem(
                             text = { Text(acc.label, maxLines = 1) },
