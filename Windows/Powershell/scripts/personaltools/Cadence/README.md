@@ -54,10 +54,10 @@ Get-ChildItem . -Recurse -Include *.ps1,*.dll | Unblock-File
 ```
 Keep `Unblock-File` on its own line — it must finish before launch, and a
 machine-scope GPO enforces execution policy regardless of `-ExecutionPolicy
-Bypass`. If the launching shell isn't already STA, the script relaunches itself
-hidden into Windows PowerShell `-STA` so only the player window shows. For a
-fire-and-forget launch, double-click **`cadence.cmd`** or run `cadence` from
-this folder — it backgrounds the player and returns the shell immediately.
+Bypass`. (Cadence also strips the mark-of-web from its own files at startup, so
+the visualizer's spectrum tap compiles even if you forget.) If the launching
+shell isn't already STA, the script relaunches itself hidden into Windows
+PowerShell `-STA` so only the player window shows.
 
 > Run only `cadence.ps1` — it dot-sources the engine and UI modules
 > itself. Don't `& .\*.ps1`, or the modules and the setup script run too.
