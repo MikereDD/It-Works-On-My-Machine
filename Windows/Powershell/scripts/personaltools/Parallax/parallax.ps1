@@ -1,10 +1,10 @@
-﻿# file:    video-player-gui.ps1
+﻿# file:    parallax.ps1
 # author:  typezero
-# version: 0.2.0
+# version: 0.5.0
 # created: 2026-06-24
-# updated: 2026-06-25
+# updated: 2026-06-26
 # desc:    libmpv-backed WinForms video player (VLC-style), HWND embedding.
-#          Monochrome Material 3 polish: dark title bar, owner-drawn sliders.
+#          Monochrome Material 3 UI: track switching, fullscreen, resume.
 
 # --- STA / Desktop-edition relaunch guard -----------------------------------
 $apartment = [System.Threading.Thread]::CurrentThread.GetApartmentState()
@@ -24,7 +24,7 @@ $MpvDllName = 'libmpv-2.dll'
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
-# --- Native interop: libmpv + DWM dark title bar + owner-drawn slider --------
+# --- Native interop: libmpv + DWM dark title bar + owner-drawn controls ------
 $cs = @'
 using System;
 using System.Drawing;
@@ -45,6 +45,8 @@ namespace Mpv {
     [DllImport("libmpv-2.dll", CallingConvention = CallingConvention.Cdecl)]
     private static extern void mpv_terminate_destroy(IntPtr ctx);
     [DllImport("libmpv-2.dll", CallingConvention = CallingConvention.Cdecl)]
+    private static extern void mpv_free(IntPtr data);
+    [DllImport("libmpv-2.dll", CallingConvention = CallingConvention.Cdecl)]
     private static extern int mpv_set_option(IntPtr ctx, byte[] name, int format, ref long data);
     [DllImport("libmpv-2.dll", CallingConvention = CallingConvention.Cdecl)]
     private static extern int mpv_set_option_string(IntPtr ctx, byte[] name, byte[] data);
@@ -53,11 +55,23 @@ namespace Mpv {
     [DllImport("libmpv-2.dll", CallingConvention = CallingConvention.Cdecl)]
     private static extern int mpv_get_property(IntPtr ctx, byte[] name, int format, out double data);
     [DllImport("libmpv-2.dll", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int mpv_get_property(IntPtr ctx, byte[] name, int format, out long data);
+    [DllImport("libmpv-2.dll", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int mpv_get_property(IntPtr ctx, byte[] name, int format, out IntPtr data);
+    [DllImport("libmpv-2.dll", CallingConvention = CallingConvention.Cdecl)]
     private static extern int mpv_command(IntPtr ctx, IntPtr args);
 
+    private const int MPV_FORMAT_STRING = 1;
     private const int MPV_FORMAT_INT64  = 4;
     private const int MPV_FORMAT_DOUBLE = 5;
     private static byte[] U(string s) { return Encoding.UTF8.GetBytes(s + "\0"); }
+    private static string ReadUtf8(IntPtr p) {
+      int len = 0;
+      while (Marshal.ReadByte(p, len) != 0) len++;
+      byte[] b = new byte[len];
+      Marshal.Copy(p, b, 0, len);
+      return Encoding.UTF8.GetString(b);
+    }
 
     public static IntPtr Create() { return mpv_create(); }
     public static bool Initialize(IntPtr ctx) { return mpv_initialize(ctx) >= 0; }
@@ -74,6 +88,17 @@ namespace Mpv {
     public static bool TryGetDouble(IntPtr ctx, string name, out double val) {
       double d = 0; int rc = mpv_get_property(ctx, U(name), MPV_FORMAT_DOUBLE, out d);
       val = d; return rc >= 0;
+    }
+    public static bool TryGetInt(IntPtr ctx, string name, out long val) {
+      long d = 0; int rc = mpv_get_property(ctx, U(name), MPV_FORMAT_INT64, out d);
+      val = d; return rc >= 0;
+    }
+    public static string GetString(IntPtr ctx, string name) {
+      IntPtr p; int rc = mpv_get_property(ctx, U(name), MPV_FORMAT_STRING, out p);
+      if (rc < 0 || p == IntPtr.Zero) return null;
+      string s = ReadUtf8(p);
+      mpv_free(p);
+      return s;
     }
     public static bool Command(IntPtr ctx, string[] args) {
       IntPtr[] ptrs = new IntPtr[args.Length + 1];
@@ -105,6 +130,31 @@ namespace VP {
         DwmSetWindowAttribute(hwnd, 19, ref on, 4);
       }
     }
+  }
+
+  // Focus-independent input: poll key state and the active top-level window
+  // (mpv's embedded child window steals focus, so WinForms key events miss).
+  public static class Win {
+    [DllImport("user32.dll")] public static extern short GetAsyncKeyState(int vKey);
+    [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+  }
+
+  // Dark color table for the Tracks popup menu.
+  public class DarkMenuColors : ProfessionalColorTable {
+    private Color bg = Color.FromArgb(28, 28, 28);
+    private Color hi = Color.FromArgb(56, 56, 56);
+    private Color bd = Color.FromArgb(70, 70, 70);
+    public override Color ToolStripDropDownBackground { get { return bg; } }
+    public override Color MenuItemSelected { get { return hi; } }
+    public override Color MenuItemSelectedGradientBegin { get { return hi; } }
+    public override Color MenuItemSelectedGradientEnd { get { return hi; } }
+    public override Color MenuItemBorder { get { return hi; } }
+    public override Color MenuBorder { get { return bd; } }
+    public override Color ImageMarginGradientBegin { get { return bg; } }
+    public override Color ImageMarginGradientMiddle { get { return bg; } }
+    public override Color ImageMarginGradientEnd { get { return bg; } }
+    public override Color SeparatorDark { get { return bd; } }
+    public override Color SeparatorLight { get { return bd; } }
   }
 
   // Owner-drawn monochrome slider. Replaces the unthemable WinForms TrackBar.
@@ -214,6 +264,7 @@ $script:colBtn      = [System.Drawing.Color]::FromArgb(40, 40, 40)
 $script:colBtnHover = [System.Drawing.Color]::FromArgb(56, 56, 56)
 $script:colText     = [System.Drawing.Color]::FromArgb(222, 222, 222)
 $script:colMuted    = [System.Drawing.Color]::FromArgb(150, 150, 150)
+$script:menuColors  = New-Object VP.DarkMenuColors
 
 # --- Helpers ----------------------------------------------------------------
 function Format-Time {
@@ -224,6 +275,14 @@ function Format-Time {
         return ('{0:0}:{1:00}:{2:00}' -f [int]$ts.TotalHours, $ts.Minutes, $ts.Seconds)
     }
     return ('{0:0}:{1:00}' -f $ts.Minutes, $ts.Seconds)
+}
+
+function Get-TrackLabel {
+    param($id, $lang, $title)
+    $label = 'Track ' + [string]$id
+    if (-not [string]::IsNullOrEmpty($lang))  { $label = $label + ' (' + $lang + ')' }
+    if (-not [string]::IsNullOrEmpty($title)) { $label = $label + ' - ' + $title }
+    return $label
 }
 
 function Style-Button {
@@ -249,6 +308,150 @@ function Toggle-Pause {
     }
 }
 
+# Shared handler for every track item; reads its target from .Tag (no closures).
+$script:onSelectTrack = {
+    $t = $this.Tag
+    if ($null -ne $t -and $script:ctx -ne [IntPtr]::Zero) {
+        [void][Mpv.Native]::SetPropertyString($script:ctx, $t.Kind, $t.Id)
+    }
+}
+
+function Add-TrackItems {
+    param($menu, $wantType, $kind)
+    $added = 0
+    $anySelected = $false
+    $count = 0L
+    [void][Mpv.Native]::TryGetInt($script:ctx, 'track-list/count', [ref]$count)
+    for ($i = 0; $i -lt $count; $i++) {
+        $type = [Mpv.Native]::GetString($script:ctx, ('track-list/' + $i + '/type'))
+        if ($type -ne $wantType) { continue }
+        $id = 0L
+        [void][Mpv.Native]::TryGetInt($script:ctx, ('track-list/' + $i + '/id'), [ref]$id)
+        $lang  = [Mpv.Native]::GetString($script:ctx, ('track-list/' + $i + '/lang'))
+        $title = [Mpv.Native]::GetString($script:ctx, ('track-list/' + $i + '/title'))
+        $sel   = [Mpv.Native]::GetString($script:ctx, ('track-list/' + $i + '/selected'))
+        $item = New-Object System.Windows.Forms.ToolStripMenuItem (Get-TrackLabel $id $lang $title)
+        $item.ForeColor = $script:colText
+        $item.Tag = @{ Kind = $kind; Id = [string]$id }
+        if ($sel -eq 'yes') { $item.Checked = $true; $anySelected = $true }
+        $item.Add_Click($script:onSelectTrack)
+        [void]$menu.Items.Add($item)
+        $added++
+    }
+    return @{ Added = $added; AnySelected = $anySelected }
+}
+
+function Build-TracksMenu {
+    if ($script:ctx -eq [IntPtr]::Zero) { return $null }
+    $count = 0L
+    if (-not [Mpv.Native]::TryGetInt($script:ctx, 'track-list/count', [ref]$count)) { return $null }
+
+    $menu = New-Object System.Windows.Forms.ContextMenuStrip
+    $menu.BackColor = $script:colBar
+    $menu.ForeColor = $script:colText
+    $menu.Renderer = New-Object System.Windows.Forms.ToolStripProfessionalRenderer ($script:menuColors)
+
+    $hAudio = New-Object System.Windows.Forms.ToolStripMenuItem 'Audio'
+    $hAudio.Enabled = $false
+    [void]$menu.Items.Add($hAudio)
+    $a = Add-TrackItems $menu 'audio' 'aid'
+    if ($a.Added -eq 0) {
+        $none = New-Object System.Windows.Forms.ToolStripMenuItem '(none)'
+        $none.Enabled = $false
+        [void]$menu.Items.Add($none)
+    }
+
+    [void]$menu.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
+
+    $hSub = New-Object System.Windows.Forms.ToolStripMenuItem 'Subtitles'
+    $hSub.Enabled = $false
+    [void]$menu.Items.Add($hSub)
+    $s = Add-TrackItems $menu 'sub' 'sid'
+    $off = New-Object System.Windows.Forms.ToolStripMenuItem 'Off'
+    $off.ForeColor = $script:colText
+    $off.Tag = @{ Kind = 'sid'; Id = 'no' }
+    if (-not $s.AnySelected) { $off.Checked = $true }
+    $off.Add_Click($script:onSelectTrack)
+    [void]$menu.Items.Add($off)
+
+    return $menu
+}
+
+# --- Fullscreen + control auto-hide -----------------------------------------
+$script:fullscreen     = $false
+$script:prevState      = 'Normal'
+$script:prevBorder     = 'Sizable'
+$script:controlsHidden = $false
+$script:idleCount      = 0
+$script:lastX          = [System.Windows.Forms.Cursor]::Position.X
+$script:lastY          = [System.Windows.Forms.Cursor]::Position.Y
+$script:keyPrev        = @{}
+
+function Poll-Key {
+    param($vk)
+    $down = ([VP.Win]::GetAsyncKeyState($vk) -band 0x8000) -ne 0
+    $was = $false
+    if ($script:keyPrev.ContainsKey($vk)) { $was = $script:keyPrev[$vk] }
+    $script:keyPrev[$vk] = $down
+    return ($down -and -not $was)
+}
+
+function Show-Controls {
+    if ($script:controlsHidden) {
+        $bar.Visible = $true
+        [System.Windows.Forms.Cursor]::Show()
+        $script:controlsHidden = $false
+    }
+}
+
+function Hide-Controls {
+    if (-not $script:controlsHidden) {
+        $bar.Visible = $false
+        [System.Windows.Forms.Cursor]::Hide()
+        $script:controlsHidden = $true
+    }
+}
+
+function Enter-Fullscreen {
+    if ($script:fullscreen) { return }
+    $script:prevState  = $form.WindowState
+    $script:prevBorder = $form.FormBorderStyle
+    $form.WindowState = 'Normal'
+    $form.FormBorderStyle = 'None'
+    $form.WindowState = 'Maximized'
+    $form.TopMost = $true
+    $script:fullscreen = $true
+    $script:idleCount = 0
+    $btnFull.Text = 'Windowed'
+    Set-SubPos
+}
+
+function Exit-Fullscreen {
+    if (-not $script:fullscreen) { return }
+    $form.TopMost = $false
+    $form.FormBorderStyle = $script:prevBorder
+    $form.WindowState = $script:prevState
+    $script:fullscreen = $false
+    $btnFull.Text = 'Full'
+    Set-SubPos
+    Show-Controls
+}
+
+function Toggle-Fullscreen {
+    if ($script:fullscreen) { Exit-Fullscreen } else { Enter-Fullscreen }
+}
+
+function Set-SubPos {
+    # Bottom edge in fullscreen (bar hidden); lift up in windowed so subtitles
+    # clear the control bar. sub-pos: 100 = bottom, lower = higher on screen.
+    if ($script:ctx -eq [IntPtr]::Zero) { return }
+    if ($script:fullscreen) {
+        [void][Mpv.Native]::SetPropertyString($script:ctx, 'sub-pos', '100')
+    } else {
+        [void][Mpv.Native]::SetPropertyString($script:ctx, 'sub-pos', '90')
+    }
+}
+
 # --- State ------------------------------------------------------------------
 $script:ctx      = [IntPtr]::Zero
 $script:duration = 0.0
@@ -256,15 +459,13 @@ $script:paused   = $false
 
 # --- Form -------------------------------------------------------------------
 $form = New-Object System.Windows.Forms.Form
-$form.Text = 'Video Player'
+$form.Text = 'Parallax'
 $form.Size = New-Object System.Drawing.Size(960, 600)
-$form.MinimumSize = New-Object System.Drawing.Size(560, 360)
+$form.MinimumSize = New-Object System.Drawing.Size(620, 360)
 $form.StartPosition = 'CenterScreen'
 $form.BackColor = $script:colBg
 $form.Font = New-Object System.Drawing.Font('Segoe UI', 9)
-$form.KeyPreview = $true
 
-# Control bar (added before Fill panel so docking lays out correctly)
 $bar = New-Object System.Windows.Forms.Panel
 $bar.Dock = 'Bottom'
 $bar.Height = 96
@@ -286,26 +487,40 @@ $seek.Anchor = 'Top, Left, Right'
 $seek.BackColor = $script:colBar
 $bar.Controls.Add($seek)
 
-# Row 2: transport + time (left), volume (right)
+# Row 2: transport + tracks + time (left), volume (right)
 $btnOpen = New-Object System.Windows.Forms.Button
 $btnOpen.Text = 'Open'
 $btnOpen.Location = New-Object System.Drawing.Point(16, 52)
-$btnOpen.Size = New-Object System.Drawing.Size(84, 32)
+$btnOpen.Size = New-Object System.Drawing.Size(80, 32)
 Style-Button $btnOpen
 $bar.Controls.Add($btnOpen)
 
 $btnPlay = New-Object System.Windows.Forms.Button
 $btnPlay.Text = 'Play'
-$btnPlay.Location = New-Object System.Drawing.Point(108, 52)
-$btnPlay.Size = New-Object System.Drawing.Size(92, 32)
+$btnPlay.Location = New-Object System.Drawing.Point(104, 52)
+$btnPlay.Size = New-Object System.Drawing.Size(88, 32)
 Style-Button $btnPlay
 $bar.Controls.Add($btnPlay)
+
+$btnTracks = New-Object System.Windows.Forms.Button
+$btnTracks.Text = 'Tracks'
+$btnTracks.Location = New-Object System.Drawing.Point(200, 52)
+$btnTracks.Size = New-Object System.Drawing.Size(88, 32)
+Style-Button $btnTracks
+$bar.Controls.Add($btnTracks)
+
+$btnFull = New-Object System.Windows.Forms.Button
+$btnFull.Text = 'Full'
+$btnFull.Location = New-Object System.Drawing.Point(296, 52)
+$btnFull.Size = New-Object System.Drawing.Size(84, 32)
+Style-Button $btnFull
+$bar.Controls.Add($btnFull)
 
 $lblTime = New-Object System.Windows.Forms.Label
 $lblTime.Text = '0:00 / 0:00'
 $lblTime.ForeColor = $script:colText
 $lblTime.AutoSize = $true
-$lblTime.Location = New-Object System.Drawing.Point(214, 60)
+$lblTime.Location = New-Object System.Drawing.Point(392, 60)
 $bar.Controls.Add($lblTime)
 
 $vol = New-Object VP.Slider
@@ -334,14 +549,26 @@ $form.Add_Shown({
         [System.Windows.Forms.MessageBox]::Show('mpv_create failed.', 'mpv') | Out-Null
         return
     }
+    $watchDir = Join-Path $env:APPDATA 'Parallax\watch_later'
+    if (-not (Test-Path -LiteralPath $watchDir)) {
+        New-Item -ItemType Directory -Path $watchDir -Force | Out-Null
+    }
     [void][Mpv.Native]::SetOptionInt64($c, 'wid', $videoPanel.Handle.ToInt64())
     [void][Mpv.Native]::SetOptionString($c, 'keep-open', 'yes')
     [void][Mpv.Native]::SetOptionString($c, 'idle', 'yes')
+    [void][Mpv.Native]::SetOptionString($c, 'input-default-bindings', 'no')
+    [void][Mpv.Native]::SetOptionString($c, 'input-vo-keyboard', 'no')
+    [void][Mpv.Native]::SetOptionString($c, 'sub-use-margins', 'yes')
+    [void][Mpv.Native]::SetOptionString($c, 'sub-ass-force-margins', 'yes')
+    [void][Mpv.Native]::SetOptionString($c, 'watch-later-directory', $watchDir)
+    [void][Mpv.Native]::SetOptionString($c, 'save-position-on-quit', 'yes')
+    [void][Mpv.Native]::SetOptionString($c, 'watch-later-options', 'start')
     if (-not [Mpv.Native]::Initialize($c)) {
         [System.Windows.Forms.MessageBox]::Show('mpv_initialize failed.', 'mpv') | Out-Null
         return
     }
     $script:ctx = $c
+    Set-SubPos
     $timer.Start()
 })
 
@@ -351,13 +578,25 @@ $btnOpen.Add_Click({
     $dlg = New-Object System.Windows.Forms.OpenFileDialog
     $dlg.Filter = 'Media files|*.mkv;*.mp4;*.avi;*.mov;*.m2ts;*.ts;*.webm;*.flv;*.wmv;*.mpg;*.mpeg|All files|*.*'
     if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+        [void][Mpv.Native]::Command($script:ctx, @('write-watch-later-config'))
         [void][Mpv.Native]::Command($script:ctx, @('loadfile', $dlg.FileName))
         $script:paused = $false
         $btnPlay.Text = 'Pause'
+        Set-SubPos
     }
 })
 
 $btnPlay.Add_Click({ Toggle-Pause })
+
+$btnFull.Add_Click({ Toggle-Fullscreen })
+$videoPanel.Add_DoubleClick({ Toggle-Fullscreen })
+
+$btnTracks.Add_Click({
+    $m = Build-TracksMenu
+    if ($null -ne $m) {
+        $m.Show($btnTracks, (New-Object System.Drawing.Point(0, -$m.Height)))
+    }
+})
 
 $seek.add_UserScrubbing({
     if ($script:duration -gt 0) {
@@ -383,22 +622,44 @@ $vol.add_UserSeek({
     }
 })
 
-$form.Add_KeyDown({
-    param($s, $e)
-    if ($script:ctx -eq [IntPtr]::Zero) { return }
-    switch ($e.KeyCode) {
-        'Space' { Toggle-Pause; $e.Handled = $true }
-        'Left'  { [void][Mpv.Native]::Command($script:ctx, @('seek', '-5', 'relative')); $e.Handled = $true }
-        'Right' { [void][Mpv.Native]::Command($script:ctx, @('seek', '5', 'relative'));  $e.Handled = $true }
-        'Up'    { [void][Mpv.Native]::Command($script:ctx, @('add', 'volume', '5'));      $e.Handled = $true }
-        'Down'  { [void][Mpv.Native]::Command($script:ctx, @('add', 'volume', '-5'));     $e.Handled = $true }
-    }
-})
-
 # --- Poll loop --------------------------------------------------------------
 $timer = New-Object System.Windows.Forms.Timer
-$timer.Interval = 250
+$timer.Interval = 100
 $timer.Add_Tick({
+    # focus-independent input + activity tracking (mouse move OR key press reveals)
+    $active = $false
+    if ([VP.Win]::GetForegroundWindow().ToInt64() -eq $form.Handle.ToInt64()) {
+        if (Poll-Key 0x46) { Toggle-Fullscreen; $active = $true }                          # F
+        if ((Poll-Key 0x1B) -and $script:fullscreen) { Exit-Fullscreen; $active = $true }  # Esc
+        if ($script:ctx -ne [IntPtr]::Zero) {
+            if (Poll-Key 0x20) { Toggle-Pause; $active = $true }                                                       # Space
+            if (Poll-Key 0x25) { [void][Mpv.Native]::Command($script:ctx, @('seek', '-5', 'relative')); $active = $true }  # Left
+            if (Poll-Key 0x27) { [void][Mpv.Native]::Command($script:ctx, @('seek', '5', 'relative'));  $active = $true }  # Right
+            if (Poll-Key 0x26) { [void][Mpv.Native]::Command($script:ctx, @('add', 'volume', '5'));      $active = $true }  # Up
+            if (Poll-Key 0x28) { [void][Mpv.Native]::Command($script:ctx, @('add', 'volume', '-5'));     $active = $true }  # Down
+        }
+    } else {
+        $script:keyPrev.Clear()
+    }
+
+    # mouse movement = activity (integer compare; Point -ne is unreliable in PS)
+    $mx = [System.Windows.Forms.Cursor]::Position.X
+    $my = [System.Windows.Forms.Cursor]::Position.Y
+    if ($mx -ne $script:lastX -or $my -ne $script:lastY) {
+        $script:lastX = $mx
+        $script:lastY = $my
+        $active = $true
+    }
+
+    # reveal on activity; otherwise count toward auto-hide (fullscreen only)
+    if ($active) {
+        $script:idleCount = 0
+        Show-Controls
+    } elseif ($script:fullscreen) {
+        $script:idleCount++
+        if ($script:idleCount -ge 20) { Hide-Controls }
+    }
+
     if ($script:ctx -eq [IntPtr]::Zero) { return }
     $dur = 0.0
     if ([Mpv.Native]::TryGetDouble($script:ctx, 'duration', [ref]$dur)) { $script:duration = $dur }
@@ -415,7 +676,9 @@ $timer.Add_Tick({
 
 $form.Add_FormClosing({
     $timer.Stop()
+    if ($script:controlsHidden) { [System.Windows.Forms.Cursor]::Show() }
     if ($script:ctx -ne [IntPtr]::Zero) {
+        [void][Mpv.Native]::Command($script:ctx, @('write-watch-later-config'))
         [Mpv.Native]::Destroy($script:ctx)
         $script:ctx = [IntPtr]::Zero
     }
