@@ -42,6 +42,19 @@ trap {
 
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
+
+# Native dark-mode scrollbars: the tree/list scrollbars are drawn by Windows,
+# not our owner-draw code, so they ignore the theme and render light. This
+# P/Invoke lets us apply the OS dark scrollbar style (dark track, light thumb).
+if (-not ([System.Management.Automation.PSTypeName]'Cadence.Native').Type) {
+    try {
+        Add-Type -Namespace 'Cadence' -Name 'Native' -MemberDefinition @'
+[System.Runtime.InteropServices.DllImport("uxtheme.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+public static extern int SetWindowTheme(System.IntPtr hWnd, string pszSubAppName, string pszSubIdList);
+'@
+    } catch {}
+}
+
 [System.Windows.Forms.Application]::EnableVisualStyles()
 # Only legal before the first window exists in the process; on a re-run in the
 # same session it throws harmlessly, so ignore that case.
@@ -802,5 +815,15 @@ $form.Add_Resize({
 # Load saved library roots and build the tree (falls back to drives if none).
 Load-Config
 Build-Tree
+
+# Apply Windows dark-mode scrollbars to the native tree + list once handles exist.
+$form.Add_Shown({
+    foreach ($c in @($tree, $list)) {
+        try {
+            [Cadence.Native]::SetWindowTheme($c.Handle, 'DarkMode_Explorer', $null) | Out-Null
+            $c.Invalidate()
+        } catch {}
+    }
+})
 
 [System.Windows.Forms.Application]::Run($form)
