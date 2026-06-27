@@ -55,6 +55,7 @@ and stream your <strong>video and audio</strong> straight from pCloud — played
 - **VLC playback** with wide codec support; auto-hiding controls (play/pause, +/-10s, scrub bar).
 - Auto-selects **English audio + subtitles** with a manual **Tracks** picker. A single video or audiobook **resumes where you left off**; playlist tracks always start from the beginning.
 - **Background audio** — music/audiobooks keep playing with the screen off or when you leave the app; video stops on leave.
+- **Android Auto** — appears as a media app in the car: browse your folders, **Playlists**, and **Audiobooks** on the head unit, play tracks and `.m3u` playlists with cover art, and control playback from the car's now-playing screen. Runs headlessly in a background service, so it keeps going with the phone locked.
 - **Playlists** — play `.m3u`/`.m3u8` as a queue (auto-advance, skip, HLS), build one by tapping tracks across folders (saved to `/Music/playlists`, resolved by pCloud file id), or bulk-generate one **per folder, saved beside its own tracks**.
 - **Shared links** — open a pCloud public link (file or folder) with no account.
 - **In-app document viewer** — open `.nfo` / `.htm` files (embedded art and all) right in the app, including from shared links.
@@ -72,6 +73,8 @@ See the **[changelog](https://github.com/MikereDD/It-Works-On-My-Machine/blob/ma
 **Player (TV remote):** **Left / Right** move the highlight across the control buttons - **OK** press the highlighted button (play/pause, -/+10s, start, end) - **Up / Menu** audio & subtitle tracks - **Down** drop onto the scrub bar (then **Left / Right** to scrub, **Up** to return) - **Back** exit.
 
 **Player (touch):** tap to show/hide controls, tap the buttons, drag the seek bar, tap **Tracks** (top-right) for audio/subtitles.
+
+**Player (Android Auto):** open **pCloud TV** from the car's app launcher to browse your folders, **Playlists**, and **Audiobooks** on the head unit, then tap a track or playlist to play. The car's now-playing screen shows the cover art and routes **play/pause**, **skip next / previous**, and **seek**; playback runs in a background service, so it continues with the phone locked or the app closed. *(Android Auto draws its own now-playing screen, so the in-app visualizer and custom layout are phone/TV only.)*
 
 ---
 
