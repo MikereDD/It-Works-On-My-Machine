@@ -6,6 +6,14 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -64,10 +72,24 @@ class PlaybackService : MediaBrowserServiceCompat() {
     private var libVlc: LibVLC? = null
     private var player: MediaPlayer? = null
 
+    // Audio focus — required for the car (and other media apps) to actually route
+    // audio. Without it the clock advances but no sound comes out.
+    private var audioManager: AudioManager? = null
+    private var focusRequest: AudioFocusRequest? = null
+
     // The Auto-initiated queue.
     private var queue: List<Track> = emptyList()
     private var queueIndex: Int = 0
     private var pendingTitle: String = ""
+
+    // Now-playing artwork shown in the car's media card. Embedded cover art is
+    // extracted by VLC a beat after playback starts, so we re-read it for a few
+    // ticks (like the in-app player) and fall back to a monochrome placeholder.
+    @Volatile private var currentArt: Bitmap? = null
+    private var artAttempts: Int = 0
+    private var artFound: Boolean = false
+    @Volatile private var artReading: Boolean = false
+    private var placeholder: Bitmap? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -306,6 +328,39 @@ class PlaybackService : MediaBrowserServiceCompat() {
         else -> null
     }
 
+    private fun ensureFocusRequest(): AudioFocusRequest {
+        focusRequest?.let { return it }
+        val fr = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                    .build()
+            )
+            .setOnAudioFocusChangeListener { change ->
+                when (change) {
+                    AudioManager.AUDIOFOCUS_LOSS,
+                    AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> pauseService()
+                    AudioManager.AUDIOFOCUS_GAIN -> if (serviceOwns()) player?.play()
+                }
+            }
+            .build()
+        focusRequest = fr
+        return fr
+    }
+
+    private fun requestFocus() {
+        val am = audioManager
+            ?: (getSystemService(Context.AUDIO_SERVICE) as AudioManager).also { audioManager = it }
+        runCatching { am.requestAudioFocus(ensureFocusRequest()) }
+    }
+
+    private fun abandonFocus() {
+        val am = audioManager ?: return
+        val fr = focusRequest ?: return
+        runCatching { am.abandonAudioFocusRequest(fr) }
+    }
+
     private fun ensurePlayer(): MediaPlayer {
         player?.let { return it }
         val vlc = LibVLC(
@@ -320,10 +375,10 @@ class PlaybackService : MediaBrowserServiceCompat() {
         val mp = MediaPlayer(vlc)
         mp.setEventListener { e ->
             when (e.type) {
-                MediaPlayer.Event.Playing -> pushServiceState(playing = true)
+                MediaPlayer.Event.Playing -> { pushServiceState(playing = true); maybeReadArtwork() }
                 MediaPlayer.Event.Paused -> pushServiceState(playing = false)
-                MediaPlayer.Event.LengthChanged -> pushServiceState(playing = mp.isPlaying)
-                MediaPlayer.Event.TimeChanged -> pushPosition(playing = mp.isPlaying)
+                MediaPlayer.Event.LengthChanged -> { pushServiceState(playing = mp.isPlaying); maybeReadArtwork() }
+                MediaPlayer.Event.TimeChanged -> { pushPosition(playing = mp.isPlaying); maybeReadArtwork() }
                 MediaPlayer.Event.EndReached -> skipService(+1)
                 MediaPlayer.Event.EncounteredError -> postError()
             }
@@ -336,6 +391,9 @@ class PlaybackService : MediaBrowserServiceCompat() {
     private fun playCurrent() {
         val item = queue.getOrNull(queueIndex) ?: run { postError(); return }
         pendingTitle = item.title
+        currentArt = null
+        artFound = false
+        artAttempts = 0
         postBuffering(item.title.ifBlank { "Loading\u2026" })
         browseScope.launch {
             val session = SessionStore(this@PlaybackService).load() ?: run { postError(); return@launch }
@@ -343,6 +401,7 @@ class PlaybackService : MediaBrowserServiceCompat() {
             withContext(Dispatchers.Main) {
                 val mp = ensurePlayer()
                 val vlc = libVlc ?: return@withContext
+                requestFocus()
                 val media = Media(vlc, Uri.parse(url)).apply { setHWDecoderEnabled(false, false) }
                 mp.media = media
                 media.release()
@@ -351,7 +410,7 @@ class PlaybackService : MediaBrowserServiceCompat() {
         }
     }
 
-    private fun resumeService() { player?.play() }
+    private fun resumeService() { requestFocus(); player?.play() }
     private fun pauseService() { player?.pause() }
 
     private fun skipService(delta: Int) {
@@ -369,6 +428,7 @@ class PlaybackService : MediaBrowserServiceCompat() {
     }
 
     private fun releasePlayer() {
+        abandonFocus()
         runCatching { player?.stop() }
         runCatching { player?.release() }
         runCatching { libVlc?.release() }
@@ -376,6 +436,9 @@ class PlaybackService : MediaBrowserServiceCompat() {
         libVlc = null
         queue = emptyList()
         queueIndex = 0
+        currentArt = null
+        artFound = false
+        artAttempts = 0
     }
 
     private fun currentMeta(): MediaMetadataCompat {
@@ -400,7 +463,77 @@ class PlaybackService : MediaBrowserServiceCompat() {
             .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, vlcArtist)
             .putString(MediaMetadataCompat.METADATA_KEY_ALBUM, vlcAlbum)
             .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, dur)
+            .putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, currentArt ?: placeholderArt())
             .build()
+    }
+
+    /**
+     * Read the current track's embedded cover art. VLC extracts it a beat after
+     * playback starts, so this is retried for a few ticks until it lands (capped),
+     * mirroring the in-app player. Same source/decode path as PlayerScreen.
+     */
+    private fun maybeReadArtwork() {
+        if (artFound || artReading || artAttempts >= ART_MAX_ATTEMPTS) return
+        artReading = true
+        artAttempts++
+        browseScope.launch {
+            val bmp = runCatching { extractArtwork() }.getOrNull()
+            if (bmp != null) {
+                currentArt = bmp
+                artFound = true
+                withContext(Dispatchers.Main) {
+                    pushServiceState(playing = player?.isPlaying == true)
+                }
+            }
+            artReading = false
+        }
+    }
+
+    private fun extractArtwork(): Bitmap? {
+        val m = runCatching { player?.media }.getOrNull() ?: return null
+        return try {
+            val url = m.getMeta(META_ARTWORK_URL)?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+            val path = Uri.parse(url).path ?: url.removePrefix("file://")
+            BitmapFactory.decodeFile(path)
+        } finally {
+            runCatching { m.release() }
+        }
+    }
+
+    /**
+     * Monochrome album-art fallback used when a track has no embedded cover —
+     * a simple vinyl record, drawn once and cached. (This is the only image slot
+     * Android Auto's now-playing screen gives an app; it shows the real cover when
+     * one is embedded, otherwise this.)
+     */
+    private fun placeholderArt(): Bitmap {
+        placeholder?.let { return it }
+        val size = 512
+        val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val c = Canvas(bmp)
+        c.drawColor(Color.rgb(18, 18, 18))
+        val cx = size / 2f
+        val cy = size / 2f
+        val p = Paint(Paint.ANTI_ALIAS_FLAG)
+        // Record body.
+        p.style = Paint.Style.FILL
+        p.color = Color.rgb(38, 38, 38)
+        c.drawCircle(cx, cy, size * 0.34f, p)
+        // Grooves.
+        p.style = Paint.Style.STROKE
+        p.strokeWidth = size * 0.006f
+        p.color = Color.rgb(72, 72, 72)
+        c.drawCircle(cx, cy, size * 0.30f, p)
+        c.drawCircle(cx, cy, size * 0.245f, p)
+        c.drawCircle(cx, cy, size * 0.19f, p)
+        // Label + center hole.
+        p.style = Paint.Style.FILL
+        p.color = Color.rgb(224, 224, 224)
+        c.drawCircle(cx, cy, size * 0.11f, p)
+        p.color = Color.rgb(18, 18, 18)
+        c.drawCircle(cx, cy, size * 0.022f, p)
+        placeholder = bmp
+        return bmp
     }
 
     private val serviceActions = PlaybackStateCompat.ACTION_PLAY or
@@ -416,6 +549,7 @@ class PlaybackService : MediaBrowserServiceCompat() {
         session.setMetadata(
             MediaMetadataCompat.Builder()
                 .putString(MediaMetadataCompat.METADATA_KEY_TITLE, title)
+                .putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, currentArt ?: placeholderArt())
                 .build()
         )
         session.setPlaybackState(
@@ -490,7 +624,7 @@ class PlaybackService : MediaBrowserServiceCompat() {
         PlaybackBridge.title = title
         PlaybackBridge.artist = null
         PlaybackBridge.album = null
-        PlaybackBridge.art = null
+        PlaybackBridge.art = currentArt ?: placeholderArt()
         PlaybackBridge.isPlaying = isPlaying
         PlaybackBridge.positionMs = position
         PlaybackBridge.durationMs = duration
@@ -614,6 +748,8 @@ class PlaybackService : MediaBrowserServiceCompat() {
         private const val META_TITLE = 0
         private const val META_ARTIST = 1
         private const val META_ALBUM = 4
+        private const val META_ARTWORK_URL = 15
+        private const val ART_MAX_ATTEMPTS = 12
 
         fun ensureChannel(ctx: Context) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
