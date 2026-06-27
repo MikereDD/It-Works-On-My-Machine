@@ -22,12 +22,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.clickable
-import android.media.MediaMetadata
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
-import android.media.session.MediaSession
-import android.media.session.PlaybackState
 import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
@@ -417,61 +414,58 @@ private fun VlcPlayer(
         reveal()
     }
 
-    // --- Headset / Bluetooth media-button support ---
-    // A MediaSession lets earbud and Bluetooth transport buttons (play/pause,
-    // next, previous) drive playback even with the screen off. The callback is
-    // created once, so it calls through these always-current lambdas.
+    // --- Media session lives in the foreground PlaybackService (it owns the
+    // MediaSessionCompat + MediaStyle notification). Here we expose always-current
+    // controls and push now-playing state through the bridge, so the lock screen,
+    // Bluetooth, and the car can show "now playing" and drive the transport. ---
     val onToggle = rememberUpdatedState<() -> Unit> { togglePlay() }
     val onNextBtn = rememberUpdatedState<() -> Unit> { onNext(); reveal() }
     val onPrevBtn = rememberUpdatedState<() -> Unit> { onPrev(); reveal() }
-    var mediaSession by remember { mutableStateOf<MediaSession?>(null) }
+    val onSeekToMs = rememberUpdatedState<(Long) -> Unit> { pos -> seekBy(pos - positionMs) }
+    val onStopCmd = rememberUpdatedState<() -> Unit> { if (isPlaying) togglePlay() }
 
     DisposableEffect(Unit) {
-        val session = MediaSession(context, "pCloudTV").apply {
-            setCallback(object : MediaSession.Callback() {
-                override fun onPlay() { onToggle.value() }
-                override fun onPause() { onToggle.value() }
-                override fun onSkipToNext() { onNextBtn.value() }
-                override fun onSkipToPrevious() { onPrevBtn.value() }
-                override fun onSeekTo(pos: Long) { seekBy(pos - positionMs) }
-            })
-            isActive = true
+        com.typezero.pcloudtv.playback.PlaybackBridge.apply {
+            onPlay = { onToggle.value() }
+            onPause = { onToggle.value() }
+            onNext = { onNextBtn.value() }
+            onPrev = { onPrevBtn.value() }
+            onSeekTo = { p -> onSeekToMs.value(p) }
+            onStop = { onStopCmd.value() }
         }
-        mediaSession = session
-        onDispose {
-            session.isActive = false
-            session.release()
-            mediaSession = null
+        onDispose { com.typezero.pcloudtv.playback.PlaybackBridge.clearControls() }
+    }
+
+    // Decode embedded cover art (if any) for the lock-screen / Bluetooth / car art.
+    val sessionArt by produceState<android.graphics.Bitmap?>(null, metaArtPath) {
+        value = metaArtPath?.let { p ->
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    val path = Uri.parse(p).path ?: p.removePrefix("file://")
+                    android.graphics.BitmapFactory.decodeFile(path)
+                }.getOrNull()
+            }
         }
     }
 
-    // Keep the session's state/metadata in sync so the system routes buttons here
-    // and shows the right title + play/pause on the lock screen / headset.
-    LaunchedEffect(isPlaying, positionMs, durationMs, title, cast.isCasting, cast.isRemotePlaying) {
-        val s = mediaSession ?: return@LaunchedEffect
-        val playing = if (cast.isCasting) cast.isRemotePlaying else isPlaying
-        s.setPlaybackState(
-            PlaybackState.Builder()
-                .setActions(
-                    PlaybackState.ACTION_PLAY or PlaybackState.ACTION_PAUSE or
-                        PlaybackState.ACTION_PLAY_PAUSE or
-                        PlaybackState.ACTION_SKIP_TO_NEXT or
-                        PlaybackState.ACTION_SKIP_TO_PREVIOUS or
-                        PlaybackState.ACTION_SEEK_TO
-                )
-                .setState(
-                    if (playing) PlaybackState.STATE_PLAYING else PlaybackState.STATE_PAUSED,
-                    positionMs,
-                    1f
-                )
-                .build()
-        )
-        s.setMetadata(
-            MediaMetadata.Builder()
-                .putString(MediaMetadata.METADATA_KEY_TITLE, title)
-                .putLong(MediaMetadata.METADATA_KEY_DURATION, if (durationMs > 0) durationMs else 0L)
-                .build()
-        )
+    // Push now-playing state to the service. Deliberately NOT keyed on positionMs
+    // (which ticks constantly) — the system interpolates position from the playback
+    // state's 1x speed, so we refresh only on real changes to avoid notification churn.
+    LaunchedEffect(
+        title, metaArtist, metaAlbum, sessionArt, isPlaying,
+        hasNext, hasPrev, durationMs, cast.isCasting, cast.isRemotePlaying
+    ) {
+        val b = com.typezero.pcloudtv.playback.PlaybackBridge
+        b.title = title
+        b.artist = metaArtist
+        b.album = metaAlbum
+        b.art = sessionArt
+        b.durationMs = if (durationMs > 0) durationMs else 0L
+        b.positionMs = positionMs
+        b.isPlaying = if (cast.isCasting) cast.isRemotePlaying else isPlaying
+        b.hasNext = hasNext
+        b.hasPrev = hasPrev
+        b.notifyChanged()
     }
 
     // Prefer English audio + English subtitles when the file has multiple tracks,
@@ -675,24 +669,29 @@ private fun VlcPlayer(
             if (!wakeLock.isHeld) wakeLock.acquire()
             if (hasVideo) {
                 window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-                // Video: don't keep the process alive in the background.
-                com.typezero.pcloudtv.playback.PlaybackService.stop(context)
             } else {
                 window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-                // Audio: keep the process alive so playback continues in the background.
-                com.typezero.pcloudtv.playback.PlaybackService.start(context, title)
             }
         } else {
             // Paused, or casting (the Chromecast is doing the playing).
             if (wakeLock.isHeld) wakeLock.release()
             window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-            com.typezero.pcloudtv.playback.PlaybackService.stop(context)
         }
         onDispose {
             if (wakeLock.isHeld) wakeLock.release()
             window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
+    // Audio: run the media-session foreground service for the whole audio session,
+    // kept alive across pause so the now-playing card + transport controls persist
+    // (lock screen / Bluetooth / car). Video and casting don't use it.
+    DisposableEffect(hasVideo, cast.isCasting) {
+        if (!hasVideo && !cast.isCasting) {
+            com.typezero.pcloudtv.playback.PlaybackService.start(context)
+        } else {
             com.typezero.pcloudtv.playback.PlaybackService.stop(context)
         }
+        onDispose { com.typezero.pcloudtv.playback.PlaybackService.stop(context) }
     }
 
     // Leaving the app: VIDEO stops, but AUDIO keeps playing in the background

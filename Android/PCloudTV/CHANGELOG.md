@@ -5,6 +5,20 @@ All notable changes to **pCloud TV**. Newest first.
 
 ---
 
+## v4.30 — proper media session: lock screen / Bluetooth / car now-playing + controls
+
+- Migrated from an in-screen framework MediaSession to a `MediaSessionCompat` owned by the foreground playback service, which now posts a real **MediaStyle** media notification. This is what surfaces "now playing" (title, artist, album, cover art) on the lock screen, the Quick Settings media player, Bluetooth, and a car's media display — and routes the transport buttons (play/pause, skip next/previous, seek), including hardware/steering-wheel/Bluetooth buttons, to playback.
+- The media service now stays alive across pause (so the now-playing card and controls persist when paused), and stops when you leave the player or switch to video/casting.
+- Architecture: a small `PlaybackBridge` connects the service-owned session to the in-app LibVLC player (the player still lives in the UI for now). This is the foundation for Android Auto browsing, which is the next step.
+
+---
+
+## v4.29 — richer now-playing metadata for lock screen / Bluetooth
+
+- The media session now publishes artist, album, and embedded cover art (in addition to title and duration), so the lock screen, headset, Quick Settings player, and a car's Bluetooth "now playing" show full track info and artwork rather than just the title. (Transport controls — play/pause, skip next/previous, seek — and hardware/Bluetooth media buttons were already wired to the session.)
+
+---
+
 ## v4.28 — hide folders (curated browse view)
 
 - Added a per-folder hide control: each folder row now has a hide button (the eye icon) that removes it from the list. Hidden folders are remembered per account and stored locally, so the TV and phone keep separate hidden lists. A "Show hidden folders" toggle in the overflow (⋮) menu reveals them again, where the eye icon unhides. Works in any folder, and applies to the Recently-Played / Playlists / Audiobooks shortcuts too (handy for hiding ones that don't apply to a given account).
