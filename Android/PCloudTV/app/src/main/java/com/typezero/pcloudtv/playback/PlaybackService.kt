@@ -7,27 +7,45 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Build
-import android.os.IBinder
+import android.os.Bundle
+import android.support.v4.media.MediaBrowserCompat.MediaItem
+import android.support.v4.media.MediaDescriptionCompat
 import android.support.v4.media.MediaMetadataCompat
 import android.support.v4.media.session.MediaSessionCompat
 import android.support.v4.media.session.PlaybackStateCompat
 import androidx.core.app.NotificationCompat
+import androidx.media.MediaBrowserServiceCompat
 import androidx.media.app.NotificationCompat.MediaStyle
 import androidx.media.session.MediaButtonReceiver
 import com.typezero.pcloudtv.MainActivity
+import com.typezero.pcloudtv.data.ApiResult
+import com.typezero.pcloudtv.data.PCloudClient
+import com.typezero.pcloudtv.data.PItem
+import com.typezero.pcloudtv.data.SessionStore
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 
 /**
- * Foreground media service. Owns a MediaSessionCompat and posts a MediaStyle
- * notification so the lock screen, headset, Bluetooth, and the car show "now
- * playing" and route the transport buttons (play/pause, skip, seek) to the
- * session. The session callback forwards to the player UI via [PlaybackBridge];
- * the LibVLC player itself still lives in the UI.
+ * Foreground media service AND Android Auto browser.
+ *
+ * - Owns a MediaSessionCompat and posts a MediaStyle notification so the lock
+ *   screen, headset, Bluetooth, and the car show "now playing" and route the
+ *   transport buttons (the session callback forwards to the UI via PlaybackBridge;
+ *   the LibVLC player still lives in the UI for now).
+ * - Exposes the pCloud tree to Android Auto via onLoadChildren so the app appears
+ *   in Auto and the folders/playlists/tracks are browsable on the car screen.
+ *
+ * NOTE: playing a track picked in Android Auto (onPlayFromMediaId) is the next
+ * step — this build makes the app appear + browsable.
  */
-class PlaybackService : android.app.Service() {
+class PlaybackService : MediaBrowserServiceCompat() {
 
     private lateinit var session: MediaSessionCompat
-
-    override fun onBind(intent: Intent?): IBinder? = null
+    private val client = PCloudClient()
+    private val browseScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     override fun onCreate() {
         super.onCreate()
@@ -47,12 +65,11 @@ class PlaybackService : android.app.Service() {
             })
             isActive = true
         }
-        // When the UI pushes new state, refresh the session + notification.
+        setSessionToken(session.sessionToken)
         PlaybackBridge.onChanged = { runCatching { refresh() } }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // Route hardware / Bluetooth / notification-action media buttons.
         MediaButtonReceiver.handleIntent(session, intent)
         try {
             refresh()
@@ -64,12 +81,94 @@ class PlaybackService : android.app.Service() {
 
     override fun onDestroy() {
         PlaybackBridge.onChanged = null
+        runCatching { browseScope.cancel() }
         runCatching {
             session.isActive = false
             session.release()
         }
         super.onDestroy()
     }
+
+    // ---------------------------------------------------------------------------
+    // Android Auto browser
+    // ---------------------------------------------------------------------------
+
+    override fun onGetRoot(
+        clientPackageName: String,
+        clientUid: Int,
+        rootHints: Bundle?
+    ): BrowserRoot {
+        // Personal app: allow any caller (Android Auto, the system media UI) to browse.
+        return BrowserRoot(ROOT_ID, null)
+    }
+
+    override fun onLoadChildren(
+        parentId: String,
+        result: Result<MutableList<MediaItem>>
+    ) {
+        result.detach()
+        browseScope.launch {
+            val items = runCatching { loadChildren(parentId) }.getOrDefault(mutableListOf())
+            runCatching { result.sendResult(items) }
+        }
+    }
+
+    private suspend fun loadChildren(parentId: String): MutableList<MediaItem> {
+        val out = mutableListOf<MediaItem>()
+        val acct = SessionStore(this).load() ?: return out
+        when {
+            parentId == ROOT_ID -> {
+                out += browsable("Playlists", "path:/Music/playlists")
+                out += browsable("Audiobooks", "path:/Books/Audiobooks")
+                val res = client.listFolder(acct, 0L)
+                if (res is ApiResult.Ok) addItems(out, res.value)
+            }
+            parentId.startsWith("folder:") -> {
+                val id = parentId.removePrefix("folder:").toLongOrNull()
+                if (id != null) {
+                    val res = client.listFolder(acct, id)
+                    if (res is ApiResult.Ok) addItems(out, res.value)
+                }
+            }
+            parentId.startsWith("path:") -> {
+                val path = parentId.removePrefix("path:")
+                val res = client.listFolderByPath(acct, path)
+                if (res is ApiResult.Ok) addItems(out, res.value)
+            }
+        }
+        return out
+    }
+
+    private fun addItems(out: MutableList<MediaItem>, items: List<PItem>) {
+        for (it in items) {
+            when {
+                it.isFolder && it.folderId != null ->
+                    out += browsable(it.name, "folder:${it.folderId}")
+                it.isPlaylist && it.fileId != null ->
+                    out += playable(it.name, "playlist:${it.fileId}")
+                it.isPlayable && it.fileId != null ->
+                    out += playable(it.name, "file:${it.fileId}")
+            }
+        }
+    }
+
+    private fun browsable(title: String, mediaId: String): MediaItem =
+        MediaItem(
+            MediaDescriptionCompat.Builder()
+                .setMediaId(mediaId).setTitle(title).build(),
+            MediaItem.FLAG_BROWSABLE
+        )
+
+    private fun playable(title: String, mediaId: String): MediaItem =
+        MediaItem(
+            MediaDescriptionCompat.Builder()
+                .setMediaId(mediaId).setTitle(title).build(),
+            MediaItem.FLAG_PLAYABLE
+        )
+
+    // ---------------------------------------------------------------------------
+    // Foreground playback notification + session state
+    // ---------------------------------------------------------------------------
 
     private fun stopForegroundCompat() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
@@ -79,7 +178,6 @@ class PlaybackService : android.app.Service() {
         }
     }
 
-    /** Push current bridge state into the session, then (re)post the notification. */
     private fun refresh() {
         val b = PlaybackBridge
 
@@ -178,6 +276,7 @@ class PlaybackService : android.app.Service() {
     companion object {
         const val CHANNEL_ID = "pcloudtv_playback"
         const val NOTIF_ID = 1001
+        const val ROOT_ID = "__root__"
 
         fun ensureChannel(ctx: Context) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
