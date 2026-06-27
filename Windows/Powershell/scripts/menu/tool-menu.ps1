@@ -1,9 +1,9 @@
 ﻿#--------------------------------------------
 # file:     tool-menu.ps1
 # author:   Mike Redd
-# version:  3.8
+# version:  3.9
 # created:  2026-03-30
-# updated:  2026-06-19
+# updated:  2026-06-23
 # desc:     Unified script launcher (Admin + Personal + Games)
 #--------------------------------------------
 
@@ -56,7 +56,7 @@ if (Test-Path $corePath) {
 }
 
 $ScriptName    = "Tool Menu"
-$ScriptVersion = "3.8"
+$ScriptVersion = "3.9"
 $ScriptAuthor  = "Mike Redd"
 
 # ── Base script paths ─────────────────────────────────────────
@@ -99,7 +99,10 @@ $PersonalTools = @(
 	[PSCustomObject]@{ Name="Clip Video";            File="clip-video.ps1" }
 	[PSCustomObject]@{ Name="Media Encoder (GUI)";     File="media-encoder-gui.ps1" }
     [PSCustomObject]@{ Name="WebRipper";             File="web-ripper.ps1" }
-	[PSCustomObject]@{ Name="Atomic Clock";     File="AtomicClock.ps1" }
+	[PSCustomObject]@{ Name="Audiobook Encoder";     File="audiobook-encoder.ps1" }
+	[PSCustomObject]@{ Name="Atomic Clock";     File="AtomicClock.ps1"; Gui=$true }
+	[PSCustomObject]@{ Name="Cadence (Audio Player)"; File="Cadence\cadence.ps1"; Gui=$true }
+	[PSCustomObject]@{ Name="Parallax (Video Player)"; File="Parallax\parallax.ps1"; Gui=$true }
 )
 
 $GameTools = @(
@@ -137,7 +140,7 @@ function Show-Menu {
         $color = if ($exists) { $global:UI_GRN } else { $global:UI_RED }
         $suffix = if ($exists) { "" } else { " (missing)" }
         Write-Host ("  {0}{1,2}){2}  {3}{4}{5}" -f $color, $index, $global:UI_R, $global:UI_WHT, $tool.Name, "$suffix$($global:UI_R)")
-        if ($exists) { $script:ToolMap["$index"] = $path }
+        if ($exists) { $script:ToolMap["$index"] = [PSCustomObject]@{ Path = $path; Gui = (($tool.Gui -eq $true) -or ($path -like '*-gui.ps1')) } }
         $index++
     }
 
@@ -149,7 +152,7 @@ function Show-Menu {
         $color = if ($exists) { $global:UI_GRN } else { $global:UI_RED }
         $suffix = if ($exists) { "" } else { " (missing)" }
         Write-Host ("  {0}{1,2}){2}  {3}{4}{5}" -f $color, $index, $global:UI_R, $global:UI_WHT, $tool.Name, "$suffix$($global:UI_R)")
-        if ($exists) { $script:ToolMap["$index"] = $path }
+        if ($exists) { $script:ToolMap["$index"] = [PSCustomObject]@{ Path = $path; Gui = (($tool.Gui -eq $true) -or ($path -like '*-gui.ps1')) } }
         $index++
     }
 
@@ -161,7 +164,7 @@ function Show-Menu {
         $color = if ($exists) { $global:UI_GRN } else { $global:UI_RED }
         $suffix = if ($exists) { "" } else { " (missing)" }
         Write-Host ("  {0}{1,2}){2}  {3}{4}{5}" -f $color, $index, $global:UI_R, $global:UI_WHT, $tool.Name, "$suffix$($global:UI_R)")
-        if ($exists) { $script:ToolMap["$index"] = $path }
+        if ($exists) { $script:ToolMap["$index"] = [PSCustomObject]@{ Path = $path; Gui = (($tool.Gui -eq $true) -or ($path -like '*-gui.ps1')) } }
         $index++
     }
 
@@ -174,7 +177,8 @@ function Show-Menu {
 function Start-ToolScript {
     param(
         [Parameter(Mandatory)]
-        [string]$ScriptPath
+        [string]$ScriptPath,
+        [switch]$IsGui
     )
 
     if (-not (Test-Path $ScriptPath)) {
@@ -184,21 +188,38 @@ function Start-ToolScript {
     }
 
     try {
-        # GUI tools (convention: *-gui.ps1) are WinForms and must run under
-        # Windows PowerShell in a single-threaded apartment (-STA). pwsh is MTA
-        # and unreliable for WinForms, so force powershell.exe here. -File gives
-        # the GUI a correct $PSScriptRoot so it finds its sibling engine script.
-        if ($ScriptPath -like '*-gui.ps1') {
-            $winPS = Get-Command powershell.exe -ErrorAction SilentlyContinue
-            if (-not $winPS) {
-                throw "powershell.exe (Windows PowerShell) is required for the GUI: $ScriptPath"
+        if ($IsGui) {
+            # GUI tools are WinForms and need a single-threaded apartment (STA).
+            # Standalone pwsh 7 is STA by default on Windows, so prefer it -- it
+            # has no -STA switch (and never needs one). Fall back to Windows
+            # PowerShell with an explicit -STA only when pwsh isn't installed.
+            # Launched DETACHED via Start-Process so THIS menu stays usable and
+            # several GUIs can run at once; -File gives the GUI a correct
+            # $PSScriptRoot, and the working directory is the script's own folder
+            # so relative paths (.\lib, config, logs) resolve.
+            $work = Split-Path $ScriptPath -Parent
+            $pwshCmd = Get-Command pwsh -ErrorAction SilentlyContinue
+            if ($pwshCmd) {
+                $argLine = "-NoProfile -ExecutionPolicy Bypass -File `"$ScriptPath`""
+                Start-Process -FilePath $pwshCmd.Source -ArgumentList $argLine -WorkingDirectory $work
+            } else {
+                $winPS = Get-Command powershell.exe -ErrorAction SilentlyContinue
+                if (-not $winPS) {
+                    throw "Neither pwsh nor powershell.exe found to launch the GUI: $ScriptPath"
+                }
+                $argLine = "-NoProfile -ExecutionPolicy Bypass -STA -File `"$ScriptPath`""
+                Start-Process -FilePath $winPS.Source -ArgumentList $argLine -WorkingDirectory $work
             }
-            & $winPS.Source -NoProfile -ExecutionPolicy Bypass -STA -File $ScriptPath
+            Write-Host ("  {0}Launched:{1} {2}  {3}(menu stays open){4}" -f `
+                $global:UI_GRN, $global:UI_R, (Split-Path $ScriptPath -Leaf), $global:UI_GRY, $global:UI_R)
+            Start-Sleep -Milliseconds 700
             return
         }
 
-        # Launch child scripts through pwsh with ExecutionPolicy Bypass so
-        # downloaded/generated scripts do not fail under RemoteSigned.
+        # Console tools run INLINE (blocking) so you interact with them and
+        # return to this menu when they exit. Launch through pwsh with
+        # ExecutionPolicy Bypass so downloaded/generated scripts do not fail
+        # under RemoteSigned.
         $pwshCmd = Get-Command pwsh -ErrorAction SilentlyContinue
 
         if (-not $pwshCmd) {
@@ -241,7 +262,8 @@ while ($true) {
     }
 
     if ($script:ToolMap.ContainsKey($choice)) {
-        Start-ToolScript -ScriptPath $script:ToolMap[$choice]
+        $entry = $script:ToolMap[$choice]
+        Start-ToolScript -ScriptPath $entry.Path -IsGui:$entry.Gui
         continue
     }
 
