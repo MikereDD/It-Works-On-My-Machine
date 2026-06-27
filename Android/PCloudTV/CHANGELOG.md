@@ -5,6 +5,12 @@ All notable changes to **pCloud TV**. Newest first.
 
 ---
 
+## v4.28 — hide folders (curated browse view)
+
+- Added a per-folder hide control: each folder row now has a hide button (the eye icon) that removes it from the list. Hidden folders are remembered per account and stored locally, so the TV and phone keep separate hidden lists. A "Show hidden folders" toggle in the overflow (⋮) menu reveals them again, where the eye icon unhides. Works in any folder, and applies to the Recently-Played / Playlists / Audiobooks shortcuts too (handy for hiding ones that don't apply to a given account).
+
+---
+
 ## v4.27 — show all real top-level folders at the root
 
 - The pCloud root no longer hides folders. Previously it only showed top-level folders literally named "Music" or "Video" (plus the Recently-Played / Playlists / Audiobooks shortcuts), so on accounts whose root folders are named anything else, none of them appeared. The root now lists every real folder (and any playable files) alongside the shortcuts.

@@ -17,6 +17,10 @@ class SessionStore(context: Context) {
     private val posPrefs =
         context.getSharedPreferences("pcloud_positions", Context.MODE_PRIVATE)
 
+    // Per-account set of hidden folder ids (curated browse view).
+    private val hiddenPrefs =
+        context.getSharedPreferences("pcloud_hidden", Context.MODE_PRIVATE)
+
     fun savePosition(fileId: Long, positionMs: Long) {
         posPrefs.edit().putLong("pos_$fileId", positionMs).apply()
     }
@@ -38,6 +42,28 @@ class SessionStore(context: Context) {
 
     fun clearPlaylistIndex(playlistKey: String) {
         posPrefs.edit().remove("plidx_$playlistKey").apply()
+    }
+
+    // --- Per-account hidden folders (curated browse view) ---
+    fun getHidden(accountId: String?): Set<Long> {
+        if (accountId.isNullOrBlank()) return emptySet()
+        return hiddenPrefs.getStringSet("hidden_$accountId", emptySet())
+            .orEmpty().mapNotNull { it.toLongOrNull() }.toSet()
+    }
+
+    fun setHidden(accountId: String?, ids: Set<Long>) {
+        if (accountId.isNullOrBlank()) return
+        hiddenPrefs.edit()
+            .putStringSet("hidden_$accountId", ids.map { it.toString() }.toSet())
+            .apply()
+    }
+
+    fun hideFolder(accountId: String?, folderId: Long) {
+        setHidden(accountId, getHidden(accountId) + folderId)
+    }
+
+    fun unhideFolder(accountId: String?, folderId: Long) {
+        setHidden(accountId, getHidden(accountId) - folderId)
     }
 
     // --- Last played: the most recent queue, so the browser can offer "Continue". ---
