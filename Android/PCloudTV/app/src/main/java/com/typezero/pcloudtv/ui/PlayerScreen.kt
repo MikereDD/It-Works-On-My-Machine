@@ -604,6 +604,10 @@ private fun VlcPlayer(
     // playback hands off cleanly in either direction.
     LaunchedEffect(resolvedUrl, cast.isCasting) {
         val url = resolvedUrl ?: return@LaunchedEffect
+        // Reclaim playback from the Android Auto headless player (if it was active)
+        // and tell the service to stop its player so the two never overlap.
+        com.typezero.pcloudtv.playback.PlaybackBridge.serviceOwnsPlayback = false
+        com.typezero.pcloudtv.playback.PlaybackBridge.onYieldToUi?.invoke()
         if (cast.isCasting) {
             runCatching { if (player.isPlaying) player.pause() }
             buffering = false

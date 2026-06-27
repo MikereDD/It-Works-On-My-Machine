@@ -36,6 +36,19 @@ object PlaybackBridge {
     /** The service installs this so the UI can ask it to refresh after a state push. */
     @Volatile var onChanged: (() -> Unit)? = null
 
+    /**
+     * True while Android Auto's headless player (in [PlaybackService]) owns
+     * playback and is the source of truth for the media session. The in-app player
+     * must set this false (and call [onYieldToUi]) before it starts playing.
+     */
+    @Volatile var serviceOwnsPlayback: Boolean = false
+
+    /**
+     * Installed by the service; invoked by the in-app player right before it starts
+     * playback so the headless car player stops and releases cleanly.
+     */
+    @Volatile var onYieldToUi: (() -> Unit)? = null
+
     fun notifyChanged() {
         onChanged?.invoke()
     }
