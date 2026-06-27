@@ -82,11 +82,21 @@ try {
 })
 
 $APP_NAME    = 'Cadence'
-$APP_VERSION = '0.1.0'
+$APP_VERSION = '0.4.0'
 $ROOT        = $PSScriptRoot
 $LIB         = Join-Path $ROOT 'lib'
 $AUDIO_EXT   = @('.mp3', '.flac', '.m4a', '.aac', '.wav', '.wma', '.ogg', '.opus')
 $BROWSE_EXT  = $AUDIO_EXT + @('.m3u', '.m3u8')   # what the tree shows as files
+
+# Strip mark-of-web from our own files. The execution-policy GPO blocks zoned
+# (downloaded) files regardless of -ExecutionPolicy Bypass, which makes the
+# spectrum tap's C# compile fail -- the visualizer then falls back to idle even
+# though audio plays. Doing it here means every launch path works (including
+# cadence.cmd / double-click) without a manual Unblock-File first.
+try {
+    Get-ChildItem -LiteralPath $ROOT -Recurse -Include *.ps1, *.dll -ErrorAction SilentlyContinue |
+        Unblock-File -ErrorAction SilentlyContinue
+} catch {}
 
 . (Join-Path $ROOT 'player.engine.ps1')
 . (Join-Path $ROOT 'player.ui.ps1')
