@@ -1,10 +1,10 @@
 ﻿# file:    parallax.ps1
 # author:  typezero
-# version: 0.5.0
+# version: 0.8.5
 # created: 2026-06-24
 # updated: 2026-06-26
 # desc:    libmpv-backed WinForms video player (VLC-style), HWND embedding.
-#          Monochrome Material 3 UI: track switching, fullscreen, resume.
+#          Monochrome Material 3 UI: tracks, fullscreen, resume, disc playback.
 
 # --- STA / Desktop-edition relaunch guard -----------------------------------
 $apartment = [System.Threading.Thread]::CurrentThread.GetApartmentState()
@@ -272,7 +272,8 @@ function Format-Time {
     if ($Seconds -lt 0 -or [double]::IsNaN($Seconds)) { $Seconds = 0 }
     $ts = [TimeSpan]::FromSeconds($Seconds)
     if ($ts.TotalHours -ge 1) {
-        return ('{0:0}:{1:00}:{2:00}' -f [int]$ts.TotalHours, $ts.Minutes, $ts.Seconds)
+        $h = [int][System.Math]::Floor($ts.TotalHours)
+        return ('{0:0}:{1:00}:{2:00}' -f $h, $ts.Minutes, $ts.Seconds)
     }
     return ('{0:0}:{1:00}' -f $ts.Minutes, $ts.Seconds)
 }
@@ -316,6 +317,55 @@ $script:onSelectTrack = {
     }
 }
 
+# Shared handler for disc items; .Tag carries the protocol + device path.
+$script:onSelectDisc = {
+    $t = $this.Tag
+    if ($null -eq $t -or $script:ctx -eq [IntPtr]::Zero) { return }
+    $script:discProto = $t.Kind
+    if ($null -ne $t.Label) { $script:discLabel = $t.Label } else { $script:discLabel = '' }
+    [void][Mpv.Native]::Command($script:ctx, @('write-watch-later-config'))
+    if ($t.Kind -eq 'bd') {
+        [void][Mpv.Native]::SetPropertyString($script:ctx, 'bluray-device', $t.Device)
+        [void][Mpv.Native]::Command($script:ctx, @('loadfile', 'bd://'))
+    } else {
+        [void][Mpv.Native]::SetPropertyString($script:ctx, 'dvd-device', $t.Device.TrimEnd('\'))
+        [void][Mpv.Native]::Command($script:ctx, @('loadfile', 'dvd://'))
+    }
+    $script:paused = $false
+    $btnPlay.Text = 'Pause'
+    Set-SubPos
+}
+
+# Shared handler for disc titles; .Tag carries the dvd://N or bd://N URL.
+$script:onSelectTitle = {
+    $t = $this.Tag
+    if ($null -eq $t -or $script:ctx -eq [IntPtr]::Zero) { return }
+    [void][Mpv.Native]::Command($script:ctx, @('loadfile', $t.Url))
+    $script:paused = $false
+    $btnPlay.Text = 'Pause'
+    Set-SubPos
+}
+
+# Shared handler for chapters; .Tag carries the 0-based chapter index.
+$script:onSelectChapter = {
+    $t = $this.Tag
+    if ($null -eq $t -or $script:ctx -eq [IntPtr]::Zero) { return }
+    [void][Mpv.Native]::SetPropertyString($script:ctx, 'chapter', $t.Chapter)
+}
+
+# Shared handler for absolute-time jumps (equal-split episodes).
+$script:onSelectTime = {
+    $t = $this.Tag
+    if ($null -eq $t -or $script:ctx -eq [IntPtr]::Zero) { return }
+    [void][Mpv.Native]::Command($script:ctx, @('seek', $t.Seek, 'absolute'))
+}
+
+# Sets how many even episodes to split a title into (0 = auto gap-detect).
+$script:onSetEpisodeCount = {
+    $t = $this.Tag
+    if ($null -ne $t) { $script:episodeCount = [int]$t.Count }
+}
+
 function Add-TrackItems {
     param($menu, $wantType, $kind)
     $added = 0
@@ -351,6 +401,14 @@ function Build-TracksMenu {
     $menu.ForeColor = $script:colText
     $menu.Renderer = New-Object System.Windows.Forms.ToolStripProfessionalRenderer ($script:menuColors)
 
+    $np = Get-MediaTitle
+    if (-not [string]::IsNullOrEmpty($np)) {
+        $npItem = New-Object System.Windows.Forms.ToolStripMenuItem ('Now Playing: ' + $np)
+        $npItem.Enabled = $false
+        [void]$menu.Items.Add($npItem)
+        [void]$menu.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
+    }
+
     $hAudio = New-Object System.Windows.Forms.ToolStripMenuItem 'Audio'
     $hAudio.Enabled = $false
     [void]$menu.Items.Add($hAudio)
@@ -374,6 +432,217 @@ function Build-TracksMenu {
     $off.Add_Click($script:onSelectTrack)
     [void]$menu.Items.Add($off)
 
+    Add-DiscTitles $menu
+    Add-Episodes $menu
+    Add-Chapters $menu
+
+    return $menu
+}
+
+function Add-DiscTitles {
+    param($menu)
+    if ($script:discProto -eq '') { return }
+    $tcount = 0L
+    if (-not [Mpv.Native]::TryGetInt($script:ctx, 'disc-titles', [ref]$tcount)) { return }
+    if ($tcount -le 1) { return }
+
+    $cur = -1L
+    if (-not [Mpv.Native]::TryGetInt($script:ctx, 'disc-title', [ref]$cur)) { $cur = -1 }
+
+    [void]$menu.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
+    $hdr = New-Object System.Windows.Forms.ToolStripMenuItem 'Titles'
+    $hdr.Enabled = $false
+    [void]$menu.Items.Add($hdr)
+
+    for ($i = 1; $i -le $tcount; $i++) {
+        $item = New-Object System.Windows.Forms.ToolStripMenuItem ('Title ' + [string]$i)
+        $item.ForeColor = $script:colText
+        $item.Tag = @{ Url = $script:discProto + '://' + [string]$i }
+        if ($i -eq $cur) { $item.Checked = $true }
+        $item.Add_Click($script:onSelectTitle)
+        [void]$menu.Items.Add($item)
+    }
+}
+
+function Add-Episodes {
+    param($menu)
+    if ($script:discProto -eq '') { return }
+
+    [void]$menu.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
+    $hdr = New-Object System.Windows.Forms.ToolStripMenuItem 'Episodes'
+    $hdr.Enabled = $false
+    [void]$menu.Items.Add($hdr)
+
+    $dur = 0.0
+    [void][Mpv.Native]::TryGetDouble($script:ctx, 'duration', [ref]$dur)
+    $pos = 0.0
+    [void][Mpv.Native]::TryGetDouble($script:ctx, 'time-pos', [ref]$pos)
+
+    if ($script:episodeCount -gt 1 -and $dur -gt 0) {
+        # Even split into the chosen number of episodes (absolute-time seeks).
+        $seg = $dur / $script:episodeCount
+        for ($k = 0; $k -lt $script:episodeCount; $k++) {
+            $start = $seg * $k
+            $end = $seg * ($k + 1)
+            $item = New-Object System.Windows.Forms.ToolStripMenuItem ('Episode ' + [string]($k + 1) + '  -  ' + (Format-Time $start))
+            $item.ForeColor = $script:colText
+            $item.Tag = @{ Seek = [string]$start }
+            if ($pos -ge $start -and $pos -lt $end) { $item.Checked = $true }
+            $item.Add_Click($script:onSelectTime)
+            [void]$menu.Items.Add($item)
+        }
+    } else {
+        # Auto: infer boundaries from large gaps between chapter timestamps.
+        $shown = $false
+        $ccount = 0L
+        if ([Mpv.Native]::TryGetInt($script:ctx, 'chapter-list/count', [ref]$ccount) -and $ccount -gt 1) {
+            $times = @()
+            for ($i = 0; $i -lt $ccount; $i++) {
+                $tt = 0.0
+                [void][Mpv.Native]::TryGetDouble($script:ctx, ('chapter-list/' + $i + '/time'), [ref]$tt)
+                $times += $tt
+            }
+            $starts = @(0)
+            for ($i = 1; $i -lt $ccount; $i++) {
+                if (($times[$i] - $times[$i - 1]) -gt $script:episodeGapSec) { $starts += $i }
+            }
+            if ($starts.Count -gt 1) {
+                $cur = -1L
+                if (-not [Mpv.Native]::TryGetInt($script:ctx, 'chapter', [ref]$cur)) { $cur = -1 }
+                for ($k = 0; $k -lt $starts.Count; $k++) {
+                    $s = $starts[$k]
+                    if ($k -lt $starts.Count - 1) { $next = $starts[$k + 1] } else { $next = $ccount }
+                    $item = New-Object System.Windows.Forms.ToolStripMenuItem ('Episode ' + [string]($k + 1) + '  -  ' + (Format-Time $times[$s]))
+                    $item.ForeColor = $script:colText
+                    $item.Tag = @{ Chapter = [string]$s }
+                    if ($cur -ge $s -and $cur -lt $next) { $item.Checked = $true }
+                    $item.Add_Click($script:onSelectChapter)
+                    [void]$menu.Items.Add($item)
+                }
+                $shown = $true
+            }
+        }
+        if (-not $shown) {
+            $hint = New-Object System.Windows.Forms.ToolStripMenuItem 'Auto-detect found none - use Split evenly'
+            $hint.Enabled = $false
+            [void]$menu.Items.Add($hint)
+        }
+    }
+
+    # Split-evenly submenu: choose the episode count straight from the UI.
+    $split = New-Object System.Windows.Forms.ToolStripMenuItem 'Split evenly'
+    $split.ForeColor = $script:colText
+    $split.DropDown.BackColor = $script:colBar
+    $split.DropDown.ForeColor = $script:colText
+    $split.DropDown.Renderer = New-Object System.Windows.Forms.ToolStripProfessionalRenderer ($script:menuColors)
+    foreach ($n in @(0, 2, 3, 4, 5, 6, 7, 8, 9, 10)) {
+        if ($n -eq 0) { $lbl = 'Auto (detect)' } else { $lbl = [string]$n + ' episodes' }
+        $si = New-Object System.Windows.Forms.ToolStripMenuItem $lbl
+        $si.ForeColor = $script:colText
+        $si.Tag = @{ Count = $n }
+        if ($n -eq $script:episodeCount) { $si.Checked = $true }
+        $si.Add_Click($script:onSetEpisodeCount)
+        [void]$split.DropDownItems.Add($si)
+    }
+    [void]$menu.Items.Add($split)
+}
+
+function Add-Chapters {
+    param($menu)
+    $ccount = 0L
+    if (-not [Mpv.Native]::TryGetInt($script:ctx, 'chapter-list/count', [ref]$ccount)) { return }
+    if ($ccount -le 1) { return }
+
+    $cur = -1L
+    if (-not [Mpv.Native]::TryGetInt($script:ctx, 'chapter', [ref]$cur)) { $cur = -1 }
+
+    [void]$menu.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
+    $parent = New-Object System.Windows.Forms.ToolStripMenuItem 'Chapters'
+    $parent.ForeColor = $script:colText
+    $parent.DropDown.BackColor = $script:colBar
+    $parent.DropDown.ForeColor = $script:colText
+    $parent.DropDown.Renderer = New-Object System.Windows.Forms.ToolStripProfessionalRenderer ($script:menuColors)
+    $parent.DropDown.MaximumSize = New-Object System.Drawing.Size(440, 760)
+
+    for ($i = 0; $i -lt $ccount; $i++) {
+        $name = [Mpv.Native]::GetString($script:ctx, ('chapter-list/' + $i + '/title'))
+        $time = 0.0
+        [void][Mpv.Native]::TryGetDouble($script:ctx, ('chapter-list/' + $i + '/time'), [ref]$time)
+        if ([string]::IsNullOrEmpty($name)) { $label = 'Chapter ' + [string]($i + 1) } else { $label = $name }
+        $label = $label + '  -  ' + (Format-Time $time)
+        $item = New-Object System.Windows.Forms.ToolStripMenuItem $label
+        $item.ForeColor = $script:colText
+        $item.Tag = @{ Chapter = [string]$i }
+        if ($i -eq $cur) { $item.Checked = $true }
+        $item.Add_Click($script:onSelectChapter)
+        [void]$parent.DropDownItems.Add($item)
+    }
+    [void]$menu.Items.Add($parent)
+}
+
+function Get-OpticalDiscs {
+    $list = @()
+    foreach ($d in [System.IO.DriveInfo]::GetDrives()) {
+        if ($d.DriveType -ne [System.IO.DriveType]::CDRom) { continue }
+        $info = @{ Letter = $d.Name; Ready = $d.IsReady; Label = ''; Type = 'unknown' }
+        if ($d.IsReady) {
+            try { $info.Label = $d.VolumeLabel } catch { $info.Label = '' }
+            $root = $d.RootDirectory.FullName
+            if (Test-Path -LiteralPath (Join-Path $root 'BDMV')) {
+                $info.Type = 'bd'
+            } elseif (Test-Path -LiteralPath (Join-Path $root 'VIDEO_TS')) {
+                $info.Type = 'dvd'
+            }
+        }
+        $list += $info
+    }
+    return $list
+}
+
+function Add-DiscItem {
+    param($menu, $text, $kind, $device, $label)
+    $item = New-Object System.Windows.Forms.ToolStripMenuItem $text
+    $item.ForeColor = $script:colText
+    $item.Tag = @{ Kind = $kind; Device = $device; Label = $label }
+    $item.Add_Click($script:onSelectDisc)
+    [void]$menu.Items.Add($item)
+}
+
+function Build-DiscMenu {
+    if ($script:ctx -eq [IntPtr]::Zero) { return $null }
+    $menu = New-Object System.Windows.Forms.ContextMenuStrip
+    $menu.BackColor = $script:colBar
+    $menu.ForeColor = $script:colText
+    $menu.Renderer = New-Object System.Windows.Forms.ToolStripProfessionalRenderer ($script:menuColors)
+
+    $discs = Get-OpticalDiscs
+    if ($discs.Count -eq 0) {
+        $none = New-Object System.Windows.Forms.ToolStripMenuItem 'No optical drives'
+        $none.Enabled = $false
+        [void]$menu.Items.Add($none)
+        return $menu
+    }
+
+    foreach ($disc in $discs) {
+        $letter = $disc.Letter.TrimEnd('\')
+        if (-not $disc.Ready) {
+            $empty = New-Object System.Windows.Forms.ToolStripMenuItem ($letter + '  (no disc)')
+            $empty.Enabled = $false
+            [void]$menu.Items.Add($empty)
+            continue
+        }
+        $base = $letter
+        if (-not [string]::IsNullOrEmpty($disc.Label)) { $base = $letter + '  ' + $disc.Label }
+
+        if ($disc.Type -eq 'bd') {
+            Add-DiscItem $menu ('Play Blu-ray  -  ' + $base) 'bd' $disc.Letter $disc.Label
+        } elseif ($disc.Type -eq 'dvd') {
+            Add-DiscItem $menu ('Play DVD  -  ' + $base) 'dvd' $disc.Letter $disc.Label
+        } else {
+            Add-DiscItem $menu ('Play Blu-ray  -  ' + $base) 'bd' $disc.Letter $disc.Label
+            Add-DiscItem $menu ('Play DVD  -  ' + $base) 'dvd' $disc.Letter $disc.Label
+        }
+    }
     return $menu
 }
 
@@ -452,16 +721,37 @@ function Set-SubPos {
     }
 }
 
+function Get-MediaTitle {
+    # Best-available name for what is playing: mpv media-title (metadata/volume
+    # label), then the disc volume label, then the filename. A bare dvd:// /
+    # bd:// URL is not useful, so fall through to the disc label in that case.
+    if ($script:ctx -eq [IntPtr]::Zero) { return '' }
+    $mt = [Mpv.Native]::GetString($script:ctx, 'media-title')
+    if (-not [string]::IsNullOrEmpty($mt)) {
+        if (-not $mt.StartsWith('dvd://') -and -not $mt.StartsWith('bd://')) { return $mt }
+    }
+    if (-not [string]::IsNullOrEmpty($script:discLabel)) { return $script:discLabel }
+    if (-not [string]::IsNullOrEmpty($mt)) { return $mt }
+    $fn = [Mpv.Native]::GetString($script:ctx, 'filename')
+    if (-not [string]::IsNullOrEmpty($fn)) { return $fn }
+    return ''
+}
+
 # --- State ------------------------------------------------------------------
-$script:ctx      = [IntPtr]::Zero
-$script:duration = 0.0
-$script:paused   = $false
+$script:ctx       = [IntPtr]::Zero
+$script:duration  = 0.0
+$script:paused    = $false
+$script:discProto = ''
+$script:discLabel      = ''
+$script:lastTitleShown = ''
+$script:episodeGapSec  = 600
+$script:episodeCount   = 0
 
 # --- Form -------------------------------------------------------------------
 $form = New-Object System.Windows.Forms.Form
 $form.Text = 'Parallax'
 $form.Size = New-Object System.Drawing.Size(960, 600)
-$form.MinimumSize = New-Object System.Drawing.Size(620, 360)
+$form.MinimumSize = New-Object System.Drawing.Size(720, 360)
 $form.StartPosition = 'CenterScreen'
 $form.BackColor = $script:colBg
 $form.Font = New-Object System.Drawing.Font('Segoe UI', 9)
@@ -491,28 +781,35 @@ $bar.Controls.Add($seek)
 $btnOpen = New-Object System.Windows.Forms.Button
 $btnOpen.Text = 'Open'
 $btnOpen.Location = New-Object System.Drawing.Point(16, 52)
-$btnOpen.Size = New-Object System.Drawing.Size(80, 32)
+$btnOpen.Size = New-Object System.Drawing.Size(70, 32)
 Style-Button $btnOpen
 $bar.Controls.Add($btnOpen)
 
+$btnDisc = New-Object System.Windows.Forms.Button
+$btnDisc.Text = 'Disc'
+$btnDisc.Location = New-Object System.Drawing.Point(94, 52)
+$btnDisc.Size = New-Object System.Drawing.Size(70, 32)
+Style-Button $btnDisc
+$bar.Controls.Add($btnDisc)
+
 $btnPlay = New-Object System.Windows.Forms.Button
 $btnPlay.Text = 'Play'
-$btnPlay.Location = New-Object System.Drawing.Point(104, 52)
-$btnPlay.Size = New-Object System.Drawing.Size(88, 32)
+$btnPlay.Location = New-Object System.Drawing.Point(172, 52)
+$btnPlay.Size = New-Object System.Drawing.Size(82, 32)
 Style-Button $btnPlay
 $bar.Controls.Add($btnPlay)
 
 $btnTracks = New-Object System.Windows.Forms.Button
 $btnTracks.Text = 'Tracks'
-$btnTracks.Location = New-Object System.Drawing.Point(200, 52)
-$btnTracks.Size = New-Object System.Drawing.Size(88, 32)
+$btnTracks.Location = New-Object System.Drawing.Point(262, 52)
+$btnTracks.Size = New-Object System.Drawing.Size(82, 32)
 Style-Button $btnTracks
 $bar.Controls.Add($btnTracks)
 
 $btnFull = New-Object System.Windows.Forms.Button
 $btnFull.Text = 'Full'
-$btnFull.Location = New-Object System.Drawing.Point(296, 52)
-$btnFull.Size = New-Object System.Drawing.Size(84, 32)
+$btnFull.Location = New-Object System.Drawing.Point(352, 52)
+$btnFull.Size = New-Object System.Drawing.Size(72, 32)
 Style-Button $btnFull
 $bar.Controls.Add($btnFull)
 
@@ -520,7 +817,7 @@ $lblTime = New-Object System.Windows.Forms.Label
 $lblTime.Text = '0:00 / 0:00'
 $lblTime.ForeColor = $script:colText
 $lblTime.AutoSize = $true
-$lblTime.Location = New-Object System.Drawing.Point(392, 60)
+$lblTime.Location = New-Object System.Drawing.Point(436, 60)
 $bar.Controls.Add($lblTime)
 
 $vol = New-Object VP.Slider
@@ -582,6 +879,8 @@ $btnOpen.Add_Click({
         [void][Mpv.Native]::Command($script:ctx, @('loadfile', $dlg.FileName))
         $script:paused = $false
         $btnPlay.Text = 'Pause'
+        $script:discProto = ''
+        $script:discLabel = ''
         Set-SubPos
     }
 })
@@ -595,6 +894,13 @@ $btnTracks.Add_Click({
     $m = Build-TracksMenu
     if ($null -ne $m) {
         $m.Show($btnTracks, (New-Object System.Drawing.Point(0, -$m.Height)))
+    }
+})
+
+$btnDisc.Add_Click({
+    $m = Build-DiscMenu
+    if ($null -ne $m) {
+        $m.Show($btnDisc, (New-Object System.Drawing.Point(0, -$m.Height)))
     }
 })
 
@@ -671,6 +977,12 @@ $timer.Add_Tick({
         if ($v -gt 1000) { $v = 1000 }
         $seek.Value = $v
         $lblTime.Text = (Format-Time $pos) + ' / ' + (Format-Time $script:duration)
+    }
+
+    $mt = Get-MediaTitle
+    if ($mt -ne $script:lastTitleShown) {
+        $script:lastTitleShown = $mt
+        if ([string]::IsNullOrEmpty($mt)) { $form.Text = 'Parallax' } else { $form.Text = 'Parallax  -  ' + $mt }
     }
 })
 
