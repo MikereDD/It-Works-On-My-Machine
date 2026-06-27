@@ -120,7 +120,7 @@ $form = [System.Windows.Forms.Form]::new()
 $form.Text = "$APP_NAME"
 # Window/taskbar/alt-tab icon (optional; ignored if the .ico isn't present).
 try {
-    $icoPath = Join-Path $PSScriptRoot 'assets\cadence.ico'
+    $icoPath = Join-Path $PSScriptRoot 'docs\cadence.ico'
     if (Test-Path $icoPath) { $form.Icon = [System.Drawing.Icon]::new($icoPath) }
 } catch {}
 $form.Size = [System.Drawing.Size]::new(540, 760)
