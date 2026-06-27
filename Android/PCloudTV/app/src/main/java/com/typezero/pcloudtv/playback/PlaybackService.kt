@@ -398,6 +398,13 @@ class PlaybackService : MediaBrowserServiceCompat() {
         browseScope.launch {
             val session = SessionStore(this@PlaybackService).load() ?: run { postError(); return@launch }
             val url = resolveUrl(session, item) ?: run { postError(); return@launch }
+            // Embedded cover art (reliable for network streams, unlike LibVLC's).
+            runCatching { client.fetchEmbeddedArt(url) }.getOrNull()?.let { bytes ->
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.let {
+                    currentArt = it
+                    artFound = true
+                }
+            }
             withContext(Dispatchers.Main) {
                 val mp = ensurePlayer()
                 val vlc = libVlc ?: return@withContext

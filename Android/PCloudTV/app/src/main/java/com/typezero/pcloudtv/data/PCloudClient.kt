@@ -350,6 +350,14 @@ class PCloudClient {
             }
         }
 
+    /**
+     * Fetch embedded cover art (ID3v2 APIC) for a track by reading just the tag at
+     * the front of a resolved stream [url]. Returns raw image bytes, or null if the
+     * file has no embedded art / isn't an MP3. Reliable for network streams where
+     * LibVLC doesn't surface the art.
+     */
+    suspend fun fetchEmbeddedArt(url: String): ByteArray? = Id3Art.fetch(http, url)
+
     /** Stream URL by absolute pCloud path (used by cross-folder playlists). */
     suspend fun getStreamUrlByPath(session: Session, filePath: String): ApiResult<String> =
         withContext(Dispatchers.IO) {

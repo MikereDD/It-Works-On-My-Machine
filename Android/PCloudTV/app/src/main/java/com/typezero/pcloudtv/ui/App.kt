@@ -28,6 +28,7 @@ fun App(vm: AppViewModel = viewModel()) {
                         }
                         ?: ApiResult.Error("Bad item")
                 },
+                fetchArt = { vm.client.fetchEmbeddedArt(it) },
                 onExit = { pubQueue = null }
             )
         } else {
@@ -74,6 +75,7 @@ fun App(vm: AppViewModel = viewModel()) {
                 }
             },
             playlistKey = playlistKey,
+            fetchArt = { vm.client.fetchEmbeddedArt(it) },
             onExit = { queue = null; playlistKey = null }
         )
     } else {
