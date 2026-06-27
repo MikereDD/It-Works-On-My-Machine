@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file: cardbot.py
 # author: Mike Redd
-# version: 0.8.3
+# version: 0.9.0
 # created: 2026-06-18
 # updated: 2026-06-18
 # desc: "Gabriel" - Telegram link-card bot.
@@ -31,7 +31,7 @@ from urllib.parse import (
 
 # ── Branding ─────────────────────────────────────────────────
 BOT_NAME = "Gabriel"
-BOT_VERSION = "0.8.3"
+BOT_VERSION = "0.9.0"
 
 import httpx
 from bs4 import BeautifulSoup
@@ -530,21 +530,21 @@ def render_card(title, description, domain,
     return buf.getvalue()
 
 
-POST_TWEET_LINES = 9
+POST_TWEET_LINES = 40
 FG_TWEET = (229, 231, 238)
 FG_FOOT = (120, 128, 146)
 
 
 def render_post_card(author, handle, text, domain,
                      avatar: Image.Image | None = None,
-                     hero: Image.Image | None = None,
-                     verified=None) -> bytes:
-    """Post layout: author + @handle byline, post text, then the whole image."""
+                     images=None, verified=None) -> bytes:
+    """Post layout: author + @handle byline, post text, then the whole image(s)."""
     name_font = _load_font(True, 32)
     handle_font = _load_font(False, 25)
     tweet_font = _load_font(False, 38)
     foot_font = _load_font(True, 22)
     inner_w = CARD_W - 2 * PAD_X
+    gap = 16
 
     measure = ImageDraw.Draw(Image.new("RGB", (CARD_W, 4)))
     tweet_eh = int(_line_h(tweet_font) * 0.82)
@@ -553,13 +553,13 @@ def render_post_card(author, handle, text, domain,
     tweet_lh = int(_line_h(tweet_font) * 1.26)
 
     av = 76
-    mimg = _fit_box(hero, inner_w, 820) if hero is not None else None
+    imgs = [_fit_box(im, inner_w, 760) for im in (images or []) if im is not None]
+    imgs_h = (sum(im.height for im in imgs) + gap * (len(imgs) - 1)) if imgs else 0
 
     head_top = 44
     tweet_top = head_top + av + 30
     text_bottom = tweet_top + len(tlines) * tweet_lh
-    img_block = (20 + mimg.height) if mimg is not None else 0
-    foot_top = text_bottom + img_block + 30
+    foot_top = text_bottom + (20 + imgs_h if imgs else 0) + 30
     card_h = foot_top + _line_h(foot_font) + 44
 
     card = _vgrad(CARD_W, card_h, BG_TOP, BG_BOT).convert("RGBA")
@@ -586,9 +586,11 @@ def render_post_card(author, handle, text, domain,
         _draw_rich(card, draw, PAD_X, y, ln, tweet_font, FG_TWEET, tweet_eh)
         y += tweet_lh
 
-    # whole image, under the post
-    if mimg is not None:
-        _paste_rounded(card, mimg, PAD_X + (inner_w - mimg.width) // 2, text_bottom + 20, 16)
+    # whole image(s), stacked under the post
+    yy = text_bottom + 20
+    for im in imgs:
+        _paste_rounded(card, im, PAD_X + (inner_w - im.width) // 2, yy, 16)
+        yy += im.height + gap
 
     # footer source
     _tracked(draw, (PAD_X, foot_top), domain.upper(), foot_font, FG_FOOT, 2)
@@ -629,32 +631,35 @@ def _paste_rounded(card, img, x, y, radius=16):
 def render_quote_card(main, text, quoted, domain,
                       main_avatar=None, quoted_avatar=None,
                       media=None, quoted_media=None) -> bytes:
-    """Quote layout: main user + comment + their full image, then the quoted
-    user + text + their full image, each image under its own author."""
+    """Quote layout: main user + comment + their full image(s), then the quoted
+    user + text + their full image(s), each image under its own author."""
     nf = _load_font(True, 30); hf = _load_font(False, 24); mf = _load_font(False, 36)
     qnf = _load_font(True, 26); qhf = _load_font(False, 22); qtf = _load_font(False, 28)
     ff = _load_font(True, 22)
     inner = CARD_W - 2 * PAD_X
+    gap = 14
     main_eh = int(_line_h(mf) * 0.82); q_eh = int(_line_h(qtf) * 0.82)
 
     measure = ImageDraw.Draw(Image.new("RGB", (CARD_W, 4)))
-    mlines = _wrap(measure, text, mf, inner, 6, main_eh)
+    mlines = _wrap(measure, text, mf, inner, 30, main_eh)
     qpad = 28
     qinner = inner - 2 * qpad
-    qlines = _wrap(measure, quoted["text"], qtf, qinner, 8, q_eh) if quoted else []
+    qlines = _wrap(measure, quoted["text"], qtf, qinner, 24, q_eh) if quoted else []
     mlh = int(_line_h(mf) * 1.28); qtlh = int(_line_h(qtf) * 1.28)
 
     av, qav = 72, 44
-    # whole images, scaled to fit (not cropped)
-    mimg = _fit_box(media, inner, 760) if media is not None else None
-    qimg = _fit_box(quoted_media, qinner, 600) if quoted_media is not None else None
+    # whole images, scaled to fit (not cropped), stacked
+    mimgs = [_fit_box(im, inner, 700) for im in (media or []) if im is not None]
+    qimgs = [_fit_box(im, qinner, 520) for im in (quoted_media or []) if im is not None]
+    mimgs_h = (sum(im.height for im in mimgs) + gap * (len(mimgs) - 1)) if mimgs else 0
+    qimgs_h = (sum(im.height for im in qimgs) + gap * (len(qimgs) - 1)) if qimgs else 0
 
     head_top = 44
     main_top = head_top + av + 26
     main_h = len(mlines) * mlh
-    main_img_block = (20 + mimg.height) if mimg is not None else 0
+    main_img_block = (20 + mimgs_h) if mimgs else 0
     qbox_top = main_top + main_h + main_img_block + 26
-    qimg_block = (16 + qimg.height) if qimg is not None else 0
+    qimg_block = (16 + qimgs_h) if qimgs else 0
     qbox_h = qpad + qav + 16 + len(qlines) * qtlh + qimg_block + qpad
     foot_top = qbox_top + qbox_h + 26
     card_h = foot_top + _line_h(ff) + 44
@@ -680,9 +685,11 @@ def render_quote_card(main, text, quoted, domain,
         _draw_rich(card, draw, PAD_X, y, ln, mf, FG_TEXT, main_eh)
         y += mlh
 
-    # main user's image (whole image, under their comment)
-    if mimg is not None:
-        _paste_rounded(card, mimg, PAD_X + (inner - mimg.width) // 2, y + 20, 16)
+    # main user's image(s) (whole, stacked under their comment)
+    yy = y + 20
+    for im in mimgs:
+        _paste_rounded(card, im, PAD_X + (inner - im.width) // 2, yy, 16)
+        yy += im.height + gap
 
     # nested quoted tweet
     if quoted:
@@ -703,9 +710,11 @@ def render_quote_card(main, text, quoted, domain,
         for ln in qlines:
             _draw_rich(card, draw, qx, qty, ln, qtf, FG_TEXT, q_eh)
             qty += qtlh
-        # quoted user's image (whole image, under their text)
-        if qimg is not None:
-            _paste_rounded(card, qimg, qx + (qinner - qimg.width) // 2, qty + 4, 14)
+        # quoted user's image(s) (whole, stacked under their text)
+        qyy = qty + 4
+        for im in qimgs:
+            _paste_rounded(card, im, qx + (qinner - im.width) // 2, qyy, 14)
+            qyy += im.height + gap
 
     # footer
     _tracked(draw, (PAD_X, foot_top), domain.upper(), ff, FG_FOOT, 2)
@@ -869,12 +878,17 @@ def _user_fields(u: dict) -> dict:
     }
 
 
-def _first_media(node: dict):
+def _all_media(node: dict, limit: int = 4):
+    urls = []
     for m in (node.get("mediaDetails") or []):
-        if m.get("media_url_https"):
-            return m["media_url_https"]
-    vid = node.get("video") or {}
-    return vid.get("poster")
+        u = m.get("media_url_https")
+        if u and u not in urls:
+            urls.append(u)
+    if not urls:
+        vid = node.get("video") or {}
+        if vid.get("poster"):
+            urls.append(vid["poster"])
+    return urls[:limit]
 
 
 async def fetch_x_syndication(tweet_id: str):
@@ -921,7 +935,7 @@ def parse_syndication(data: dict):
     out = {
         "main": _user_fields(data.get("user")),
         "text": _clean_tweet_text(data),
-        "media": _first_media(data),
+        "media": _all_media(data),
         "quoted": None,
     }
     q = data.get("quoted_tweet")
@@ -929,7 +943,7 @@ def parse_syndication(data: dict):
         out["quoted"] = {
             **_user_fields(q.get("user")),
             "text": _clean_tweet_text(q),
-            "media": _first_media(q),
+            "media": _all_media(q),
         }
     return out
 
@@ -1109,18 +1123,18 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if syn:                              # richer X path: real avatars, verified, quote
                 post_text = syn["text"]
                 main_av = await fetch_image(syn["main"]["avatar"])
-                media = await fetch_image(syn["media"])
+                media_imgs = [im for im in [await fetch_image(u) for u in syn["media"]] if im]
                 if syn["quoted"]:
                     q_av = await fetch_image(syn["quoted"]["avatar"])
-                    q_media = await fetch_image(syn["quoted"]["media"])
+                    q_imgs = [im for im in [await fetch_image(u) for u in syn["quoted"]["media"]] if im]
                     png = await asyncio.to_thread(
                         render_quote_card, syn["main"], syn["text"], syn["quoted"],
-                        meta["domain"], main_av, q_av, media, q_media,
+                        meta["domain"], main_av, q_av, media_imgs, q_imgs,
                     )
                 else:
                     png = await asyncio.to_thread(
                         render_post_card, syn["main"]["name"], syn["main"]["handle"],
-                        syn["text"], meta["domain"], main_av, media,
+                        syn["text"], meta["domain"], main_av, media_imgs,
                         syn["main"]["verified"],
                     )
             else:                                # OG fallback (X without syndication, or t.me)
@@ -1128,7 +1142,7 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 post_text = text
                 png = await asyncio.to_thread(
                     render_post_card, author, handle, text, meta["domain"],
-                    None if big else og, og if big else None,
+                    None if big else og, [og] if big else None,
                 )
         else:
             favicon = await fetch_favicon(meta.get("favicon"))

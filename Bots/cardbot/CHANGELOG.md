@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-06-19
+
+### Fixed
+- Long posts are no longer cut off early — the post-text line cap was raised
+  well past any normal tweet, so the full text is captured (quote cards too).
+
+### Added
+- Multiple images: posts with more than one image now show all of them (up to
+  4), each as a whole image stacked under the post. Applies to both the main
+  tweet and the quoted tweet in quote cards.
+
 ## [0.8.3] - 2026-06-19
 
 ### Changed
@@ -175,7 +186,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Card rendering runs in a worker thread to avoid blocking the event loop;
   `HTTPXRequest` timeouts configured for Telegram I/O.
 
-[Unreleased]: https://github.com/MikereDD/It-Works-On-My-Machine/compare/cardbot-v0.8.3...HEAD
+[Unreleased]: https://github.com/MikereDD/It-Works-On-My-Machine/compare/cardbot-v0.9.0...HEAD
+[0.9.0]: https://github.com/MikereDD/It-Works-On-My-Machine/compare/cardbot-v0.8.3...cardbot-v0.9.0
 [0.8.3]: https://github.com/MikereDD/It-Works-On-My-Machine/compare/cardbot-v0.8.2...cardbot-v0.8.3
 [0.8.2]: https://github.com/MikereDD/It-Works-On-My-Machine/compare/cardbot-v0.8.1...cardbot-v0.8.2
 [0.8.1]: https://github.com/MikereDD/It-Works-On-My-Machine/compare/cardbot-v0.8.0...cardbot-v0.8.1
