@@ -24,7 +24,7 @@ Search, a much better visualizer, and a pwsh-native launch.
   (double-click still plays the right track and the now-playing row follows),
   `Esc` clears it, and typing is shortcut-safe (Space/M go to the box, not the
   transport).
-- App icon: a visualizer-bars mark (`assets/cadence.ico`) — the recessed well,
+- App icon: a visualizer-bars mark (`docs/cadence.ico`) — the recessed well,
   gradient bars, and peak caps from the spectrum view — on the window title bar,
   taskbar, and alt-tab.
 

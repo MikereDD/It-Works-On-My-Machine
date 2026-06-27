@@ -1,16 +1,20 @@
 # Cadence
 
+<p align="center">
+  <img src="docs/cadence-icon-256.png" width="116" alt="Cadence">
+</p>
+
 A sleek, fully owner-drawn local audio player for Windows — monochrome
 Material-style UI, NAudio engine, live FFT visualizer, and a real library
 browser. Part of the `personaltools/` toolkit.
 
-**Latest: v0.3.0** · [Changelog](https://github.com/MikereDD/It-Works-On-My-Machine/blob/main/personaltools/audio-player/CHANGELOG.md)
+**Latest: v0.3.0** · [Changelog](https://github.com/MikereDD/It-Works-On-My-Machine/blob/main/Windows/Powershell/scripts/personaltools/Cadence/CHANGELOG.md)
 
 ## Screenshots
 
 | Library &amp; search | Now playing |
 |:---:|:---:|
-| ![Library browser with queue search](assets/screenshot-library.png) | ![Playing a track with the live visualizer](assets/screenshot-playing.png) |
+| ![Library browser with queue search](docs/screenshot-library.png) | ![Playing a track with the live visualizer](docs/screenshot-playing.png) |
 
 ## Highlights
 - **Wide format support** — MP3, FLAC, M4A/AAC, WAV, WMA, OGG, OPUS via NAudio
@@ -85,4 +89,4 @@ well. If the tap fails to compile it falls back to an idle baseline — audio is
 never routed through anything that could interrupt playback.
 
 ## Changelog
-See [CHANGELOG.md](https://github.com/MikereDD/It-Works-On-My-Machine/blob/main/personaltools/audio-player/CHANGELOG.md).
+See [CHANGELOG.md](https://github.com/MikereDD/It-Works-On-My-Machine/blob/main/Windows/Powershell/scripts/personaltools/Cadence/CHANGELOG.md).
