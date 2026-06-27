@@ -5,7 +5,19 @@ All notable changes to **pCloud TV**. Newest first.
 
 ---
 
-## v4.32 — Android Auto: play a track picked in the car (B2b)
+## v4.34 — Android Auto: fix no-audio, real cover art in the card
+
+- **Fixed: no sound from Android Auto.** The headless car player never requested audio focus, so the car wouldn't route audio even though the position clock advanced. It now requests `AUDIOFOCUS_GAIN` (USAGE_MEDIA / CONTENT_TYPE_MUSIC) before playing, re-acquires on resume, pauses on focus loss, and abandons on stop — same as the in-app player.
+- The now-playing card's image is now the **real embedded cover**, with a clean monochrome **vinyl-record** fallback when a track has no art (replacing the v4.33 spectrum-bars image, which was only ever a stand-in).
+- Scope note: a *live visualizer above the seekbar* isn't possible on Android Auto. The car (host) renders the now-playing screen; a `MediaBrowserService` app only supplies title/artist, the single album-art image, playback state, and action buttons — there's no app-drawable region above the seekbar and no animated content in the media UI. The live FFT visualizer remains an in-app (phone/TV) feature.
+
+
+
+- The car's now-playing card now shows **embedded cover art**, read from the track the same way the in-app player does (VLC artwork meta → decoded bitmap), pushed as the session's album art. Filled the empty gray square.
+- When a track has no embedded art, a **static monochrome spectrum-bars cover** is used instead, drawn once and cached — it carries the phone/TV monochrome identity onto the car screen.
+- Note on scope: a *live* visualizer and full theming aren't possible on Android Auto's now-playing screen — the car/host renders that UI from your MediaSession, and a `MediaBrowserService` app only gets to supply content, custom actions, art, and an accent color (no custom drawing surface, no animation in the media UI). The static cover is the closest on-theme equivalent. Cover art also flows to the phone lock-screen/notification largeIcon for Auto-initiated playback.
+
+
 
 - The playback service now owns a **headless audio-only LibVLC player**, so tapping a track or playlist in Android Auto actually plays — no phone UI required (app backgrounded / phone locked). This fixes the "Getting your selection…" hang, which was `onPlayFromMediaId` never being implemented and there being no player in the service to honor it.
 - `onPlayFromMediaId` resolves the tapped browse id into a queue: a single file (`file:<id>`), or a playlist (`playlist:<id>`) — playlist ids now carry their parent folder locator so the service can re-list the folder and resolve relative `.m3u` entries at play time. Per-track URL resolution mirrors the in-app path (direct URL → pCloud path → `getfilelink` by file id).
