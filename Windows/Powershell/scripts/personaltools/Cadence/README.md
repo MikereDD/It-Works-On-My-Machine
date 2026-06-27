@@ -8,7 +8,7 @@ A sleek, fully owner-drawn local audio player for Windows — monochrome
 Material-style UI, NAudio engine, live FFT visualizer, and a real library
 browser. Part of the `personaltools/` toolkit.
 
-**Latest: v0.3.0** · [Changelog](https://github.com/MikereDD/It-Works-On-My-Machine/blob/main/Windows/Powershell/scripts/personaltools/Cadence/CHANGELOG.md)
+**Latest: v0.4.0** · [Changelog](https://github.com/MikereDD/It-Works-On-My-Machine/blob/main/Windows/Powershell/scripts/personaltools/Cadence/CHANGELOG.md)
 
 ## Screenshots
 
@@ -21,13 +21,17 @@ browser. Part of the `personaltools/` toolkit.
   and system codecs.
 - **Live spectrum visualizer** — a real FFT off a pass-through tap, drawn as
   gradient bars with rounded tops and floating peak-hold caps in a recessed
-  well (no fake animation).
+  well (no fake animation). Switchable palettes: monochrome, full spectrum,
+  indigo.
 - **Library browser** — a lazy-loaded folder tree with saved roots persisted to
   config, so a large collection is navigated rather than flattened.
 - **Queue search** — a live filter box narrows the queue to matching tracks as
   you type; playback stays correct while filtered.
-- **Playlist queue** — shuffle, repeat-all, auto-advance, full-path dedupe, and
-  M3U / M3U8 import.
+- **Playlist queue** — shuffle, repeat-all, auto-advance, full-path dedupe,
+  M3U / M3U8 import, and drag-and-drop of files / folders / playlists onto the
+  window. Export the queue back out as an `.m3u8`.
+- **Remembers your setup** — saved library roots plus volume, shuffle, repeat,
+  and visualizer palette persist across launches.
 - **Monochrome Material UI** — tonal pill buttons, a FAB transport, toggle
   chips, recessed dark-grey wells, and a subtle depth gradient.
 - **Tags + album art** — via TagLibSharp when present, with a filename fallback.
@@ -67,6 +71,9 @@ this folder — it backgrounds the player and returns the shell immediately.
 | Type in the search box | Live-filter the queue |
 | `Esc` (in search box) | Clear the filter |
 | Double-click file / `.m3u` | Play |
+| Drag files / folders onto the window | Add to queue |
+| Right-click queue | Export queue as M3U |
+| Right-click visualizer | Switch palette (mono / spectrum / indigo) |
 | Right-click folder (tree) | Add recursively |
 | Library button | Add / remove / clear saved roots |
 
@@ -79,14 +86,18 @@ this folder — it backgrounds the player and returns the shell immediately.
 | `setup-naudio.ps1` | NuGet dependency fetcher (`-> .\lib`) |
 
 Runtime files written next to the script: `cadence.config.json` (saved library
-roots) and `cadence-startup.log` (startup/exception log).
+roots plus volume / shuffle / repeat / visualizer palette) and
+`cadence-startup.log` (startup/exception log).
 
 ## Visualizer
 A compiled C# tap copies samples into a ring buffer as they play; a UI timer
-runs an FFT, folds it into log-spaced bands, and paints center-mirrored grey
-spikes (bass mid-grey to treble near-white) inside a recessed, light-bordered
-well. If the tap fails to compile it falls back to an idle baseline — audio is
-never routed through anything that could interrupt playback.
+runs an FFT, folds it into log-spaced bands, and draws them as gradient bars
+with rounded tops and floating peak-hold caps (with a faint mirrored
+reflection) inside a recessed, light-bordered well. A gamma curve expands the
+dynamic range so the silhouette actually moves with the music. Right-click to
+switch palettes (monochrome / full spectrum / indigo). If the tap fails to
+compile it falls back to an idle baseline — audio is never routed through
+anything that could interrupt playback.
 
 ## Changelog
 See [CHANGELOG.md](https://github.com/MikereDD/It-Works-On-My-Machine/blob/main/Windows/Powershell/scripts/personaltools/Cadence/CHANGELOG.md).

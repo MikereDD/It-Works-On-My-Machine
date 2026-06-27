@@ -7,12 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Planned
-- Drag-and-drop files onto the window.
-- Persist volume / shuffle / repeat alongside the saved library roots.
-- Export the current queue as an `.m3u`.
-- Optional visualizer palettes (full-spectrum / indigo) as an alternative to
-  the default monochrome.
+## [0.4.0] - 2026-06-27
+
+Drag-and-drop, persisted settings, queue export, and switchable visualizer
+palettes.
+
+### Added
+- Drag-and-drop: drop files, folders, or `.m3u`/`.m3u8` playlists onto the
+  window to add them to the queue (folders are scanned recursively).
+- Export the current queue as an `.m3u8`/`.m3u` playlist (right-click the queue
+  -> "Export queue as M3U...").
+
+### Changed
+- Settings now persist alongside the saved library roots in
+  `cadence.config.json`: volume, shuffle, repeat, and the visualizer palette are
+  restored on launch.
+- Visualizer palettes: right-click the visualizer to switch between Monochrome
+  (default), Full spectrum, and Indigo; the choice is saved.
 
 ## [0.3.0] - 2026-06-24
 
@@ -127,6 +138,7 @@ visualizer, a real library browser, playlist plumbing, the Windows PowerShell
 - `New-Visualizer` stub with the FFT integration recipe documented inline.
 
 [Unreleased]: https://github.com/MikereDD/It-Works-On-My-Machine/commits/main
+[0.4.0]: https://github.com/MikereDD/It-Works-On-My-Machine/tree/main/personaltools/audio-player
 [0.3.0]: https://github.com/MikereDD/It-Works-On-My-Machine/tree/main/personaltools/audio-player
 [0.2.0]: https://github.com/MikereDD/It-Works-On-My-Machine/tree/main/personaltools/audio-player
 [0.1.0]: https://github.com/MikereDD/It-Works-On-My-Machine/tree/main/personaltools/audio-player

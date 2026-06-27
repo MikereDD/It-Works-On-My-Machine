@@ -110,6 +110,7 @@ $script:State = @{
     Active  = $false      # true while a track is meant to be playing/paused
     Shuffle = $false
     Repeat  = $false      # repeat-all
+    VisPalette = 'mono'   # visualizer palette: mono | spectrum | indigo
     Art     = $null       # current album art Image (disposed on swap)
 }
 
@@ -565,20 +566,31 @@ function Expand-Node {
 }
 
 $script:ConfigPath = Join-Path $ROOT 'cadence.config.json'
-$script:Config     = @{ roots = @() }
+$script:Config     = @{ roots = @(); volume = 0.8; shuffle = $false; repeat = $false; palette = 'mono' }
 
 function Load-Config {
     if (-not (Test-Path -LiteralPath $script:ConfigPath)) { return }
     try {
         $json = Get-Content -LiteralPath $script:ConfigPath -Raw -ErrorAction Stop | ConvertFrom-Json
-        $script:Config = @{ roots = @($json.roots | Where-Object { $_ }) }
-    } catch { $script:Config = @{ roots = @() } }
+        $script:Config = @{
+            roots   = @($json.roots | Where-Object { $_ })
+            volume  = if ($null -ne $json.volume) { [double]$json.volume } else { 0.8 }
+            shuffle = [bool]$json.shuffle
+            repeat  = [bool]$json.repeat
+            palette = if ($json.palette) { [string]$json.palette } else { 'mono' }
+        }
+    } catch { $script:Config = @{ roots = @(); volume = 0.8; shuffle = $false; repeat = $false; palette = 'mono' } }
 }
 
 function Save-Config {
     try {
-        [pscustomobject]@{ roots = @($script:Config.roots) } |
-            ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $script:ConfigPath -Encoding UTF8
+        [pscustomobject]@{
+            roots   = @($script:Config.roots)
+            volume  = [double]$script:Engine.Volume
+            shuffle = [bool]$script:State.Shuffle
+            repeat  = [bool]$script:State.Repeat
+            palette = [string]$script:State.VisPalette
+        } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $script:ConfigPath -Encoding UTF8
     } catch {}
 }
 
@@ -668,6 +680,55 @@ function Add-FolderToQueue {
     }
 }
 
+# Drag-and-drop: accept dropped files/folders/playlists onto the window.
+function Add-Dropped {
+    param($Paths)
+    if (-not $Paths) { return }
+    $loose = New-Object System.Collections.Generic.List[string]
+    foreach ($p in $Paths) {
+        try {
+            if (Test-Path -LiteralPath $p -PathType Container) { Add-FolderToQueue $p }
+            else { $loose.Add($p) }   # files + .m3u handled by Add-Paths
+        } catch {}
+    }
+    if ($loose.Count -gt 0) { Add-Paths $loose }
+}
+
+# Export the current queue as an M3U playlist.
+function Export-QueueM3U {
+    if ($script:State.Items.Count -eq 0) {
+        $form.Text = "$APP_NAME  -  nothing to export"
+        return
+    }
+    $dlg = [System.Windows.Forms.SaveFileDialog]::new()
+    $dlg.Title    = 'Export queue'
+    $dlg.Filter   = 'M3U8 playlist (*.m3u8)|*.m3u8|M3U playlist (*.m3u)|*.m3u'
+    $dlg.FileName = 'cadence-queue.m3u8'
+    if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+        try {
+            $sb = [System.Text.StringBuilder]::new()
+            [void]$sb.AppendLine('#EXTM3U')
+            foreach ($p in $script:State.Items) { [void]$sb.AppendLine($p) }
+            [System.IO.File]::WriteAllText($dlg.FileName, $sb.ToString(), [System.Text.UTF8Encoding]::new($false))
+            $form.Text = "$APP_NAME  -  exported $($script:State.Items.Count) track(s)"
+        } catch {
+            $form.Text = "$APP_NAME  -  export failed"
+        }
+    }
+}
+
+# Switch the visualizer palette and persist it.
+function Set-VisPalette {
+    param($Name)
+    $script:State.VisPalette = $Name
+    $script:Config.palette   = $Name
+    Save-Config
+    if ($script:miPalMono)     { $script:miPalMono.Checked     = ($Name -eq 'mono') }
+    if ($script:miPalSpectrum) { $script:miPalSpectrum.Checked = ($Name -eq 'spectrum') }
+    if ($script:miPalIndigo)   { $script:miPalIndigo.Checked   = ($Name -eq 'indigo') }
+    $vis.Invalidate()
+}
+
 # --- Wiring -----------------------------------------------------------------
 $seek.OnSeek = { param($f) Seek-To $f }.GetNewClosure()
 $vol.OnSeek  = { param($f) Set-Volume $f }.GetNewClosure()
@@ -680,11 +741,46 @@ $btnStop.Add_Click({ Stop-Playback; $script:State.Active = $false; Sync-PlayGlyp
 $pillShuffle.Add_Click({
     $script:State.Shuffle = -not $script:State.Shuffle
     $pillShuffle.Active = $script:State.Shuffle; Update-PillVisual $pillShuffle
+    Save-Config
 })
 $pillRepeat.Add_Click({
     $script:State.Repeat = -not $script:State.Repeat
     $pillRepeat.Active = $script:State.Repeat; Update-PillVisual $pillRepeat
+    Save-Config
 })
+
+# Drag-and-drop files / folders / playlists onto the window.
+$form.AllowDrop = $true
+$form.Add_DragEnter({
+    param($s, $e)
+    if ($e.Data.GetDataPresent([System.Windows.Forms.DataFormats]::FileDrop)) {
+        $e.Effect = [System.Windows.Forms.DragDropEffects]::Copy
+    }
+})
+$form.Add_DragDrop({
+    param($s, $e)
+    try { Add-Dropped ($e.Data.GetData([System.Windows.Forms.DataFormats]::FileDrop)) } catch {}
+})
+
+# Queue context menu: export as M3U.
+$listMenu = [System.Windows.Forms.ContextMenuStrip]::new()
+$listMenu.BackColor = $script:Theme.Panel
+$listMenu.ForeColor = $script:Theme.Text
+$miExport = $listMenu.Items.Add('Export queue as M3U...')
+$miExport.Add_Click({ Export-QueueM3U })
+$list.ContextMenuStrip = $listMenu
+
+# Visualizer context menu: palette picker.
+$visMenu = [System.Windows.Forms.ContextMenuStrip]::new()
+$visMenu.BackColor = $script:Theme.Panel
+$visMenu.ForeColor = $script:Theme.Text
+$script:miPalMono     = $visMenu.Items.Add('Monochrome')
+$script:miPalSpectrum = $visMenu.Items.Add('Full spectrum')
+$script:miPalIndigo   = $visMenu.Items.Add('Indigo')
+$script:miPalMono.Add_Click({ Set-VisPalette 'mono' })
+$script:miPalSpectrum.Add_Click({ Set-VisPalette 'spectrum' })
+$script:miPalIndigo.Add_Click({ Set-VisPalette 'indigo' })
+$vis.ContextMenuStrip = $visMenu
 
 $list.Add_DoubleClick({
     $vr = $list.SelectedIndex
@@ -882,6 +978,21 @@ $form.Add_Resize({
 # Load saved library roots and build the tree (falls back to drives if none).
 Load-Config
 Build-Tree
+
+# Apply persisted settings (volume / shuffle / repeat / visualizer palette).
+try {
+    Set-Volume ([double]$script:Config.volume)
+    $vol.Fraction = $script:Engine.Volume; $vol.Invalidate()
+    $script:lastVol = $script:Engine.Volume
+    $script:State.Shuffle = [bool]$script:Config.shuffle
+    $pillShuffle.Active = $script:State.Shuffle; Update-PillVisual $pillShuffle
+    $script:State.Repeat = [bool]$script:Config.repeat
+    $pillRepeat.Active = $script:State.Repeat; Update-PillVisual $pillRepeat
+    Set-VisPalette ([string]$script:Config.palette)
+} catch {}
+
+# Persist settings (incl. final volume) when the window closes.
+$form.Add_FormClosing({ try { Save-Config } catch {} })
 
 # Apply Windows dark-mode scrollbars to the native tree + list once handles exist.
 $form.Add_Shown({

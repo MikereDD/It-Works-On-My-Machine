@@ -1,5 +1,9 @@
 {
   "roots": [
     "P:\\Music"
-  ]
+  ],
+  "volume": 0.8,
+  "shuffle": false,
+  "repeat": false,
+  "palette": "mono"
 }
