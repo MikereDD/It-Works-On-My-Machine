@@ -1,6 +1,6 @@
 ﻿# file:    parallax.ps1
 # author:  typezero
-# version: 0.8.5
+# version: 0.8.6
 # created: 2026-06-24
 # updated: 2026-06-26
 # desc:    libmpv-backed WinForms video player (VLC-style), HWND embedding.
@@ -334,6 +334,9 @@ $script:onSelectDisc = {
     $script:paused = $false
     $btnPlay.Text = 'Pause'
     Set-SubPos
+    $script:discWatch = $true
+    $script:discWatchTicks = 0
+    $script:discWarned = $false
 }
 
 # Shared handler for disc titles; .Tag carries the dvd://N or bd://N URL.
@@ -737,6 +740,19 @@ function Get-MediaTitle {
     return ''
 }
 
+# Shown when a disc loads but no playable title appears (typically AACS/CSS
+# encryption with no matching decryption library on hand).
+function Show-DiscWarning {
+    $nl = [Environment]::NewLine
+    $msg = 'Disc loaded but no playable title was found.' + $nl + $nl +
+           'This usually means the disc is AACS- or CSS-encrypted and the' + $nl +
+           'matching decryption library is not present.' + $nl + $nl +
+           'Rip the title with MakeMKV, then open the resulting file.'
+    [void][System.Windows.Forms.MessageBox]::Show($form, $msg, 'Parallax  -  Encrypted disc',
+        [System.Windows.Forms.MessageBoxButtons]::OK,
+        [System.Windows.Forms.MessageBoxIcon]::Information)
+}
+
 # --- State ------------------------------------------------------------------
 $script:ctx       = [IntPtr]::Zero
 $script:duration  = 0.0
@@ -746,6 +762,9 @@ $script:discLabel      = ''
 $script:lastTitleShown = ''
 $script:episodeGapSec  = 600
 $script:episodeCount   = 0
+$script:discWatch      = $false
+$script:discWatchTicks = 0
+$script:discWarned     = $false
 
 # --- Form -------------------------------------------------------------------
 $form = New-Object System.Windows.Forms.Form
@@ -881,6 +900,7 @@ $btnOpen.Add_Click({
         $btnPlay.Text = 'Pause'
         $script:discProto = ''
         $script:discLabel = ''
+        $script:discWatch = $false
         Set-SubPos
     }
 })
@@ -969,6 +989,24 @@ $timer.Add_Tick({
     if ($script:ctx -eq [IntPtr]::Zero) { return }
     $dur = 0.0
     if ([Mpv.Native]::TryGetDouble($script:ctx, 'duration', [ref]$dur)) { $script:duration = $dur }
+
+    # Disc-load guard: after selecting a disc, give mpv a moment to load. If it
+    # falls back to idle with no duration, the title never decrypted.
+    if ($script:discWatch) {
+        if ($script:duration -gt 0) {
+            $script:discWatch = $false
+        } else {
+            $script:discWatchTicks++
+            if ($script:discWatchTicks -ge 10 -and -not $script:discWarned) {
+                $idle = [Mpv.Native]::GetString($script:ctx, 'idle-active')
+                if ($idle -eq 'yes') {
+                    $script:discWarned = $true
+                    $script:discWatch = $false
+                    Show-DiscWarning
+                }
+            }
+        }
+    }
     $pos = 0.0
     if (-not [Mpv.Native]::TryGetDouble($script:ctx, 'time-pos', [ref]$pos)) { $pos = 0.0 }
     if (-not $seek.IsDragging -and $script:duration -gt 0) {

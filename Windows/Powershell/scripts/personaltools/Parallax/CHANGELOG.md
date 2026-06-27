@@ -5,6 +5,14 @@ All notable changes to Parallax are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.6] - 2026-06-27
+
+### Added
+- Encrypted-disc hint: when a disc is selected but mpv falls back to idle with no
+  playable title (typically AACS/CSS encryption with no decryption library on
+  hand), Parallax now shows a one-line dialog pointing to MakeMKV instead of
+  leaving a silent black screen.
+
 ## [0.8.5] - 2026-06-27
 
 ### Fixed

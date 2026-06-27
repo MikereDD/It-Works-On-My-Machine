@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.8.5-2d2d2d">
+  <img src="https://img.shields.io/badge/version-0.8.6-2d2d2d">
   <img src="https://img.shields.io/badge/PowerShell-5.1-2d2d2d?logo=powershell&logoColor=white">
   <img src="https://img.shields.io/badge/backend-libmpv-2d2d2d">
   <img src="https://img.shields.io/badge/platform-Windows-2d2d2d">
@@ -40,7 +40,7 @@
 | `F` | Toggle fullscreen |
 | `Esc` | Exit fullscreen |
 
-See the [changelog](https://github.com/MikereDD/It-Works-On-My-Machine/blob/main/Windows/PowerShell/personaltools/Parallax/CHANGELOG.md) for full history.
+See the [changelog](https://github.com/MikereDD/It-Works-On-My-Machine/blob/main/Windows/Powershell/scripts/personaltools/Parallax/CHANGELOG.md) for full history.
 
 ## Screenshots
 
