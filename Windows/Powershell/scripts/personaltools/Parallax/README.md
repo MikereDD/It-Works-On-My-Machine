@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.5.0-2d2d2d">
+  <img src="https://img.shields.io/badge/version-0.8.5-2d2d2d">
   <img src="https://img.shields.io/badge/PowerShell-5.1-2d2d2d?logo=powershell&logoColor=white">
   <img src="https://img.shields.io/badge/backend-libmpv-2d2d2d">
   <img src="https://img.shields.io/badge/platform-Windows-2d2d2d">
@@ -22,7 +22,10 @@
 
 - Plays anything libmpv handles (MKV, MP4, M2TS, TS, WebM, ...) via HWND embedding
 - **Resume** &mdash; reopening a file picks up where you left off (per-file watch-later)
+- **Disc** &mdash; play DVDs and Blu-rays straight from the drive, with title,
+  episode, and chapter navigation
 - **Tracks** popup for switching audio and subtitle streams, with Off for subs
+- Now-playing name shown in the title bar and at the top of the Tracks popup
 - Fullscreen with auto-hiding controls and cursor
 - Owner-drawn monochrome seek + volume sliders (click-to-seek, drag-scrub)
 - DWM dark title bar, Material 3 monochrome styling
@@ -69,3 +72,22 @@ parallax.cmd
 
 Or directly: `powershell.exe -STA -File parallax.ps1`. Click **Open**, pick a file,
 and it plays into the embedded panel. Playback position is saved automatically.
+
+### Discs
+
+The **Disc** button lists optical drives and plays a DVD or Blu-ray, auto-detecting
+the type from `VIDEO_TS` / `BDMV`. Once a disc is playing, the **Tracks** popup gains:
+
+- **Titles** &mdash; the disc's individual titles, for multi-title discs
+- **Episodes** &mdash; for a single-title "Play All" disc, use **Split evenly** to
+  divide the title into N even episode jumps (or leave it on auto gap-detection)
+- **Chapters** &mdash; every chapter, with timestamps
+
+Commercial discs are encrypted and need extra libraries on PATH (or beside
+`libmpv-2.dll`):
+
+- **DVD** &mdash; `libdvdcss.dll` for CSS-encrypted discs
+- **Blu-ray** &mdash; `libaacs.dll` plus a valid `KEYDB.cfg` for AACS discs
+
+Unencrypted and self-authored discs play without these. Most retail Blu-rays
+will not play in-player even with libaacs &mdash; rip them with MakeMKV instead.
