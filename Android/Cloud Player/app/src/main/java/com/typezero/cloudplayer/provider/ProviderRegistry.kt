@@ -6,8 +6,8 @@ import com.typezero.cloudplayer.data.Session
 /**
  * Central place for provider availability.
  *
- * v1.0 keeps pCloud enabled and records the next providers as planned so the
- * app can grow into Cloud Player after the foundation is stable.
+ * v1.1 keeps pCloud as the first working provider and begins the
+ * MEGA provider flow with account/shared-link entry points.
  */
 object ProviderRegistry {
     const val PCLOUD = "pcloud"

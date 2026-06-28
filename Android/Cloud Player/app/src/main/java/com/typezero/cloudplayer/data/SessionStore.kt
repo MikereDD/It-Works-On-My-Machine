@@ -366,6 +366,67 @@ class SessionStore(context: Context) {
         return getActiveAccount()?.toSession()
     }
 
+
+
+    // ---- MEGA accounts (web-session marker until the MEGA SDK provider is connected) ----
+
+    fun getMegaAccounts(): List<MegaAccount> {
+        val s = prefs.getString(KEY_MEGA_ACCOUNTS, null) ?: return emptyList()
+        return try {
+            val arr = JSONArray(s)
+            buildList {
+                for (i in 0 until arr.length()) {
+                    val o = arr.getJSONObject(i)
+                    add(
+                        MegaAccount(
+                            id = o.getString("id"),
+                            email = o.optString("email", "MEGA account"),
+                            label = o.optString("label", o.optString("email", "MEGA account"))
+                        )
+                    )
+                }
+            }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    private fun persistMegaAccounts(list: List<MegaAccount>) {
+        val arr = JSONArray()
+        list.forEach { a ->
+            arr.put(
+                JSONObject().apply {
+                    put("id", a.id)
+                    put("email", a.email)
+                    put("label", a.label)
+                }
+            )
+        }
+        prefs.edit().putString(KEY_MEGA_ACCOUNTS, arr.toString()).apply()
+    }
+
+    /**
+     * MEGA WebView sign-in can complete MEGA's own password/2FA flow, but Cloud
+     * Player still needs the official MEGA SDK/decryption provider before account
+     * files can be listed. Until then, save a visible connected-library marker so
+     * the Libraries screen accurately shows that MEGA was signed in.
+     */
+    fun addMegaWebSession(email: String? = null): String {
+        val cleanEmail = email?.trim()?.takeIf { it.isNotBlank() } ?: "MEGA account"
+        val id = if (cleanEmail.contains("@")) "mega-web-$cleanEmail" else "mega-web"
+        val label = if (cleanEmail.contains("@")) cleanEmail else "MEGA Web Session"
+        val acc = MegaAccount(id = id, email = cleanEmail, label = label)
+        val list = getMegaAccounts().toMutableList()
+        val existing = list.indexOfFirst { it.id == id }
+        if (existing >= 0) list[existing] = acc else list.add(acc)
+        persistMegaAccounts(list)
+        return id
+    }
+
+    fun removeMegaAccount(id: String) {
+        persistMegaAccounts(getMegaAccounts().filterNot { it.id == id })
+    }
+
     // ---- Back-compat single-session API, now backed by the accounts list ----
 
     fun save(session: Session) { addOrUpdateAccount(session) }
@@ -379,5 +440,6 @@ class SessionStore(context: Context) {
         private const val KEY_HOST = "api_host"
         private const val KEY_ACCOUNTS = "accounts"
         private const val KEY_ACTIVE = "active_account"
+        private const val KEY_MEGA_ACCOUNTS = "mega_accounts"
     }
 }

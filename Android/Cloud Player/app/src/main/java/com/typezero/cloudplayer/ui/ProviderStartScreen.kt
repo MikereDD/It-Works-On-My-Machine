@@ -49,7 +49,8 @@ private data class ProviderChoice(
 
 @Composable
 fun ProviderStartScreen(
-    onOpenPCloud: () -> Unit
+    onOpenPCloud: () -> Unit,
+    onOpenMega: () -> Unit
 ) {
     val pCloudFocus = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { pCloudFocus.requestFocus() } }
@@ -121,7 +122,7 @@ fun ProviderStartScreen(
 
             val providers = listOf(
                 ProviderChoice("pCloud", "Sign in and browse your pCloud media", true, Icons.Rounded.CloudQueue),
-                ProviderChoice("MEGA", "Coming soon", false, Icons.Rounded.Lock),
+                ProviderChoice("MEGA", "Sign in or open a shared MEGA link", true, Icons.Rounded.CloudQueue),
                 ProviderChoice("Google Drive", "Coming soon", false, Icons.Rounded.Lock),
                 ProviderChoice("Dropbox", "Coming soon", false, Icons.Rounded.Lock),
                 ProviderChoice("OneDrive", "Coming soon", false, Icons.Rounded.Lock),
@@ -137,7 +138,12 @@ fun ProviderStartScreen(
                         ProviderCard(
                             provider = provider,
                             modifier = if (index == 0) compactCardModifier.focusRequester(pCloudFocus) else compactCardModifier,
-                            onClick = { if (provider.name == "pCloud") onOpenPCloud() }
+                            onClick = {
+                                when (provider.name) {
+                                    "pCloud" -> onOpenPCloud()
+                                    "MEGA" -> onOpenMega()
+                                }
+                            }
                         )
                     }
                 }
@@ -156,7 +162,12 @@ fun ProviderStartScreen(
                                 ProviderCard(
                                     provider = provider,
                                     modifier = if (globalIndex == 0) Modifier.weight(1f).focusRequester(pCloudFocus) else Modifier.weight(1f),
-                                    onClick = { if (provider.name == "pCloud") onOpenPCloud() }
+                                    onClick = {
+                                        when (provider.name) {
+                                            "pCloud" -> onOpenPCloud()
+                                            "MEGA" -> onOpenMega()
+                                        }
+                                    }
                                 )
                             }
                             repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
@@ -167,7 +178,7 @@ fun ProviderStartScreen(
 
             Spacer(Modifier.height(8.dp))
             Text(
-                text = "Cloud Player starts with pCloud support. More providers will unlock here as they are added.",
+                text = "Cloud Player starts with pCloud support. MEGA is being added as the first optional provider.",
                 color = Brand.TextLow,
                 fontSize = 12.sp,
                 textAlign = TextAlign.Center

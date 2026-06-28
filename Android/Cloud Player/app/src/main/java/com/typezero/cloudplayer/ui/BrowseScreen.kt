@@ -66,6 +66,7 @@ import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -145,6 +146,7 @@ fun BrowseScreen(
     onPlayQueue: (List<com.typezero.cloudplayer.data.MediaItem>, String?) -> Unit,
     onSwitchAccount: (String) -> Unit,
     onAddAccount: () -> Unit,
+    onLibraries: () -> Unit,
     onLogout: () -> Unit
 ) {
     // "Continue" + Android TV browse state. Restore the last folder stack so
@@ -499,6 +501,7 @@ fun BrowseScreen(
                             onToggleHidden = { showHidden = !showHidden },
                             onSwitchAccount = onSwitchAccount,
                             onAddAccount = onAddAccount,
+                            onLibraries = onLibraries,
                             onAbout = { showAbout = true },
                             onLogout = onLogout
                         )
@@ -543,6 +546,7 @@ fun BrowseScreen(
                         onToggleHidden = { showHidden = !showHidden },
                         onSwitchAccount = onSwitchAccount,
                         onAddAccount = onAddAccount,
+                        onLibraries = onLibraries,
                         onAbout = { showAbout = true },
                         onLogout = onLogout
                     )
@@ -1851,6 +1855,7 @@ private fun HeaderActions(
     onToggleHidden: () -> Unit,
     onSwitchAccount: (String) -> Unit,
     onAddAccount: () -> Unit,
+    onLibraries: () -> Unit,
     onAbout: () -> Unit,
     onLogout: () -> Unit
 ) {
@@ -1886,6 +1891,11 @@ private fun HeaderActions(
                     expanded = menuOpen,
                     onDismissRequest = { menuOpen = false }
                 ) {
+                    DropdownMenuItem(
+                        text = { Text("Libraries") },
+                        leadingIcon = { Icon(Icons.Filled.Home, null) },
+                        onClick = { menuOpen = false; onLibraries() }
+                    )
                     if (itemsNotEmpty) {
                         DropdownMenuItem(
                             text = { Text("Select") },

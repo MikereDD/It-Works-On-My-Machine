@@ -1,6 +1,7 @@
 package com.typezero.cloudplayer.ui
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -14,6 +15,8 @@ fun App(vm: AppViewModel = viewModel()) {
     val session = vm.session
     val publicLink = vm.publicLink
     var selectedProvider by remember { mutableStateOf<String?>(null) }
+    var activeLibrary by remember { mutableStateOf<String?>(null) }
+    var megaMessage by remember { mutableStateOf<String?>(null) }
 
     // ---- Public shared-link mode (no account) ----
     if (publicLink != null) {
@@ -43,28 +46,111 @@ fun App(vm: AppViewModel = viewModel()) {
         return
     }
 
-    if (session == null || vm.addingAccount) {
+    LaunchedEffect(session?.authToken, selectedProvider) {
+        if (session != null && selectedProvider == "pcloud" && !vm.loginInProgress && !vm.addingAccount) {
+            selectedProvider = null
+            activeLibrary = null
+        }
+    }
+
+    // ---- Provider connection flows ----
+    if (selectedProvider == "mega-web-login") {
+        MegaWebLoginScreen(
+            onSignedIn = { email ->
+                vm.markMegaWebSignedIn(email)
+                megaMessage = null
+                selectedProvider = null
+                activeLibrary = null
+            },
+            onCancel = { selectedProvider = "mega" }
+        )
+        return
+    }
+
+    if (selectedProvider == "mega") {
+        MegaConnectScreen(
+            megaAccounts = vm.megaAccounts,
+            onBack = {
+                megaMessage = null
+                selectedProvider = null
+            },
+            onLibraries = {
+                megaMessage = null
+                selectedProvider = null
+                activeLibrary = null
+            },
+            onSignInWithMega = { selectedProvider = "mega-web-login" },
+            onRemoveMegaAccount = vm::removeMegaAccount,
+            initialMessage = megaMessage
+        )
+        return
+    }
+
+    if (vm.loginInProgress) {
+        WebLoginScreen(
+            onResult = { token ->
+                vm.completeLogin(token)
+                selectedProvider = null
+                activeLibrary = null
+            },
+            onCancel = {
+                vm.cancelLogin()
+                selectedProvider = null
+                activeLibrary = null
+            }
+        )
+        return
+    }
+
+    if (session == null || vm.addingAccount || selectedProvider == "pcloud") {
         if (session == null && !vm.addingAccount && selectedProvider == null) {
-            ProviderStartScreen(
-                onOpenPCloud = { selectedProvider = "pcloud" }
+            LibraryHomeScreen(
+                pCloudAccounts = vm.accounts,
+                megaAccounts = vm.megaAccounts,
+                activeAccountId = vm.activeAccountId,
+                onOpenPCloudAccount = { id ->
+                    vm.switchAccount(id)
+                    activeLibrary = "pcloud"
+                },
+                onAddPCloud = { selectedProvider = "pcloud" },
+                onOpenMega = { selectedProvider = "mega" }
             )
             return
         }
 
-        if (vm.loginInProgress) {
-            WebLoginScreen(
-                onResult = { token -> vm.completeLogin(token) },
-                onCancel = { vm.cancelLogin(); selectedProvider = null }
-            )
-        } else {
-            LoginScreen(
-                error = vm.loginError,
-                busy = vm.busy,
-                onSignIn = { vm.startWebLogin() },
-                onUseToken = { vm.useToken(it) },
-                onOpenLink = { vm.openPublicLink(it) }
-            )
-        }
+        LoginScreen(
+            error = vm.loginError,
+            busy = vm.busy,
+            onSignIn = { vm.startWebLogin() },
+            onUseToken = {
+                vm.useToken(it)
+                activeLibrary = null
+            },
+            onOpenLink = { vm.openPublicLink(it) },
+            onLibraries = if (vm.addingAccount || session != null) {
+                {
+                    vm.cancelLogin()
+                    selectedProvider = null
+                    activeLibrary = null
+                }
+            } else null
+        )
+        return
+    }
+
+    // ---- Library hub: Cloud Player can hold more than one provider/library. ----
+    if (activeLibrary != "pcloud") {
+        LibraryHomeScreen(
+            pCloudAccounts = vm.accounts,
+            megaAccounts = vm.megaAccounts,
+            activeAccountId = vm.activeAccountId,
+            onOpenPCloudAccount = { id ->
+                vm.switchAccount(id)
+                activeLibrary = "pcloud"
+            },
+            onAddPCloud = { vm.beginAddAccount() },
+            onOpenMega = { selectedProvider = "mega" }
+        )
         return
     }
 
@@ -95,7 +181,11 @@ fun App(vm: AppViewModel = viewModel()) {
             onPlayQueue = { items, key -> queue = items; playlistKey = key },
             onSwitchAccount = vm::switchAccount,
             onAddAccount = vm::beginAddAccount,
-            onLogout = vm::logout
+            onLibraries = { activeLibrary = null },
+            onLogout = {
+                vm.logout()
+                activeLibrary = null
+            }
         )
     }
 }
