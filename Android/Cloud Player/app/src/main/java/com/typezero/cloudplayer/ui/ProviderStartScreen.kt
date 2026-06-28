@@ -50,7 +50,9 @@ private data class ProviderChoice(
 @Composable
 fun ProviderStartScreen(
     onOpenPCloud: () -> Unit,
-    onOpenMega: () -> Unit
+    onOpenMega: () -> Unit,
+    onOpenDropbox: () -> Unit,
+    onBackToLibraries: () -> Unit
 ) {
     val pCloudFocus = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { pCloudFocus.requestFocus() } }
@@ -71,6 +73,15 @@ fun ProviderStartScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(18.dp)
         ) {
+            Text(
+                text = "Libraries",
+                color = Brand.TextMid,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 15.sp,
+                modifier = Modifier
+                    .align(Alignment.Start)
+                    .clickable { onBackToLibraries() }
+            )
             Box(
                 modifier = Modifier
                     .size(if (compact) 72.dp else 88.dp)
@@ -124,7 +135,7 @@ fun ProviderStartScreen(
                 ProviderChoice("pCloud", "Sign in and browse your pCloud media", true, Icons.Rounded.CloudQueue),
                 ProviderChoice("MEGA", "Sign in or open a shared MEGA link", true, Icons.Rounded.CloudQueue),
                 ProviderChoice("Google Drive", "Coming soon", false, Icons.Rounded.Lock),
-                ProviderChoice("Dropbox", "Coming soon", false, Icons.Rounded.Lock),
+                ProviderChoice("Dropbox", "Sign in and add your Dropbox library", true, Icons.Rounded.CloudQueue),
                 ProviderChoice("OneDrive", "Coming soon", false, Icons.Rounded.Lock),
                 ProviderChoice("SMB / WebDAV", "Coming soon", false, Icons.Rounded.Storage)
             )
@@ -142,6 +153,7 @@ fun ProviderStartScreen(
                                 when (provider.name) {
                                     "pCloud" -> onOpenPCloud()
                                     "MEGA" -> onOpenMega()
+                                    "Dropbox" -> onOpenDropbox()
                                 }
                             }
                         )
@@ -166,6 +178,7 @@ fun ProviderStartScreen(
                                         when (provider.name) {
                                             "pCloud" -> onOpenPCloud()
                                             "MEGA" -> onOpenMega()
+                                            "Dropbox" -> onOpenDropbox()
                                         }
                                     }
                                 )
@@ -178,7 +191,7 @@ fun ProviderStartScreen(
 
             Spacer(Modifier.height(8.dp))
             Text(
-                text = "Cloud Player starts with pCloud support. MEGA is being added as the first optional provider.",
+                text = "Cloud Player starts with pCloud and now adds MEGA plus Dropbox as connected libraries.",
                 color = Brand.TextLow,
                 fontSize = 12.sp,
                 textAlign = TextAlign.Center

@@ -1,5 +1,37 @@
 # Changelog
 
+## v1.8.1 - Provider navigation and Dropbox visibility hotfix
+
+- Fixed pCloud root Back behavior so it returns to Libraries instead of closing the app.
+- Relaxed Dropbox browser cleanup so the folder/file list stays visible.
+- Made the provider header clickable/tappable to return to Libraries.
+- Kept provider web browsing as a temporary bridge while native API browsing is built out.
+
+
+## v1.8 — Provider Browser Cleanup
+
+- Cleaned up MEGA and Dropbox provider browsing so the app no longer shows the large instructional overlay over folder lists.
+- Changed Android Back from MEGA / Dropbox provider browsing to return directly to the Cloud Player Libraries page instead of walking website history or quitting the app.
+- Added a small header chip showing `Libraries ← Provider` without blocking the folder view.
+- Added Dropbox page cleanup injection to hide common upgrade, promo, modal, and iframe distractions while browsing folders.
+- Kept provider websites for login/session browsing only until real provider API folder browsing is wired in.
+
+## v1.8 — Dropbox Connected Library
+
+- Added WebView folder browsing for logged-in MEGA accounts via MEGA's own cloud drive.
+- Added WebView folder browsing for logged-in Dropbox accounts via Dropbox Home.
+- Logged-in MEGA and Dropbox cards now open their cloud folder views instead of only account-management screens.
+- Added persistent Libraries navigation inside MEGA and Dropbox web browsers.
+- Bumped Cloud Player to v1.8.
+- Added Dropbox to the Connected Libraries dashboard.
+- Added Dropbox connect screen with account status and remove action.
+- Added Dropbox WebView sign-in marker for Android TV testing.
+- Added Dropbox 2FA/security-code flow support so the login screen does not save too early.
+- Added **Done — save Dropbox after 2FA** fallback for Android TV testing.
+- Libraries now shows Dropbox as Logged in with the saved account label.
+- Add Cloud Service now opens Dropbox instead of leaving it as coming soon.
+- Kept native Dropbox API streaming staged for a later OAuth/API provider pass; v1.8 uses the provider web app so folders are visible now.
+
 ## v1.6 — Connected Libraries
 
 - Bumped Cloud Player to v1.6.

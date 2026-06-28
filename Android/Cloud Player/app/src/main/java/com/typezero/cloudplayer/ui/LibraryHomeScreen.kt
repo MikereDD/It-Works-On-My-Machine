@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.sp
 import com.typezero.cloudplayer.BuildConfig
 import com.typezero.cloudplayer.data.Account
 import com.typezero.cloudplayer.data.MegaAccount
+import com.typezero.cloudplayer.data.DropboxAccount
 import com.typezero.cloudplayer.ui.theme.Brand
 
 private data class LibraryCardModel(
@@ -48,16 +49,19 @@ private data class LibraryCardModel(
     val action: LibraryAction
 )
 
-private enum class LibraryAction { OpenPCloud, AddPCloud, OpenMega, ComingSoon }
+private enum class LibraryAction { OpenPCloud, AddPCloud, OpenMega, OpenDropbox, AddService, ComingSoon }
 
 @Composable
 fun LibraryHomeScreen(
     pCloudAccounts: List<Account>,
     megaAccounts: List<MegaAccount>,
+    dropboxAccounts: List<DropboxAccount>,
     activeAccountId: String?,
     onOpenPCloudAccount: (String) -> Unit,
     onAddPCloud: () -> Unit,
-    onOpenMega: () -> Unit
+    onOpenMega: () -> Unit,
+    onOpenDropbox: () -> Unit,
+    onAddService: () -> Unit
 ) {
     BoxWithConstraints(
         modifier = Modifier
@@ -79,8 +83,8 @@ fun LibraryHomeScreen(
             }
             add(
                 LibraryCardModel(
-                    title = if (pCloudAccounts.isEmpty()) "pCloud • Not logged in" else "Add pCloud",
-                    subtitle = if (pCloudAccounts.isEmpty()) "Sign in and add your pCloud library" else "Sign in and add another pCloud library",
+                    title = if (pCloudAccounts.isEmpty()) "pCloud • Not logged in" else "pCloud • Add account",
+                    subtitle = if (pCloudAccounts.isEmpty()) "Sign in and add your pCloud library" else "Add another pCloud account",
                     icon = Icons.Rounded.Add,
                     action = LibraryAction.AddPCloud
                 )
@@ -98,16 +102,42 @@ fun LibraryHomeScreen(
             }
             add(
                 LibraryCardModel(
-                    title = if (megaAccounts.isEmpty()) "MEGA • Not logged in" else "Manage MEGA",
-                    subtitle = if (megaAccounts.isEmpty()) "Sign in or open a shared MEGA link" else "Logged in — open options or add another connection",
+                    title = if (megaAccounts.isEmpty()) "MEGA • Not logged in" else "MEGA • Manage account",
+                    subtitle = if (megaAccounts.isEmpty()) "Sign in or open a shared MEGA link" else "View signed-in MEGA account and options",
                     icon = Icons.Rounded.CloudQueue,
                     action = LibraryAction.OpenMega
                 )
             )
-            add(LibraryCardModel("Google Drive", "Planned", Icons.Rounded.Lock, enabled = false, action = LibraryAction.ComingSoon))
-            add(LibraryCardModel("Dropbox", "Planned", Icons.Rounded.Lock, enabled = false, action = LibraryAction.ComingSoon))
-            add(LibraryCardModel("OneDrive", "Planned", Icons.Rounded.Lock, enabled = false, action = LibraryAction.ComingSoon))
-            add(LibraryCardModel("SMB / WebDAV", "Planned", Icons.Rounded.Storage, enabled = false, action = LibraryAction.ComingSoon))
+            dropboxAccounts.forEach { account ->
+                add(
+                    LibraryCardModel(
+                        title = "Dropbox • Logged in",
+                        subtitle = account.label,
+                        icon = Icons.Rounded.CloudQueue,
+                        accountId = account.id,
+                        action = LibraryAction.OpenDropbox
+                    )
+                )
+            }
+            add(
+                LibraryCardModel(
+                    title = if (dropboxAccounts.isEmpty()) "Dropbox • Not logged in" else "Dropbox • Manage account",
+                    subtitle = if (dropboxAccounts.isEmpty()) "Sign in and add your Dropbox library" else "View signed-in Dropbox account and options",
+                    icon = Icons.Rounded.CloudQueue,
+                    action = LibraryAction.OpenDropbox
+                )
+            )
+            add(
+                LibraryCardModel(
+                    title = "+ Add Cloud Service",
+                    subtitle = "Choose pCloud, MEGA, Dropbox, Google Drive, OneDrive, SMB, or WebDAV",
+                    icon = Icons.Rounded.Add,
+                    action = LibraryAction.AddService
+                )
+            )
+            add(LibraryCardModel("Google Drive", "Coming soon", Icons.Rounded.Lock, enabled = false, action = LibraryAction.ComingSoon))
+            add(LibraryCardModel("OneDrive", "Coming soon", Icons.Rounded.Lock, enabled = false, action = LibraryAction.ComingSoon))
+            add(LibraryCardModel("SMB / WebDAV", "Coming soon", Icons.Rounded.Storage, enabled = false, action = LibraryAction.ComingSoon))
         }
 
         Column(
@@ -170,7 +200,7 @@ fun LibraryHomeScreen(
                 )
             }
             Text(
-                text = "Add multiple cloud services and switch between them from one place. Logged-in providers stay visible here, so after pCloud or MEGA sign-in you land back here and can add the next service.",
+                text = "Connected Accounts keeps every provider visible from one place. Logged-in services show the account attached to that provider, and Add Cloud Service is the path for everything we add next.",
                 color = Brand.TextMid,
                 fontSize = 14.sp,
                 lineHeight = 20.sp,
@@ -193,6 +223,8 @@ fun LibraryHomeScreen(
                                     LibraryAction.OpenPCloud -> card.accountId?.let(onOpenPCloudAccount)
                                     LibraryAction.AddPCloud -> onAddPCloud()
                                     LibraryAction.OpenMega -> onOpenMega()
+                                    LibraryAction.OpenDropbox -> onOpenDropbox()
+                                    LibraryAction.AddService -> onAddService()
                                     LibraryAction.ComingSoon -> Unit
                                 }
                             }
@@ -218,6 +250,8 @@ fun LibraryHomeScreen(
                                             LibraryAction.OpenPCloud -> card.accountId?.let(onOpenPCloudAccount)
                                             LibraryAction.AddPCloud -> onAddPCloud()
                                             LibraryAction.OpenMega -> onOpenMega()
+                                            LibraryAction.OpenDropbox -> onOpenDropbox()
+                                            LibraryAction.AddService -> onAddService()
                                             LibraryAction.ComingSoon -> Unit
                                         }
                                     }

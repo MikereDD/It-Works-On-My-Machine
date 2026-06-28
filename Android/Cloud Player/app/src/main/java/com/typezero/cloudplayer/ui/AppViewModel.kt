@@ -9,6 +9,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.typezero.cloudplayer.data.ApiResult
 import com.typezero.cloudplayer.data.Account
+import com.typezero.cloudplayer.data.DropboxAccount
 import com.typezero.cloudplayer.data.PCloudClient
 import com.typezero.cloudplayer.data.MegaAccount
 import com.typezero.cloudplayer.data.Publink
@@ -39,6 +40,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         private set
 
     var megaAccounts by mutableStateOf(store.getMegaAccounts())
+        private set
+
+    var dropboxAccounts by mutableStateOf(store.getDropboxAccounts())
         private set
 
     /** Id of the active account (matches Account.id = email ?: token). */
@@ -116,6 +120,16 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun removeMegaAccount(id: String) {
         store.removeMegaAccount(id)
         megaAccounts = store.getMegaAccounts()
+    }
+
+    fun markDropboxWebSignedIn(email: String? = null) {
+        store.addDropboxWebSession(email)
+        dropboxAccounts = store.getDropboxAccounts()
+    }
+
+    fun removeDropboxAccount(id: String) {
+        store.removeDropboxAccount(id)
+        dropboxAccounts = store.getDropboxAccounts()
     }
 
     fun logout() {

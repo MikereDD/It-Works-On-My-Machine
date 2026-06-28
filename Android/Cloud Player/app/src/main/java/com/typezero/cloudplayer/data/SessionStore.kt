@@ -427,6 +427,66 @@ class SessionStore(context: Context) {
         persistMegaAccounts(getMegaAccounts().filterNot { it.id == id })
     }
 
+
+    // ---- Dropbox accounts (web-session marker until Dropbox API browsing is connected) ----
+
+    fun getDropboxAccounts(): List<DropboxAccount> {
+        val s = prefs.getString(KEY_DROPBOX_ACCOUNTS, null) ?: return emptyList()
+        return try {
+            val arr = JSONArray(s)
+            buildList {
+                for (i in 0 until arr.length()) {
+                    val o = arr.getJSONObject(i)
+                    add(
+                        DropboxAccount(
+                            id = o.getString("id"),
+                            email = o.optString("email", "Dropbox account"),
+                            label = o.optString("label", o.optString("email", "Dropbox account"))
+                        )
+                    )
+                }
+            }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    private fun persistDropboxAccounts(list: List<DropboxAccount>) {
+        val arr = JSONArray()
+        list.forEach { a ->
+            arr.put(
+                JSONObject().apply {
+                    put("id", a.id)
+                    put("email", a.email)
+                    put("label", a.label)
+                }
+            )
+        }
+        prefs.edit().putString(KEY_DROPBOX_ACCOUNTS, arr.toString()).apply()
+    }
+
+    /**
+     * Dropbox web sign-in marker for v1.8. This makes Dropbox visible in the
+     * Connected Libraries dashboard while the real Dropbox OAuth/API provider is
+     * wired in next. Passwords and tokens are never stored here.
+     */
+    fun addDropboxWebSession(email: String? = null): String {
+        val cleanEmail = email?.trim()?.takeIf { it.isNotBlank() } ?: "Dropbox account"
+        val id = if (cleanEmail.contains("@")) "dropbox-web-$cleanEmail" else "dropbox-web"
+        val label = if (cleanEmail.contains("@")) cleanEmail else "Dropbox Web Session"
+        val acc = DropboxAccount(id = id, email = cleanEmail, label = label)
+        val list = getDropboxAccounts().toMutableList()
+        val existing = list.indexOfFirst { it.id == id }
+        if (existing >= 0) list[existing] = acc else list.add(acc)
+        persistDropboxAccounts(list)
+        return id
+    }
+
+    fun removeDropboxAccount(id: String) {
+        persistDropboxAccounts(getDropboxAccounts().filterNot { it.id == id })
+    }
+
+
     // ---- Back-compat single-session API, now backed by the accounts list ----
 
     fun save(session: Session) { addOrUpdateAccount(session) }
@@ -441,5 +501,6 @@ class SessionStore(context: Context) {
         private const val KEY_ACCOUNTS = "accounts"
         private const val KEY_ACTIVE = "active_account"
         private const val KEY_MEGA_ACCOUNTS = "mega_accounts"
+        private const val KEY_DROPBOX_ACCOUNTS = "dropbox_accounts"
     }
 }

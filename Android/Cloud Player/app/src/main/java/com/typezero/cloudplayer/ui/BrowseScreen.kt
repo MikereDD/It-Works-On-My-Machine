@@ -446,6 +446,13 @@ fun BrowseScreen(
         persistBrowseState()
     }
 
+    // At the pCloud root, Back should return to the Libraries hub instead of
+    // closing Cloud Player. This keeps every provider using the same navigation:
+    // folder Back -> parent, root Back -> Libraries.
+    BackHandler(enabled = stack.size <= 1) {
+        onLibraries()
+    }
+
     val firstRow = remember { FocusRequester() }
 
     BoxWithConstraints(

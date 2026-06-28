@@ -54,6 +54,16 @@ fun App(vm: AppViewModel = viewModel()) {
     }
 
     // ---- Provider connection flows ----
+    if (selectedProvider == "add-service") {
+        ProviderStartScreen(
+            onOpenPCloud = { selectedProvider = "pcloud" },
+            onOpenMega = { selectedProvider = if (vm.megaAccounts.isNotEmpty()) "mega-browser" else "mega" },
+            onOpenDropbox = { selectedProvider = if (vm.dropboxAccounts.isNotEmpty()) "dropbox-browser" else "dropbox" },
+            onBackToLibraries = { selectedProvider = null; activeLibrary = null }
+        )
+        return
+    }
+
     if (selectedProvider == "mega-web-login") {
         MegaWebLoginScreen(
             onSignedIn = { email ->
@@ -63,6 +73,55 @@ fun App(vm: AppViewModel = viewModel()) {
                 activeLibrary = null
             },
             onCancel = { selectedProvider = "mega" }
+        )
+        return
+    }
+
+
+
+    if (selectedProvider == "dropbox-web-login") {
+        DropboxWebLoginScreen(
+            onSignedIn = { email ->
+                vm.markDropboxWebSignedIn(email)
+                selectedProvider = null
+                activeLibrary = null
+            },
+            onCancel = { selectedProvider = "dropbox" }
+        )
+        return
+    }
+
+
+    if (selectedProvider == "mega-browser") {
+        CloudWebBrowserScreen(
+            providerName = "MEGA",
+            startUrl = "https://mega.nz/fm",
+            onLibraries = { selectedProvider = null; activeLibrary = null },
+            onProviderOptions = { selectedProvider = "mega" }
+        )
+        return
+    }
+
+    if (selectedProvider == "dropbox-browser") {
+        CloudWebBrowserScreen(
+            providerName = "Dropbox",
+            startUrl = "https://www.dropbox.com/home",
+            onLibraries = { selectedProvider = null; activeLibrary = null },
+            onProviderOptions = { selectedProvider = "dropbox" }
+        )
+        return
+    }
+
+    if (selectedProvider == "dropbox") {
+        DropboxConnectScreen(
+            dropboxAccounts = vm.dropboxAccounts,
+            onBack = { selectedProvider = null },
+            onLibraries = {
+                selectedProvider = null
+                activeLibrary = null
+            },
+            onSignInWithDropbox = { selectedProvider = "dropbox-web-login" },
+            onRemoveDropboxAccount = vm::removeDropboxAccount
         )
         return
     }
@@ -107,13 +166,16 @@ fun App(vm: AppViewModel = viewModel()) {
             LibraryHomeScreen(
                 pCloudAccounts = vm.accounts,
                 megaAccounts = vm.megaAccounts,
+                dropboxAccounts = vm.dropboxAccounts,
                 activeAccountId = vm.activeAccountId,
                 onOpenPCloudAccount = { id ->
                     vm.switchAccount(id)
                     activeLibrary = "pcloud"
                 },
                 onAddPCloud = { selectedProvider = "pcloud" },
-                onOpenMega = { selectedProvider = "mega" }
+                onOpenMega = { selectedProvider = if (vm.megaAccounts.isNotEmpty()) "mega-browser" else "mega" },
+                onOpenDropbox = { selectedProvider = if (vm.dropboxAccounts.isNotEmpty()) "dropbox-browser" else "dropbox" },
+                onAddService = { selectedProvider = "add-service" }
             )
             return
         }
@@ -143,13 +205,16 @@ fun App(vm: AppViewModel = viewModel()) {
         LibraryHomeScreen(
             pCloudAccounts = vm.accounts,
             megaAccounts = vm.megaAccounts,
+            dropboxAccounts = vm.dropboxAccounts,
             activeAccountId = vm.activeAccountId,
             onOpenPCloudAccount = { id ->
                 vm.switchAccount(id)
                 activeLibrary = "pcloud"
             },
             onAddPCloud = { vm.beginAddAccount() },
-            onOpenMega = { selectedProvider = "mega" }
+            onOpenMega = { selectedProvider = if (vm.megaAccounts.isNotEmpty()) "mega-browser" else "mega" },
+            onOpenDropbox = { selectedProvider = if (vm.dropboxAccounts.isNotEmpty()) "dropbox-browser" else "dropbox" },
+            onAddService = { selectedProvider = "add-service" }
         )
         return
     }
