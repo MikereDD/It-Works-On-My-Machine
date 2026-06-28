@@ -342,6 +342,12 @@ private fun VlcPlayer(
 
     // Track picker state. Each entry is (id, label).
     var showTracks by remember { mutableStateOf(false) }
+
+    // Video decoding: hardware by default, software when forced (some TV HW decoders
+    // fail on 10-bit HEVC). Persisted so it's set once per device. Toggling reloads
+    // the current file; pendingSeekMs carries the position across the reload.
+    var swDecode by remember { mutableStateOf(store.getSoftwareDecode()) }
+    var pendingSeekMs by remember { mutableStateOf(0L) }
     var audioOptions by remember { mutableStateOf<List<Pair<Int, String>>>(emptyList()) }
     var subOptions by remember { mutableStateOf<List<Pair<Int, String>>>(emptyList()) }
     var currentAudio by remember { mutableStateOf(-1) }
@@ -625,7 +631,7 @@ private fun VlcPlayer(
     // Route the resolved URL to the active sink: the Chromecast if a Cast session
     // is up, otherwise the local VLC player. Re-runs if casting starts/stops, so
     // playback hands off cleanly in either direction.
-    LaunchedEffect(resolvedUrl, cast.isCasting) {
+    LaunchedEffect(resolvedUrl, cast.isCasting, swDecode) {
         val url = resolvedUrl ?: return@LaunchedEffect
         // Reclaim playback from the Android Auto headless player (if it was active)
         // and tell the service to stop its player so the two never overlap.
@@ -639,12 +645,24 @@ private fun VlcPlayer(
             cast.loadUrl(url, title, guessContentType(title), startMs)
         } else {
             val media = Media(libVlc, Uri.parse(url)).apply {
-                setHWDecoderEnabled(true, false)
+                setHWDecoderEnabled(!swDecode, false)
             }
             player.media = media
             media.release()
             player.play()
             isPlaying = true
+            // Restore position after a decode-mode reload.
+            if (pendingSeekMs > 0) {
+                val seekTo = pendingSeekMs
+                pendingSeekMs = 0L
+                repeat(30) {
+                    delay(150)
+                    if (player.isSeekable) {
+                        player.time = seekTo
+                        return@LaunchedEffect
+                    }
+                }
+            }
         }
     }
 
@@ -1075,6 +1093,14 @@ private fun VlcPlayer(
                 subs = subOptions,
                 currentAudio = currentAudio,
                 currentSub = currentSub,
+                softwareDecode = swDecode,
+                onToggleDecode = {
+                    pendingSeekMs = positionMs
+                    swDecode = !swDecode
+                    store.setSoftwareDecode(swDecode)
+                    showTracks = false
+                    reveal()
+                },
                 onPickAudio = { id ->
                     player.audioTrack = id
                     currentAudio = id
@@ -1999,6 +2025,8 @@ private fun TrackPicker(
     subs: List<Pair<Int, String>>,
     currentAudio: Int,
     currentSub: Int,
+    softwareDecode: Boolean,
+    onToggleDecode: () -> Unit,
     onPickAudio: (Int) -> Unit,
     onPickSub: (Int) -> Unit,
     onClose: () -> Unit
@@ -2052,6 +2080,20 @@ private fun TrackPicker(
                     else Modifier
                 ) { onPickSub(id) }
             }
+
+            Spacer(Modifier.height(18.dp))
+            Text("Decoding", color = Brand.Accent, fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(8.dp))
+            TrackRow(
+                if (softwareDecode) "Software (compatibility)" else "Hardware (default)",
+                selected = softwareDecode
+            ) { onToggleDecode() }
+            Text(
+                "Switch to Software if video won't play (e.g. 10-bit HEVC on some TVs).",
+                color = Brand.TextLow, fontSize = 11.sp,
+                modifier = Modifier.padding(top = 4.dp, start = 2.dp)
+            )
 
             Spacer(Modifier.height(20.dp))
             TrackRow("Close", selected = false, accent = true) { onClose() }

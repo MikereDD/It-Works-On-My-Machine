@@ -4,7 +4,7 @@
 
 <h1 align="center">pCloud TV</h1>
 
-<p align="center"><strong>v4.38</strong></p>
+<p align="center"><strong>v4.39</strong></p>
 
 <p align="center">
 A minimal <strong>Google TV / Android TV</strong> app (also runs on phones), built with
@@ -14,14 +14,14 @@ and stream your <strong>video and audio</strong> straight from pCloud — played
 </p>
 
 <p align="center">
-  <a href="https://github.com/MikereDD/It-Works-On-My-Machine/releases/download/pCloudTV-v4.38/pCloudTV-v4.38.apk"><strong>Download the APK (v4.38)</strong></a>
+  <a href="https://github.com/MikereDD/It-Works-On-My-Machine/releases/download/pCloudTV-v4.39/pCloudTV-v4.39.apk"><strong>Download the APK (v4.39)</strong></a>
 </p>
 
 ---
 
 ## Install
 
-1. Download **[pCloudTV-v4.38.apk](https://github.com/MikereDD/It-Works-On-My-Machine/releases/download/pCloudTV-v4.38/pCloudTV-v4.38.apk)** and copy it to your phone or Android TV device.
+1. Download **[pCloudTV-v4.39.apk](https://github.com/MikereDD/It-Works-On-My-Machine/releases/download/pCloudTV-v4.39/pCloudTV-v4.39.apk)** and copy it to your phone or Android TV device.
 2. Open it with a file manager and install. You'll see Google **Play Protect**'s "unknown developer" notice — tap **More details -> Install anyway**. That's expected for a sideloaded personal build.
 3. Launch **pCloud TV**, tap **Sign in with pCloud**, and log in (two-factor authentication is handled on pCloud's own page).
 
@@ -140,7 +140,7 @@ app/src/main/java/com/typezero/pcloudtv/
 - **`Unsupported class file major version` / JVM target mismatch** — set the Gradle JDK to **17**: *Settings -> Build, Execution, Deployment -> Build Tools -> Gradle -> Gradle JDK* (the bundled `jbr-17` works), then re-sync.
 - **Gradle can't resolve `libvlc-all:3.6.0`** — that exact version may not be on Maven Central; open the LibVLC page on Maven Central and bump to the latest `3.6.x`. (Avoid the `4.0.0-eap` builds; the API differs.)
 - **Subtitles show the wrong language** — open **Tracks** (Up/Menu on TV, or the top-right button on touch) and pick the track you want, or set subtitles to **Off**.
-- **Video won't decode** — LibVLC handles most formats; if one misbehaves, try toggling hardware decoding in `PlayerScreen.kt` (`setHWDecoderEnabled`).
+- **Video won't decode / black screen on a TV** — some TV hardware decoders fail on certain streams (e.g. 10-bit HEVC/x265). Open **Tracks** (Up/Menu on the remote, or the top-right button on touch) and switch **Decoding** to **Software**. The setting persists per device. LibVLC handles most formats; you can also toggle hardware decoding in `PlayerScreen.kt` (`setHWDecoderEnabled`).
 - **"Directory does not contain a Gradle build"** — you opened the wrong folder; open the one that directly contains `settings.gradle.kts` and `app/`.
 
 ---
