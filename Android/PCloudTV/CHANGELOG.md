@@ -5,14 +5,17 @@ All notable changes to **pCloud TV**. Newest first.
 
 ---
 
-## v4.50 — Foundation Update
+## v4.51 — Foundation Update
 
+- Isolated Android TV local playback from the Android Auto / foreground audio MediaSession path to stop TV playback from immediately pausing after switching files.
+- Disabled TV-side audio focus pause callbacks while the visible VLC player screen owns playback.
+- Stopped the foreground PlaybackService on Android TV so stale media-button/session callbacks cannot fight the TV player.
 - Added the first internal CloudProvider foundation layer for future storage backends.
 - Added a pCloud provider adapter so new architecture work can target a provider interface instead of hardcoding pCloud into future UI/player code.
 - Added provider registry placeholders for planned future services: MEGA, Google Drive, Dropbox, OneDrive, WebDAV, and SMB.
 - Updated the APK launcher icon to the new monochrome pCloudTV theme.
 - Updated the README icon to match the app icon.
-- Kept pCloud as the only active user-facing provider for this release; rebrand and provider expansion remain planned after v4.50 is proven stable.
+- Kept pCloud as the only active user-facing provider for this release; rebrand and provider expansion remain planned after v4.51 is proven stable.
 - Includes v4.45.1 safe Music/Audiobooks M3U generation behavior.
 
 ## v4.45.1 — Safe M3U Generation Fix

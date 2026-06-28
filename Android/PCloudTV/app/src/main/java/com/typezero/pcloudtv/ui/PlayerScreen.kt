@@ -271,6 +271,22 @@ private fun VlcPlayer(
         )
     }
     val player = remember { MediaPlayer(libVlc) }
+    val isTvDevice = remember {
+        context.packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
+    }
+
+    // Android TV uses the visible VLC player screen as the single playback owner.
+    // The Android Auto / foreground audio MediaSession layer can receive stale
+    // media-button, focus, or lifecycle callbacks after switching items and pause
+    // the TV player. Keep that layer fully disabled on TV; phones, tablets,
+    // Bluetooth, lock screen, and Android Auto still use it normally.
+    LaunchedEffect(isTvDevice) {
+        if (isTvDevice) {
+            com.typezero.pcloudtv.playback.PlaybackBridge.clearControls()
+            com.typezero.pcloudtv.playback.PlaybackBridge.serviceOwnsPlayback = false
+            com.typezero.pcloudtv.playback.PlaybackService.stop(context)
+        }
+    }
 
     var controlsVisible by remember { mutableStateOf(true) }
     var isPlaying by remember { mutableStateOf(true) }
@@ -461,16 +477,25 @@ private fun VlcPlayer(
     val onSeekToMs = rememberUpdatedState<(Long) -> Unit> { pos -> seekBy(pos - positionMs) }
     val onStopCmd = rememberUpdatedState<() -> Unit> { pauseLocal() }
 
-    DisposableEffect(Unit) {
-        com.typezero.pcloudtv.playback.PlaybackBridge.apply {
-            onPlay = { onPlayCmd.value() }
-            onPause = { onPauseCmd.value() }
-            onNext = { onNextBtn.value() }
-            onPrev = { onPrevBtn.value() }
-            onSeekTo = { p -> onSeekToMs.value(p) }
-            onStop = { onStopCmd.value() }
+    DisposableEffect(isTvDevice) {
+        if (!isTvDevice) {
+            com.typezero.pcloudtv.playback.PlaybackBridge.apply {
+                onPlay = { onPlayCmd.value() }
+                onPause = { onPauseCmd.value() }
+                onNext = { onNextBtn.value() }
+                onPrev = { onPrevBtn.value() }
+                onSeekTo = { p -> onSeekToMs.value(p) }
+                onStop = { onStopCmd.value() }
+            }
+        } else {
+            com.typezero.pcloudtv.playback.PlaybackBridge.clearControls()
+            com.typezero.pcloudtv.playback.PlaybackBridge.serviceOwnsPlayback = false
+            com.typezero.pcloudtv.playback.PlaybackService.stop(context)
         }
-        onDispose { com.typezero.pcloudtv.playback.PlaybackBridge.clearControls() }
+        onDispose {
+            com.typezero.pcloudtv.playback.PlaybackBridge.clearControls()
+            if (isTvDevice) com.typezero.pcloudtv.playback.PlaybackService.stop(context)
+        }
     }
 
     // Decode embedded cover art (if any) for the lock-screen / Bluetooth / car art.
@@ -642,9 +667,6 @@ private fun VlcPlayer(
     // Skipped on Android TV: the extra connection to the IP-bound pCloud stream URL
     // can disrupt LibVLC's playback there, and the cover is barely visible from the
     // couch anyway — the TV falls back to the placeholder.
-    val isTvDevice = remember {
-        context.packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
-    }
     LaunchedEffect(resolvedUrl) {
         if (isTvDevice) return@LaunchedEffect
         val url = resolvedUrl ?: return@LaunchedEffect
@@ -775,12 +797,12 @@ private fun VlcPlayer(
     // Audio: run the media-session foreground service for the whole audio session,
     // kept alive across pause so the now-playing card + transport controls persist
     // (lock screen / Bluetooth / car). Video and casting don't use it.
-    DisposableEffect(videoKnown, hasVideo, cast.isCasting) {
+    DisposableEffect(isTvDevice, videoKnown, hasVideo, cast.isCasting) {
         // Do not start the foreground media service until VLC has actually told us
-        // this item is audio-only. On Android TV, starting the MediaSession while a
-        // video is still probing can race with remote/media-button events and make
-        // Play behave like Play+Pause.
-        if (videoKnown && !hasVideo && !cast.isCasting) {
+        // this item is audio-only. Android TV is intentionally excluded because
+        // the Android Auto / audio MediaSession layer can send pause/focus events
+        // back into the visible TV player after switching files.
+        if (!isTvDevice && videoKnown && !hasVideo && !cast.isCasting) {
             com.typezero.pcloudtv.playback.PlaybackService.start(context)
         } else {
             com.typezero.pcloudtv.playback.PlaybackService.stop(context)
@@ -825,8 +847,8 @@ private fun VlcPlayer(
             }
             .build()
     }
-    DisposableEffect(isPlaying, cast.isCasting) {
-        if (isPlaying && !cast.isCasting) {
+    DisposableEffect(isTvDevice, isPlaying, cast.isCasting) {
+        if (!isTvDevice && isPlaying && !cast.isCasting) {
             runCatching { audioManager.requestAudioFocus(focusRequest) }
         } else {
             runCatching { audioManager.abandonAudioFocusRequest(focusRequest) }
