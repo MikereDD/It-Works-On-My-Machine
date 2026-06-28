@@ -4,6 +4,13 @@ import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
 
+
+// Browser navigation state for Android TV: folder stack + focused row.
+data class BrowseNavState(
+    val stack: List<Pair<Long, String>>,
+    val focusedByFolder: Map<Long, Int>
+)
+
 /**
  * Persists the pCloud auth token + region in app-private storage.
  * No password is ever stored. Signing out clears the token.
@@ -77,6 +84,50 @@ class SessionStore(context: Context) {
 
     fun unhideFolder(accountId: String?, folderId: Long) {
         setHidden(accountId, getHidden(accountId) - folderId)
+    }
+
+    // --- Browser navigation state: used to restore Android TV focus when returning. ---
+    fun saveBrowseState(accountId: String?, stack: List<Pair<Long, String>>, focusedByFolder: Map<Long, Int>) {
+        if (accountId.isNullOrBlank()) return
+        val stackArr = JSONArray()
+        stack.forEach { (id, name) ->
+            stackArr.put(JSONObject().apply {
+                put("id", id)
+                put("name", name)
+            })
+        }
+        val focusObj = JSONObject()
+        focusedByFolder.forEach { (id, index) -> focusObj.put(id.toString(), index.coerceAtLeast(0)) }
+        val obj = JSONObject().apply {
+            put("stack", stackArr)
+            put("focus", focusObj)
+        }
+        posPrefs.edit().putString("browse_state_$accountId", obj.toString()).apply()
+    }
+
+    fun getBrowseState(accountId: String?): BrowseNavState? {
+        if (accountId.isNullOrBlank()) return null
+        val raw = posPrefs.getString("browse_state_$accountId", null) ?: return null
+        return try {
+            val obj = JSONObject(raw)
+            val stackArr = obj.optJSONArray("stack") ?: JSONArray()
+            val stack = ArrayList<Pair<Long, String>>()
+            for (i in 0 until stackArr.length()) {
+                val row = stackArr.getJSONObject(i)
+                stack.add(row.optLong("id", 0L) to row.optString("name", "pCloud"))
+            }
+            val cleanStack = if (stack.isEmpty() || stack.first().first != 0L) {
+                listOf(0L to "pCloud")
+            } else stack
+            val focusObj = obj.optJSONObject("focus") ?: JSONObject()
+            val focus = mutableMapOf<Long, Int>()
+            focusObj.keys().forEach { key ->
+                key.toLongOrNull()?.let { id -> focus[id] = focusObj.optInt(key, 0).coerceAtLeast(0) }
+            }
+            BrowseNavState(cleanStack, focus)
+        } catch (_: Exception) {
+            null
+        }
     }
 
     // --- Last played: the most recent queue, so the browser can offer "Continue". ---
