@@ -5,7 +5,16 @@ All notable changes to **pCloud TV**. Newest first.
 
 ---
 
-## v4.39 — Software-decoding toggle (fixes HEVC playback on some TVs)
+## v4.41 — Fix: video now actually plays on TV (force software + default it on)
+
+- **Software decoding now truly forces the CPU path.** v4.39's toggle called `setHWDecoderEnabled(false, false)`, which doesn't actually disable LibVLC's hardware path, so video kept going through the broken decoder. It's now `setHWDecoderEnabled(false, true)` plus `:avcodec-hw=none`.
+- **TV now defaults to software decoding.** A logcat showed this MediaTek TV's OMX decoder fails its output-buffer/surface setup for *both* H.264 and HEVC (`DynamicANWBuffer -1010`, `output: 21 unknown`, looping `MS_OMX_OutputBufferProcess` errors) — i.e. hardware video decode is unusable here regardless of codec. So on Android TV the app now defaults to software decode, and video plays out of the box. Hardware stays default on phone. Either way it's overridable in Tracks → Decoding, and the choice persists per device.
+
+
+
+- Fixed audio playback starting and then immediately pausing on Android TV. The v4.36 real-visualizer change auto-requested the mic permission when the audio screen opened; on a TV that system dialog pops over the player and forces it to pause the moment playback begins. The auto-prompt is now **disabled on TV** (it still runs on phone, where the permission is already granted and nothing interrupts). On TV the spectrum uses synthetic motion by default; grant RECORD_AUDIO manually (Settings → Apps → pCloud TV → Permissions) to get the real audio-reactive spectrum with no disruptive prompt.
+
+
 
 - Added a **Decoding: Hardware / Software** toggle in the **Tracks** menu. Some TV hardware decoders (e.g. MediaTek) fail on 10-bit HEVC/x265 — the OMX HEVC decoder half-initializes and loops output-buffer errors, so video loads but never starts. Switching to **Software** decodes those streams in LibVLC instead. The choice is persisted per device, and toggling reloads the current file in place (seeks back to where you were). Hardware stays the default so files that decode fine in HW aren't slowed down.
 

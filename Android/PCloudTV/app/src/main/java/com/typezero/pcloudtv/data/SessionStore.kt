@@ -26,8 +26,10 @@ class SessionStore(context: Context) {
         context.getSharedPreferences("pcloud_settings", Context.MODE_PRIVATE)
 
     /** Force software video decoding — needed on TVs whose HW decoder chokes on
-     *  some streams (e.g. 10-bit HEVC). Default off (use hardware). */
-    fun getSoftwareDecode(): Boolean = settingsPrefs.getBoolean("sw_decode", false)
+     *  some streams (e.g. 10-bit HEVC). [defaultValue] lets callers default it on
+     *  for devices with broken HW decoders (TVs) until the user changes it. */
+    fun getSoftwareDecode(defaultValue: Boolean = false): Boolean =
+        settingsPrefs.getBoolean("sw_decode", defaultValue)
     fun setSoftwareDecode(value: Boolean) {
         settingsPrefs.edit().putBoolean("sw_decode", value).apply()
     }
