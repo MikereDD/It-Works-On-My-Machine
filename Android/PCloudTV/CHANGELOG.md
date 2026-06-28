@@ -5,7 +5,25 @@ All notable changes to **pCloud TV**. Newest first.
 
 ---
 
-## v4.41 — Fix: video now actually plays on TV (force software + default it on)
+## v4.44 — Playlist reliability: M3U, resume, queue handling
+
+- Improved M3U/M3U8 playlist parsing so entries with BOMs, quotes, Windows paths, `file://` prefixes, URL-encoded spaces, and query strings resolve more reliably.
+- Preserved HLS manifest behavior: `#EXT-X-*` playlists still load as a single VLC stream.
+- Kept app-generated `#PCLOUDID:` entries as the preferred playlist target so saved playlists survive pCloud renames/moves.
+- Added duplicate protection while resolving playlists so repeated M3U entries do not create repeated queue items.
+- Playlist resume now restores both the saved track index and the saved in-track position for named playlists.
+- Ad-hoc folder queues still start each track fresh, avoiding surprise resume jumps when simply playing through a folder.
+- Includes v4.43.1 TV playback hotfix: split explicit Play/Pause commands and delay audio media-service takeover until video detection is known.
+
+## v4.43.1.1 — Fix: TV auto-pauses after ~1 second (increase network buffer)
+
+- Increased network pre-buffer to 5 s on TV (`:network-caching=5000` + `:http-caching=5000`). LibVLC's default 1000 ms caching matched the ~1-second auto-pause exactly: the buffer fills, plays, drains, then pauses waiting for more data. 5 s gives software-decode on the TV's CPU enough headroom to keep up with the stream.
+
+
+
+- Fixed no audio / frozen-frame playback on Android TV. LibVLC's default Java `AudioTrack` output module fails on this TV's firmware ("audio output: module not functional"), which also stalls video — LibVLC won't advance video without a working audio sink to sync to, leaving a frozen still frame. The fix adds `:aout=opensles` alongside the existing software-decode options on TV, routing audio through OpenSL ES instead of the broken AudioTrack layer.
+
+
 
 - **Software decoding now truly forces the CPU path.** v4.39's toggle called `setHWDecoderEnabled(false, false)`, which doesn't actually disable LibVLC's hardware path, so video kept going through the broken decoder. It's now `setHWDecoderEnabled(false, true)` plus `:avcodec-hw=none`.
 - **TV now defaults to software decoding.** A logcat showed this MediaTek TV's OMX decoder fails its output-buffer/surface setup for *both* H.264 and HEVC (`DynamicANWBuffer -1010`, `output: 21 unknown`, looping `MS_OMX_OutputBufferProcess` errors) — i.e. hardware video decode is unusable here regardless of codec. So on Android TV the app now defaults to software decode, and video plays out of the box. Hardware stays default on phone. Either way it's overridable in Tracks → Decoding, and the choice persists per device.

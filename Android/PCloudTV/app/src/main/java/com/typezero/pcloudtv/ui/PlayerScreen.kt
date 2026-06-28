@@ -331,10 +331,9 @@ private fun VlcPlayer(
     fun resumeIfNeeded() {
         if (resumed) return
         resumed = true
-        // Only a single, deliberately-reopened file (a long video or audiobook)
-        // resumes where you left off. In a playlist/queue every track starts from
-        // the beginning, even on reopen.
-        if (queue.size > 1) return
+        // Single files always resume. Named playlists also resume within the
+        // saved track; ad-hoc folder queues still start each new file fresh.
+        if (queue.size > 1 && playlistKey == null) return
         val key = currentKey() ?: return
         val saved = store.getPosition(key)
         if (saved > 3_000) player.time = saved
@@ -403,18 +402,42 @@ private fun VlcPlayer(
         interactionTick++
     }
 
-    fun togglePlay() {
+    fun playLocal() {
         if (cast.isCasting) {
             when {
-                cast.isRemotePlaying -> cast.pause()
+                cast.isRemotePlaying -> Unit
                 cast.canResume -> cast.play()           // still paused with media → simple resume
                 else -> castReload()                    // media dropped/expired → reload fresh
             }
             reveal()
             return
         }
-        if (player.isPlaying) player.pause() else player.play()
+        if (!player.isPlaying) {
+            player.play()
+            isPlaying = true
+        }
         reveal()
+    }
+
+    fun pauseLocal() {
+        if (cast.isCasting) {
+            if (cast.isRemotePlaying) cast.pause()
+            reveal()
+            return
+        }
+        if (player.isPlaying) {
+            player.pause()
+            isPlaying = false
+        }
+        reveal()
+    }
+
+    fun togglePlay() {
+        if (cast.isCasting) {
+            if (cast.isRemotePlaying) pauseLocal() else playLocal()
+            return
+        }
+        if (player.isPlaying) pauseLocal() else playLocal()
     }
 
     fun seekBy(deltaMs: Long) {
@@ -431,16 +454,17 @@ private fun VlcPlayer(
     // MediaSessionCompat + MediaStyle notification). Here we expose always-current
     // controls and push now-playing state through the bridge, so the lock screen,
     // Bluetooth, and the car can show "now playing" and drive the transport. ---
-    val onToggle = rememberUpdatedState<() -> Unit> { togglePlay() }
+    val onPlayCmd = rememberUpdatedState<() -> Unit> { playLocal() }
+    val onPauseCmd = rememberUpdatedState<() -> Unit> { pauseLocal() }
     val onNextBtn = rememberUpdatedState<() -> Unit> { onNext(); reveal() }
     val onPrevBtn = rememberUpdatedState<() -> Unit> { onPrev(); reveal() }
     val onSeekToMs = rememberUpdatedState<(Long) -> Unit> { pos -> seekBy(pos - positionMs) }
-    val onStopCmd = rememberUpdatedState<() -> Unit> { if (isPlaying) togglePlay() }
+    val onStopCmd = rememberUpdatedState<() -> Unit> { pauseLocal() }
 
     DisposableEffect(Unit) {
         com.typezero.pcloudtv.playback.PlaybackBridge.apply {
-            onPlay = { onToggle.value() }
-            onPause = { onToggle.value() }
+            onPlay = { onPlayCmd.value() }
+            onPause = { onPauseCmd.value() }
             onNext = { onNextBtn.value() }
             onPrev = { onPrevBtn.value() }
             onSeekTo = { p -> onSeekToMs.value(p) }
@@ -654,6 +678,16 @@ private fun VlcPlayer(
                     // may still hand the stream to the (broken) MediaCodec path.
                     setHWDecoderEnabled(false, true)
                     addOption(":avcodec-hw=none")
+                    // Force OpenSL ES audio output. This TV's firmware rejects LibVLC's
+                    // default Java AudioTrack module ("audio output: module not functional"),
+                    // which stalls playback entirely (LibVLC won't advance video without a
+                    // working audio sink to sync to). OpenSL ES bypasses that layer.
+                    addOption(":aout=opensles")
+                    // Increase network buffer to 5 s. Default 1000 ms matches the ~1-second
+                    // auto-pause seen on this TV — buffer drains, LibVLC pauses waiting for
+                    // data. 5 s gives the CPU-heavy software decode enough headroom.
+                    addOption(":network-caching=5000")
+                    addOption(":http-caching=5000")
                 } else {
                     setHWDecoderEnabled(true, false)
                 }
@@ -741,8 +775,12 @@ private fun VlcPlayer(
     // Audio: run the media-session foreground service for the whole audio session,
     // kept alive across pause so the now-playing card + transport controls persist
     // (lock screen / Bluetooth / car). Video and casting don't use it.
-    DisposableEffect(hasVideo, cast.isCasting) {
-        if (!hasVideo && !cast.isCasting) {
+    DisposableEffect(videoKnown, hasVideo, cast.isCasting) {
+        // Do not start the foreground media service until VLC has actually told us
+        // this item is audio-only. On Android TV, starting the MediaSession while a
+        // video is still probing can race with remote/media-button events and make
+        // Play behave like Play+Pause.
+        if (videoKnown && !hasVideo && !cast.isCasting) {
             com.typezero.pcloudtv.playback.PlaybackService.start(context)
         } else {
             com.typezero.pcloudtv.playback.PlaybackService.stop(context)
