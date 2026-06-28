@@ -5,6 +5,15 @@ All notable changes to **pCloud TV**. Newest first.
 
 ---
 
+## v4.45 — Android TV Experience Update
+
+- Improved Android TV remote navigation by preserving the focused item in each folder.
+- Restored the last focused row when returning from playback or navigating back up the folder stack.
+- Persisted the browser folder stack per account so the app can return to the last browsed location instead of always starting at the root.
+- Added an in-memory folder cache so returning to recently opened folders is much faster and avoids unnecessary pCloud re-list calls.
+- Kept the v4.44 playlist reliability fixes and the v4.43.1 Android TV playback hotfix.
+- Note: Music/Audiobooks M3U generation improvements are intentionally deferred to a follow-up pass.
+
 ## v4.44 — Playlist reliability: M3U, resume, queue handling
 
 - Improved M3U/M3U8 playlist parsing so entries with BOMs, quotes, Windows paths, `file://` prefixes, URL-encoded spaces, and query strings resolve more reliably.

@@ -34,6 +34,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.shape.CircleShape
@@ -146,16 +147,30 @@ fun BrowseScreen(
     onAddAccount: () -> Unit,
     onLogout: () -> Unit
 ) {
-    val stack = remember { mutableStateListOf(0L to "pCloud") }
-    val current = stack.last()
-
-    // "Continue" — the most recent queue, loaded fresh each time we enter the browser.
+    // "Continue" + Android TV browse state. Restore the last folder stack so
+    // Back from playback returns to the same folder instead of dumping focus at root.
     val browseContext = LocalContext.current
     val browseStore = remember { com.typezero.pcloudtv.data.SessionStore(browseContext) }
+    val accountId = session.email ?: session.authToken
+    val restoredBrowse = remember(accountId) { browseStore.getBrowseState(accountId) }
+    val stack = remember(accountId) {
+        mutableStateListOf<Pair<Long, String>>().apply {
+            addAll(restoredBrowse?.stack ?: listOf(0L to "pCloud"))
+        }
+    }
+    val current = stack.last()
+    val focusedByFolder = remember(accountId) {
+        mutableMapOf<Long, Int>().apply { putAll(restoredBrowse?.focusedByFolder ?: emptyMap()) }
+    }
+    val folderCache = remember(accountId) { mutableMapOf<Long, List<PItem>>() }
+    var currentFocusIndex by remember(current.first) { mutableStateOf(focusedByFolder[current.first] ?: 0) }
     var recents by remember { mutableStateOf(browseStore.getRecents()) }
 
+    fun persistBrowseState() {
+        browseStore.saveBrowseState(accountId, stack.toList(), focusedByFolder.toMap())
+    }
+
     // Per-account hidden folders (curated view) + a toggle to reveal them.
-    val accountId = session.email ?: session.authToken
     var hidden by remember { mutableStateOf(browseStore.getHidden(accountId)) }
     var showHidden by remember { mutableStateOf(false) }
 
@@ -285,8 +300,10 @@ fun BrowseScreen(
     }
 
     fun goToCrumb(index: Int) {
+        focusedByFolder[current.first] = currentFocusIndex
         // Pop the folder stack back to the tapped breadcrumb segment.
         while (stack.size > index + 1) stack.removeAt(stack.lastIndex)
+        persistBrowseState()
     }
 
     fun toggleSelect(file: PItem) {
@@ -333,7 +350,11 @@ fun BrowseScreen(
     // separately at the call site.
     fun openItem(pItem: PItem) {
         when {
-            pItem.isFolder -> stack.add(pItem.folderId!! to pItem.name)
+            pItem.isFolder -> {
+                focusedByFolder[current.first] = currentFocusIndex
+                stack.add(pItem.folderId!! to pItem.name)
+                persistBrowseState()
+            }
             pItem.isPlaylist -> {
                 resolveError = null
                 resolving = true
@@ -365,9 +386,11 @@ fun BrowseScreen(
         val node = hit.item
         when {
             node.isFolder && node.folderId != null -> {
+                focusedByFolder[current.first] = currentFocusIndex
                 hit.ancestors.forEach { stack.add(it) }
                 stack.add(node.folderId!! to node.name)
                 query = ""
+                persistBrowseState()
             }
             node.isViewableDoc -> viewingDoc = node
             node.isPlayable -> onPlayQueue(
@@ -378,9 +401,15 @@ fun BrowseScreen(
     }
 
     LaunchedEffect(current.first, reloadKey) {
-        loading = true
         error = null
         query = ""
+        val cached = if (reloadKey == 0) folderCache[current.first] else null
+        if (cached != null) {
+            items = cached
+            loading = false
+            return@LaunchedEffect
+        }
+        loading = true
         when (current.first) {
             RP_ROOT -> items = listOf(
                 PItem("Audio", true, RP_AUDIO, null, "", 0, 0L),
@@ -407,10 +436,15 @@ fun BrowseScreen(
                 is ApiResult.Error -> error = r.message
             }
         }
+        if (error == null) folderCache[current.first] = items
         loading = false
     }
 
-    BackHandler(enabled = stack.size > 1) { stack.removeAt(stack.lastIndex) }
+    BackHandler(enabled = stack.size > 1) {
+        focusedByFolder[current.first] = currentFocusIndex
+        stack.removeAt(stack.lastIndex)
+        persistBrowseState()
+    }
 
     val firstRow = remember { FocusRequester() }
 
@@ -627,8 +661,15 @@ fun BrowseScreen(
                         if (showHidden) matched
                         else matched.filterNot { it.folderId?.let { id -> id in hidden } == true }
                     }
-                    LaunchedEffect(items) { runCatching { firstRow.requestFocus() } }
+                    val listState = rememberLazyListState()
+                    LaunchedEffect(visible, current.first) {
+                        val index = (focusedByFolder[current.first] ?: 0).coerceIn(0, (visible.size - 1).coerceAtLeast(0))
+                        currentFocusIndex = index
+                        if (index > 0) runCatching { listState.scrollToItem(index + if (!selecting) 1 else 0) }
+                        runCatching { firstRow.requestFocus() }
+                    }
                     LazyColumn(
+                        state = listState,
                         modifier = Modifier.fillMaxSize(),
                         verticalArrangement = Arrangement.spacedBy(if (compact) 10.dp else 12.dp)
                     ) {
@@ -696,11 +737,16 @@ fun BrowseScreen(
                                         client = client,
                                         session = session,
                                         modifier = rowMax.then(
-                                            if (index == 0) Modifier.focusRequester(firstRow) else Modifier
+                                            if (index == currentFocusIndex) Modifier.focusRequester(firstRow) else Modifier
                                         ),
                                         subtitleOverride = if (hit.parentLabel.isBlank())
                                             (if (hit.item.isFolder) "Folder · here" else "here")
                                         else "in ${hit.parentLabel}",
+                                        onFocused = {
+                                            currentFocusIndex = index
+                                            focusedByFolder[current.first] = index
+                                            persistBrowseState()
+                                        },
                                         onClick = { openHit(hit) }
                                     )
                                 }
@@ -725,7 +771,7 @@ fun BrowseScreen(
                                     selecting = selecting,
                                     selected = pItem.fileId != null && selectedItems.any { it.fileId == pItem.fileId },
                                     modifier = rowMax.then(
-                                        if (index == 0) Modifier.focusRequester(firstRow) else Modifier
+                                        if (index == currentFocusIndex) Modifier.focusRequester(firstRow) else Modifier
                                     ),
                                     onManage = if (current.first == PLAYLISTS_ROOT && pItem.isPlaylist) {
                                         { managePlaylist = pItem }
@@ -739,11 +785,19 @@ fun BrowseScreen(
                                         }
                                     } else null,
                                     hidden = pItem.folderId?.let { id -> id in hidden } == true,
+                                    onFocused = {
+                                        currentFocusIndex = index
+                                        focusedByFolder[current.first] = index
+                                        persistBrowseState()
+                                    },
                                     onClick = {
                                         if (selecting) {
                                             when {
-                                                pItem.isFolder ->
+                                                pItem.isFolder -> {
+                                                    focusedByFolder[current.first] = currentFocusIndex
                                                     stack.add(pItem.folderId!! to pItem.name)
+                                                    persistBrowseState()
+                                                }
                                                 !pItem.isPlaylist && pItem.isPlayable && pItem.fileId != null ->
                                                     toggleSelect(pItem)
                                             }
@@ -1550,6 +1604,7 @@ private fun ItemCard(
     onHide: (() -> Unit)? = null,
     hidden: Boolean = false,
     subtitleOverride: String? = null,
+    onFocused: (() -> Unit)? = null,
     onClick: () -> Unit
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -1621,7 +1676,10 @@ private fun ItemCard(
                 color = if (focused) accent else Brand.Stroke,
                 shape = RoundedCornerShape(16.dp)
             )
-            .onFocusChanged { focused = it.isFocused }
+            .onFocusChanged {
+                focused = it.isFocused
+                if (it.isFocused) onFocused?.invoke()
+            }
             .focusable(interactionSource = interaction)
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
             .padding(horizontal = if (compact) 14.dp else 16.dp, vertical = if (compact) 9.dp else 11.dp),
