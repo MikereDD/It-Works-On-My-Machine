@@ -5,6 +5,24 @@ All notable changes to **pCloud TV**. Newest first.
 
 ---
 
+## v4.50 — Foundation Update
+
+- Added the first internal CloudProvider foundation layer for future storage backends.
+- Added a pCloud provider adapter so new architecture work can target a provider interface instead of hardcoding pCloud into future UI/player code.
+- Added provider registry placeholders for planned future services: MEGA, Google Drive, Dropbox, OneDrive, WebDAV, and SMB.
+- Updated the APK launcher icon to the new monochrome pCloudTV theme.
+- Updated the README icon to match the app icon.
+- Kept pCloud as the only active user-facing provider for this release; rebrand and provider expansion remain planned after v4.50 is proven stable.
+- Includes v4.45.1 safe Music/Audiobooks M3U generation behavior.
+
+## v4.45.1 — Safe M3U Generation Fix
+
+- Tightened Music/Audiobooks folder playlist regeneration.
+- Generated folder playlists are saved beside the audio files they describe.
+- Old .m3u/.m3u8 files are removed only from the exact audio folder being regenerated.
+- Custom playlists in /Music/playlists are protected and are only removed when the user deletes them.
+- No other media or document files are touched during playlist regeneration.
+
 ## v4.45 — Android TV Experience Update
 
 - Improved Android TV remote navigation by preserving the focused item in each folder.
