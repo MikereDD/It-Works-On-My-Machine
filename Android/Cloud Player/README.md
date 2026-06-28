@@ -16,7 +16,7 @@ engine in a monochrome Material 3 interface.
 </p>
 
 <p align="center">
-  <a href="https://github.com/MikereDD/It-Works-On-My-Machine/releases/download/cloudplayer-v1.8/cloudplayer-v1.8.apk"><strong>Download the APK (v1.8)</strong></a>
+  <a href="https://github.com/MikereDD/It-Works-On-My-Machine/releases/download/cloudplayer-v1.8.1/cloudplayer-v1.8.1.apk"><strong>Download the APK (v1.8)</strong></a>
 </p>
 
 ---
@@ -29,7 +29,7 @@ This hotfix also cleans up MEGA / Dropbox browsing: the oversized instructional 
 
 ## Install
 
-1. Download **[cloudplayer-v1.8.apk](https://github.com/MikereDD/It-Works-On-My-Machine/releases/download/cloudplayer-v1.8/cloudplayer-v1.8.apk)** and copy it to your phone or Android TV device.
+1. Download **[https://github.com/MikereDD/It-Works-On-My-Machine/releases/download/cloudplayer-v1.8.1/cloudplayer-v1.8.1.apk)** and copy it to your phone or Android TV device.
 2. Open it with a file manager and install. You'll see Google **Play Protect**'s "unknown developer" notice — tap **More details -> Install anyway**. That's expected for a sideloaded personal build.
 3. Launch **Cloud Player**, choose a provider, and add your library.
 
