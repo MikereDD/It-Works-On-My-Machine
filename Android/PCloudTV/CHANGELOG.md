@@ -5,7 +5,11 @@ All notable changes to **pCloud TV**. Newest first.
 
 ---
 
-## v4.38 — Fix: TV playback wouldn't start (disable cover-art fetch on TV)
+## v4.39 — Software-decoding toggle (fixes HEVC playback on some TVs)
+
+- Added a **Decoding: Hardware / Software** toggle in the **Tracks** menu. Some TV hardware decoders (e.g. MediaTek) fail on 10-bit HEVC/x265 — the OMX HEVC decoder half-initializes and loops output-buffer errors, so video loads but never starts. Switching to **Software** decodes those streams in LibVLC instead. The choice is persisted per device, and toggling reloads the current file in place (seeks back to where you were). Hardware stays the default so files that decode fine in HW aren't slowed down.
+
+
 
 - Fixed audio and video failing to start on Android TV (loaded but stuck at 0:00). The v4.37 embedded-art fetch opens a second connection to the IP-bound pCloud `getfilelink` URL right as playback begins; on the TV that disrupts LibVLC's stream before it establishes. The art fetch is now **skipped on Android TV** (FEATURE_LEANBACK) — the TV uses the monochrome placeholder, while phone and Android Auto keep real embedded covers.
 
