@@ -815,6 +815,46 @@ class PCloudClient {
             }
         }
 
+    /**
+     * Delete only .m3u/.m3u8 files that live directly inside [folderId].
+     *
+     * This is intentionally non-recursive and is used only by folder playlist
+     * regeneration. It keeps generated Music/Audiobooks playlists beside their
+     * audio while protecting custom playlists such as /Music/playlists.
+     */
+    suspend fun deletePlaylistsInFolder(session: Session, folderId: Long): ApiResult<Int> =
+        withContext(Dispatchers.IO) {
+            try {
+                val listUrl = "https://${session.apiHost}/listfolder".toHttpUrl().newBuilder()
+                    .addQueryParameter("auth", session.authToken)
+                    .addQueryParameter("folderid", folderId.toString())
+                    .build()
+                val json = http.newCall(Request.Builder().url(listUrl).build()).execute()
+                    .use { JSONObject(it.body?.string().orEmpty()) }
+                if (json.optInt("result", -1) != 0) {
+                    return@withContext ApiResult.Error(
+                        json.optString("error", "Could not list folder")
+                    )
+                }
+
+                val contents = json.getJSONObject("metadata").optJSONArray("contents")
+                    ?: return@withContext ApiResult.Ok(0)
+                var removed = 0
+                for (i in 0 until contents.length()) {
+                    val o = contents.getJSONObject(i)
+                    if (o.optBoolean("isfolder", false)) continue
+                    val name = o.optString("name")
+                    if (name.endsWith(".m3u", true) || name.endsWith(".m3u8", true)) {
+                        val fileId = o.optLong("fileid", 0L)
+                        if (fileId > 0 && deleteFile(session, fileId) is ApiResult.Ok) removed++
+                    }
+                }
+                ApiResult.Ok(removed)
+            } catch (e: Exception) {
+                ApiResult.Error(e.message ?: "Network error")
+            }
+        }
+
     /** Rename a file in place. [newName] is the bare file name (with extension). */
     suspend fun renameFile(session: Session, fileId: Long, newName: String): ApiResult<Unit> =
         withContext(Dispatchers.IO) {

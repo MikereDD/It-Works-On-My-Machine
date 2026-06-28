@@ -202,21 +202,13 @@ fun BrowseScreen(
         saveMessage = null
         genDone = 0; genTotal = 0; genName = ""
         scope.launch {
-            // Optionally wipe every existing .m3u/.m3u8 under the path first.
+            // Folder-generated playlists are regenerated in-place only.
+            // Do not recursively wipe playlists ahead of time; that can touch
+            // curated/custom .m3u files outside the target audio folder.
+            // Instead, for each folder that actually contains audio, remove only
+            // the old .m3u/.m3u8 files in that exact same folder immediately
+            // before writing the freshly generated folder playlist.
             var removed = 0
-            if (replaceExisting) {
-                genName = "Removing old playlists…"
-                when (val pls = client.collectPlaylistsByPath(session, path, excludePath = PLAYLIST_DIR)) {
-                    is ApiResult.Ok -> {
-                        for (pl in pls.value) {
-                            pl.fileId?.let {
-                                if (client.deleteFile(session, it) is ApiResult.Ok) removed++
-                            }
-                        }
-                    }
-                    is ApiResult.Error -> { /* non-fatal: continue to generate */ }
-                }
-            }
             val scan = client.collectAudioFoldersByPath(session, path)
             when (scan) {
                 is ApiResult.Ok -> {
@@ -229,6 +221,12 @@ fun BrowseScreen(
                     for ((i, fol) in folders.withIndex()) {
                         genName = fol.name
                         genDone = i + 1
+                        if (replaceExisting) {
+                            when (val old = client.deletePlaylistsInFolder(session, fol.folderId)) {
+                                is ApiResult.Ok -> removed += old.value
+                                is ApiResult.Error -> { /* non-fatal: still try to save */ }
+                            }
+                        }
                         val pname = fol.name.ifBlank { "Playlist" } + ".m3u"
                         if (client.savePlaylist(session, fol.folderId, pname, fol.files) is ApiResult.Ok) ok++
                     }
