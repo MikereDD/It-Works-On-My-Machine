@@ -21,10 +21,8 @@
 **Cloud Player v1.0 APK**
 
 <p align="center">
-  <a href="https://github.com/MikereDD/It-Works-On-My-Machine/releases/download/cloudplayer-v1.0/cloudplayer-v1.0.apk"><strong>Download the APK (cloudplayer-v1.0)</strong></a>
+  <a href="https://github.com/MikereDD/It-Works-On-My-Machine/releases/download/cloudplayer-v1.0/cloudplayer-v1.0.apk"><strong>Download the Cloud Player (v1.0)</strong></a>
 </p>
-
-> Future releases follow the same pattern: `cloudplayer-vX.Y/cloudplayer-vX.Y.apk`
 
 ---
 
