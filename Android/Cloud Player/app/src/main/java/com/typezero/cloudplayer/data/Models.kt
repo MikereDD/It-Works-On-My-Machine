@@ -1,0 +1,94 @@
+package com.typezero.cloudplayer.data
+
+/** A single entry returned by listfolder: either a folder or a file. */
+data class PItem(
+    val name: String,
+    val isFolder: Boolean,
+    val folderId: Long?,   // set when isFolder == true
+    val fileId: Long?,     // set when isFolder == false
+    val contentType: String,
+    val category: Int,     // pCloud category: 1=image, 2=video, 3=audio, 4=document, 5=archive
+    val size: Long
+) {
+    val isVideo: Boolean get() = category == 2 || contentType.startsWith("video/")
+    val isAudio: Boolean get() = category == 3 || contentType.startsWith("audio/")
+    val isImage: Boolean get() = category == 1 || contentType.startsWith("image/")
+    val isPlaylist: Boolean get() =
+        name.endsWith(".m3u", true) || name.endsWith(".m3u8", true)
+    val isNfo: Boolean get() = name.endsWith(".nfo", true)
+    val isHtmlDoc: Boolean get() = name.endsWith(".htm", true) || name.endsWith(".html", true)
+    /** Text/HTML documents the app can render in its built-in viewer. */
+    val isViewableDoc: Boolean get() = isNfo || isHtmlDoc
+    val isPlayable: Boolean get() = isVideo || isAudio
+    /** Things the user can tap to start playback (files or playlists). */
+    val isOpenable: Boolean get() = isPlayable || isPlaylist
+}
+
+/** One item in the player's queue: a pCloud file (resolve on demand) or a direct URL. */
+data class MediaItem(
+    val title: String,
+    val fileId: Long?,      // resolve via getfilelink when about to play
+    val directUrl: String?, // already an absolute URL (e.g. http entry in a playlist)
+    val path: String? = null // absolute pCloud path (cross-folder playlist entry)
+)
+
+/** The most recently played queue, surfaced as "Continue" on the browse screen. */
+data class LastPlayed(
+    val title: String,
+    val playlistKey: String?,
+    val queue: List<MediaItem>
+)
+
+/** A folder that contains playable files, used by the recursive playlist generator. */
+data class AudioFolder(
+    val folderId: Long,
+    val name: String,
+    val path: String,
+    val files: List<PItem>
+)
+
+/**
+ * A match from a recursive folder search. [ancestors] is the chain of
+ * (folderId, name) folders from the search root (exclusive) down to the match's
+ * parent, so the browser can rebuild a correct breadcrumb when opening it, and
+ * [parentLabel] is that chain joined for display ("Rock / Helmet").
+ */
+data class SearchHit(
+    val item: PItem,
+    val parentLabel: String,
+    val ancestors: List<Pair<Long, String>>
+)
+
+/**
+ * A resolved pCloud public share link (no account needed).
+ * [children] maps a folderId to its contents so a shared folder tree can be
+ * browsed entirely from the single showpublink response.
+ */
+data class Publink(
+    val code: String,
+    val apiHost: String,
+    val root: PItem,
+    val children: Map<Long, List<PItem>>
+)
+
+/** Result of authenticating against pCloud. */
+data class Session(
+    val authToken: String,
+    val apiHost: String,   // "api.pcloud.com" (US) or "eapi.pcloud.com" (EU)
+    val email: String? = null
+)
+
+/** A saved pCloud account for the multi-account switcher. */
+data class Account(
+    val id: String,        // stable id (email when known, else the token)
+    val label: String,     // email, or a friendly fallback
+    val token: String,
+    val host: String
+) {
+    fun toSession() = Session(token, host, label.takeIf { it.contains("@") })
+}
+
+sealed interface ApiResult<out T> {
+    data class Ok<T>(val value: T) : ApiResult<T>
+    data class Error(val message: String) : ApiResult<Nothing>
+}
