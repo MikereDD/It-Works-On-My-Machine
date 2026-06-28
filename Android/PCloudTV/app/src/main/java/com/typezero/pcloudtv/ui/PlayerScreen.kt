@@ -343,10 +343,14 @@ private fun VlcPlayer(
     // Track picker state. Each entry is (id, label).
     var showTracks by remember { mutableStateOf(false) }
 
-    // Video decoding: hardware by default, software when forced (some TV HW decoders
-    // fail on 10-bit HEVC). Persisted so it's set once per device. Toggling reloads
-    // the current file; pendingSeekMs carries the position across the reload.
-    var swDecode by remember { mutableStateOf(store.getSoftwareDecode()) }
+    // Video decoding: hardware by default on phone, software by default on TV (this
+    // class of MediaTek TV decoder fails its OMX output-buffer/surface setup for both
+    // H.264 and HEVC, so HW is unusable there). Persisted once the user picks. Toggling
+    // reloads the current file; pendingSeekMs carries the position across the reload.
+    var swDecode by remember {
+        val tv = context.packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
+        mutableStateOf(store.getSoftwareDecode(defaultValue = tv))
+    }
     var pendingSeekMs by remember { mutableStateOf(0L) }
     var audioOptions by remember { mutableStateOf<List<Pair<Int, String>>>(emptyList()) }
     var subOptions by remember { mutableStateOf<List<Pair<Int, String>>>(emptyList()) }
@@ -645,7 +649,14 @@ private fun VlcPlayer(
             cast.loadUrl(url, title, guessContentType(title), startMs)
         } else {
             val media = Media(libVlc, Uri.parse(url)).apply {
-                setHWDecoderEnabled(!swDecode, false)
+                if (swDecode) {
+                    // Force software: the second arg (force) must be true, or LibVLC
+                    // may still hand the stream to the (broken) MediaCodec path.
+                    setHWDecoderEnabled(false, true)
+                    addOption(":avcodec-hw=none")
+                } else {
+                    setHWDecoderEnabled(true, false)
+                }
             }
             player.media = media
             media.release()
@@ -1460,11 +1471,14 @@ private fun AudioVisualizer(isPlaying: Boolean, modifier: Modifier = Modifier) {
         ActivityResultContracts.RequestPermission()
     ) { granted -> hasMic = granted }
 
-    // Make the real audio-reactive spectrum the default on BOTH phone and TV:
-    // auto-request the mic permission once per launch (TV has no tap hint, so this
-    // is the only way it can go real there). Denial falls back to synthetic motion.
+    // Make the real audio-reactive spectrum the default on phone: auto-request the
+    // mic permission once per launch. NOT on TV — there the permission dialog pops
+    // over the player and forces it to pause the instant playback starts. On TV the
+    // spectrum uses synthetic motion unless RECORD_AUDIO is granted manually (TV
+    // Settings -> Apps -> pCloud TV -> Permissions), in which case it goes real with
+    // no disruptive prompt. Denial falls back to synthetic motion.
     LaunchedEffect(Unit) {
-        if (!hasMic && !VizSession.asked) {
+        if (!hasMic && !VizSession.asked && !isTv) {
             VizSession.asked = true
             askMic.launch(Manifest.permission.RECORD_AUDIO)
         }
