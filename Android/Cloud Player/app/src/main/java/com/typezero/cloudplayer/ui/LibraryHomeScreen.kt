@@ -38,6 +38,7 @@ import com.typezero.cloudplayer.BuildConfig
 import com.typezero.cloudplayer.data.Account
 import com.typezero.cloudplayer.data.MegaAccount
 import com.typezero.cloudplayer.data.DropboxAccount
+import com.typezero.cloudplayer.data.BoxAccount
 import com.typezero.cloudplayer.ui.theme.Brand
 
 private data class LibraryCardModel(
@@ -49,18 +50,21 @@ private data class LibraryCardModel(
     val action: LibraryAction
 )
 
-private enum class LibraryAction { OpenPCloud, AddPCloud, OpenMega, OpenDropbox, AddService, ComingSoon }
+private enum class LibraryAction { OpenPCloud, AddPCloud, OpenMega, OpenDropbox, OpenBox, OpenSharedLink, AddService, ComingSoon }
 
 @Composable
 fun LibraryHomeScreen(
     pCloudAccounts: List<Account>,
     megaAccounts: List<MegaAccount>,
     dropboxAccounts: List<DropboxAccount>,
+    boxAccounts: List<BoxAccount>,
     activeAccountId: String?,
     onOpenPCloudAccount: (String) -> Unit,
     onAddPCloud: () -> Unit,
     onOpenMega: () -> Unit,
     onOpenDropbox: () -> Unit,
+    onOpenBox: () -> Unit,
+    onOpenSharedLink: () -> Unit,
     onAddService: () -> Unit
 ) {
     BoxWithConstraints(
@@ -127,10 +131,39 @@ fun LibraryHomeScreen(
                     action = LibraryAction.OpenDropbox
                 )
             )
+
+            boxAccounts.forEach { account ->
+                add(
+                    LibraryCardModel(
+                        title = "Box • Logged in",
+                        subtitle = account.label,
+                        icon = Icons.Rounded.CloudQueue,
+                        accountId = account.id,
+                        action = LibraryAction.OpenBox
+                    )
+                )
+            }
+            add(
+                LibraryCardModel(
+                    title = if (boxAccounts.isEmpty()) "Box • Not logged in" else "Box • Manage account",
+                    subtitle = if (boxAccounts.isEmpty()) "Sign in and add your Box library" else "View signed-in Box account and options",
+                    icon = Icons.Rounded.CloudQueue,
+                    action = LibraryAction.OpenBox
+                )
+            )
+
+            add(
+                LibraryCardModel(
+                    title = "Open Shared Link",
+                    subtitle = "Play or cast shared media links without signing in",
+                    icon = Icons.Rounded.CloudQueue,
+                    action = LibraryAction.OpenSharedLink
+                )
+            )
             add(
                 LibraryCardModel(
                     title = "+ Add Cloud Service",
-                    subtitle = "Choose pCloud, MEGA, Dropbox, Google Drive, OneDrive, SMB, or WebDAV",
+                    subtitle = "Choose pCloud, MEGA, Dropbox, Box, Google Drive, OneDrive, SMB, or WebDAV",
                     icon = Icons.Rounded.Add,
                     action = LibraryAction.AddService
                 )
@@ -224,6 +257,8 @@ fun LibraryHomeScreen(
                                     LibraryAction.AddPCloud -> onAddPCloud()
                                     LibraryAction.OpenMega -> onOpenMega()
                                     LibraryAction.OpenDropbox -> onOpenDropbox()
+                                    LibraryAction.OpenBox -> onOpenBox()
+                                    LibraryAction.OpenSharedLink -> onOpenSharedLink()
                                     LibraryAction.AddService -> onAddService()
                                     LibraryAction.ComingSoon -> Unit
                                 }
@@ -251,6 +286,8 @@ fun LibraryHomeScreen(
                                             LibraryAction.AddPCloud -> onAddPCloud()
                                             LibraryAction.OpenMega -> onOpenMega()
                                             LibraryAction.OpenDropbox -> onOpenDropbox()
+                                            LibraryAction.OpenBox -> onOpenBox()
+                                            LibraryAction.OpenSharedLink -> onOpenSharedLink()
                                             LibraryAction.AddService -> onAddService()
                                             LibraryAction.ComingSoon -> Unit
                                         }

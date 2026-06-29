@@ -109,7 +109,7 @@ fun LoginScreen(
 
             Text("Cloud Player", fontSize = if (compact) 32.sp else 40.sp,
                 fontWeight = FontWeight.Bold, color = Brand.TextHi)
-            Text("Stream your pCloud video & audio",
+            Text("Stream video & music in Cloud Player",
                 color = Brand.TextMid, fontSize = 14.sp)
 
             if (error != null) {
@@ -178,7 +178,7 @@ fun LoginScreen(
             OutlinedTextField(
                 value = link,
                 onValueChange = { link = it },
-                label = { Text("pCloud share link") },
+                label = { Text("Shared media link") },
                 singleLine = true,
                 shape = RoundedCornerShape(12.dp),
                 colors = OutlinedTextFieldDefaults.colors(
@@ -201,8 +201,7 @@ fun LoginScreen(
             )
 
             Text(
-                "No account needed for a shared link — anything someone has shared " +
-                    "publicly (a file or a whole folder) will play here.",
+                "No account needed for a shared link. Direct media URLs and supported public links open in the native player.",
                 color = Brand.TextLow,
                 fontSize = 12.sp,
                 modifier = block

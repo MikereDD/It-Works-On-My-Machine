@@ -14,9 +14,43 @@ import com.typezero.cloudplayer.data.MediaItem
 fun App(vm: AppViewModel = viewModel()) {
     val session = vm.session
     val publicLink = vm.publicLink
+    val megaSharedWebUrl = vm.megaSharedWebUrl
+    val nativeSharedQueue = vm.nativeSharedQueue
     var selectedProvider by remember { mutableStateOf<String?>(null) }
     var activeLibrary by remember { mutableStateOf<String?>(null) }
     var megaMessage by remember { mutableStateOf<String?>(null) }
+
+
+    // ---- Native direct/shared-media playback ----
+    if (nativeSharedQueue != null) {
+        PlayerScreen(
+            queue = nativeSharedQueue,
+            resolveUrl = { item ->
+                item.directUrl?.let { ApiResult.Ok(it) } ?: ApiResult.Error("No playable stream URL")
+            },
+            fetchArt = { vm.client.fetchEmbeddedArt(it) },
+            onExit = { vm.closeNativeSharedPlayback() }
+        )
+        return
+    }
+
+    // ---- MEGA shared links (no account): open the official MEGA web viewer with the full #key. ----
+    // MEGA files/folders are client-side encrypted. Until the native MEGA SDK/decryption
+    // backend is bundled, the correct working behavior is to preserve the #key and send
+    // the normalized link into MEGA's own web app instead of stopping at validation.
+    if (megaSharedWebUrl != null) {
+        CloudWebBrowserScreen(
+            providerName = "MEGA Shared Link",
+            startUrl = megaSharedWebUrl,
+            onLibraries = {
+                vm.closeMegaSharedWebLink()
+                selectedProvider = null
+                activeLibrary = null
+            },
+            onProviderOptions = { selectedProvider = "mega" }
+        )
+        return
+    }
 
     // ---- Public shared-link mode (no account) ----
     if (publicLink != null) {
@@ -54,11 +88,29 @@ fun App(vm: AppViewModel = viewModel()) {
     }
 
     // ---- Provider connection flows ----
+
+    if (selectedProvider == "shared-link") {
+        LoginScreen(
+            error = vm.loginError,
+            busy = vm.busy,
+            onSignIn = { vm.startWebLogin() },
+            onUseToken = {
+                vm.useToken(it)
+                activeLibrary = null
+                selectedProvider = null
+            },
+            onOpenLink = { vm.openPublicLink(it) },
+            onLibraries = { selectedProvider = null; activeLibrary = null }
+        )
+        return
+    }
+
     if (selectedProvider == "add-service") {
         ProviderStartScreen(
             onOpenPCloud = { selectedProvider = "pcloud" },
             onOpenMega = { selectedProvider = if (vm.megaAccounts.isNotEmpty()) "mega-browser" else "mega" },
             onOpenDropbox = { selectedProvider = if (vm.dropboxAccounts.isNotEmpty()) "dropbox-browser" else "dropbox" },
+            onOpenBox = { selectedProvider = if (vm.boxAccounts.isNotEmpty()) "box-browser" else "box" },
             onBackToLibraries = { selectedProvider = null; activeLibrary = null }
         )
         return
@@ -92,6 +144,19 @@ fun App(vm: AppViewModel = viewModel()) {
     }
 
 
+
+    if (selectedProvider == "box-web-login") {
+        BoxWebLoginScreen(
+            onSignedIn = { email ->
+                vm.markBoxWebSignedIn(email)
+                selectedProvider = null
+                activeLibrary = null
+            },
+            onCancel = { selectedProvider = "box" }
+        )
+        return
+    }
+
     if (selectedProvider == "mega-browser") {
         CloudWebBrowserScreen(
             providerName = "MEGA",
@@ -108,6 +173,30 @@ fun App(vm: AppViewModel = viewModel()) {
             startUrl = "https://www.dropbox.com/home",
             onLibraries = { selectedProvider = null; activeLibrary = null },
             onProviderOptions = { selectedProvider = "dropbox" }
+        )
+        return
+    }
+
+    if (selectedProvider == "box-browser") {
+        CloudWebBrowserScreen(
+            providerName = "Box",
+            startUrl = "https://app.box.com/folder/0",
+            onLibraries = { selectedProvider = null; activeLibrary = null },
+            onProviderOptions = { selectedProvider = "box" }
+        )
+        return
+    }
+
+    if (selectedProvider == "box") {
+        BoxConnectScreen(
+            boxAccounts = vm.boxAccounts,
+            onBack = { selectedProvider = null },
+            onLibraries = {
+                selectedProvider = null
+                activeLibrary = null
+            },
+            onSignInWithBox = { selectedProvider = "box-web-login" },
+            onRemoveBoxAccount = vm::removeBoxAccount
         )
         return
     }
@@ -140,6 +229,10 @@ fun App(vm: AppViewModel = viewModel()) {
             },
             onSignInWithMega = { selectedProvider = "mega-web-login" },
             onRemoveMegaAccount = vm::removeMegaAccount,
+            onOpenSharedMegaLink = { link ->
+                vm.openPublicLink(link)
+                megaMessage = null
+            },
             initialMessage = megaMessage
         )
         return
@@ -167,6 +260,7 @@ fun App(vm: AppViewModel = viewModel()) {
                 pCloudAccounts = vm.accounts,
                 megaAccounts = vm.megaAccounts,
                 dropboxAccounts = vm.dropboxAccounts,
+                boxAccounts = vm.boxAccounts,
                 activeAccountId = vm.activeAccountId,
                 onOpenPCloudAccount = { id ->
                     vm.switchAccount(id)
@@ -175,6 +269,8 @@ fun App(vm: AppViewModel = viewModel()) {
                 onAddPCloud = { selectedProvider = "pcloud" },
                 onOpenMega = { selectedProvider = if (vm.megaAccounts.isNotEmpty()) "mega-browser" else "mega" },
                 onOpenDropbox = { selectedProvider = if (vm.dropboxAccounts.isNotEmpty()) "dropbox-browser" else "dropbox" },
+                onOpenBox = { selectedProvider = if (vm.boxAccounts.isNotEmpty()) "box-browser" else "box" },
+                onOpenSharedLink = { selectedProvider = "shared-link" },
                 onAddService = { selectedProvider = "add-service" }
             )
             return
@@ -206,6 +302,7 @@ fun App(vm: AppViewModel = viewModel()) {
             pCloudAccounts = vm.accounts,
             megaAccounts = vm.megaAccounts,
             dropboxAccounts = vm.dropboxAccounts,
+            boxAccounts = vm.boxAccounts,
             activeAccountId = vm.activeAccountId,
             onOpenPCloudAccount = { id ->
                 vm.switchAccount(id)
@@ -214,6 +311,8 @@ fun App(vm: AppViewModel = viewModel()) {
             onAddPCloud = { vm.beginAddAccount() },
             onOpenMega = { selectedProvider = if (vm.megaAccounts.isNotEmpty()) "mega-browser" else "mega" },
             onOpenDropbox = { selectedProvider = if (vm.dropboxAccounts.isNotEmpty()) "dropbox-browser" else "dropbox" },
+            onOpenBox = { selectedProvider = if (vm.boxAccounts.isNotEmpty()) "box-browser" else "box" },
+            onOpenSharedLink = { selectedProvider = "shared-link" },
             onAddService = { selectedProvider = "add-service" }
         )
         return

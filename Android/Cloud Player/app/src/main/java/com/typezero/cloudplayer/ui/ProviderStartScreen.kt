@@ -52,6 +52,7 @@ fun ProviderStartScreen(
     onOpenPCloud: () -> Unit,
     onOpenMega: () -> Unit,
     onOpenDropbox: () -> Unit,
+    onOpenBox: () -> Unit,
     onBackToLibraries: () -> Unit
 ) {
     val pCloudFocus = remember { FocusRequester() }
@@ -137,6 +138,7 @@ fun ProviderStartScreen(
                 ProviderChoice("Google Drive", "Coming soon", false, Icons.Rounded.Lock),
                 ProviderChoice("Dropbox", "Sign in and add your Dropbox library", true, Icons.Rounded.CloudQueue),
                 ProviderChoice("OneDrive", "Coming soon", false, Icons.Rounded.Lock),
+                ProviderChoice("Box", "Sign in and add your Box library", true, Icons.Rounded.CloudQueue),
                 ProviderChoice("SMB / WebDAV", "Coming soon", false, Icons.Rounded.Storage)
             )
 
@@ -154,6 +156,7 @@ fun ProviderStartScreen(
                                     "pCloud" -> onOpenPCloud()
                                     "MEGA" -> onOpenMega()
                                     "Dropbox" -> onOpenDropbox()
+                                    "Box" -> onOpenBox()
                                 }
                             }
                         )
@@ -179,6 +182,7 @@ fun ProviderStartScreen(
                                             "pCloud" -> onOpenPCloud()
                                             "MEGA" -> onOpenMega()
                                             "Dropbox" -> onOpenDropbox()
+                                            "Box" -> onOpenBox()
                                         }
                                     }
                                 )
@@ -191,7 +195,7 @@ fun ProviderStartScreen(
 
             Spacer(Modifier.height(8.dp))
             Text(
-                text = "Cloud Player starts with pCloud and now adds MEGA plus Dropbox as connected libraries.",
+                text = "Cloud Player starts with pCloud and now adds MEGA, Dropbox, and Box as connected libraries.",
                 color = Brand.TextLow,
                 fontSize = 12.sp,
                 textAlign = TextAlign.Center

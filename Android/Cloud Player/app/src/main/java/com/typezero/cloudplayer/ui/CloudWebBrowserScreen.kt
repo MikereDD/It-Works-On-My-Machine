@@ -116,9 +116,17 @@ fun CloudWebBrowserScreen(
 ) {
     val webRef = remember { mutableStateOf<WebView?>(null) }
 
-    // In provider browsing mode, Back is app navigation, not website navigation.
-    // This keeps Android TV users from getting trapped in Dropbox/MEGA web history.
-    BackHandler { onLibraries() }
+    // In provider browsing mode, Back should move up one provider/web folder at a time.
+    // Once the provider has no more history, Back returns to the Libraries hub instead
+    // of quitting Cloud Player. This matches pCloud's native folder behavior.
+    BackHandler {
+        val web = webRef.value
+        if (web != null && web.canGoBack()) {
+            web.goBack()
+        } else {
+            onLibraries()
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize().background(ComposeColor.Black)) {
         AndroidView(
@@ -146,6 +154,13 @@ fun CloudWebBrowserScreen(
                 frame.post { frame.requestFocus() }
                 frame
             }
+        )
+
+        com.typezero.cloudplayer.cast.CastButton(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(10.dp)
+                .size(42.dp)
         )
 
         Row(
@@ -181,61 +196,107 @@ fun CloudWebBrowserScreen(
 
 private fun providerCleanUpJavaScript(providerName: String): String {
     val provider = providerName.lowercase()
-    return if (provider.contains("dropbox")) {
-        """
-        (function(){
-          var style = document.getElementById('cloudplayer-clean-web');
-          if (!style) {
-            style = document.createElement('style');
-            style.id = 'cloudplayer-clean-web';
-            style.innerHTML = `
-              /* Keep the real Dropbox file list visible. Only hide obvious promos. */
-              div[class*=upgrade],
-              div[class*=Upgrade],
-              div[class*=promo],
-              div[class*=Promo],
-              div[class*=onboarding],
-              div[class*=Onboarding] {
-                display: none !important;
-                visibility: hidden !important;
+    return when {
+        provider.contains("dropbox") -> {
+            """
+            (function(){
+              var style = document.getElementById('cloudplayer-clean-web');
+              if (!style) {
+                style = document.createElement('style');
+                style.id = 'cloudplayer-clean-web';
+                style.innerHTML = `
+                  /* Keep the real Dropbox file list visible. Only hide obvious promos. */
+                  div[class*=upgrade],
+                  div[class*=Upgrade],
+                  div[class*=promo],
+                  div[class*=Promo],
+                  div[class*=onboarding],
+                  div[class*=Onboarding] {
+                    display: none !important;
+                    visibility: hidden !important;
+                  }
+                  body { overflow: auto !important; }
+                `;
+                document.head.appendChild(style);
               }
-              body { overflow: auto !important; }
-            `;
-            document.head.appendChild(style);
-          }
 
-          Array.from(document.querySelectorAll('button, a, div, section')).forEach(function(el){
-            var text = (el.innerText || '').toLowerCase();
-            if (
-              text.indexOf('upgrade to dropbox') >= 0 ||
-              text.indexOf('compare plans') >= 0 ||
-              text.indexOf('create your free account') >= 0 ||
-              text.indexOf('not today') >= 0
-            ) {
-              var box = el.closest('section') ||
-                        el.closest('div[class*=modal]') ||
-                        el.closest('div[class*=banner]') ||
-                        el.closest('div[class*=promo]') ||
-                        el;
-              box.style.display = 'none';
-              box.style.visibility = 'hidden';
-            }
-          });
-        })();
-        """.trimIndent()
-    } else {
-        """
-        (function(){
-          var style = document.getElementById('cloudplayer-clean-web');
-          if (!style) {
-            style = document.createElement('style');
-            style.id = 'cloudplayer-clean-web';
-            style.innerHTML = `
-              body { overflow: auto !important; }
-            `;
-            document.head.appendChild(style);
-          }
-        })();
-        """.trimIndent()
+              Array.from(document.querySelectorAll('button, a, div, section')).forEach(function(el){
+                var text = (el.innerText || '').toLowerCase();
+                if (
+                  text.indexOf('upgrade to dropbox') >= 0 ||
+                  text.indexOf('compare plans') >= 0 ||
+                  text.indexOf('create your free account') >= 0 ||
+                  text.indexOf('not today') >= 0
+                ) {
+                  var box = el.closest('section') ||
+                            el.closest('div[class*=modal]') ||
+                            el.closest('div[class*=banner]') ||
+                            el.closest('div[class*=promo]') ||
+                            el;
+                  box.style.display = 'none';
+                  box.style.visibility = 'hidden';
+                }
+              });
+            })();
+            """.trimIndent()
+        }
+        provider.contains("box") -> {
+            """
+            (function(){
+              var style = document.getElementById('cloudplayer-clean-web');
+              if (!style) {
+                style = document.createElement('style');
+                style.id = 'cloudplayer-clean-web';
+                style.innerHTML = `
+                  body { overflow: auto !important; }
+                  /* Hide common Box web-app distractions while keeping the Files list visible. */
+                  [class*="promotion"], [class*="Promotion"],
+                  [class*="upgrade"], [class*="Upgrade"],
+                  [class*="trial"], [class*="Trial"],
+                  [class*="modal"], [class*="Modal"] {
+                    display: none !important;
+                    visibility: hidden !important;
+                  }
+                  /* Leave room for Cloud Player's Libraries chip so it does not cover folder rows. */
+                  main, [role="main"] { padding-top: 12px !important; }
+                `;
+                document.head.appendChild(style);
+              }
+
+              Array.from(document.querySelectorAll('button, a, div, section')).forEach(function(el){
+                var text = (el.innerText || '').toLowerCase();
+                if (
+                  text.indexOf('upgrade') >= 0 ||
+                  text.indexOf('try box') >= 0 ||
+                  text.indexOf('start trial') >= 0 ||
+                  text.indexOf('get more storage') >= 0
+                ) {
+                  var box = el.closest('section') ||
+                            el.closest('div[class*=modal]') ||
+                            el.closest('div[class*=banner]') ||
+                            el.closest('div[class*=promotion]') ||
+                            el;
+                  box.style.display = 'none';
+                  box.style.visibility = 'hidden';
+                }
+              });
+            })();
+            """.trimIndent()
+        }
+        else -> {
+            """
+            (function(){
+              var style = document.getElementById('cloudplayer-clean-web');
+              if (!style) {
+                style = document.createElement('style');
+                style.id = 'cloudplayer-clean-web';
+                style.innerHTML = `
+                  body { overflow: auto !important; }
+                `;
+                document.head.appendChild(style);
+              }
+            })();
+            """.trimIndent()
+        }
     }
 }

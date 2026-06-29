@@ -125,7 +125,11 @@ fun PublicBrowseScreen(
                             fontSize = 12.sp, color = Brand.TextLow, maxLines = 1)
                     }
                 }
-                CloseButton(onClose)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    com.typezero.cloudplayer.cast.CastButton(modifier = Modifier.size(40.dp))
+                    Spacer(Modifier.width(10.dp))
+                    CloseButton(onClose)
+                }
             }
 
             if (items.isEmpty()) {

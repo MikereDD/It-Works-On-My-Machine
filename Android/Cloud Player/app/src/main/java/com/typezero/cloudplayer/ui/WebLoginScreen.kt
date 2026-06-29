@@ -11,6 +11,7 @@ import android.os.SystemClock
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.webkit.CookieManager
+import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
@@ -42,6 +43,13 @@ import androidx.compose.ui.viewinterop.AndroidView
  * pointer and OK taps, exactly like a mouse. Text fields then open the on-screen
  * keyboard as usual.
  */
+private val PCLOUD_LOGIN_URLS = listOf(
+    "https://my.pcloud.com/#page=login",
+    "https://my.pcloud.com//#page=login",
+    "https://www.pcloud.com/#page=login",
+    "https://u.pcloud.com/#page=login"
+)
+
 private const val COOKIE_ACCEPT_JS =
     "(function(){try{var els=document.querySelectorAll('button,a,[role=button],span,div');" +
         "for(var i=0;i<els.length;i++){var t=(els[i].innerText||els[i].textContent||'')" +
@@ -139,7 +147,20 @@ fun WebLoginScreen(
                 CookieManager.getInstance().setAcceptThirdPartyCookies(web, true)
 
                 var done = false
+                var loginUrlIndex = 0
                 val main = Handler(Looper.getMainLooper())
+
+                fun loadPCloudLogin(reason: String? = null) {
+                    val url = PCLOUD_LOGIN_URLS.getOrElse(loginUrlIndex) { PCLOUD_LOGIN_URLS.last() }
+                    web.loadUrl(url)
+                }
+
+                fun tryNextPCloudLoginUrl() {
+                    if (loginUrlIndex < PCLOUD_LOGIN_URLS.lastIndex) {
+                        loginUrlIndex += 1
+                        loadPCloudLogin()
+                    }
+                }
 
                 fun deliver(token: String?) {
                     if (done || token.isNullOrBlank() || token.length < 20) return
@@ -161,6 +182,17 @@ fun WebLoginScreen(
                         return null
                     }
 
+                    override fun onReceivedError(
+                        view: WebView,
+                        request: WebResourceRequest,
+                        error: WebResourceError
+                    ) {
+                        super.onReceivedError(view, request, error)
+                        if (!done && request.isForMainFrame) {
+                            tryNextPCloudLoginUrl()
+                        }
+                    }
+
                     override fun onPageFinished(view: WebView, url: String?) {
                         view.evaluateJavascript(COOKIE_ACCEPT_JS, null)
                         main.postDelayed({ view.evaluateJavascript(COOKIE_ACCEPT_JS, null) }, 800)
@@ -177,7 +209,11 @@ fun WebLoginScreen(
                     }
                 }
 
-                web.loadUrl("https://my.pcloud.com/")
+                // Start on pCloud's login route, not the root web app.  Some Android
+                // WebView builds currently get net::ERR_CONNECTION_RESET from
+                // https://my.pcloud.com/ directly, so we try known pCloud login
+                // entry points before giving up.
+                loadPCloudLogin()
                 frame.post { frame.requestFocus() }
                 frame
             }

@@ -41,6 +41,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.typezero.cloudplayer.data.MegaAccount
+import com.typezero.cloudplayer.data.MegaSharedLinkParser
 import com.typezero.cloudplayer.ui.theme.Brand
 
 @Composable
@@ -50,6 +51,7 @@ fun MegaConnectScreen(
     onLibraries: () -> Unit,
     onSignInWithMega: () -> Unit,
     onRemoveMegaAccount: (String) -> Unit,
+    onOpenSharedMegaLink: (String) -> Unit,
     initialMessage: String? = null
 ) {
     var sharedLink by remember { mutableStateOf("") }
@@ -226,7 +228,7 @@ fun MegaConnectScreen(
                     )
                 }
                 Text(
-                    text = "Paste a MEGA file or folder link. Shared link streaming will be enabled after the MEGA decrypting provider is connected.",
+                    text = "Paste a MEGA file or folder link. Cloud Player keeps the decryption key after # and opens the official MEGA viewer for now.",
                     color = Brand.TextMid,
                     fontSize = 14.sp,
                     lineHeight = 20.sp
@@ -245,13 +247,17 @@ fun MegaConnectScreen(
                         val link = sharedLink.trim()
                         message = when {
                             link.isBlank() -> "Paste a MEGA shared link first."
-                            !looksLikeMegaLink(link) -> "That does not look like a MEGA file or folder link."
-                            else -> "MEGA link accepted. Streaming support comes next after the MEGA decrypting provider is connected."
+                            !MegaSharedLinkParser.looksLikeMegaLink(link) -> "That does not look like a MEGA file or folder link."
+                            MegaSharedLinkParser.parse(link) == null -> "MEGA link found, but the decryption key is missing. Paste the full link including #key, or paste the separate decryption key under the link."
+                            else -> {
+                                onOpenSharedMegaLink(link)
+                                null
+                            }
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = Brand.Accent, contentColor = Color.Black)
                 ) {
-                    Text("Check Link")
+                    Text("Open MEGA Link")
                 }
             }
 
@@ -268,11 +274,3 @@ fun MegaConnectScreen(
     }
 }
 
-private fun looksLikeMegaLink(value: String): Boolean {
-    val lower = value.lowercase()
-    return (lower.contains("mega.nz/file/") ||
-            lower.contains("mega.nz/folder/") ||
-            lower.contains("mega.co.nz/#!") ||
-            lower.contains("mega.nz/#!") ||
-            lower.contains("mega.nz/#f!"))
-}

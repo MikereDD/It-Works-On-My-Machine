@@ -487,6 +487,65 @@ class SessionStore(context: Context) {
     }
 
 
+    // ---- Box accounts (OAuth web-session marker for v1.9 phase 1) ----
+
+    fun getBoxAccounts(): List<BoxAccount> {
+        val s = prefs.getString(KEY_BOX_ACCOUNTS, null) ?: return emptyList()
+        return try {
+            val arr = JSONArray(s)
+            buildList {
+                for (i in 0 until arr.length()) {
+                    val o = arr.getJSONObject(i)
+                    add(
+                        BoxAccount(
+                            id = o.getString("id"),
+                            email = o.optString("email", "Box account"),
+                            label = o.optString("label", o.optString("email", "Box account"))
+                        )
+                    )
+                }
+            }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    private fun persistBoxAccounts(list: List<BoxAccount>) {
+        val arr = JSONArray()
+        list.forEach { a ->
+            arr.put(
+                JSONObject().apply {
+                    put("id", a.id)
+                    put("email", a.email)
+                    put("label", a.label)
+                }
+            )
+        }
+        prefs.edit().putString(KEY_BOX_ACCOUNTS, arr.toString()).apply()
+    }
+
+    /**
+     * Box phase-1 sign-in marker. The Box login WebView handles email/password
+     * and Box 2FA. After the user finishes auth, Cloud Player stores only a
+     * connected-account marker so Libraries can show Box as logged in.
+     */
+    fun addBoxWebSession(email: String? = null): String {
+        val cleanEmail = email?.trim()?.takeIf { it.isNotBlank() } ?: "Box account"
+        val id = if (cleanEmail.contains("@")) "box-web-$cleanEmail" else "box-web"
+        val label = if (cleanEmail.contains("@")) cleanEmail else "Box Web Session"
+        val acc = BoxAccount(id = id, email = cleanEmail, label = label)
+        val list = getBoxAccounts().toMutableList()
+        val existing = list.indexOfFirst { it.id == id }
+        if (existing >= 0) list[existing] = acc else list.add(acc)
+        persistBoxAccounts(list)
+        return id
+    }
+
+    fun removeBoxAccount(id: String) {
+        persistBoxAccounts(getBoxAccounts().filterNot { it.id == id })
+    }
+
+
     // ---- Back-compat single-session API, now backed by the accounts list ----
 
     fun save(session: Session) { addOrUpdateAccount(session) }
@@ -502,5 +561,6 @@ class SessionStore(context: Context) {
         private const val KEY_ACTIVE = "active_account"
         private const val KEY_MEGA_ACCOUNTS = "mega_accounts"
         private const val KEY_DROPBOX_ACCOUNTS = "dropbox_accounts"
+        private const val KEY_BOX_ACCOUNTS = "box_accounts"
     }
 }

@@ -10,10 +10,14 @@ import androidx.lifecycle.viewModelScope
 import com.typezero.cloudplayer.data.ApiResult
 import com.typezero.cloudplayer.data.Account
 import com.typezero.cloudplayer.data.DropboxAccount
+import com.typezero.cloudplayer.data.BoxAccount
 import com.typezero.cloudplayer.data.PCloudClient
 import com.typezero.cloudplayer.data.MegaAccount
 import com.typezero.cloudplayer.data.Publink
+import com.typezero.cloudplayer.data.MegaSharedLinkParser
 import com.typezero.cloudplayer.data.SessionStore
+import com.typezero.cloudplayer.data.MediaItem
+import com.typezero.cloudplayer.data.SharedMediaLinkParser
 import kotlinx.coroutines.launch
 
 class AppViewModel(app: Application) : AndroidViewModel(app) {
@@ -43,6 +47,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         private set
 
     var dropboxAccounts by mutableStateOf(store.getDropboxAccounts())
+        private set
+
+    var boxAccounts by mutableStateOf(store.getBoxAccounts())
         private set
 
     /** Id of the active account (matches Account.id = email ?: token). */
@@ -132,6 +139,16 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         dropboxAccounts = store.getDropboxAccounts()
     }
 
+    fun markBoxWebSignedIn(email: String? = null) {
+        store.addBoxWebSession(email)
+        boxAccounts = store.getBoxAccounts()
+    }
+
+    fun removeBoxAccount(id: String) {
+        store.removeBoxAccount(id)
+        boxAccounts = store.getBoxAccounts()
+    }
+
     fun logout() {
         // Sign out of the active account; fall back to another if one exists.
         val active = store.getActiveAccount()
@@ -148,15 +165,44 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var publicLink by mutableStateOf<Publink?>(null)
         private set
 
+    var megaSharedWebUrl by mutableStateOf<String?>(null)
+        private set
+
+    var nativeSharedQueue by mutableStateOf<List<MediaItem>?>(null)
+        private set
+
     fun openPublicLink(input: String) {
-        if (input.isBlank()) {
-            loginError = "Paste a pCloud share link first."
+        val trimmed = input.trim()
+        if (trimmed.isBlank()) {
+            loginError = "Paste a shared link first."
             return
         }
+
+        if (MegaSharedLinkParser.looksLikeMegaLink(trimmed)) {
+            val megaLink = MegaSharedLinkParser.parse(trimmed)
+            if (megaLink == null) {
+                loginError = "MEGA link found, but the decryption key is missing. Paste the full link including #key, or paste the separate decryption key under the link."
+            } else {
+                loginError = null
+                publicLink = null
+                nativeSharedQueue = null
+                megaSharedWebUrl = megaLink.normalizedUrl
+            }
+            return
+        }
+
+        SharedMediaLinkParser.parse(trimmed)?.let { parsed ->
+            loginError = null
+            publicLink = null
+            megaSharedWebUrl = null
+            nativeSharedQueue = listOf(MediaItem(parsed.title, fileId = null, directUrl = parsed.playbackUrl))
+            return
+        }
+
         loginError = null
         busy = true
         viewModelScope.launch {
-            when (val r = client.openPublink(input.trim())) {
+            when (val r = client.openPublink(trimmed)) {
                 is ApiResult.Ok -> publicLink = r.value
                 is ApiResult.Error -> loginError = r.message
             }
@@ -166,5 +212,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun closePublicLink() {
         publicLink = null
+    }
+
+    fun closeNativeSharedPlayback() {
+        nativeSharedQueue = null
+    }
+
+    fun closeMegaSharedWebLink() {
+        megaSharedWebUrl = null
     }
 }

@@ -1,4 +1,77 @@
+# v2.0 / Native Playback Core
+
+- Bump Cloud Player to v2.0 for the Native Playback Core milestone.
+- Clarify the app architecture: provider websites are for login/2FA/permission approval, while video and music playback should happen inside Cloud Player.
+- Add a native shared-media playback route backed by the existing LibVLC player.
+- Direct media URLs can now open directly in Cloud Player instead of staying in a provider preview page.
+- Supported Dropbox shared media links are normalized for direct playback where possible.
+- Keep pCloud account files and pCloud shared links on the native player path.
+- Keep MEGA shared-link `#decryption_key` handling intact; true native MEGA playback still needs the decrypting backend/SDK.
+- Update Libraries and shared-link copy around native playback/casting.
+
 # Changelog
+
+## v1.9.5 - MEGA Shared-Link Loader
+
+- Bumped Cloud Player to v1.9.5.
+- Fixed MEGA shared links so they open instead of stopping after parser validation.
+- Preserved the full `#decryption_key` when launching the official MEGA web viewer.
+- Kept support for separate MEGA link + separate decryption key text.
+- Scoped the loading fix only to MEGA shared links; pCloud, Dropbox, and Box behavior is unchanged.
+- Kept native MEGA SDK/decryption-backed browsing and streaming staged for a later provider-backend pass.
+
+## v1.9.4 - MEGA Shared-Link Key Parser
+
+- Fixed MEGA shared-link parsing so the decryption key after `#` is preserved.
+- Added support for modern MEGA file and folder links: `https://mega.nz/file/<id>#<key>` and `https://mega.nz/folder/<id>#<key>`.
+- Added support for legacy MEGA links using `!` separators.
+- Added support for separate MEGA link plus separate decryption key text.
+- Scoped this parser only to MEGA shared links; pCloud, Dropbox, and Box parsing are unchanged.
+
+
+## v1.9.3 - Universal cast access
+
+- Bumped Cloud Player to v1.9.3.
+- Added Cast access to provider browsing so MEGA, Dropbox, and Box expose the same Cast entry point as pCloud.
+- Added Cast access to public shared-link browsing so free shared links and logged-in libraries use the same playback/cast path.
+- Added an Open Shared Link card to Libraries so shared links are available even after cloud accounts are logged in.
+- Kept pCloud native browsing and public pCloud shared-link playback as the first working shared-link implementation while MEGA/Dropbox/Box native shared-link APIs remain staged.
+
+## v1.9.2 - v1.9 Phase 3 provider browser navigation
+
+- Bumped Cloud Player to v1.9.2.
+- Folded the provider Back-navigation hotfix into v1.9 Phase 3.
+- Back / mobile swipe-back now moves up one folder/page at a time in Box, Dropbox, and MEGA.
+- At the provider root, Back returns to Libraries instead of quitting Cloud Player.
+- Kept pCloud navigation aligned with the same rule: folder Back first, Libraries at root.
+- Kept the small provider header so folder lists are easier to see while the full native provider API browser is being built.
+
+## v1.9.1 - Provider back navigation hotfix
+
+- Bumped Cloud Player to v1.9.1.
+- Changed provider browser Back handling so mobile gestures and Android TV remote Back move up one folder/page at a time.
+- Return to Libraries only when the provider browser is already at its root.
+- Keeps pCloud, MEGA, Dropbox, and Box navigation behavior consistent.
+
+## v1.9 - Box connected-library phase 2
+
+- Added Box folder browsing entry for logged-in Box accounts.
+- Logged-in Box cards now open the Box Files view instead of stopping at account management.
+- Added Box-specific provider-browser cleanup for common upgrade/trial/modal distractions.
+- Kept Android Back behavior consistent: provider root returns to Libraries instead of quitting the app.
+- Updated README to describe Box Phase 2 folder access.
+
+## v1.9 - Box connected-library phase 1
+
+- Bumped Cloud Player to v1.9.
+- Added Box to the Connected Libraries dashboard.
+- Added Box connect screen with account status and remove action.
+- Added Box WebView login screen so Box handles password, 2FA, verification code, and account security prompts.
+- Added **Done — save Box after 2FA** fallback for Android TV testing.
+- Libraries now shows Box as Logged in with the saved account label.
+- Add Cloud Service now includes Box as a selectable provider.
+- Kept native Box API folder browsing and streaming staged for the next provider pass.
+
 
 ## v1.8.1 - Provider navigation and Dropbox visibility hotfix
 
