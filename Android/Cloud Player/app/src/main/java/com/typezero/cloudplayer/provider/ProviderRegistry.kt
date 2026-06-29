@@ -14,6 +14,7 @@ object ProviderRegistry {
     const val MEGA = "mega"
     const val GOOGLE_DRIVE = "google_drive"
     const val DROPBOX = "dropbox"
+    const val BOX = "box"
     const val ONEDRIVE = "onedrive"
     const val WEBDAV = "webdav"
     const val SMB = "smb"
@@ -23,6 +24,7 @@ object ProviderRegistry {
         MEGA,
         GOOGLE_DRIVE,
         DROPBOX,
+        BOX,
         ONEDRIVE,
         WEBDAV,
         SMB

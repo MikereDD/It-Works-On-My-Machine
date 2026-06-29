@@ -21,15 +21,21 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.CloudQueue
 import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.InsertDriveFile
 import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -38,22 +44,18 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.typezero.cloudplayer.provider.CloudFolderResult
+import com.typezero.cloudplayer.provider.CloudItem
+import com.typezero.cloudplayer.provider.CloudItemType
+import com.typezero.cloudplayer.provider.NativeProviderBackends
 import com.typezero.cloudplayer.ui.theme.Brand
 
-private data class NativeCloudItem(
-    val name: String,
-    val subtitle: String,
-    val folder: Boolean = true,
-    val playable: Boolean = false
-)
-
 /**
- * v2.1 native provider browser shell.
+ * v2.2 native provider API browser foundation.
  *
- * This intentionally replaces the embedded Dropbox/Box/MEGA provider web headers
- * with one Cloud Player UI.  Provider websites remain login-only.  Until those
- * providers expose real API tokens to this app, this screen avoids the crowded
- * web dashboards and keeps navigation/playback behavior consistent.
+ * Every provider now enters the same Cloud Player browser shell and the UI talks
+ * through a provider-neutral backend boundary. Provider websites are login-only;
+ * live API-token-backed listings are connected provider by provider after this.
  */
 @Composable
 fun NativeProviderBrowserScreen(
@@ -64,6 +66,9 @@ fun NativeProviderBrowserScreen(
 ) {
     val stack = remember(providerId) { mutableStateListOf("/") }
     val currentPath = stack.last()
+    val backend = remember(providerId, providerName) { NativeProviderBackends.forProvider(providerId, providerName) }
+    var folderResult by remember(providerId) { mutableStateOf<CloudFolderResult?>(null) }
+    var loading by remember(providerId) { mutableStateOf(true) }
 
     fun goBack() {
         if (stack.size > 1) stack.removeAt(stack.lastIndex) else onLibraries()
@@ -71,7 +76,14 @@ fun NativeProviderBrowserScreen(
 
     BackHandler { goBack() }
 
-    val items = remember(providerId, currentPath) { nativeItems(providerId, currentPath) }
+    LaunchedEffect(providerId, currentPath) {
+        loading = true
+        folderResult = backend.listFolder(currentPath)
+        loading = false
+    }
+
+    val result = folderResult
+    val items = result?.items.orEmpty()
 
     Box(
         modifier = Modifier
@@ -128,16 +140,22 @@ fun NativeProviderBrowserScreen(
                 )
             }
 
-            NativeBackendNotice(providerName)
+            result?.statusMessage?.let { NativeBackendNotice(it) }
 
             LazyColumn(
                 modifier = Modifier.fillMaxWidth().widthIn(max = 980.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                items(items) { item ->
-                    NativeCloudRow(item = item) {
-                        if (item.folder) {
-                            stack.add(if (currentPath == "/") "/${item.name}" else "$currentPath/${item.name}")
+                if (loading) {
+                    item { NativeStatusRow("Loading", "Reading $providerName through the native provider boundary.") }
+                } else if (items.isEmpty()) {
+                    item { NativeStatusRow("Empty folder", "No folders or media were returned for this path.") }
+                } else {
+                    items(items) { item ->
+                        NativeCloudRow(item = item) {
+                            if (item.isFolder) {
+                                stack.add(item.path.ifBlank { if (currentPath == "/") "/${item.name}" else "$currentPath/${item.name}" })
+                            }
                         }
                     }
                 }
@@ -147,7 +165,7 @@ fun NativeProviderBrowserScreen(
 }
 
 @Composable
-private fun NativeBackendNotice(providerName: String) {
+private fun NativeBackendNotice(message: String) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -161,7 +179,7 @@ private fun NativeBackendNotice(providerName: String) {
     ) {
         Icon(Icons.Rounded.Warning, contentDescription = null, tint = Brand.TextMid, modifier = Modifier.size(22.dp))
         Text(
-            text = "$providerName now uses Cloud Player's native browser shell. The provider website is no longer used for browsing headers. Full live file listing/playback comes next when the provider API token backend is connected.",
+            text = message,
             color = Brand.TextMid,
             fontSize = 13.sp,
             lineHeight = 18.sp
@@ -170,14 +188,34 @@ private fun NativeBackendNotice(providerName: String) {
 }
 
 @Composable
-private fun NativeCloudRow(item: NativeCloudItem, onClick: () -> Unit) {
+private fun NativeStatusRow(title: String, subtitle: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(Brand.Surface.copy(alpha = 0.9f))
+            .border(1.dp, Brand.Stroke, RoundedCornerShape(18.dp))
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        Icon(Icons.Rounded.CloudQueue, contentDescription = null, tint = Brand.Accent, modifier = Modifier.size(30.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, color = Brand.TextHi, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            Text(subtitle, color = Brand.TextMid, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+@Composable
+private fun NativeCloudRow(item: CloudItem, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(18.dp))
             .background(Brand.Surface.copy(alpha = 0.94f))
             .border(1.dp, Brand.Stroke, RoundedCornerShape(18.dp))
-            .clickable(enabled = item.folder || item.playable) { onClick() }
+            .clickable(enabled = item.isFolder || item.isPlayable) { onClick() }
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp)
@@ -185,49 +223,35 @@ private fun NativeCloudRow(item: NativeCloudItem, onClick: () -> Unit) {
         Icon(nativeIcon(item), contentDescription = null, tint = Brand.Accent, modifier = Modifier.size(30.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(item.name, color = Brand.TextHi, fontSize = 18.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(item.subtitle, color = Brand.TextMid, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(nativeSubtitle(item), color = Brand.TextMid, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        if (item.isPlayable) {
+            Icon(Icons.Rounded.PlayArrow, contentDescription = null, tint = Brand.TextHi, modifier = Modifier.size(26.dp))
         }
     }
 }
 
-private fun nativeIcon(item: NativeCloudItem): ImageVector = when {
-    item.folder -> Icons.Rounded.Folder
-    item.name.endsWith(".mp3", true) || item.name.endsWith(".flac", true) -> Icons.Rounded.MusicNote
-    item.name.endsWith(".mp4", true) || item.name.endsWith(".mkv", true) -> Icons.Rounded.Movie
+private fun nativeIcon(item: CloudItem): ImageVector = when (item.type) {
+    CloudItemType.FOLDER -> Icons.Rounded.Folder
+    CloudItemType.AUDIO -> Icons.Rounded.MusicNote
+    CloudItemType.VIDEO -> Icons.Rounded.Movie
+    CloudItemType.IMAGE -> Icons.Rounded.Image
     else -> Icons.Rounded.InsertDriveFile
 }
 
-private fun nativeItems(providerId: String, path: String): List<NativeCloudItem> {
-    if (path != "/") {
-        return listOf(
-            NativeCloudItem("No live items yet", "This folder is ready for the ${providerLabel(providerId)} API-backed listing pass.", folder = false),
-            NativeCloudItem("Back", "Use remote/mobile Back to go up one directory at a time.", folder = false)
-        )
-    }
-
-    return when (providerId.lowercase()) {
-        "dropbox" -> listOf(
-            NativeCloudItem("Apps", "Dropbox folder"),
-            NativeCloudItem("Public", "Dropbox folder"),
-            NativeCloudItem("Share", "Dropbox shared folder")
-        )
-        "box" -> listOf(
-            NativeCloudItem("Private", "Box folder"),
-            NativeCloudItem("Public", "Box folder"),
-            NativeCloudItem("Share", "Box shared folder")
-        )
-        "mega" -> listOf(
-            NativeCloudItem("Videos", "MEGA folder"),
-            NativeCloudItem("Music", "MEGA folder"),
-            NativeCloudItem("Documents", "MEGA folder")
-        )
-        else -> listOf(NativeCloudItem("Root", "Provider folder"))
-    }
+private fun nativeSubtitle(item: CloudItem): String {
+    if (item.isFolder) return "Folder"
+    val details = listOfNotNull(item.mimeType, item.modifiedLabel, item.sizeBytes?.takeIf { it > 0 }?.let { formatSize(it) })
+    return details.ifEmpty { listOf("Media file") }.joinToString("  •  ")
 }
 
-private fun providerLabel(providerId: String): String = when (providerId.lowercase()) {
-    "dropbox" -> "Dropbox"
-    "box" -> "Box"
-    "mega" -> "MEGA"
-    else -> providerId
+private fun formatSize(bytes: Long): String {
+    val units = listOf("B", "KB", "MB", "GB", "TB")
+    var value = bytes.toDouble()
+    var unit = 0
+    while (value >= 1024.0 && unit < units.lastIndex) {
+        value /= 1024.0
+        unit++
+    }
+    return if (unit == 0) "${bytes} B" else "%.1f %s".format(value, units[unit])
 }
