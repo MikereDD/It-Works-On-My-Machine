@@ -1,4 +1,4 @@
-# Cloud Player v2.0
+# Cloud Player v2.1
 
 Android TV cloud media player based on pCloud TV v4.51, now moving into a connected-libraries multi-cloud layout.
 
@@ -21,6 +21,16 @@ engine in a monochrome Material 3 interface.
 
 ---
 
+
+
+## v2.1 / Native Provider Browser
+
+- Moves Dropbox, Box, and MEGA browsing away from crowded provider web headers.
+- Adds a shared Cloud Player native browser shell for connected providers.
+- Keeps provider websites focused on login, 2FA, and permission approval only.
+- Keeps Cast inside Cloud Player UI instead of injecting it into Dropbox/Box headers.
+- Back navigation now belongs to Cloud Player: folder -> parent folder -> Libraries.
+- Stages live provider API token backends as the next pass for true native listing and playback.
 
 ## v2.0 / Native Playback Core
 

@@ -158,31 +158,31 @@ fun App(vm: AppViewModel = viewModel()) {
     }
 
     if (selectedProvider == "mega-browser") {
-        CloudWebBrowserScreen(
+        NativeProviderBrowserScreen(
+            providerId = "mega",
             providerName = "MEGA",
-            startUrl = "https://mega.nz/fm",
-            onLibraries = { selectedProvider = null; activeLibrary = null },
-            onProviderOptions = { selectedProvider = "mega" }
+            accountLabel = vm.megaAccounts.firstOrNull()?.label,
+            onLibraries = { selectedProvider = null; activeLibrary = null }
         )
         return
     }
 
     if (selectedProvider == "dropbox-browser") {
-        CloudWebBrowserScreen(
+        NativeProviderBrowserScreen(
+            providerId = "dropbox",
             providerName = "Dropbox",
-            startUrl = "https://www.dropbox.com/home",
-            onLibraries = { selectedProvider = null; activeLibrary = null },
-            onProviderOptions = { selectedProvider = "dropbox" }
+            accountLabel = vm.dropboxAccounts.firstOrNull()?.label,
+            onLibraries = { selectedProvider = null; activeLibrary = null }
         )
         return
     }
 
     if (selectedProvider == "box-browser") {
-        CloudWebBrowserScreen(
+        NativeProviderBrowserScreen(
+            providerId = "box",
             providerName = "Box",
-            startUrl = "https://app.box.com/folder/0",
-            onLibraries = { selectedProvider = null; activeLibrary = null },
-            onProviderOptions = { selectedProvider = "box" }
+            accountLabel = vm.boxAccounts.firstOrNull()?.label,
+            onLibraries = { selectedProvider = null; activeLibrary = null }
         )
         return
     }

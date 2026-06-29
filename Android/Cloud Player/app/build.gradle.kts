@@ -11,8 +11,8 @@ android {
         applicationId = "com.typezero.cloudplayer"
         minSdk = 26
         targetSdk = 34
-        versionCode = 20
-        versionName = "2.0"
+        versionCode = 21
+        versionName = "2.1"
 
         // Ship 64-bit and 32-bit ARM native libs. arm64-v8a covers modern phones
         // and most Android TVs; armeabi-v7a is REQUIRED for Chromecast with Google

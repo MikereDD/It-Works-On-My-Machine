@@ -1,3 +1,13 @@
+# v2.1 / Native Provider Browser
+
+- Bump Cloud Player to v2.1.
+- Replace Dropbox, Box, and MEGA provider web browsing routes with a shared Cloud Player native browser shell.
+- Remove injected Cast/provider controls from crowded Dropbox and Box web headers.
+- Keep provider websites limited to login, 2FA, and permission approval flows.
+- Keep Cast inside Cloud Player-owned screens.
+- Preserve one-folder-at-a-time Back behavior, returning to Libraries at provider root.
+- Stage live API-token backed native listing/playback for the next provider-backend pass.
+
 # v2.0 / Native Playback Core
 
 - Bump Cloud Player to v2.0 for the Native Playback Core milestone.
