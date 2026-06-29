@@ -6,7 +6,7 @@ Android TV cloud media player based on pCloud TV v4.51, now moving into a connec
 
 <h1 align="center">Cloud Player</h1>
 
-<p align="center"><strong>v2.0 / Native Playback Core</strong></p>
+<p align="center"><strong>v2.1 / Native Playback Core</strong></p>
 
 <p align="center">
 A provider-first <strong>Android / Android TV / Android Auto</strong> media player built with
@@ -16,7 +16,7 @@ engine in a monochrome Material 3 interface.
 </p>
 
 <p align="center">
-  <a href="https://github.com/MikereDD/It-Works-On-My-Machine/releases/download/cloudplayer-v2.0/cloudplayer-v2.0.apk"><strong>Download the APK (v2.0)</strong></a>
+  <a href="https://github.com/MikereDD/It-Works-On-My-Machine/releases/download/cloudplayer-v2.1/cloudplayer-v2.1.apk"><strong>Download the APK (v2.1)</strong></a>
 </p>
 
 ---
@@ -66,11 +66,11 @@ Phase 2 makes logged-in Box accounts open into the Box Files view from Libraries
 
 ## Install
 
-1. Download **[cloudplayer-v2.0.apk](https://github.com/MikereDD/It-Works-On-My-Machine/releases/download/cloudplayer-v2.0/cloudplayer-v2.0.apk)** and copy it to your phone or Android TV device.
+1. Download **[cloudplayer-v2.1.apk](https://github.com/MikereDD/It-Works-On-My-Machine/releases/download/cloudplayer-v2.1/cloudplayer-v2.1.apk)** and copy it to your phone or Android TV device.
 2. Open it with a file manager and install. You'll see Google **Play Protect**'s "unknown developer" notice — tap **More details -> Install anyway**. That's expected for a sideloaded personal build.
 3. Launch **Cloud Player**, choose a provider, and add your library.
 
-> On Android TV, sideload via a file manager or `adb install cloudplayer-v2.0.apk`.
+> On Android TV, sideload via a file manager or `adb install cloudplayer-v2.1.apk`.
 
 ---
 
