@@ -46,6 +46,7 @@ import com.typezero.atomicclock.ntp.NtpServer
 import com.typezero.atomicclock.ui.theme.AtomAmber
 import com.typezero.atomicclock.ui.theme.AtomRed
 import com.typezero.atomicclock.ui.theme.AtomTeal
+import com.typezero.atomicclock.weather.BackgroundLocationStatus
 
 enum class StatusKind { SYNCED, SYNCING, OFFLINE }
 
@@ -127,6 +128,7 @@ fun SettingsSheet(
     onSelectWind: (Boolean) -> Unit,
     onSelectWidgetBg: (Int) -> Unit,
     onSelectServer: (NtpServer) -> Unit,
+    backgroundLocationStatus: BackgroundLocationStatus,
     onBackgroundUpdates: () -> Unit,
     onAbout: () -> Unit,
     onDismiss: () -> Unit,
@@ -233,12 +235,12 @@ fun SettingsSheet(
                     )
                     Column {
                         Text(
-                            "Background widget updates",
+                            backgroundLocationStatus.title,
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurface,
                         )
                         Text(
-                            "Needs \"Allow all the time\" location",
+                            backgroundLocationStatus.message,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )

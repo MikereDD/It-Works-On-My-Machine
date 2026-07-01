@@ -5,6 +5,28 @@ All notable changes to Atomic Clock are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-06-30
+
+### Changed
+- Polished the large widget layout so weather freshness appears on its own secondary line instead of crowding the weather row.
+- Large widget weather row now prioritizes temperature, condition, humidity, and city.
+- Weather freshness now uses muted text by default, amber after 1 hour, and red after 6 hours.
+- Bumped app version to **0.5.1**.
+
+## [0.5.0] - 2026-06-30
+
+### Added
+- **Clear background-location guidance** for automatic widget weather updates.
+  Settings now tells the user whether widget weather can refresh while the app is closed and explains that Android requires Location set to **Allow all the time**.
+- **Weather freshness timestamp** in the large widget. The widget now shows when the weather/city reading was last updated, so stale cached weather is obvious instead of mysterious.
+
+### Changed
+- Background widget update wording now changes based on permission state: location missing, background permission missing, or fully enabled.
+- About screen continues to read the version from `BuildConfig.VERSION_NAME`, now bumped to **0.5.0**.
+
+### Fixed
+- Reduced confusion where the widget appeared broken even though Android was blocking background location. The app now guides users straight to the required permission path.
+
 ## [0.4.1] - 2026-06-22
 
 ### Added

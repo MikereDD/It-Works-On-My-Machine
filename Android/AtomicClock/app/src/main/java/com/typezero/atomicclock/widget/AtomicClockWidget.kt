@@ -15,27 +15,24 @@ import com.typezero.atomicclock.ui.formatOffset
 import com.typezero.atomicclock.weather.formatTemperature
 
 /**
- * Home-screen widget. The time is a self-updating [android.widget.TextClock]
- * (no service needed); drift, source, and weather come from the latest
- * [WidgetStore] snapshot written by the app.
+ * Home-screen widget.
  *
- * Registered twice via the subclasses below so the picker shows a 2x1 and a
- * 4x2 tile; both render responsively and are resizable.
+ * The time is a self-updating TextClock; drift, source, and weather come from
+ * the latest [WidgetStore] snapshot written by the app or background worker.
  */
 open class AtomicClockWidget : AppWidgetProvider() {
-
     override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
+        WidgetWork.ensureScheduled(context)
+        WidgetWork.refreshNow(context)
         ids.forEach { render(context, manager, it) }
     }
 
     override fun onEnabled(context: Context) {
-        // First instance of this tile placed — make sure background refresh runs.
         WidgetWork.ensureScheduled(context)
+        WidgetWork.refreshNow(context)
     }
 
     override fun onDisabled(context: Context) {
-        // Last instance of this tile removed; stop the worker only if no tile of
-        // either size remains on the home screen.
         val manager = AppWidgetManager.getInstance(context)
         val anyLeft = listOf(
             AtomicClockWidgetSmall::class.java,
@@ -50,11 +47,11 @@ open class AtomicClockWidget : AppWidgetProvider() {
         id: Int,
         newOptions: Bundle,
     ) {
+        WidgetWork.ensureScheduled(context)
         render(context, manager, id)
     }
 
     companion object {
-        /** Re-render every placed instance of both tiles; call from the app. */
         fun refresh(context: Context) {
             val manager = AppWidgetManager.getInstance(context)
             val providers = listOf(
@@ -72,7 +69,6 @@ open class AtomicClockWidget : AppWidgetProvider() {
             val minW = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 0)
             val minH = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 0)
             val large = minW >= 180 && minH >= 80
-
             val s = WidgetStore.load(context)
             val views = if (large) buildLarge(context, s) else buildSmall(context, s)
             views.setInt(R.id.widget_root, "setBackgroundResource", backgroundRes(s.bgLevel))
@@ -96,8 +92,7 @@ open class AtomicClockWidget : AppWidgetProvider() {
                     setViewVisibility(R.id.widget_cond_icon, View.GONE)
                 }
                 val accent = when {
-                    s.hasWeather && s.hasSync ->
-                        "${formatTemperature(s.tempC, s.fahrenheit)} · ${formatOffset(s.driftMs)}"
+                    s.hasWeather && s.hasSync -> "${formatTemperature(s.tempC, s.fahrenheit)} · ${formatOffset(s.driftMs)}"
                     s.hasWeather -> formatTemperature(s.tempC, s.fahrenheit)
                     s.hasSync -> formatOffset(s.driftMs)
                     else -> "Open to sync"
@@ -109,11 +104,9 @@ open class AtomicClockWidget : AppWidgetProvider() {
             RemoteViews(context.packageName, R.layout.widget_atomic_large).apply {
                 applyClockFormat(this, s.use24)
                 setOnClickPendingIntent(R.id.widget_root, launchIntent(context))
-
                 if (s.hasWeather) {
                     setViewVisibility(R.id.widget_cond_icon, View.VISIBLE)
                     setImageViewResource(R.id.widget_cond_icon, condIconRes(s.iconName))
-
                     val main = buildString {
                         append(formatTemperature(s.tempC, s.fahrenheit))
                         if (s.label.isNotEmpty()) append(" · ${s.label}")
@@ -128,20 +121,26 @@ open class AtomicClockWidget : AppWidgetProvider() {
                             append(it)
                         }
                     }
-                    setViewVisibility(
-                        R.id.widget_drop_icon,
-                        if (showDrop) View.VISIBLE else View.GONE,
-                    )
+                    setViewVisibility(R.id.widget_drop_icon, if (showDrop) View.VISIBLE else View.GONE)
                     if (rightText.isNotEmpty()) {
                         setViewVisibility(R.id.widget_humidity, View.VISIBLE)
                         setTextViewText(R.id.widget_humidity, rightText)
                     } else {
                         setViewVisibility(R.id.widget_humidity, View.GONE)
                     }
+
+                    if (s.lastWeatherEpoch > 0) {
+                        setViewVisibility(R.id.widget_weather_updated, View.VISIBLE)
+                        setTextViewText(R.id.widget_weather_updated, "Updated ${ago(s.lastWeatherEpoch)}")
+                        setTextColor(R.id.widget_weather_updated, weatherAgeColor(s.lastWeatherEpoch))
+                    } else {
+                        setViewVisibility(R.id.widget_weather_updated, View.GONE)
+                    }
                 } else {
                     setViewVisibility(R.id.widget_cond_icon, View.GONE)
                     setViewVisibility(R.id.widget_drop_icon, View.GONE)
                     setViewVisibility(R.id.widget_humidity, View.GONE)
+                    setViewVisibility(R.id.widget_weather_updated, View.GONE)
                     setTextViewText(R.id.widget_weather, "Weather unavailable")
                 }
 
@@ -159,10 +158,9 @@ open class AtomicClockWidget : AppWidgetProvider() {
             "RAIN" -> R.drawable.ic_widget_rain
             "SNOW" -> R.drawable.ic_widget_snow
             "STORM" -> R.drawable.ic_widget_storm
-            else -> R.drawable.ic_widget_cloud // CLOUD, FOG, fallback
+            else -> R.drawable.ic_widget_cloud
         }
 
-        /** Force the TextClock format so it ignores the system 12/24h toggle. */
         private fun applyClockFormat(views: RemoteViews, use24: Boolean) {
             val time = if (use24) "HH:mm" else "h:mm"
             views.setCharSequence(R.id.widget_clock, "setFormat12Hour", time)
@@ -175,9 +173,20 @@ open class AtomicClockWidget : AppWidgetProvider() {
             val intent = Intent(context, MainActivity::class.java)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             return PendingIntent.getActivity(
-                context, 0, intent,
+                context,
+                0,
+                intent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             )
+        }
+
+        private fun weatherAgeColor(epoch: Long): Int {
+            val mins = ((System.currentTimeMillis() - epoch) / 60_000L).toInt()
+            return when {
+                mins >= 360 -> 0xFFFF6B6B.toInt()
+                mins >= 60 -> 0xFFFFC65C.toInt()
+                else -> 0xFF93A0B8.toInt()
+            }
         }
 
         private fun ago(epoch: Long): String {
@@ -192,8 +201,5 @@ open class AtomicClockWidget : AppWidgetProvider() {
     }
 }
 
-/** The 2x1 tile. */
 class AtomicClockWidgetSmall : AtomicClockWidget()
-
-/** The 4x2 tile. */
 class AtomicClockWidgetLarge : AtomicClockWidget()

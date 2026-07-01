@@ -71,6 +71,17 @@
     </LinearLayout>
 
     <TextView
+        android:id="@+id/widget_weather_updated"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:textColor="@color/widget_muted"
+        android:textSize="11sp"
+        android:maxLines="1"
+        android:ellipsize="end"
+        android:text="" />
+
+    <TextView
         android:id="@+id/widget_stats"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"

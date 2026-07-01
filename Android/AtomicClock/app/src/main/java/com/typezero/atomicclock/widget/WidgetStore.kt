@@ -18,6 +18,7 @@ data class WidgetSnapshot(
     val label: String = "",
     val iconName: String = "CLOUD",
     val city: String? = null,
+    val lastWeatherEpoch: Long = 0L,
     val use24: Boolean = true,
     val fahrenheit: Boolean = false,
     val windMph: Boolean = false,
@@ -45,6 +46,7 @@ object WidgetStore {
             putString("label", s.label)
             putString("iconName", s.iconName)
             putString("city", s.city)
+            putLong("lastWeatherEpoch", s.lastWeatherEpoch)
             putBoolean("use24", s.use24)
             putBoolean("fahrenheit", s.fahrenheit)
             putBoolean("windMph", s.windMph)
@@ -67,6 +69,7 @@ object WidgetStore {
             label = p.getString("label", "") ?: "",
             iconName = p.getString("iconName", "CLOUD") ?: "CLOUD",
             city = p.getString("city", null),
+            lastWeatherEpoch = p.getLong("lastWeatherEpoch", 0L),
             use24 = p.getBoolean("use24", true),
             fahrenheit = p.getBoolean("fahrenheit", false),
             windMph = p.getBoolean("windMph", false),

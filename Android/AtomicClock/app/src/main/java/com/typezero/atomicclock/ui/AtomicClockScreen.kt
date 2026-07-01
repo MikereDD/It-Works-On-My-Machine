@@ -70,6 +70,7 @@ import com.typezero.atomicclock.ui.theme.AtomBlue
 import com.typezero.atomicclock.ui.theme.AtomTeal
 import com.typezero.atomicclock.ui.theme.AtomViolet
 import com.typezero.atomicclock.weather.WeatherState
+import com.typezero.atomicclock.weather.backgroundLocationStatus
 import com.typezero.atomicclock.widget.WidgetBackground
 
 @Composable
@@ -81,9 +82,13 @@ fun AtomicClockScreen(vm: ClockViewModel = viewModel()) {
     var showAbout by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
+    var bgLocationStatus by remember { mutableStateOf(backgroundLocationStatus(context)) }
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
-    ) { granted -> if (granted) vm.refreshWeather() }
+    ) { granted ->
+        bgLocationStatus = backgroundLocationStatus(context)
+        if (granted) vm.refreshWeather()
+    }
 
     val requestWeather: () -> Unit = {
         val granted = ContextCompat.checkSelfPermission(
@@ -98,17 +103,14 @@ fun AtomicClockScreen(vm: ClockViewModel = viewModel()) {
     val backgroundLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
+        bgLocationStatus = backgroundLocationStatus(context)
         val msg = if (granted) "Background updates enabled." else "Background updates not enabled."
         Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
     }
     val enableBackgroundUpdates: () -> Unit = {
-        val foreground = ContextCompat.checkSelfPermission(
-            context, Manifest.permission.ACCESS_COARSE_LOCATION,
-        ) == PackageManager.PERMISSION_GRANTED
-        val background = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q ||
-            ContextCompat.checkSelfPermission(
-                context, Manifest.permission.ACCESS_BACKGROUND_LOCATION,
-            ) == PackageManager.PERMISSION_GRANTED
+        bgLocationStatus = backgroundLocationStatus(context)
+        val foreground = bgLocationStatus.foregroundGranted
+        val background = bgLocationStatus.backgroundGranted
         when {
             background ->
                 Toast.makeText(context, "Background updates are on.", Toast.LENGTH_SHORT).show()
@@ -139,10 +141,8 @@ fun AtomicClockScreen(vm: ClockViewModel = viewModel()) {
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                val granted = ContextCompat.checkSelfPermission(
-                    context, Manifest.permission.ACCESS_COARSE_LOCATION,
-                ) == PackageManager.PERMISSION_GRANTED
-                if (granted) vm.refreshWeather()
+                bgLocationStatus = backgroundLocationStatus(context)
+                if (bgLocationStatus.foregroundGranted) vm.refreshWeather()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -269,6 +269,7 @@ fun AtomicClockScreen(vm: ClockViewModel = viewModel()) {
                 onSelectWind = { vm.setWindMph(it) },
                 onSelectWidgetBg = { vm.setWidgetBackground(WidgetBackground.entries[it]) },
                 onSelectServer = { vm.setServer(it) },
+                backgroundLocationStatus = bgLocationStatus,
                 onBackgroundUpdates = enableBackgroundUpdates,
                 onAbout = {
                     showSettings = false
