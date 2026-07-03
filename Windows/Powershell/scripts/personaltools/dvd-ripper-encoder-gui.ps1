@@ -1,7 +1,7 @@
 <#
 ================================================================
   DVD Ripper Encoder GUI  -  thin WinForms front end
-  version:  1.0  by Mike Redd
+  version:  1.1.0  by Mike Redd
 ----------------------------------------------------------------
   Reuses dvd-ripper-encoder.ps1's own functions (config,
   Encode-DvdTitle, sidecar I/O, language resolution, tool
@@ -34,7 +34,7 @@ param(
 if (-not $DvdEncoderPath) {
     $candidates = @(
         (Join-Path $PSScriptRoot 'dvd-ripper-encoder.ps1')
-        (Join-Path $env:USERPROFILE 'PS\scripts\personaltools\dvd-ripper-encoder.ps1')
+        (Join-Path $HOME 'PS\scripts\personaltools\dvd-ripper-encoder.ps1')
         (Join-Path (Split-Path $PSScriptRoot -Parent) 'personaltools\dvd-ripper-encoder.ps1')
     )
     $DvdEncoderPath = $candidates | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -First 1
@@ -70,11 +70,16 @@ $ErrorActionPreference = 'Continue'
 
 # ----------------------------------------------------------------
 # Pull config + tools from the CLI (resolved via its own helpers).
+# Run dependency setup once so GUI scans get the same libdvdcss self-healing
+# as the CLI menu path.
 # ----------------------------------------------------------------
+try { Ensure-Dependencies; Ensure-Directories } catch { }
 $script:HandBrakeCLI = $null
 $script:MkvPropEdit  = $null
+$script:MkvMerge     = $null
 try { $script:HandBrakeCLI = Get-HandBrakeCLIPath } catch { }
 try { $script:MkvPropEdit  = Get-MkvPropEditPath }  catch { }
+try { $script:MkvMerge     = Get-MkvMergePath }     catch { }
 
 $script:OutputRoot   = if ($Script:OutputRoot)      { $Script:OutputRoot }      else { 'G:\Rip\dvdarchive' }
 $script:MetaRoot     = if ($Script:MetaRoot)        { $Script:MetaRoot }        else { 'G:\Rip\meta' }
@@ -174,7 +179,7 @@ function Get-MovieName {
 #  FORM (dark theme, matching BRencoder GUI)
 # ════════════════════════════════════════════════════════════════
 $form = New-Object System.Windows.Forms.Form
-$form.Text = 'DVD Ripper Encoder GUI  v1.0'
+$form.Text = 'DVD Ripper Encoder GUI  v1.1.0'
 $form.Size = New-Object System.Drawing.Size(1240, 920)
 $form.MinimumSize = New-Object System.Drawing.Size(1040, 840)
 $form.StartPosition = 'CenterScreen'
@@ -240,6 +245,7 @@ $lblPreset.Text = 'Preset'; $lblPreset.Location = '14,60'; $lblPreset.AutoSize =
 $cmbPreset = New-Object System.Windows.Forms.ComboBox
 $cmbPreset.Location = '110,58'; $cmbPreset.Size = '120,24'; $cmbPreset.DropDownStyle = 'DropDownList'
 [void]$cmbPreset.Items.AddRange(@('slow','slower','veryslow')); $cmbPreset.SelectedItem = 'slower'
+$cmbPreset.BackColor = $dark; $cmbPreset.ForeColor = [System.Drawing.Color]::Gainsboro
 $grpSet.Controls.Add($cmbPreset)
 
 $lblCont = New-Object System.Windows.Forms.Label
@@ -247,6 +253,7 @@ $lblCont.Text = 'Container'; $lblCont.Location = '14,92'; $lblCont.AutoSize = $t
 $cmbCont = New-Object System.Windows.Forms.ComboBox
 $cmbCont.Location = '110,90'; $cmbCont.Size = '120,24'; $cmbCont.DropDownStyle = 'DropDownList'
 [void]$cmbCont.Items.AddRange(@('mkv','mp4')); $cmbCont.SelectedItem = 'mkv'
+$cmbCont.BackColor = $dark; $cmbCont.ForeColor = [System.Drawing.Color]::Gainsboro
 $grpSet.Controls.Add($cmbCont)
 
 $lblTune = New-Object System.Windows.Forms.Label
@@ -254,6 +261,7 @@ $lblTune.Text = 'Tune'; $lblTune.Location = '14,124'; $lblTune.AutoSize = $true;
 $cmbTune = New-Object System.Windows.Forms.ComboBox
 $cmbTune.Location = '110,122'; $cmbTune.Size = '120,24'; $cmbTune.DropDownStyle = 'DropDownList'
 [void]$cmbTune.Items.AddRange(@('auto','none','animation','grain')); $cmbTune.SelectedItem = 'auto'
+$cmbTune.BackColor = $dark; $cmbTune.ForeColor = [System.Drawing.Color]::Gainsboro
 $grpSet.Controls.Add($cmbTune)
 
 $lblEnc = New-Object System.Windows.Forms.Label
@@ -372,8 +380,8 @@ function Update-Grid {
     $ai = 0
     foreach ($a in $TitleObj.AudioList) {
         $ai++
-        $code = $a.Code
-        if ((-not $code -or $code -eq 'und') -and $sidecar -and $sidecar.Audio.ContainsKey([int]$a.Num)) { $code = $sidecar.Audio[[int]$a.Num] }
+        $code = Normalize-LanguageCode $a.Code
+        if ((-not $code -or $code -eq 'und') -and $sidecar -and $sidecar.Audio.ContainsKey([int]$a.Num)) { $code = Normalize-LanguageCode ($sidecar.Audio[[int]$a.Num]) }
         if (-not $code) { $code = 'und' }
         $idx = $grid.Rows.Add(("a{0}" -f $ai), 'audio', (Get-CodecFromDesc 'audio' $a.Desc), $code, $true, $a.Desc)
         $grid.Rows[$idx].Tag = [pscustomobject]@{ Num = $a.Num; Kind = 'audio' }
@@ -381,8 +389,8 @@ function Update-Grid {
     $si = 0
     foreach ($s in $TitleObj.SubtitleList) {
         $si++
-        $code = $s.Code
-        if ((-not $code -or $code -eq 'und') -and $sidecar -and $sidecar.Subtitle.ContainsKey([int]$s.Num)) { $code = $sidecar.Subtitle[[int]$s.Num] }
+        $code = Normalize-LanguageCode $s.Code
+        if ((-not $code -or $code -eq 'und') -and $sidecar -and $sidecar.Subtitle.ContainsKey([int]$s.Num)) { $code = Normalize-LanguageCode ($sidecar.Subtitle[[int]$s.Num]) }
         if (-not $code) { $code = 'und' }
         $idx = $grid.Rows.Add(("s{0}" -f $si), 'subtitle', (Get-CodecFromDesc 'subtitle' $s.Desc), $code, $true, $s.Desc)
         $grid.Rows[$idx].Tag = [pscustomobject]@{ Num = $s.Num; Kind = 'subtitle' }
@@ -398,7 +406,7 @@ function Get-GridSelections {
     foreach ($row in $grid.Rows) {
         if ($row.IsNewRow) { continue }
         $tag = $row.Tag; if (-not $tag) { continue }
-        $lang = ([string]$row.Cells['Lang'].Value).Trim().ToLowerInvariant(); if (-not $lang) { $lang = 'und' }
+        $lang = Normalize-LanguageCode ([string]$row.Cells['Lang'].Value); if (-not $lang) { $lang = 'und' }
         $incl = [bool]$row.Cells['Incl'].Value
         if ($tag.Kind -eq 'audio') { $aTotal++; if ($incl) { $aNums += [int]$tag.Num; $aCodes += $lang } }
         elseif ($tag.Kind -eq 'subtitle') { $sTotal++; if ($incl) { $sNums += [int]$tag.Num; $sCodes += $lang } }
@@ -411,8 +419,23 @@ function Get-GridSelections {
 # ════════════════════════════════════════════════════════════════
 #  Scan (background runspace, like BRencoder's preview probe)
 # ════════════════════════════════════════════════════════════════
+
+function Stop-HandBrakeChildren {
+    param([string]$Reason = 'stopping')
+    try {
+        Get-CimInstance Win32_Process -Filter "Name='HandBrakeCLI.exe'" -ErrorAction SilentlyContinue |
+            Where-Object { $_.ParentProcessId -eq $PID } |
+            ForEach-Object {
+                Add-Log ("    {0} HandBrakeCLI PID {1}" -f $Reason, $_.ProcessId)
+                Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+            }
+    }
+    catch { Add-Log "    (HandBrakeCLI enumeration failed: $($_.Exception.Message))" }
+}
+
 function Stop-Scan {
     if ($script:ScanTimer) { try { $script:ScanTimer.Stop() } catch { } }
+    if (-not $script:Encoding) { Stop-HandBrakeChildren -Reason 'stop scan' }
     if ($script:ScanPs) { try { $script:ScanPs.Stop() } catch { }; try { $script:ScanPs.Dispose() } catch { } }
     if ($script:ScanRs) { try { $script:ScanRs.Dispose() } catch { } }
     $script:ScanPs = $null; $script:ScanRs = $null; $script:ScanAsync = $null; $script:ScanTimer = $null
@@ -576,11 +599,7 @@ function Stop-Encode {
     $script:CancelRequested = $true
     $btnCancel.Enabled = $false
     Add-Log '==> Cancelling - terminating HandBrakeCLI...'
-    try {
-        Get-CimInstance Win32_Process -Filter "Name='HandBrakeCLI.exe'" -ErrorAction SilentlyContinue |
-            Where-Object { $_.ParentProcessId -eq $PID } |
-            ForEach-Object { Add-Log "    kill HandBrakeCLI PID $($_.ProcessId)"; Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
-    } catch { Add-Log "    (HandBrakeCLI enumeration failed: $($_.Exception.Message))" }
+    Stop-HandBrakeChildren -Reason 'kill'
     if ($script:Ps) { try { $script:Ps.Stop() } catch { } }
 }
 
@@ -614,6 +633,7 @@ $form.Add_Shown({
     Add-Log "Loaded dvd-ripper-encoder from $DvdEncoderPath"
     Add-Log ("HandBrakeCLI: {0}" -f $(if ($script:HandBrakeCLI) { $script:HandBrakeCLI } else { 'NOT FOUND' }))
     Add-Log ("mkvpropedit : {0}" -f $(if ($script:MkvPropEdit) { $script:MkvPropEdit } else { 'not found (language tagging disabled)' }))
+    Add-Log ("mkvmerge    : {0}" -f $(if ($script:MkvMerge) { $script:MkvMerge } else { 'not found (stream validation disabled)' }))
     if (-not $script:HandBrakeCLI) { Add-Log 'Install HandBrake to scan/encode.' }
 })
 
