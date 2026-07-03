@@ -1,9 +1,9 @@
-﻿#--------------------------------------------
+#--------------------------------------------
 # file:     dvd-ripper-encoder.ps1
 # author:   Mike Redd
-# version:  4.6.1
+# version:  4.7.0
 # created:  2026-04-11
-# updated:  2026-06-21
+# updated:  2026-07-03
 # desc:     Encode DVDs directly with HandBrakeCLI on Windows
 #           using high-quality x265 defaults. Sibling pipeline
 #           to BRencoder.ps1: DVDTrackMeta sidecars, mkvpropedit
@@ -20,6 +20,9 @@
 #                 LPCM tracks lossless.
 #           v4.6.1: fix invalid HandBrake fallback codec (flac -> flac24)
 #                   that failed job init; drop redundant --audio-copy-mask.
+#           v4.7.0: stable 1.0 production pass — self-contained UI
+#                   fallback, ISO language normalization, safe temp output,
+#                   MKVToolNix count validation, and sidecar-first metadata.
 #--------------------------------------------
 
 param(
@@ -27,38 +30,61 @@ param(
     [switch]$AutoAccept
 )
 
-# ── Load custom UI ────────────────────────────────────────────
-$uiPath = "$env:USERPROFILE\PS\profile.d\ui.ps1"
+# ── Load custom UI/core helpers, with production-safe fallbacks ──
+# Prefer the user's shared profile helpers, but never abort the encoder/GUI
+# just because those personal UI files are missing on a fresh machine.
+$profileRoot = Join-Path $HOME 'PS\profile.d'
+$uiPath      = Join-Path $profileRoot 'ui.ps1'
+$corePath    = Join-Path $profileRoot 'core.ps1'
+
 if (Test-Path -LiteralPath $uiPath) {
     try { . $uiPath }
-    catch {
-        Write-Host "Failed to load ui.ps1: $($_.Exception.Message)"
-        return
-    }
+    catch { Write-Host "Failed to load ui.ps1, using fallback UI: $($_.Exception.Message)" }
 }
-else {
-    Write-Host "Missing ui.ps1: $uiPath"
-    return
-}
-
-# ── Load core helper ──────────────────────────────────────────
-$corePath = "$env:USERPROFILE\PS\profile.d\core.ps1"
 if (Test-Path -LiteralPath $corePath) {
     try { . $corePath }
-    catch {
-        Write-Host "Failed to load core.ps1: $($_.Exception.Message)"
-        return
+    catch { Write-Host "Failed to load core.ps1, using fallback core helpers: $($_.Exception.Message)" }
+}
+
+# ANSI colors are optional. Define harmless fallbacks when the shared UI was
+# not loaded so dot-sourcing from the GUI stays reliable.
+foreach ($pair in @{
+    UI_R=''; UI_GRY=''; UI_DIM=''; UI_GRN=''; UI_YLW=''; UI_MAG=''; UI_CYN=''
+}.GetEnumerator()) {
+    if (-not (Get-Variable -Name $pair.Key -Scope Global -ErrorAction SilentlyContinue)) {
+        Set-Variable -Name $pair.Key -Value $pair.Value -Scope Global
     }
 }
-else {
-    Write-Host "Missing core.ps1: $corePath"
-    return
+
+if (-not (Get-Command Clear-UiScreen -ErrorAction SilentlyContinue)) {
+    function Clear-UiScreen { try { Clear-Host } catch { } }
+}
+if (-not (Get-Command Get-UiBoxWidth -ErrorAction SilentlyContinue)) {
+    function Get-UiBoxWidth { param([int]$MaxWidth = 70, [int]$MinWidth = 48) return $MaxWidth }
+}
+if (-not (Get-Command Write-UiHeader -ErrorAction SilentlyContinue)) {
+    function Write-UiHeader { param([string]$Title, [string]$Subtitle = '', [int]$Width = 70) Write-Host "=== $Title ==="; if ($Subtitle) { Write-Host "    $Subtitle" } }
+}
+if (-not (Get-Command Write-UiRow -ErrorAction SilentlyContinue)) {
+    function Write-UiRow { param([string]$Label, [string]$Value, [string]$Color = '') Write-Host ("  {0,-14} {1}" -f $Label, $Value) }
+}
+if (-not (Get-Command Write-UiBlankLine -ErrorAction SilentlyContinue)) {
+    function Write-UiBlankLine { Write-Host '' }
+}
+if (-not (Get-Command Write-UiDivider -ErrorAction SilentlyContinue)) {
+    function Write-UiDivider { Write-Host ('-' * 60) }
+}
+if (-not (Get-Command Write-CoreError -ErrorAction SilentlyContinue)) {
+    function Write-CoreError { param([string]$Message) Write-Host "ERROR: $Message" }
+}
+if (-not (Get-Command Pause-Core -ErrorAction SilentlyContinue)) {
+    function Pause-Core { param([string]$Message = 'Press Enter to continue...') [void](Read-Host $Message) }
 }
 
 $ErrorActionPreference = 'Stop'
 
 $ScriptName    = "DVD Ripper Encoder"
-$ScriptVersion = "4.6.1"
+$ScriptVersion = "4.7.0"
 $ScriptAuthor  = "Mike Redd"
 
 # ── Config ────────────────────────────────────────────────────
@@ -70,6 +96,7 @@ $Script:SourceRoot       = Join-Path $Script:RootPath 'dvdsource'
 $Script:DefaultDrive     = 'D:'
 $Script:HandBrakeCLI     = $null
 $Script:MkvPropEdit      = $null
+$Script:MkvMerge         = $null
 
 $Script:DefaultContainer = 'mkv'
 $Script:DefaultEncoder   = 'x265_10bit'
@@ -166,6 +193,37 @@ function Get-MkvPropEditPath {
     }
 
     $cmd = Get-Command mkvpropedit -ErrorAction SilentlyContinue
+    if ($cmd -and $cmd.Source -and (Test-Path -LiteralPath $cmd.Source)) {
+        return [string]$cmd.Source
+    }
+
+    return $null
+}
+
+function Get-MkvMergePath {
+    if ($Script:MkvMerge -and (Test-Path -LiteralPath $Script:MkvMerge)) {
+        return [string]$Script:MkvMerge
+    }
+
+    $paths = @(
+        'C:\Program Files\MKVToolNix\mkvmerge.exe',
+        'C:\Program Files (x86)\MKVToolNix\mkvmerge.exe',
+        "$env:LOCALAPPDATA\Programs\MKVToolNix\mkvmerge.exe",
+        'C:\Tools\MKVToolNix\mkvmerge.exe'
+    )
+
+    if ($Script:MkvPropEdit) {
+        $sib = Join-Path (Split-Path -Parent $Script:MkvPropEdit) 'mkvmerge.exe'
+        $paths = @($sib) + $paths
+    }
+
+    foreach ($p in ($paths | Select-Object -Unique)) {
+        if ($p -and (Test-Path -LiteralPath $p)) {
+            return [string]$p
+        }
+    }
+
+    $cmd = Get-Command mkvmerge -ErrorAction SilentlyContinue
     if ($cmd -and $cmd.Source -and (Test-Path -LiteralPath $cmd.Source)) {
         return [string]$cmd.Source
     }
@@ -346,7 +404,7 @@ function Ensure-Dependencies {
         }
     }
 
-    # mkvpropedit is optional — only needed for the language remux step.
+    # MKVToolNix is optional, but production validation/tagging uses it when present.
     $resolvedMkv = Get-MkvPropEditPath
     if ($resolvedMkv) {
         $Script:MkvPropEdit = $resolvedMkv
@@ -355,6 +413,15 @@ function Ensure-Dependencies {
         $Script:MkvPropEdit = $null
         Write-Host "  $($global:UI_YLW)mkvpropedit not found — language remux will be skipped.$($global:UI_R)"
         Write-Host "  $($global:UI_GRY)Install MKVToolNix to enable it.$($global:UI_R)"
+    }
+
+    $resolvedMkvMerge = Get-MkvMergePath
+    if ($resolvedMkvMerge) {
+        $Script:MkvMerge = $resolvedMkvMerge
+    }
+    else {
+        $Script:MkvMerge = $null
+        Write-Host "  $($global:UI_YLW)mkvmerge not found — final MKV stream-count validation will be skipped.$($global:UI_R)"
     }
 }
 
@@ -407,6 +474,29 @@ function Resolve-HandBrakeInputPath {
     return [string]$resolved
 }
 
+
+function Normalize-LanguageCode {
+    param([AllowNull()][string]$Code)
+
+    if ([string]::IsNullOrWhiteSpace($Code)) { return 'und' }
+    $c = $Code.Trim().ToLowerInvariant()
+
+    $aliases = @{
+        # ISO 639-2 bibliographic -> terminologic/common Matroska form
+        fre='fra'; ger='deu'; chi='zho'; dut='nld'; baq='eus'; cze='ces'; gre='ell'
+        ice='isl'; mac='mkd'; mao='mri'; may='msa'; per='fas'; rum='ron'; slo='slk'
+        tib='bod'; wel='cym'; alb='sqi'; arm='hye'; bur='mya'
+        # Common two-letter input conveniences for hand-edited sidecars / GUI edits
+        en='eng'; fr='fra'; es='spa'; ja='jpn'; de='deu'; it='ita'; pt='por'; zh='zho'
+        ko='kor'; ru='rus'; nl='nld'; sv='swe'; no='nor'; da='dan'; fi='fin'; pl='pol'
+        cs='ces'; el='ell'; he='heb'; id='ind'; uk='ukr'; ar='ara'; hi='hin'; th='tha'
+    }
+
+    if ($aliases.ContainsKey($c)) { return [string]$aliases[$c] }
+    if ($c -match '^[a-z]{3}$') { return [string]$c }
+    return 'und'
+}
+
 function Get-TrackLangFromDesc {
     # Parses a HandBrake track line tail like:
     #   "English (AC3) (2.0 ch) (iso639-2: eng), 48000Hz, 192000bps"
@@ -421,7 +511,7 @@ function Get-TrackLangFromDesc {
 
     $code = ''
     if ($Desc -match 'iso639-2:\s*([A-Za-z]{2,3})') {
-        $code = $matches[1].ToLowerInvariant()
+        $code = Normalize-LanguageCode $matches[1]
     }
 
     $label =
@@ -604,10 +694,10 @@ function Read-DvdTrackMeta {
             $title = [int]$matches[1]
         }
         elseif ($t -match '^audio\.(\d+)\s*=\s*([A-Za-z]{2,3})\s*(?:#.*)?$') {
-            $audio[[int]$matches[1]] = $matches[2].ToLowerInvariant()
+            $audio[[int]$matches[1]] = Normalize-LanguageCode $matches[2]
         }
         elseif ($t -match '^subtitle\.(\d+)\s*=\s*([A-Za-z]{2,3})\s*(?:#.*)?$') {
-            $sub[[int]$matches[1]] = $matches[2].ToLowerInvariant()
+            $sub[[int]$matches[1]] = Normalize-LanguageCode $matches[2]
         }
     }
 
@@ -639,7 +729,7 @@ function Write-DvdTrackMeta {
     [void]$sb.AppendLine("title=$Title")
 
     foreach ($a in $AudioList) {
-        $code = $a.Code
+        $code = Normalize-LanguageCode $a.Code
         if ((-not $code) -or $code -eq 'und') {
             if ($Existing -and $Existing.Audio.ContainsKey([int]$a.Num)) { $code = $Existing.Audio[[int]$a.Num] }
         }
@@ -648,7 +738,7 @@ function Write-DvdTrackMeta {
     }
 
     foreach ($s in $SubtitleList) {
-        $code = $s.Code
+        $code = Normalize-LanguageCode $s.Code
         if ((-not $code) -or $code -eq 'und') {
             if ($Existing -and $Existing.Subtitle.ContainsKey([int]$s.Num)) { $code = $Existing.Subtitle[[int]$s.Num] }
         }
@@ -692,13 +782,13 @@ function Resolve-LangCodes {
     foreach ($t in $Selected) {
         $c = ''
         if ($t.Code -and $t.Code -ne 'und') {
-            $c = $t.Code
+            $c = Normalize-LanguageCode $t.Code
         }
         elseif ($SidecarMap -and $SidecarMap.ContainsKey([int]$t.Num)) {
-            $c = $SidecarMap[[int]$t.Num]
+            $c = Normalize-LanguageCode ($SidecarMap[[int]$t.Num])
         }
         if (-not $c) { $c = 'und' }
-        $codes += $c
+        $codes += (Normalize-LanguageCode $c)
     }
     return ,$codes
 }
@@ -730,14 +820,14 @@ function Invoke-MKVLanguageRemux {
     $edits  = 0
 
     for ($i = 0; $i -lt $AudioCodes.Count; $i++) {
-        $c = $AudioCodes[$i]
+        $c = Normalize-LanguageCode $AudioCodes[$i]
         if ($c -and $c -ne 'und') {
             $ppArgs += @('--edit', "track:a$($i + 1)", '--set', "language=$c")
             $edits++
         }
     }
     for ($i = 0; $i -lt $SubtitleCodes.Count; $i++) {
-        $c = $SubtitleCodes[$i]
+        $c = Normalize-LanguageCode $SubtitleCodes[$i]
         if ($c -and $c -ne 'und') {
             $ppArgs += @('--edit', "track:s$($i + 1)", '--set', "language=$c")
             $edits++
@@ -766,6 +856,45 @@ function Invoke-MKVLanguageRemux {
     }
     catch {
         Write-Host "  $($global:UI_YLW)Language remux failed: $($_.Exception.Message)$($global:UI_R)"
+    }
+}
+
+# ── Final MKV validation ───────────────────────────────────────
+function Test-EncodedMkvTracks {
+    param(
+        [Parameter(Mandatory)][string]$MkvPath,
+        [int]$ExpectedAudioCount = -1,
+        [int]$ExpectedSubtitleCount = -1
+    )
+
+    if ($MkvPath -notmatch '\.mkv$') { return }
+    if (-not $Script:MkvMerge) {
+        Write-Host "  $($global:UI_YLW)MKV validation skipped — mkvmerge unavailable.$($global:UI_R)"
+        return
+    }
+    if (-not (Test-Path -LiteralPath $MkvPath)) {
+        throw "MKV validation failed — file not found: $MkvPath"
+    }
+
+    try {
+        $json = & $Script:MkvMerge -J $MkvPath 2>&1 | Out-String
+        if ($LASTEXITCODE -ne 0) { throw "mkvmerge exited with code $LASTEXITCODE: $json" }
+        $info = $json | ConvertFrom-Json
+        $tracks = @($info.tracks)
+        $audioCount = @($tracks | Where-Object { $_.type -eq 'audio' }).Count
+        $subCount   = @($tracks | Where-Object { $_.type -eq 'subtitles' }).Count
+
+        if ($ExpectedAudioCount -ge 0 -and $audioCount -ne $ExpectedAudioCount) {
+            throw "audio count mismatch: expected $ExpectedAudioCount, found $audioCount"
+        }
+        if ($ExpectedSubtitleCount -ge 0 -and $subCount -ne $ExpectedSubtitleCount) {
+            throw "subtitle count mismatch: expected $ExpectedSubtitleCount, found $subCount"
+        }
+
+        Write-Host "  $($global:UI_GRN)MKV validation passed: audio=$audioCount subtitle=$subCount.$($global:UI_R)"
+    }
+    catch {
+        throw "MKV validation failed: $($_.Exception.Message)"
     }
 }
 
@@ -895,7 +1024,14 @@ function Encode-DvdTitle {
 
     $resolvedInput = Resolve-HandBrakeInputPath -Path $InputPath
     $safeName      = New-SafeName -Name $MovieName
+    if (-not (Test-Path -LiteralPath $Script:OutputRoot)) {
+        [System.IO.Directory]::CreateDirectory($Script:OutputRoot) | Out-Null
+    }
     $outputFile    = Join-Path $Script:OutputRoot "$safeName.$Container"
+
+    if ($Container -eq 'mp4' -and $SubtitleSelection -ne 'none') {
+        Write-Host "  $($global:UI_YLW)MP4 is not recommended for full DVD archival subtitles. MKV is the stable production default.$($global:UI_R)"
+    }
 
     if (Test-Path -LiteralPath $outputFile) {
         Write-UiBlankLine
@@ -910,10 +1046,20 @@ function Encode-DvdTitle {
         }
     }
 
+    $workOutputFile = $outputFile
+    if (-not $DryRun) {
+        $stamp = Get-Date -Format 'yyyyMMdd_HHmmss'
+        $workOutputFile = Join-Path $Script:OutputRoot ("{0}.__encoding_{1}.{2}" -f $safeName, $stamp, $Container)
+        if (Test-Path -LiteralPath $workOutputFile) {
+            Remove-Item -LiteralPath $workOutputFile -Force -ErrorAction SilentlyContinue
+        }
+    }
+
     Write-UiBlankLine
     Write-Host "  $($global:UI_GRN)Encoding title $TitleNumber...$($global:UI_R)"
     Write-Host ("  {0}Input  {1} {2}" -f $global:UI_DIM, $global:UI_R, $resolvedInput)
     Write-Host ("  {0}Output {1} {2}" -f $global:UI_DIM, $global:UI_R, $outputFile)
+    if ($workOutputFile -ne $outputFile) { Write-Host ("  {0}Temp   {1} {2}" -f $global:UI_DIM, $global:UI_R, $workOutputFile) }
     Write-Host ("  {0}Codec  {1} {2}" -f $global:UI_DIM, $global:UI_R, $Script:DefaultEncoder)
     Write-Host ("  {0}RF     {1} {2}" -f $global:UI_DIM, $global:UI_R, $RF)
     Write-Host ("  {0}Preset {1} {2}" -f $global:UI_DIM, $global:UI_R, $Preset)
@@ -926,7 +1072,7 @@ function Encode-DvdTitle {
     $encodeArgs = @(
         '--input',          $resolvedInput,
         '--title',          $TitleNumber,
-        '--output',         $outputFile,
+        '--output',         $workOutputFile,
         '--format',         "av_$Container",
 
         '--encoder',        $Script:DefaultEncoder,
@@ -996,21 +1142,32 @@ function Encode-DvdTitle {
     if ($hbExit -ne 0) {
         throw "HandBrake exited with code $hbExit — no usable output. See the HB| lines above."
     }
-    if (-not (Test-Path -LiteralPath $outputFile)) {
-        throw "Encode finished (exit 0) but no output file at: $outputFile"
+    if (-not (Test-Path -LiteralPath $workOutputFile)) {
+        throw "Encode finished (exit 0) but no output file at: $workOutputFile"
     }
 
     Write-UiBlankLine
-    Write-Host "  $($global:UI_GRN)Encode complete:$($global:UI_R) $outputFile"
+    Write-Host "  $($global:UI_GRN)Encode complete:$($global:UI_R) $workOutputFile"
 
-    # Post-encode: fix language tags (MKV only), archive source, write NFO.
+    # Post-encode: validate stream counts, fix language tags (MKV only), then publish final file.
     if ($Container -eq 'mkv') {
+        $expectedAudio = if ($AudioCodes.Count -gt 0 -or $AudioSelection -eq 'none') { [int]$AudioCodes.Count } else { -1 }
+        $expectedSubs  = if ($SubtitleCodes.Count -gt 0 -or $SubtitleSelection -eq 'none') { [int]$SubtitleCodes.Count } else { -1 }
+        Write-UiBlankLine
+        Write-Host "  $($global:UI_GRN)Validating MKV stream counts...$($global:UI_R)"
+        Test-EncodedMkvTracks -MkvPath $workOutputFile -ExpectedAudioCount $expectedAudio -ExpectedSubtitleCount $expectedSubs
+
         Write-UiBlankLine
         Write-Host "  $($global:UI_GRN)Tagging track languages...$($global:UI_R)"
-        Invoke-MKVLanguageRemux -MkvPath $outputFile -AudioCodes $AudioCodes -SubtitleCodes $SubtitleCodes
+        Invoke-MKVLanguageRemux -MkvPath $workOutputFile -AudioCodes $AudioCodes -SubtitleCodes $SubtitleCodes
     }
     else {
-        Write-Host "  $($global:UI_GRY)Container is $Container — language remux applies to MKV only.$($global:UI_R)"
+        Write-Host "  $($global:UI_GRY)Container is $Container — language remux and MKV validation apply to MKV only.$($global:UI_R)"
+    }
+
+    if ($workOutputFile -ne $outputFile) {
+        Move-Item -LiteralPath $workOutputFile -Destination $outputFile -Force
+        Write-Host "  $($global:UI_GRN)Published final file:$($global:UI_R) $outputFile"
     }
 
     Copy-DvdSource -InputPath $InputPath -MovieName $MovieName
@@ -1180,6 +1337,11 @@ function Invoke-EncodeFlow {
     $audioCodes = Resolve-LangCodes -Selected $selAudio -SidecarMap ($(if ($sidecar) { $sidecar.Audio }    else { $null }))
     $subCodes   = Resolve-LangCodes -Selected $selSubs  -SidecarMap ($(if ($sidecar) { $sidecar.Subtitle } else { $null }))
 
+    # Production safety: write/refresh sidecar before the encode too. If a disc
+    # fails halfway through, the track map still exists for correction/retry.
+    Write-DvdTrackMeta -MovieName $MovieName -Title $selectedTitle `
+        -AudioList $titleObj.AudioList -SubtitleList $titleObj.SubtitleList -Existing $sidecar
+
     $tuneInfo = Get-AutoTune -MovieName $MovieName
     $tune     = $tuneInfo.Tune
 
@@ -1341,8 +1503,8 @@ function Remux-ExistingMkv-Action {
     $audioIn = (Read-Host "Audio track languages").Trim()
     $subIn   = (Read-Host "Subtitle track languages").Trim()
 
-    $audioCodes = if ($audioIn) { @($audioIn -split '\s*,\s*') } else { @() }
-    $subCodes   = if ($subIn)   { @($subIn   -split '\s*,\s*') } else { @() }
+    $audioCodes = if ($audioIn) { @($audioIn -split '\s*,\s*' | ForEach-Object { Normalize-LanguageCode $_ }) } else { @() }
+    $subCodes   = if ($subIn)   { @($subIn   -split '\s*,\s*' | ForEach-Object { Normalize-LanguageCode $_ }) } else { @() }
 
     try {
         Invoke-MKVLanguageRemux -MkvPath ([string]$mkvPath) -AudioCodes $audioCodes -SubtitleCodes $subCodes
@@ -1369,6 +1531,7 @@ function Show-Config {
     Write-UiRow "Preset"        $Script:DefaultPreset $global:UI_GRY
     Write-UiRow "HandBrakeCLI"  $Script:HandBrakeCLI $global:UI_GRY
     Write-UiRow "MkvPropEdit"   $(if ($Script:MkvPropEdit) { $Script:MkvPropEdit } else { '(not found — remux disabled)' }) $global:UI_GRY
+    Write-UiRow "MkvMerge"      $(if ($Script:MkvMerge) { $Script:MkvMerge } else { '(not found — validation disabled)' }) $global:UI_GRY
     Write-UiRow "ArchiveSource" $(if ($Script:ArchiveSource) { 'Yes' } else { 'No' }) $global:UI_GRY
     Write-UiRow "DryRun"        $(if ($DryRun) { 'Yes' } else { 'No' }) $global:UI_GRY
     Write-UiRow "AutoAccept"    $(if ($AutoAccept) { 'Yes' } else { 'No' }) $global:UI_GRY
@@ -1414,4 +1577,4 @@ while ($true) {
     }
 }
 
-} # end: if (-not $env:DVDENCODER_NOMENU)
+} # end: if (-not $env:DVDENCODER_NOMENU)
