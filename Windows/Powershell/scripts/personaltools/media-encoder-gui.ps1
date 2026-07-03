@@ -1,7 +1,7 @@
 ﻿<#
 ================================================================
   Media Encoder GUI  -  all-in-one disc -> HEVC front end
-  version:  0.3  (fixed UI binding + safer tool/sidecar runners)  by Mike Redd
+  version:  1.0.1  (stable production front end hotfix)  by Mike Redd
 ----------------------------------------------------------------
   One window over the existing toolset. It does NOT reimplement any
   pipeline; each engine is dot-sourced inside its OWN background
@@ -44,7 +44,16 @@ param(
 if ([System.Threading.Thread]::CurrentThread.GetApartmentState() -ne [System.Threading.ApartmentState]::STA) {
     $winPS = (Get-Command powershell.exe -ErrorAction SilentlyContinue).Source
     if ($winPS) {
-        & $winPS -NoProfile -ExecutionPolicy Bypass -STA -File $PSCommandPath @args
+        # Preserve bound engine-path parameters when relaunching from pwsh/MTA.
+        $launchArgs = @('-NoProfile','-ExecutionPolicy','Bypass','-STA','-File', $PSCommandPath)
+        foreach ($kv in $PSBoundParameters.GetEnumerator()) {
+            if ($null -ne $kv.Value -and ([string]$kv.Value).Length -gt 0) {
+                $launchArgs += ('-' + $kv.Key)
+                $launchArgs += [string]$kv.Value
+            }
+        }
+        $launchArgs += $args
+        & $winPS @launchArgs
         return
     }
     Write-Host "This GUI must run in a single-threaded apartment (STA)."
@@ -61,14 +70,19 @@ $ErrorActionPreference = 'Continue'
 
 function Resolve-Engine {
     param([string]$Given, [string]$FileName)
-    if ($Given) { return $Given }
+    if ($Given) { return [Environment]::ExpandEnvironmentVariables($Given) }
+
+    $personalRoot = Join-Path $HOME 'PS\scripts\personaltools'
+    $parent       = Split-Path $PSScriptRoot -Parent
     $cands = @(
-        (Join-Path $PSScriptRoot $FileName)
-        (Join-Path $env:USERPROFILE "PS\scripts\personaltools\$FileName")
-        (Join-Path (Split-Path $PSScriptRoot -Parent) "personaltools\$FileName")
-    )
-    $hit = $cands | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -First 1
-    if ($hit) { return $hit } else { return $cands[0] }
+        (Join-Path $PSScriptRoot $FileName),
+        (Join-Path $personalRoot $FileName),
+        $(if ($parent) { Join-Path $parent "personaltools\$FileName" } else { $null })
+    ) | Where-Object { $_ }
+
+    $hit = $cands | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+    if ($hit) { return $hit }
+    return (Join-Path $PSScriptRoot $FileName)
 }
 $DvdEncoderPath   = Resolve-Engine $DvdEncoderPath   'dvd-ripper-encoder.ps1'
 $BREncoderPath    = Resolve-Engine $BREncoderPath    'BRencoder.ps1'
@@ -95,7 +109,9 @@ $script:ProgFile = $null
 $script:TotalSeconds = 0
 # carried between the two Blu-ray stages
 $script:BdMovie = $null; $script:BdSourceM2ts = $null; $script:BdAudioCodes = @(); $script:BdSubCodes = @()
-$script:BdBackupOnly = $false   # Blu-ray "Backup only": decrypt to MKV, skip BRencoder
+$script:BdBackupOnly = $false   # Blu-ray "Backup only": decrypt to a full disc folder, skip BRencoder
+$script:BdBackupRoot = $null
+$script:BdCleanupAfterEncode = $false
 # pass 2: post-encode chaining + standalone tools
 $script:LastOutput = $null     # last good encode/tool output, target for the tools
 $script:PostQueue  = @()       # queued post-encode steps (sample/minfo) after an encode
@@ -133,11 +149,83 @@ function Get-OpticalDrives {
     return $d
 }
 
+function Resolve-GuiLanguageCode {
+    param([AllowNull()][string]$Code)
+    $c = ([string]$Code).Trim().ToLowerInvariant()
+    if ([string]::IsNullOrWhiteSpace($c)) { return 'und' }
+    $c = $c -replace '[^a-z]', ''
+    if ([string]::IsNullOrWhiteSpace($c)) { return 'und' }
+    $map = @{
+        'en'='eng'; 'eng'='eng'; 'english'='eng'
+        'fr'='fra'; 'fre'='fra'; 'fra'='fra'; 'french'='fra'
+        'es'='spa'; 'spa'='spa'; 'spanish'='spa'
+        'de'='deu'; 'ger'='deu'; 'deu'='deu'; 'german'='deu'
+        'it'='ita'; 'ita'='ita'; 'italian'='ita'
+        'ja'='jpn'; 'jp'='jpn'; 'jpn'='jpn'; 'japanese'='jpn'
+        'ko'='kor'; 'kor'='kor'; 'korean'='kor'
+        'zh'='zho'; 'chi'='zho'; 'zho'='zho'; 'chinese'='zho'
+        'pt'='por'; 'por'='por'; 'portuguese'='por'
+        'ru'='rus'; 'rus'='rus'; 'russian'='rus'
+        'nl'='nld'; 'dut'='nld'; 'nld'='nld'; 'dutch'='nld'
+        'sv'='swe'; 'swe'='swe'; 'swedish'='swe'
+        'no'='nor'; 'nor'='nor'; 'norwegian'='nor'
+        'da'='dan'; 'dan'='dan'; 'danish'='dan'
+        'fi'='fin'; 'fin'='fin'; 'finnish'='fin'
+        'pl'='pol'; 'pol'='pol'; 'polish'='pol'
+        'tr'='tur'; 'tur'='tur'; 'turkish'='tur'
+        'ar'='ara'; 'ara'='ara'; 'arabic'='ara'
+        'hi'='hin'; 'hin'='hin'; 'hindi'='hin'
+        'und'='und'; 'unknown'='und'; 'undefined'='und'
+    }
+    if ($map.ContainsKey($c)) { return $map[$c] }
+    if ($c.Length -eq 3) { return $c }
+    return 'und'
+}
+
+function Test-EngineAvailable {
+    param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][string]$Name)
+    if ($Path -and (Test-Path -LiteralPath $Path -PathType Leaf)) { return $true }
+    Add-LogColor ("    ERROR: {0} not found -> {1}" -f $Name, $Path) ([System.Drawing.Color]::FromArgb(240, 120, 120))
+    return $false
+}
+
+function Get-BluRayBackupRootFromM2ts {
+    param([string]$M2tsPath)
+    if (-not $M2tsPath) { return $null }
+    try {
+        $fi = Get-Item -LiteralPath $M2tsPath -ErrorAction Stop
+        $dir = $fi.Directory
+        while ($dir) {
+            if ($dir.Name -ieq 'BDMV') { return $dir.Parent.FullName }
+            $dir = $dir.Parent
+        }
+    } catch { }
+    return $null
+}
+
+function Remove-BluRayBackupRoot {
+    param([string]$Root)
+    if (-not $Root -or -not (Test-Path -LiteralPath $Root -PathType Container)) { return }
+    $safeRoot = (Join-Path 'G:\Rip' 'bluray')
+    try {
+        $fullRoot = [System.IO.Path]::GetFullPath($Root)
+        $fullSafe = [System.IO.Path]::GetFullPath($safeRoot)
+        if (-not $fullRoot.StartsWith($fullSafe, [System.StringComparison]::OrdinalIgnoreCase)) {
+            Add-Log "    backup cleanup skipped: outside expected Blu-ray root ($fullRoot)"
+            return
+        }
+        Add-Log "    removing Blu-ray backup: $fullRoot"
+        Remove-Item -LiteralPath $fullRoot -Recurse -Force -ErrorAction Stop
+    } catch {
+        Add-Log "    backup cleanup failed: $($_.Exception.Message)"
+    }
+}
+
 # ════════════════════════════════════════════════════════════════
 #  FORM (dark theme)
 # ════════════════════════════════════════════════════════════════
 $form = New-Object System.Windows.Forms.Form
-$form.Text = 'Media Encoder GUI  v0.3.9  (DVD / Blu-ray / File / Audio CD)'
+$form.Text = 'Media Encoder GUI  v1.0.0  (DVD / Blu-ray / File / Audio CD)'
 $form.Size = New-Object System.Drawing.Size(1240, 920)
 $form.MinimumSize = New-Object System.Drawing.Size(1040, 920)
 $form.StartPosition = 'CenterScreen'
@@ -242,7 +330,7 @@ $chkDry = New-Object System.Windows.Forms.CheckBox
 $chkDry.Text = 'Dry run (DVD)'; $chkDry.Location = '14,230'; $chkDry.Size = '160,22'
 $grpSet.Controls.Add($chkDry)
 $chkBackupOnly = New-Object System.Windows.Forms.CheckBox
-$chkBackupOnly.Text = 'Backup only (decrypt to MKV, no encode)'; $chkBackupOnly.Location = '14,230'; $chkBackupOnly.Size = '300,22'; $chkBackupOnly.Visible = $false
+$chkBackupOnly.Text = 'Backup only (decrypt full disc, no encode)'; $chkBackupOnly.Location = '14,230'; $chkBackupOnly.Size = '300,22'; $chkBackupOnly.Visible = $false
 $grpSet.Controls.Add($chkBackupOnly)
 $lblBdNote = New-Object System.Windows.Forms.Label
 $lblBdNote.Text = 'Blu-ray mode: BRencoder controls quality / preset / HDR. Only "Keep backup" applies here.'
@@ -280,7 +368,7 @@ $lblName = New-Object System.Windows.Forms.Label
 $lblName.Text = 'Movie name'; $lblName.Location = '352,10'; $lblName.AutoSize = $true
 $form.Controls.Add($lblName)
 $txtName = New-Object System.Windows.Forms.TextBox
-$txtName.Location = '352,30'; $txtName.Size = '740,24'; $txtName.Anchor = 'Top, Left, Right'
+$txtName.Location = '352,30'; $txtName.Size = '540,24'; $txtName.Anchor = 'Top, Left, Right'
 $txtName.Font = $mono; $txtName.BackColor = $dark; $txtName.ForeColor = [System.Drawing.Color]::Gainsboro
 $form.Controls.Add($txtName)
 $lblYear = New-Object System.Windows.Forms.Label
@@ -290,6 +378,13 @@ $txtYear = New-Object System.Windows.Forms.TextBox
 $txtYear.Location = '1138,30'; $txtYear.Size = '70,24'; $txtYear.Anchor = 'Top, Right'
 $txtYear.Font = $mono; $txtYear.BackColor = $dark; $txtYear.ForeColor = [System.Drawing.Color]::Gainsboro
 $form.Controls.Add($txtYear)
+$lblImdb = New-Object System.Windows.Forms.Label
+$lblImdb.Text = 'IMDb (tt...)'; $lblImdb.Location = '900,12'; $lblImdb.AutoSize = $true; $lblImdb.Anchor = 'Top, Right'
+$form.Controls.Add($lblImdb)
+$txtImdb = New-Object System.Windows.Forms.TextBox
+$txtImdb.Location = '900,30'; $txtImdb.Size = '190,24'; $txtImdb.Anchor = 'Top, Right'
+$txtImdb.Font = $mono; $txtImdb.BackColor = $dark; $txtImdb.ForeColor = [System.Drawing.Color]::Gainsboro
+$form.Controls.Add($txtImdb)
 
 # --- grid ---
 $lblGrid = New-Object System.Windows.Forms.Label
@@ -497,7 +592,7 @@ function Get-GridSelections {
     foreach ($row in $grid.Rows) {
         if ($row.IsNewRow) { continue }
         $tag = $row.Tag; if (-not $tag) { continue }
-        $lang = ([string]$row.Cells['Lang'].Value).Trim().ToLowerInvariant(); if (-not $lang) { $lang = 'und' }
+        $lang = Resolve-GuiLanguageCode ([string]$row.Cells['Lang'].Value)
         $incl = [bool]$row.Cells['Incl'].Value
         if ($tag.Kind -eq 'audio') { $aTotal++; $aCodesAll += $lang; if ($incl) { $aNums += [int]$tag.Num; $aCodes += $lang } }
         elseif ($tag.Kind -eq 'subtitle') { $sTotal++; $sCodesAll += $lang; if ($incl) { $sNums += [int]$tag.Num; $sCodes += $lang } }
@@ -536,6 +631,9 @@ function Start-Scan {
     $disc = Get-DiscType $drive
     if     ($disc -eq 'dvd')    { $rbDvd.Checked = $true }
     elseif ($disc -eq 'bluray') { $rbBd.Checked  = $true }
+
+    if ($rbDvd.Checked -and -not (Test-EngineAvailable -Path $DvdEncoderPath -Name 'dvd-ripper-encoder.ps1')) { return }
+    if ($rbBd.Checked  -and -not (Test-EngineAvailable -Path $BlurayBackupPath -Name 'bluray-backup.ps1')) { return }
 
     $log.Clear(); $lstTitles.Items.Clear(); $grid.Rows.Clear(); $script:Titles = @()
     if ($disc) { Add-Log "==> Detected $($disc.ToUpper()) in $drive" }
@@ -612,6 +710,7 @@ function Start-Scan {
         $rs.SessionStateProxy.SetVariable('DriveLetter', $drive)
         [void]$ps.AddScript({
             $env:BLURAYBACKUP_NOMENU = '1'; . $BackupPath
+            $ErrorActionPreference = 'Continue'   # MakeMKV/native stderr must not be fatal
 
 function Get-MakeMKVPath {
     $names = @('makemkvcon.exe','makemkvcon64.exe')
@@ -732,6 +831,11 @@ function Start-Encode {
     if ($script:Encoding) { return }
     if (-not $script:CurrentTitle) { [System.Windows.Forms.MessageBox]::Show('Scan and pick a title first.', 'Media Encoder GUI') | Out-Null; return }
     if ($script:CurrentTitle.Kind -eq 'file') { [System.Windows.Forms.MessageBox]::Show('File mode is for tools only. Use Create sample or Create minfo, or use BRencoder/DVD GUI for direct file encodes.', 'Media Encoder GUI') | Out-Null; return }
+    if ($script:CurrentTitle.Kind -eq 'dvd' -and -not (Test-EngineAvailable -Path $DvdEncoderPath -Name 'dvd-ripper-encoder.ps1')) { return }
+    if ($script:CurrentTitle.Kind -eq 'bluray') {
+        if (-not (Test-EngineAvailable -Path $BlurayBackupPath -Name 'bluray-backup.ps1')) { return }
+        if (-not $chkBackupOnly.Checked -and -not (Test-EngineAvailable -Path $BREncoderPath -Name 'BRencoder.ps1')) { return }
+    }
     $drive = Get-DriveLetter
     $movie = Get-MovieName
     $sel   = Get-GridSelections
@@ -774,8 +878,15 @@ function Start-Encode {
                 Write-Host "ENCODE ERROR at: $($_.InvocationInfo.ScriptName):$($_.InvocationInfo.ScriptLineNumber)  -> $($_.InvocationInfo.Line.Trim())"
             }
             try {
-                $newest = Get-ChildItem -LiteralPath $Script:OutputRoot -Filter "*.$Container" -File -ErrorAction SilentlyContinue |
-                          Sort-Object LastWriteTime -Descending | Select-Object -First 1
+                # Only report an output that belongs to this movie, and never report
+                # the temporary .__encoding file as a completed encode.
+                $safe = New-SafeName -Name $Movie
+                $patterns = @("$safe.$Container", "${safe}_*.$Container")
+                $candidates = foreach ($pat in $patterns) {
+                    Get-ChildItem -LiteralPath $Script:OutputRoot -Filter $pat -File -ErrorAction SilentlyContinue |
+                        Where-Object { $_.Name -notmatch '\.__encoding_' }
+                }
+                $newest = @($candidates) | Sort-Object LastWriteTime -Descending | Select-Object -First 1
                 if ($newest) { Write-Output $newest.FullName }
             } catch { }
         })
@@ -810,6 +921,7 @@ function Start-BdBackup {
     $ps=[powershell]::Create(); $ps.Runspace=$rs
     [void]$ps.AddScript({
         $env:BLURAYBACKUP_NOMENU='1'; . $BackupPath
+        $ErrorActionPreference = 'Continue'   # MakeMKV/native stderr must not be fatal
 
 function Get-MakeMKVPath {
     $names = @('makemkvcon.exe','makemkvcon64.exe')
@@ -881,14 +993,35 @@ function Get-MakeMKVPath {
         if (-not $stream) { Write-Host 'ERROR: no STREAM folder'; return $null }
         $largest = Get-LargestM2TS -Path $stream
         if (-not $largest) { Write-Host 'ERROR: no m2ts'; return $null }
-        # rebuild title metadata, apply the GUI's language edits, write sidecar
+        # rebuild title metadata, apply the GUI's language edits, write sidecar.
+        # Production rule: preserve CLPI-derived physical stream language order
+        # so BRencoder can map/tag the actual raw .m2ts streams deterministically.
+        $physicalStreams = if (Get-Command Read-ClpiStreamLanguages -ErrorAction SilentlyContinue) {
+            Read-ClpiStreamLanguages -M2tsPath $largest.FullName
+        } else {
+            [pscustomobject]@{ Audio=@(); Subtitle=@(); Status='clpi: helper unavailable'; Source=$null }
+        }
+        Write-Host ("physical streams: {0}" -f $physicalStreams.Status)
+
         $lines = Get-MakeMKVInfoLines -Exe $exe -Source $Script:Drive
         $titles = ConvertFrom-MakeMKVInfo -Lines $lines
         $main = $titles | Where-Object { $_.TitleId -eq $TitleId } | Select-Object -First 1
         if (-not $main) { $main = Get-MainTitleFromInfo -Titles $titles }
+        if (-not $main) { Write-Host 'ERROR: could not determine title metadata'; return $null }
         for ($i=0; $i -lt @($main.AudioTracks).Count; $i++) { if ($i -lt $ACodes.Count -and $ACodes[$i]) { $main.AudioTracks[$i].LanguageCode = $ACodes[$i] } }
         for ($i=0; $i -lt @($main.SubtitleTracks).Count; $i++) { if ($i -lt $SCodes.Count -and $SCodes[$i]) { $main.SubtitleTracks[$i].LanguageCode = $SCodes[$i] } }
-        $meta = [pscustomobject]@{ MovieName=$Movie; LargestM2TS=$largest.Name; LargestPath=$largest.FullName; Title=$main }
+        $meta = [pscustomobject]@{
+            MovieName       = $Movie
+            LargestM2TS     = $largest.Name
+            LargestPath     = $largest.FullName
+            PhysicalStreams = [pscustomobject]@{
+                Source            = $physicalStreams.Source
+                Status            = $physicalStreams.Status
+                AudioLanguages    = @($physicalStreams.Audio)
+                SubtitleLanguages = @($physicalStreams.Subtitle)
+            }
+            Title           = $main
+        }
         Save-TrackMeta -Meta $meta -BasePath $metaBase
         Write-Host "bluray-backup Save-TrackMeta -> $metaBase.json"
         Write-Host "MAINM2TS=$($largest.FullName)"
@@ -902,6 +1035,8 @@ function Start-BdEncode {
     param([string]$M2ts)
     $script:Stage = 'bd-encode'
     $script:BdSourceM2ts = $M2ts
+    $script:BdBackupRoot = Get-BluRayBackupRootFromM2ts -M2tsPath $M2ts
+    $script:BdCleanupAfterEncode = (-not [bool]$chkKeepBackup.Checked)
     $progress.Style='Continuous'; Set-Progress 0; $lblStat.Text='  encoding (BRencoder)...'
     Add-Log "==> HEVC encode (BRencoder) '$($script:BdMovie)'"
     Add-Log "    $M2ts"
@@ -915,6 +1050,7 @@ function Start-BdEncode {
     $ps=[powershell]::Create(); $ps.Runspace=$rs
     [void]$ps.AddScript({
         $env:BRENCODER_NOMENU='1'; . $BRPath
+        $ErrorActionPreference = 'Continue'   # HandBrake stderr must not be fatal
         Write-Host 'engine: BRencoder Encode-File (HEVC, reads BRTrackMeta sidecar)'
         $fi = Get-Item -LiteralPath $SourceFull
         Encode-File -SourceFile $fi -MovieName $Movie -AutoAccept -ProgressFile $ProgFile
@@ -930,6 +1066,7 @@ function Start-BdEncode {
 # ════════════════════════════════════════════════════════════════
 function Start-Sample {
     param([string]$Target)
+    if (-not (Test-EngineAvailable -Path $MkvSamplePath -Name 'mkv-sample.ps1')) { Finish-Encode 'failed'; return }
     $script:Stage = 'sample'
     $progress.Style='Marquee'; $lblStat.Text='  creating sample clip...'
     Add-Log "==> Sample clip from $Target"
@@ -939,6 +1076,7 @@ function Start-Sample {
     $ps=[powershell]::Create(); $ps.Runspace=$rs
     [void]$ps.AddScript({
         $env:MKVSAMPLE_NOMENU='1'; . $SamplePath
+        $ErrorActionPreference = 'Continue'   # ffmpeg logs to stderr; don't let the engine's global Stop make that fatal
         Write-Host 'engine: mkv-sample Create-SampleFile'
         try { Ensure-Dependencies } catch { }
         try { Ensure-Directories } catch { }
@@ -952,18 +1090,25 @@ function Start-Sample {
 
 function Start-Minfo {
     param([string]$Target)
+    if (-not (Test-EngineAvailable -Path $MinfoPath -Name 'minfocreate.ps1')) { Finish-Encode 'failed'; return }
     $script:Stage = 'minfo'
+    $imdbId = $txtImdb.Text.Trim()
     $progress.Style='Marquee'; $lblStat.Text='  creating minfo (MediaInfo + OMDb)...'
     Add-Log "==> Minfo / NFO for $Target"
+    if ($imdbId) { Add-Log "    IMDb id: $imdbId" }
     $rs=[runspacefactory]::CreateRunspace(); $rs.ApartmentState='MTA'; $rs.Open()
     $rs.SessionStateProxy.SetVariable('MinfoPath', $MinfoPath)
     $rs.SessionStateProxy.SetVariable('Target',    $Target)
+    $rs.SessionStateProxy.SetVariable('ImdbId',    $imdbId)
     $ps=[powershell]::Create(); $ps.Runspace=$rs
     [void]$ps.AddScript({
         Write-Host 'engine: minfocreate (MediaInfo + OMDb -> NFO/HTML/poster)'
-        # minfocreate is a linear script (param block, no menu guard); invoke it
-        # with -VideoFile so it runs non-interactively and self-configures its key.
-        try { & $MinfoPath -VideoFile $Target } catch { Write-Host "minfo error: $($_.Exception.Message)" }
+        # Runspace has no console, so run minfocreate -NonInteractive. Pass the
+        # GUI IMDb id when present so OMDb resolves without any prompts.
+        try {
+            if ($ImdbId) { & $MinfoPath -VideoFile $Target -NonInteractive -ImdbId $ImdbId }
+            else         { & $MinfoPath -VideoFile $Target -NonInteractive }
+        } catch { Write-Host "minfo error: $($_.Exception.Message)"; throw }
     })
     $script:Ps=$ps; $script:Rs=$rs; $script:Async=$ps.BeginInvoke()
     $script:InfoIdx=0; $script:WarnIdx=0
@@ -988,6 +1133,8 @@ function Start-Tool {
     # Standalone Tools-row run on the File source or the last encode output.
     param([string]$Kind)
     if ($script:Encoding -or $script:Stage -ne 'idle') { return }
+    if ($Kind -eq 'sample' -and -not (Test-EngineAvailable -Path $MkvSamplePath -Name 'mkv-sample.ps1')) { return }
+    if ($Kind -eq 'minfo'  -and -not (Test-EngineAvailable -Path $MinfoPath -Name 'minfocreate.ps1')) { return }
     $tgt = Get-ToolTarget
     if (-not $tgt) { [System.Windows.Forms.MessageBox]::Show('No target file. Pick a File source (Browse + Scan) or run an encode first.', 'Media Encoder GUI') | Out-Null; return }
     $log.Clear(); $script:InfoIdx=0; $script:WarnIdx=0
@@ -1000,6 +1147,16 @@ function Start-Tool {
 function Start-Dump {
     # Info-only BRTrackMeta sidecar via the trackdump engine (no decrypt, no prompts).
     if ($script:Encoding -or $script:Stage -ne 'idle') { return }
+    $dumpPath = $TrackdumpPath
+    $dumpMode = 'trackdump'
+    if (-not ($dumpPath -and (Test-Path -LiteralPath $dumpPath -PathType Leaf))) {
+        # Stable fallback: bluray-backup.ps1 contains the same MakeMKV info parser
+        # and Save-TrackMeta writer, so the Dump Sidecar button still works even
+        # when the optional bluray-trackdump.ps1 helper is not installed.
+        $dumpPath = $BlurayBackupPath
+        $dumpMode = 'backup-fallback'
+    }
+    if (-not (Test-EngineAvailable -Path $dumpPath -Name $(if ($dumpMode -eq 'trackdump') { 'bluray-trackdump.ps1' } else { 'bluray-backup.ps1 fallback for sidecar dump' }))) { return }
     if (-not $rbBd.Checked)        { [System.Windows.Forms.MessageBox]::Show('Dump sidecar is for Blu-ray. Select the Blu-ray source.', 'Media Encoder GUI') | Out-Null; return }
     if (-not $script:CurrentTitle) { [System.Windows.Forms.MessageBox]::Show('Scan the Blu-ray and pick a title first.', 'Media Encoder GUI') | Out-Null; return }
     $movie = Get-MovieName; $sel = Get-GridSelections
@@ -1009,7 +1166,8 @@ function Start-Dump {
     $progress.Style='Marquee'; $lblStat.Text='  dumping sidecar...'
     Add-Log "==> Dump BRTrackMeta sidecar '$movie' (info only, no decrypt)"
     $rs=[runspacefactory]::CreateRunspace(); $rs.ApartmentState='MTA'; $rs.Open()
-    $rs.SessionStateProxy.SetVariable('DumpPath', $TrackdumpPath)
+    $rs.SessionStateProxy.SetVariable('DumpPath', $dumpPath)
+    $rs.SessionStateProxy.SetVariable('DumpMode', $dumpMode)
     $rs.SessionStateProxy.SetVariable('Movie',    $movie)
     $rs.SessionStateProxy.SetVariable('TitleId',  [int]$script:CurrentTitle.Num)
     $rs.SessionStateProxy.SetVariable('ACodes',   [string[]]$sel.AudioCodesAll)
@@ -1017,7 +1175,10 @@ function Start-Dump {
     $rs.SessionStateProxy.SetVariable('DriveLetter', (Get-DriveLetter))
     $ps=[powershell]::Create(); $ps.Runspace=$rs
     [void]$ps.AddScript({
-        $env:BLURAYTRACKDUMP_NOMENU='1'; . $DumpPath
+        if ($DumpMode -eq 'backup-fallback') { $env:BLURAYBACKUP_NOMENU='1' }
+        else { $env:BLURAYTRACKDUMP_NOMENU='1' }
+        . $DumpPath
+        $ErrorActionPreference = 'Continue'   # native tool stderr must not be fatal
 
 function Get-MakeMKVPath {
     $names = @('makemkvcon.exe','makemkvcon64.exe')
@@ -1191,11 +1352,25 @@ function Start-EncodeTimer {
                 return
             }
             { $_ -eq 'bd-encode' -or $_ -eq 'dvd-encode' } {
-                # capture the output file, then run any queued post-encode steps
+                # capture the output file, then run any queued post-encode steps.
+                # Stable rule: a non-dry encode with no finished output is a failure,
+                # not a soft "done".
                 $out = $null
                 foreach ($r in @($ret)) { if ($r -is [string] -and $r -match '\.(mkv|mp4)$' -and (Test-Path -LiteralPath $r)) { $out = $r } }
-                if ($out) { $script:LastOutput = $out; Add-Log "    output: $out" }
-                else      { Add-Log '    (output not auto-detected; use the Tools row with a File source)' }
+                if ($out) {
+                    $script:LastOutput = $out
+                    Add-Log "    output: $out"
+                }
+                elseif ($finishedStage -eq 'dvd-encode' -and $chkDry.Checked) {
+                    Add-Log '    DVD dry run complete.'
+                    Finish-Encode 'done'
+                    return
+                }
+                else {
+                    Add-Log '    ERROR: no finished output file was detected.'
+                    Finish-Encode 'failed'
+                    return
+                }
                 $script:PostQueue = @()
                 if ($chkPostSample.Checked) { $script:PostQueue += 'sample' }
                 if ($chkPostMinfo.Checked)  { $script:PostQueue += 'minfo' }
@@ -1216,9 +1391,14 @@ function Start-EncodeTimer {
 
 function Finish-Encode {
     param([string]$How)
-    if ($script:Stage -eq 'bd-encode' -and $How -eq 'done' -and -not $chkKeepBackup.Checked) {
-        Add-Log '    (Blu-ray backup retained on disk; remove it manually if not needed)'
+    if ($How -eq 'done' -and $script:BdCleanupAfterEncode -and $script:BdBackupRoot) {
+        Remove-BluRayBackupRoot -Root $script:BdBackupRoot
     }
+    elseif ($How -eq 'done' -and $script:BdBackupRoot -and -not $script:BdCleanupAfterEncode) {
+        Add-Log "    Blu-ray backup retained: $($script:BdBackupRoot)"
+    }
+    $script:BdCleanupAfterEncode = $false
+    $script:BdBackupRoot = $null
     $progress.Style='Continuous'
     switch ($How) {
         'done'      { Set-Progress 100; Add-Log '==> Done.' }
@@ -1315,7 +1495,7 @@ function Update-Plan {
     }
     $steps = @()
     if ($kind -eq 'bluray') {
-        if ($chkBackupOnly.Checked) { $lblPlan.Text = 'Plan:  decrypt to MKV  (backup only — no encode)'; return }
+        if ($chkBackupOnly.Checked) { $lblPlan.Text = 'Plan:  decrypt full Blu-ray backup  (backup only — no encode)'; return }
         $steps += 'decrypt'; $steps += 'HEVC encode'
     } else {
         if ($chkDry.Checked) { $lblPlan.Text = 'Plan:  DVD dry run  (no encode)'; return }
@@ -1372,7 +1552,7 @@ catch {
 $form.Add_Shown({
     Write-DebugLog 'Add_Shown: fired'
     try {
-        Add-Log 'Media Encoder GUI v0.3.9  (DVD / Blu-ray / File / Audio CD)'
+        Add-Log 'Media Encoder GUI v1.0.0  (DVD / Blu-ray / File / Audio CD)'
         Add-Log 'Engines:'
         $engineMap = [ordered]@{
             'dvd-ripper-encoder.ps1' = $DvdEncoderPath
@@ -1390,7 +1570,11 @@ $form.Add_Shown({
             $p = $engineMap[$name]
             if ($p -and (Test-Path -LiteralPath $p)) {
                 Add-LogColor ("  [ OK ]    {0}" -f $name) $okColor
-            } else {
+            }
+            elseif ($name -eq 'bluray-trackdump.ps1' -and (Test-Path -LiteralPath $BlurayBackupPath)) {
+                Add-LogColor ("  [FALLBACK] {0}   ->  using bluray-backup.ps1" -f $name) ([System.Drawing.Color]::FromArgb(120, 200, 255))
+            }
+            else {
                 Add-LogColor ("  [MISSING] {0}   ->  {1}" -f $name, $p) $badColor
             }
         }

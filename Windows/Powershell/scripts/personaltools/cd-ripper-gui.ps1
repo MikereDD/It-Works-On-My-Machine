@@ -1,9 +1,9 @@
 ﻿#--------------------------------------------
 # file:     cd-ripper-gui.ps1
 # author:   Mike Redd
-# version:  1.0.0
+# version:  1.1.0
 # created:  2026-06-17
-# updated:  2026-06-17
+# updated:  2026-07-03
 # desc:     WinForms GUI front-end for the CD -> FLAC
 #           archiving toolchain. Wraps both modes:
 #             * Single FLAC image + CUE (cd-image-flac.ps1)
@@ -68,6 +68,63 @@ function Write-ToolLog {
     param([Parameter(Mandatory)] [string]$Path, [Parameter(Mandatory)] [string]$Message)
     $stamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     Add-Content -Path $Path -Value "[$stamp] $Message"
+}
+
+
+
+function Test-WorkerPath {
+    param(
+        [Parameter(Mandatory)] [string]$Label,
+        [Parameter(Mandatory)] [string]$Path,
+        [switch]$Required
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path $Path)) {
+        $msg = "$Label not found: $Path"
+        if ($Required) { throw $msg }
+        Send-Log $msg "Warn"
+        return $false
+    }
+
+    return $true
+}
+
+function Test-WorkerTools {
+    param(
+        [switch]$RequireRip,
+        [switch]$RequireEncode,
+        [switch]$WarnMetadataTools
+    )
+
+    $cfg = $global:sync.Cfg
+    if ($RequireRip)    { [void](Test-WorkerPath -Label "cdda2wav" -Path $cfg.CDDA2WAV -Required) }
+    if ($RequireEncode) { [void](Test-WorkerPath -Label "flac"     -Path $cfg.FLAC     -Required) }
+
+    if ($WarnMetadataTools) {
+        [void](Test-WorkerPath -Label "metaflac" -Path $cfg.METAFLAC)
+        [void](Test-WorkerPath -Label "libdiscid" -Path $cfg.LIBDISCID)
+    }
+}
+
+function Test-AudioOutputFile {
+    param([Parameter(Mandatory)] [string]$Path)
+
+    if (-not (Test-Path $Path)) { throw "Expected output file was not created: $Path" }
+    $item = Get-Item -LiteralPath $Path -ErrorAction Stop
+    if ($item.Length -le 0) { throw "Output file is empty: $Path" }
+    return $true
+}
+
+function Publish-ValidatedAudioFile {
+    param(
+        [Parameter(Mandatory)] [string]$TempPath,
+        [Parameter(Mandatory)] [string]$FinalPath
+    )
+
+    [void](Test-AudioOutputFile -Path $TempPath)
+    if (Test-Path $FinalPath) { Remove-Item -LiteralPath $FinalPath -Force -ErrorAction Stop }
+    Move-Item -LiteralPath $TempPath -Destination $FinalPath -Force -ErrorAction Stop
+    [void](Test-AudioOutputFile -Path $FinalPath)
 }
 
 function Initialize-LibDiscid {
@@ -216,8 +273,10 @@ function Resolve-TrackCountFromRipLog {
     $lines = Get-Content -Path $LogPath | ForEach-Object { $_ -replace "`0", "" }
     foreach ($line in $lines) {
         if ($line -match 'total tracks:\s*(\d+)') { return [int]$Matches[1] }
+        if ($line -match 'tracks?\s*[:=]\s*(\d+)\s*[-–]\s*(\d+)') { return ([int]$Matches[2] - [int]$Matches[1] + 1) }
+        if ($line -match '\b(\d+)\s+audio\s+tracks?\b') { return [int]$Matches[1] }
     }
-    throw "Could not determine track count from rip log."
+    throw "Could not determine track count from rip log. Check $LogPath."
 }
 
 function Get-StartSectorsFromRipLog {
@@ -331,6 +390,10 @@ function Encode-TrackFlac {
 function Embed-Cue {
     param($flac, $cue)
     $cfg = $global:sync.Cfg
+    if ([string]::IsNullOrWhiteSpace($cfg.METAFLAC) -or -not (Test-Path $cfg.METAFLAC)) {
+        Send-Log "metaflac not found; skipping embedded cuesheet." "Warn"
+        return
+    }
     Send-Log "Embedding cuesheet into FLAC..." "Info"
     & $cfg.METAFLAC "--import-cuesheet-from=$cue" $flac | Out-Null
 }
@@ -339,6 +402,10 @@ function Embed-Cover {
     param($flac, $img)
     $cfg = $global:sync.Cfg
     if (-not (Test-Path $img)) { Send-Log "Cover not found, skipping." "Warn"; return }
+    if ([string]::IsNullOrWhiteSpace($cfg.METAFLAC) -or -not (Test-Path $cfg.METAFLAC)) {
+        Send-Log "metaflac not found; skipping cover art embed." "Warn"
+        return
+    }
     Send-Log "Embedding cover art..." "Info"
     & $cfg.METAFLAC --remove --block-type=PICTURE $flac 2>$null | Out-Null
     & $cfg.METAFLAC --import-picture-from="$img" $flac 2>&1 | Out-Null
@@ -411,6 +478,8 @@ function Save-TracksJson {
 
 # ── Operation entry points ──────────────────
 function Invoke-Detect {
+    Test-WorkerTools -RequireRip -WarnMetadataTools
+
     $discId = ""
     $artist = ""; $album = ""; $year = ""; $genre = ""
     $tracks = @()
@@ -485,6 +554,8 @@ function Invoke-Release {
 }
 
 function Invoke-Rip {
+    Test-WorkerTools -RequireRip -RequireEncode -WarnMetadataTools
+
     $cfg = $global:sync.Cfg
     $job = $global:sync.Job
 
@@ -510,16 +581,24 @@ function Invoke-Rip {
         $base = "$artistSafe - $albumSafe"
         $wav  = Join-Path $tempRoot "$base.wav"
         $flac = Join-Path $dir "$base.flac"
+        $flacWork = "${flac}.__encoding__.tmp.flac"
         $cue  = Join-Path $dir "$base.cue"
         $json = Join-Path $dir "album.json"
         $ripLog = Join-Path $logRoot "cdda2wav_rip.log"
 
-        foreach ($f in @($wav, $flac, $cue, $json)) {
+        foreach ($f in @($wav, $flac, $flacWork, $cue, $json)) {
             if (Test-Path $f) { Remove-Item $f -Force -ErrorAction SilentlyContinue }
         }
 
-        if ((Rip-Wav $wav) -ne 0) { Send-Log "WAV rip failed." "Bad"; return }
-        if ((Encode-Flac $wav $flac $albumInfo) -ne 0) { Send-Log "FLAC encode failed." "Bad"; return }
+        if ((Rip-Wav $wav) -ne 0 -or -not (Test-Path $wav)) { Send-Log "WAV rip failed or output was missing." "Bad"; return }
+        if ((Encode-Flac $wav $flacWork $albumInfo) -ne 0) { Send-Log "FLAC encode failed." "Bad"; return }
+
+        try {
+            Publish-ValidatedAudioFile -TempPath $flacWork -FinalPath $flac
+            Send-Log "Validated FLAC image output." "Good"
+        } catch {
+            Send-Log "FLAC validation/publish failed: $($_.Exception.Message)" "Bad"; return
+        }
 
         try {
             [int[]]$startSectors = Get-StartSectorsFromRipLog -LogPath $ripLog -TrackCount $tracks.Count
@@ -559,32 +638,44 @@ function Invoke-Rip {
         $json = Join-Path $albumDir "album.json"
 
         $flacFiles = New-Object System.Collections.Generic.List[string]
+        $failedTracks = New-Object System.Collections.Generic.List[int]
         for ($i = 0; $i -lt $tracks.Count; $i++) {
             $trackNum = $i + 1
             $trackTitle = $tracks[$i]
             $safeTitle = Get-SafeName $trackTitle
             $wavPath  = Join-Path $tempRoot ("{0:D2} - {1}.wav"  -f $trackNum, $safeTitle)
             $flacPath = Join-Path $albumDir ("{0:D2} - {1}.flac" -f $trackNum, $safeTitle)
-            foreach ($f in @($wavPath, $flacPath)) {
+            $flacWork = "${flacPath}.__encoding__.tmp.flac"
+            foreach ($f in @($wavPath, $flacPath, $flacWork)) {
                 if (Test-Path $f) { Remove-Item $f -Force -ErrorAction SilentlyContinue }
             }
 
             Send-Log ("Ripping track {0:D2}: {1}" -f $trackNum, $trackTitle) "Info"
             $ripCode = Rip-TrackWav -TrackNumber $trackNum -OutPath $wavPath
             if ($ripCode -ne 0 -or -not (Test-Path $wavPath)) {
-                Send-Log ("Failed to rip track {0:D2}" -f $trackNum) "Bad"; continue
+                Send-Log ("Failed to rip track {0:D2}" -f $trackNum) "Bad"; [void]$failedTracks.Add($trackNum); continue
             }
 
             Send-Log ("Encoding track {0:D2}: {1}" -f $trackNum, $trackTitle) "Info"
-            $encCode = Encode-TrackFlac -WavPath $wavPath -FlacPath $flacPath -AlbumInfo $albumInfo -TrackTitle $trackTitle -TrackNumber $trackNum
-            if ($encCode -ne 0 -or -not (Test-Path $flacPath)) {
-                Send-Log ("Failed to encode track {0:D2}" -f $trackNum) "Bad"; continue
+            $encCode = Encode-TrackFlac -WavPath $wavPath -FlacPath $flacWork -AlbumInfo $albumInfo -TrackTitle $trackTitle -TrackNumber $trackNum
+            if ($encCode -ne 0) {
+                Send-Log ("Failed to encode track {0:D2}" -f $trackNum) "Bad"; [void]$failedTracks.Add($trackNum); continue
+            }
+
+            try {
+                Publish-ValidatedAudioFile -TempPath $flacWork -FinalPath $flacPath
+            } catch {
+                Send-Log ("Track {0:D2} validation/publish failed: {1}" -f $trackNum, $_.Exception.Message) "Bad"; [void]$failedTracks.Add($trackNum); continue
             }
 
             if ($job.Cover -and (Test-Path $job.Cover)) { Embed-Cover $flacPath $job.Cover }
             Remove-Item $wavPath -Force -ErrorAction SilentlyContinue
             [void]$flacFiles.Add([System.IO.Path]::GetFileName($flacPath))
             Send-Log ("Created {0:D2} - {1}.flac" -f $trackNum, $trackTitle) "Good"
+        }
+
+        if ($failedTracks.Count -gt 0 -or $flacFiles.Count -ne $tracks.Count) {
+            Send-Log ("CD track rip finished with failures. Expected {0}, created {1}. Failed tracks: {2}" -f $tracks.Count, $flacFiles.Count, ($failedTracks -join ', ')) "Bad"
         }
 
         try {
@@ -594,7 +685,12 @@ function Invoke-Rip {
             Send-Log "Failed to save JSON: $($_.Exception.Message)" "Warn"
         }
 
-        Send-Log "Done." "Good"
+        if ($failedTracks.Count -gt 0 -or $flacFiles.Count -ne $tracks.Count) {
+            Send-Log "Finished with errors. Check logs before using this rip." "Bad"
+        }
+        else {
+            Send-Log "Done." "Good"
+        }
         Send-Log "TRACK DIR: $albumDir" "Dim"
         $global:sync.OutputDir = $albumDir
     }
@@ -655,7 +751,7 @@ function New-Group {
 
 # ── Form ────────────────────────────────────
 $form = New-Object System.Windows.Forms.Form
-$form.Text = "CD -> FLAC Ripper"
+$form.Text = "CD -> FLAC Ripper v1.1.0"
 $form.Size = "1000,980"
 $form.MinimumSize = "900,840"
 $form.StartPosition = "CenterScreen"
@@ -666,12 +762,20 @@ $form.Font = $fontUI
 $header = New-Object System.Windows.Forms.Panel
 $header.Dock = "Top"; $header.Height = 52; $header.BackColor = $clrPanel
 $hLabel = New-Object System.Windows.Forms.Label
-$hLabel.Text = "  CD -> FLAC Ripper"; $hLabel.ForeColor = $clrAccent
+$hLabel.Text = "  CD -> FLAC Ripper v1.1.0"; $hLabel.ForeColor = $clrAccent
 $hLabel.Font = $fontHead; $hLabel.Dock = "Fill"; $hLabel.TextAlign = "MiddleLeft"
 $header.Controls.Add($hLabel)
 $form.Controls.Add($header)
 
 $W = 964   # inner content width baseline
+
+
+# ── Default paths ───────────────────────────
+$defaultRipRoot = "G:\Rip\CD"
+$defaultCdda2Wav = "C:\Program Files (x86)\cdrtfe\tools\cdrtools\cdda2wav.exe"
+$defaultFlac = Join-Path $HOME "Apps\FLAC\flac.exe"
+$defaultMetaFlac = Join-Path $HOME "Apps\FLAC\metaflac.exe"
+$defaultLibDiscid = Join-Path $HOME "Apps\libdiscid\discid.dll"
 
 # ── Group: Tools & Paths ────────────────────
 $gPaths = New-Group "Tools and Paths" 8 60 $W 178
@@ -682,14 +786,14 @@ $txtDrive = New-Text 80 25 70 "D:"; $gPaths.Controls.Add($txtDrive)
 $gPaths.Controls.Add((New-Label "CDDA Dev" 170 26 70))
 $txtDevice = New-Text 242 25 80 "0,0,0"; $gPaths.Controls.Add($txtDevice)
 $gPaths.Controls.Add((New-Label "Rip Root" 342 26 60))
-$txtRipRoot = New-Text 404 25 460 "G:\Rip\CD"; $txtRipRoot.Anchor = "Top,Left,Right"; $gPaths.Controls.Add($txtRipRoot)
+$txtRipRoot = New-Text 404 25 460 $defaultRipRoot; $txtRipRoot.Anchor = "Top,Left,Right"; $gPaths.Controls.Add($txtRipRoot)
 $btnRipRoot = New-Button "..." 868 24 32 24; $btnRipRoot.Anchor = "Top,Right"; $gPaths.Controls.Add($btnRipRoot)
 
 $pathRows = @(
-    @{ Lbl="cdda2wav";  Var="txtCdda";  Def="C:\Program Files (x86)\cdrtfe\tools\cdrtools\cdda2wav.exe" },
-    @{ Lbl="flac";      Var="txtFlac";  Def="C:\Users\miker\Apps\FLAC\flac.exe" },
-    @{ Lbl="metaflac";  Var="txtMeta";  Def="C:\Users\miker\Apps\FLAC\metaflac.exe" },
-    @{ Lbl="libdiscid"; Var="txtDisc";  Def="C:\Users\miker\Apps\libdiscid\discid.dll" }
+    @{ Lbl="cdda2wav";  Var="txtCdda";  Def=$defaultCdda2Wav },
+    @{ Lbl="flac";      Var="txtFlac";  Def=$defaultFlac },
+    @{ Lbl="metaflac";  Var="txtMeta";  Def=$defaultMetaFlac },
+    @{ Lbl="libdiscid"; Var="txtDisc";  Def=$defaultLibDiscid }
 )
 $y = 58
 foreach ($row in $pathRows) {
@@ -835,11 +939,22 @@ function Renumber-Grid {
 function Set-Tracks {
     param([string[]]$titles, [int]$count)
     $grid.Rows.Clear()
-    if ($titles -and $titles.Count -gt 0) {
-        foreach ($t in $titles) { $grid.Rows.Add(@("", $t)) | Out-Null }
-    } elseif ($count -gt 0) {
-        for ($i = 0; $i -lt $count; $i++) { $grid.Rows.Add(@("", "")) | Out-Null }
+
+    if ($count -gt 0) {
+        if ($titles -and $titles.Count -gt 0 -and $titles.Count -ne $count) {
+            Add-LogLine ("Metadata track count ({0}) does not match disc track count ({1}); padding/trimming grid." -f $titles.Count, $count) "Warn"
+        }
+        for ($i = 0; $i -lt $count; $i++) {
+            $title = ""
+            if ($titles -and $i -lt $titles.Count) { $title = $titles[$i] }
+            if ([string]::IsNullOrWhiteSpace($title)) { $title = "Track $($i + 1)" }
+            $grid.Rows.Add(@("", $title)) | Out-Null
+        }
     }
+    elseif ($titles -and $titles.Count -gt 0) {
+        foreach ($t in $titles) { $grid.Rows.Add(@("", $t)) | Out-Null }
+    }
+
     Renumber-Grid
 }
 
@@ -852,7 +967,7 @@ function Get-Cfg {
         FLAC      = $txtFlac.Text.Trim()
         METAFLAC  = $txtMeta.Text.Trim()
         LIBDISCID = $txtDisc.Text.Trim()
-        UserAgent = "MikeRedd-CDRipperGUI/1.0"
+        UserAgent = "MikeRedd-CDRipperGUI/1.1.0"
     }
 }
 

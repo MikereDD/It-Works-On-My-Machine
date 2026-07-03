@@ -1,9 +1,9 @@
 ﻿#--------------------------------------------
 # file:     minfocreate.ps1
 # author:   Mike Redd
-# version:  2.10
+# version:  2.14
 # created:  2026-04-11
-# updated:  2026-06-21
+# updated:  2026-07-03
 # desc:     Create NFO, HTML, and poster data
 #           for a video file using OMDb and
 #           MediaInfo CLI. Optional -Preview pops
@@ -22,6 +22,10 @@
 #           v2.10: -VideoFile accepts a full path (split to dir+name)
 #                  for GUI/scripted callers; auto-mode resolves to
 #                  single under -NonInteractive (no console prompt).
+#           v2.11: self-contained UI/core fallback for media-encoder-gui runs.
+#           v2.12: fix HTML here-string layout for Windows PowerShell 5.1 parser.
+#           v2.13: fix episode-card here-string AppendLine layout for PS 5.1 parser.
+#           v2.14: use $HOME for profile config lookup.
 #--------------------------------------------
 
 param(
@@ -36,37 +40,65 @@ param(
     [switch]$Preview
 )
 
-# ── Load custom UI ────────────────────────────────────────────
-$uiPath = "$env:USERPROFILE\PS\profile.d\ui.ps1"
+# ── Load custom UI/core helpers, with production-safe fallbacks ──
+# Prefer the user's shared profile helpers, but never abort the encoder/GUI
+# just because those personal UI files are missing on a fresh machine.
+$profileRoot = Join-Path $HOME 'PS\profile.d'
+$uiPath      = Join-Path $profileRoot 'ui.ps1'
+$corePath    = Join-Path $profileRoot 'core.ps1'
+
 if (Test-Path -LiteralPath $uiPath) {
-    try {
-        . $uiPath
-    } catch {
-        Write-Host "Failed to load ui.ps1: $($_.Exception.Message)"
-        return
-    }
-} else {
-    Write-Host "Missing ui.ps1: $uiPath"
-    return
+    try { . $uiPath }
+    catch { Write-Host "Failed to load ui.ps1, using fallback UI: $($_.Exception.Message)" }
+}
+if (Test-Path -LiteralPath $corePath) {
+    try { . $corePath }
+    catch { Write-Host "Failed to load core.ps1, using fallback core helpers: $($_.Exception.Message)" }
 }
 
-# ── Load core helper ──────────────────────────────────────────
-$corePath = "$env:USERPROFILE\PS\profile.d\core.ps1"
-if (Test-Path -LiteralPath $corePath) {
-    try {
-        . $corePath
-    } catch {
-        Write-Host "Failed to load core.ps1: $($_.Exception.Message)"
-        Pause-UiReturn "Press Enter to return..."
-        return
+# ANSI colors are optional. Define harmless fallbacks when the shared UI was
+# not loaded so dot-sourcing from the GUI stays reliable.
+foreach ($pair in @{
+    UI_R=''; UI_GRY=''; UI_DIM=''; UI_GRN=''; UI_YLW=''; UI_MAG=''; UI_CYN=''; UI_RED=''
+}.GetEnumerator()) {
+    if (-not (Get-Variable -Name $pair.Key -Scope Global -ErrorAction SilentlyContinue)) {
+        Set-Variable -Name $pair.Key -Value $pair.Value -Scope Global
     }
-} else {
-    Write-Host "Missing core.ps1: $corePath"
-    Pause-UiReturn "Press Enter to return..."
-    return
+}
+
+if (-not (Get-Command Clear-UiScreen -ErrorAction SilentlyContinue)) {
+    function Clear-UiScreen { try { Clear-Host } catch { } }
+}
+if (-not (Get-Command Get-UiBoxWidth -ErrorAction SilentlyContinue)) {
+    function Get-UiBoxWidth { param([int]$MaxWidth = 70, [int]$MinWidth = 48) return $MaxWidth }
+}
+if (-not (Get-Command Write-UiHeader -ErrorAction SilentlyContinue)) {
+    function Write-UiHeader { param([string]$Title, [string]$Subtitle = '', [int]$Width = 70) Write-Host "=== $Title ==="; if ($Subtitle) { Write-Host "    $Subtitle" } }
+}
+if (-not (Get-Command Write-UiRow -ErrorAction SilentlyContinue)) {
+    function Write-UiRow { param([string]$Label, [string]$Value, [string]$Color = '', [string]$ValueColor = '') Write-Host ("  {0,-14} {1}" -f $Label, $Value) }
+}
+if (-not (Get-Command Write-UiBlankLine -ErrorAction SilentlyContinue)) {
+    function Write-UiBlankLine { Write-Host '' }
+}
+if (-not (Get-Command Write-UiDivider -ErrorAction SilentlyContinue)) {
+    function Write-UiDivider { Write-Host ('-' * 60) }
+}
+if (-not (Get-Command Write-UiSection -ErrorAction SilentlyContinue)) {
+    function Write-UiSection { param([string]$Text = '', [string]$Title = '', [string]$Color = '') $t = if ($Title) { $Title } else { $Text }; Write-Host ''; Write-Host ("-- {0} --" -f $t) }
+}
+if (-not (Get-Command Write-CoreError -ErrorAction SilentlyContinue)) {
+    function Write-CoreError { param([string]$Message) Write-Host "ERROR: $Message" }
+}
+if (-not (Get-Command Pause-Core -ErrorAction SilentlyContinue)) {
+    function Pause-Core { param([string]$Message = 'Press Enter to continue...') [void](Read-Host $Message) }
+}
+if (-not (Get-Command Pause-UiReturn -ErrorAction SilentlyContinue)) {
+    function Pause-UiReturn { param([string]$Message = 'Press Enter to continue...') [void](Read-Host $Message) }
 }
 
 $ErrorActionPreference = 'Stop'
+
 
 # ── Console-less safety (GUI runspace) ────────────────────────
 # The shared UI helpers in ui.ps1 position the console cursor to draw boxes,
@@ -102,7 +134,7 @@ if ($NonInteractive) {
 }
 
 $ScriptName    = "MiNfoCreate"
-$ScriptVersion = "2.10"
+$ScriptVersion = "2.14"
 $ScriptAuthor  = "Mike Redd"
 
 # Shared NFO banner (figlet) reused by single-file and multi-file output.
@@ -122,7 +154,7 @@ $Script:MinfoFiglet = @"
 
 # ── Config ────────────────────────────────────────────────────
 $Script:ConfigPaths = @(
-    "$env:USERPROFILE\PS\profile.d\minforc.ps1",
+    (Join-Path $HOME 'PS\profile.d\minforc.ps1'),
     "$PSScriptRoot\minforc.ps1",
     "$HOME\.config\minforc.ps1"
 )
@@ -819,14 +851,15 @@ function Invoke-MinfoSeries {
         if ($r.Rating)   { $metaParts += ("IMDB " + (ConvertTo-HtmlSafe $r.Rating) + "/10") }
         $metaLine = ($metaParts -join "  &nbsp;|&nbsp;  ")
         $plotHtml = if ($pl) { "<div class='epplot'>$pl</div>" } else { "" }
-        [void]$cards.AppendLine(@"
+        $cardHtml = @"
     <div class="ep">
         <div class="ephead"><span class="eplabel">$lb</span><span class="eptitle">$t</span></div>
         <div class="epmeta">$metaLine</div>
         $plotHtml
         <details><summary>Technical info</summary><div class="mediainfo">$tech</div></details>
     </div>
-"@)
+"@
+        [void]$cards.AppendLine($cardHtml)
     }
 
     $seriesTitleHtml = ConvertTo-HtmlSafe $SeriesName
@@ -1211,14 +1244,41 @@ $rtBlock = if ($omdbOK -and $mRT -ne "N/A") { @"
                 <div class="score" style="color:#fa320a">$mRT</div>
                 <div class="source">Rotten Tomatoes</div>
             </div>
-"@ } else { "" }
+"@
+} else { "" }
 
 $metaBlock = if ($omdbOK -and $mMeta -ne "N/A") { @"
             <div class="rating-box">
                 <div class="score" style="color:#6c3">$mMeta</div>
                 <div class="source">Metascore</div>
             </div>
-"@ } else { "" }
+"@
+} else { "" }
+
+$infoBlock = if ($omdbOK) { @"
+        <div class="field"><span class="label">Director</span> $mDir</div>
+        <div class="field"><span class="label">Writer</span> $mWriter</div>
+        <div class="field"><span class="label">Cast</span> $mCast</div>
+        <div class="field"><span class="label">Language</span> $mLang</div>
+        <div class="field"><span class="label">Country</span> $mCountry</div>
+        <div class="field"><span class="label">Released</span> $mRel</div>
+        <div class="field"><span class="label">Awards</span> $mAwards</div>
+        <div class="ratings">
+            <div class="rating-box">
+                <div class="score">$mRating<span style="font-size:0.9rem;color:#888">/10</span></div>
+                <div class="source">IMDB ($mVotes)</div>
+            </div>
+            $rtBlock
+            $metaBlock
+        </div>
+        <div class="imdb-link">
+            <span class="label">IMDB</span>
+            <a href="https://www.imdb.com/title/$mImdbId/" target="_blank">
+                https://www.imdb.com/title/$mImdbId/
+            </a>
+        </div>
+"@
+} else { "        <div class='field'>No OMDb data available.</div>" }
 
 $htmContent = @"
 <!DOCTYPE html>
@@ -1293,29 +1353,7 @@ $htmContent = @"
 <div class="container">
     <div class="poster">$posterTag</div>
     <div class="info">
-$(if ($omdbOK) { @"
-        <div class="field"><span class="label">Director</span> $mDir</div>
-        <div class="field"><span class="label">Writer</span> $mWriter</div>
-        <div class="field"><span class="label">Cast</span> $mCast</div>
-        <div class="field"><span class="label">Language</span> $mLang</div>
-        <div class="field"><span class="label">Country</span> $mCountry</div>
-        <div class="field"><span class="label">Released</span> $mRel</div>
-        <div class="field"><span class="label">Awards</span> $mAwards</div>
-        <div class="ratings">
-            <div class="rating-box">
-                <div class="score">$mRating<span style="font-size:0.9rem;color:#888">/10</span></div>
-                <div class="source">IMDB ($mVotes)</div>
-            </div>
-            $rtBlock
-            $metaBlock
-        </div>
-        <div class="imdb-link">
-            <span class="label">IMDB</span>
-            <a href="https://www.imdb.com/title/$mImdbId/" target="_blank">
-                https://www.imdb.com/title/$mImdbId/
-            </a>
-        </div>
-"@ } else { "        <div class='field'>No OMDb data available.</div>" })
+$infoBlock
     </div>
 </div>
 

@@ -1,9 +1,9 @@
 #--------------------------------------------
 # file:     cd-tracks-flac.ps1
 # author:   Mike Redd
-# version:  1.3
+# version:  1.4.0
 # created:  2026-04-12
-# updated:  2026-04-12
+# updated:  2026-07-03
 # desc:     Rip audio CD to one FLAC per track
 #           + MusicBrainz metadata fallback
 #           + album.json + optional cover art
@@ -11,14 +11,26 @@
 #--------------------------------------------
 
 [CmdletBinding()]
-param()
+param(
+    [string]$RipRoot = "G:\Rip\CD",
+    [string]$CdDrive = "D:",
+    [string]$CddaDevice = "0,0,0",
+    [string]$Cdda2WavExe = "C:\Program Files (x86)\cdrtfe\tools\cdrtools\cdda2wav.exe",
+    [string]$FlacExe = (Join-Path $HOME "Apps\FLAC\flac.exe"),
+    [string]$MetaFlacExe = (Join-Path $HOME "Apps\FLAC\metaflac.exe"),
+    [string]$LibDiscidDll = (Join-Path $HOME "Apps\libdiscid\discid.dll"),
+    [switch]$NoElevate
+)
 
 # ── Elevate if needed ───────────────────────
 $isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).
     IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 
-if (-not $isAdmin) {
-    Start-Process pwsh -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
+if (-not $NoElevate -and -not $isAdmin) {
+    $psExe = (Get-Command powershell.exe -ErrorAction SilentlyContinue).Source
+    if (-not $psExe) { $psExe = (Get-Command pwsh -ErrorAction SilentlyContinue).Source }
+    if (-not $psExe) { $psExe = "powershell.exe" }
+    Start-Process $psExe -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
     exit
 }
 
@@ -40,23 +52,23 @@ if ($corePath) { . $corePath }
 if ($uiPath)   { . $uiPath }
 
 # ── Config ──────────────────────────────────
-$VER = "1.3"
+$VER = "1.4.0"
 
-$global:RipRoot   = "G:\Rip\CD"
+$global:RipRoot   = $RipRoot
 $global:TempRoot  = Join-Path $global:RipRoot "temp"
 $global:TrackRoot = Join-Path $global:RipRoot "tracks"
 $global:LogRoot   = Join-Path $global:RipRoot "logs"
 $global:CoverRoot = Join-Path $global:RipRoot "cover"
 
-$global:CdDrive    = "D:"
-$global:CddaDevice = "0,0,0"
+$global:CdDrive    = $CdDrive
+$global:CddaDevice = $CddaDevice
 
-$global:CDDA2WAV_EXE = "C:\Program Files (x86)\cdrtfe\tools\cdrtools\cdda2wav.exe"
-$global:FLAC_EXE     = "C:\Users\miker\Apps\FLAC\flac.exe"
-$global:METAFLAC_EXE = "C:\Users\miker\Apps\FLAC\metaflac.exe"
+$global:CDDA2WAV_EXE = $Cdda2WavExe
+$global:FLAC_EXE     = $FlacExe
+$global:METAFLAC_EXE = $MetaFlacExe
 
-$global:LIBDISCID_DLL = "C:\Users\miker\Apps\libdiscid\discid.dll"
-$global:MB_USER_AGENT = "MikeRedd-CDTracksFlac/1.2"
+$global:LIBDISCID_DLL = $LibDiscidDll
+$global:MB_USER_AGENT = "MikeRedd-CDTracksFlac/1.4.0"
 
 # ── UI helpers ──────────────────────────────
 function Show-Header {
@@ -129,6 +141,62 @@ function Write-ToolLog {
 
     $stamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     Add-Content -Path $Path -Value "[$stamp] $Message"
+}
+
+
+
+function Test-CDRipperTools {
+    $missingRequired = @()
+
+    foreach ($tool in @(
+        @{ Name = "cdda2wav"; Path = $global:CDDA2WAV_EXE },
+        @{ Name = "flac";     Path = $global:FLAC_EXE }
+    )) {
+        if ([string]::IsNullOrWhiteSpace($tool.Path) -or -not (Test-Path $tool.Path)) {
+            $missingRequired += ("{0}: {1}" -f $tool.Name, $tool.Path)
+        }
+    }
+
+    if ($missingRequired.Count -gt 0) {
+        throw "Missing required CD ripping tools:`n$($missingRequired -join "`n")"
+    }
+
+    if ([string]::IsNullOrWhiteSpace($global:METAFLAC_EXE) -or -not (Test-Path $global:METAFLAC_EXE)) {
+        Write-Status "metaflac not found; FLAC files will still be created, but cuesheet/cover embedding will be skipped: $global:METAFLAC_EXE" "Warn"
+    }
+
+    if ([string]::IsNullOrWhiteSpace($global:LIBDISCID_DLL) -or -not (Test-Path $global:LIBDISCID_DLL)) {
+        Write-Status "libdiscid not found; exact DiscID lookup will fall back to text/manual metadata: $global:LIBDISCID_DLL" "Warn"
+    }
+}
+
+function Test-AudioOutputFile {
+    param([Parameter(Mandatory)] [string]$Path)
+
+    if (-not (Test-Path $Path)) {
+        throw "Expected output file was not created: $Path"
+    }
+
+    $item = Get-Item -LiteralPath $Path -ErrorAction Stop
+    if ($item.Length -le 0) {
+        throw "Output file is empty: $Path"
+    }
+
+    return $true
+}
+
+function Publish-ValidatedAudioFile {
+    param(
+        [Parameter(Mandatory)] [string]$TempPath,
+        [Parameter(Mandatory)] [string]$FinalPath
+    )
+
+    [void](Test-AudioOutputFile -Path $TempPath)
+    if (Test-Path $FinalPath) {
+        Remove-Item -LiteralPath $FinalPath -Force -ErrorAction Stop
+    }
+    Move-Item -LiteralPath $TempPath -Destination $FinalPath -Force -ErrorAction Stop
+    [void](Test-AudioOutputFile -Path $FinalPath)
 }
 
 function Get-SafeName {
@@ -426,9 +494,15 @@ function Resolve-TrackCountFromRipLog {
         if ($line -match 'total tracks:\s*(\d+)') {
             return [int]$Matches[1]
         }
+        if ($line -match 'tracks?\s*[:=]\s*(\d+)\s*[-–]\s*(\d+)') {
+            return ([int]$Matches[2] - [int]$Matches[1] + 1)
+        }
+        if ($line -match '\b(\d+)\s+audio\s+tracks?\b') {
+            return [int]$Matches[1]
+        }
     }
 
-    throw "Could not determine track count from rip log."
+    throw "Could not determine track count from rip log. Check $LogPath."
 }
 
 function Rip-TrackWav {
@@ -534,6 +608,10 @@ function Embed-Cover {
     )
 
     if (-not (Test-Path $ImagePath)) { return }
+    if ([string]::IsNullOrWhiteSpace($global:METAFLAC_EXE) -or -not (Test-Path $global:METAFLAC_EXE)) {
+        Write-Status "metaflac not found; skipping cover art embed." "Warn"
+        return
+    }
 
     Write-Status "Embedding cover art..." "Info"
 
@@ -577,6 +655,15 @@ function Get-ManualTrackTitles {
 # ── Main ────────────────────────────────────
 function Start-Job {
     Initialize-Folders
+
+    try {
+        Test-CDRipperTools
+    }
+    catch {
+        Write-Status $_.Exception.Message "Bad"
+        Pause-Key
+        return
+    }
 
     $albumInfo = $null
     $tracks    = $null
@@ -698,6 +785,7 @@ function Start-Job {
     }
 
     $flacFiles = New-Object System.Collections.Generic.List[string]
+    $failedTracks = New-Object System.Collections.Generic.List[int]
 
     for ($i = 0; $i -lt $trackCount; $i++) {
         $trackNum   = $i + 1
@@ -706,8 +794,9 @@ function Start-Job {
 
         $wavPath  = Join-Path $global:TempRoot ("{0:D2} - {1}.wav" -f $trackNum, $safeTitle)
         $flacPath = Join-Path $albumDir        ("{0:D2} - {1}.flac" -f $trackNum, $safeTitle)
+        $flacWork = "${flacPath}.__encoding__.tmp.flac"
 
-        foreach ($f in @($wavPath, $flacPath)) {
+        foreach ($f in @($wavPath, $flacPath, $flacWork)) {
             if (Test-Path $f) {
                 Remove-Item $f -Force -ErrorAction SilentlyContinue
             }
@@ -718,14 +807,25 @@ function Start-Job {
         $ripCode = Rip-TrackWav -TrackNumber $trackNum -OutPath $wavPath
         if ($ripCode -ne 0 -or -not (Test-Path $wavPath)) {
             Write-Status ("Failed to rip track {0:D2}" -f $trackNum) "Bad"
+            [void]$failedTracks.Add($trackNum)
             continue
         }
 
         Write-Status ("Encoding track {0:D2}: {1}" -f $trackNum, $trackTitle) "Info"
 
-        $encCode = Encode-TrackFlac -WavPath $wavPath -FlacPath $flacPath -AlbumInfo $albumInfo -TrackTitle $trackTitle -TrackNumber $trackNum
-        if ($encCode -ne 0 -or -not (Test-Path $flacPath)) {
+        $encCode = Encode-TrackFlac -WavPath $wavPath -FlacPath $flacWork -AlbumInfo $albumInfo -TrackTitle $trackTitle -TrackNumber $trackNum
+        if ($encCode -ne 0) {
             Write-Status ("Failed to encode track {0:D2}" -f $trackNum) "Bad"
+            [void]$failedTracks.Add($trackNum)
+            continue
+        }
+
+        try {
+            Publish-ValidatedAudioFile -TempPath $flacWork -FinalPath $flacPath
+        }
+        catch {
+            Write-Status ("Track {0:D2} validation/publish failed: {1}" -f $trackNum, $_.Exception.Message) "Bad"
+            [void]$failedTracks.Add($trackNum)
             continue
         }
 
@@ -737,6 +837,10 @@ function Start-Job {
         [void]$flacFiles.Add([System.IO.Path]::GetFileName($flacPath))
 
         Write-Status ("Created {0:D2} - {1}.flac" -f $trackNum, $trackTitle) "Good"
+    }
+
+    if ($failedTracks.Count -gt 0 -or $flacFiles.Count -ne $trackCount) {
+        Write-Status ("CD track rip finished with failures. Expected {0}, created {1}. Failed tracks: {2}" -f $trackCount, $flacFiles.Count, ($failedTracks -join ', ')) "Bad"
     }
 
     try {
@@ -752,7 +856,12 @@ function Start-Job {
     }
 
     Write-Host ""
-    Write-Status "Done." "Good"
+    if ($failedTracks.Count -gt 0 -or $flacFiles.Count -ne $trackCount) {
+        Write-Status "Finished with errors. Check logs before using this rip." "Bad"
+    }
+    else {
+        Write-Status "Done." "Good"
+    }
     Write-Host " TRACK DIR : $albumDir" -ForegroundColor Yellow
     Write-Host " JSON      : $json"     -ForegroundColor Yellow
     Write-Host ""

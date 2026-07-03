@@ -1,7 +1,7 @@
 ﻿#--------------------------------------------
 # file:     bluray-backup.ps1
 # author:   Mike Redd
-# version:  2.3
+# version:  2.4
 # created:  2026-04-11
 # updated:  2026-07-03
 # desc:     Blu-ray backup + decrypt wrapper
@@ -11,7 +11,9 @@
 #           Outputs to G:\Rip\bluray
 #           and writes track metadata JSON/TXT
 #           for BREncoder
-# changes:  v2.3 - store CLPI-derived physical audio/subtitle language lists
+# changes:  v2.4 - media-gui production pass: self-contained UI/core fallback
+#                  so dot-sourcing from media-encoder-gui never aborts
+#           v2.3 - store CLPI-derived physical audio/subtitle language lists
 #                  in the BRTrackMeta sidecar so BREncoder can map/tag every
 #                  actual source stream deterministically, even during repair
 #           v2.2 - display saved JSON filename prominently after backup so the
@@ -20,54 +22,67 @@
 
 param()
 
+# ── Load custom UI/core helpers, with production-safe fallbacks ──
+# Prefer the user's shared profile helpers, but never abort the encoder/GUI
+# just because those personal UI files are missing on a fresh machine.
+$profileRoot = Join-Path $HOME 'PS\profile.d'
+$uiPath      = Join-Path $profileRoot 'ui.ps1'
+$corePath    = Join-Path $profileRoot 'core.ps1'
+
+if (Test-Path -LiteralPath $uiPath) {
+    try { . $uiPath }
+    catch { Write-Host "Failed to load ui.ps1, using fallback UI: $($_.Exception.Message)" }
+}
+if (Test-Path -LiteralPath $corePath) {
+    try { . $corePath }
+    catch { Write-Host "Failed to load core.ps1, using fallback core helpers: $($_.Exception.Message)" }
+}
+
+# ANSI colors are optional. Define harmless fallbacks when the shared UI was
+# not loaded so dot-sourcing from the GUI stays reliable.
+foreach ($pair in @{
+    UI_R=''; UI_GRY=''; UI_DIM=''; UI_GRN=''; UI_YLW=''; UI_MAG=''; UI_CYN=''; UI_RED=''
+}.GetEnumerator()) {
+    if (-not (Get-Variable -Name $pair.Key -Scope Global -ErrorAction SilentlyContinue)) {
+        Set-Variable -Name $pair.Key -Value $pair.Value -Scope Global
+    }
+}
+
+if (-not (Get-Command Clear-UiScreen -ErrorAction SilentlyContinue)) {
+    function Clear-UiScreen { try { Clear-Host } catch { } }
+}
+if (-not (Get-Command Get-UiBoxWidth -ErrorAction SilentlyContinue)) {
+    function Get-UiBoxWidth { param([int]$MaxWidth = 70, [int]$MinWidth = 48) return $MaxWidth }
+}
+if (-not (Get-Command Write-UiHeader -ErrorAction SilentlyContinue)) {
+    function Write-UiHeader { param([string]$Title, [string]$Subtitle = '', [int]$Width = 70) Write-Host "=== $Title ==="; if ($Subtitle) { Write-Host "    $Subtitle" } }
+}
+if (-not (Get-Command Write-UiRow -ErrorAction SilentlyContinue)) {
+    function Write-UiRow { param([string]$Label, [string]$Value, [string]$Color = '', [string]$ValueColor = '') Write-Host ("  {0,-14} {1}" -f $Label, $Value) }
+}
+if (-not (Get-Command Write-UiBlankLine -ErrorAction SilentlyContinue)) {
+    function Write-UiBlankLine { Write-Host '' }
+}
+if (-not (Get-Command Write-UiDivider -ErrorAction SilentlyContinue)) {
+    function Write-UiDivider { Write-Host ('-' * 60) }
+}
+if (-not (Get-Command Write-UiSection -ErrorAction SilentlyContinue)) {
+    function Write-UiSection { param([string]$Text = '', [string]$Title = '', [string]$Color = '') $t = if ($Title) { $Title } else { $Text }; Write-Host ''; Write-Host ("-- {0} --" -f $t) }
+}
+if (-not (Get-Command Write-CoreError -ErrorAction SilentlyContinue)) {
+    function Write-CoreError { param([string]$Message) Write-Host "ERROR: $Message" }
+}
+if (-not (Get-Command Pause-Core -ErrorAction SilentlyContinue)) {
+    function Pause-Core { param([string]$Message = 'Press Enter to continue...') [void](Read-Host $Message) }
+}
+if (-not (Get-Command Pause-UiReturn -ErrorAction SilentlyContinue)) {
+    function Pause-UiReturn { param([string]$Message = 'Press Enter to continue...') [void](Read-Host $Message) }
+}
+
 $ErrorActionPreference = 'Stop'
 
-# ── Load shared UI/core ──────────────────────────────────────
-$uiPath   = "$env:USERPROFILE\PS\profile.d\ui.ps1"
-$corePath = "$env:USERPROFILE\PS\profile.d\core.ps1"
-
-if (Test-Path $uiPath) {
-    try {
-        . $uiPath
-    }
-    catch {
-        Write-Host "Failed to load ui.ps1: $($_.Exception.Message)"
-        return
-    }
-}
-else {
-    Write-Host "Missing ui.ps1: $uiPath"
-    return
-}
-
-if (Test-Path $corePath) {
-    try {
-        . $corePath
-    }
-    catch {
-        Write-Host "Failed to load core.ps1: $($_.Exception.Message)"
-        if (Get-Command Pause-UiReturn -ErrorAction SilentlyContinue) {
-            Pause-UiReturn "Press Enter to return..."
-        }
-        else {
-            Read-Host "Press Enter to return..." | Out-Null
-        }
-        return
-    }
-}
-else {
-    Write-Host "Missing core.ps1: $corePath"
-    if (Get-Command Pause-UiReturn -ErrorAction SilentlyContinue) {
-        Pause-UiReturn "Press Enter to return..."
-    }
-    else {
-        Read-Host "Press Enter to return..." | Out-Null
-    }
-    return
-}
-
 $ScriptName    = "Blu-ray Backup"
-$ScriptVersion = "2.3"
+$ScriptVersion = "2.4"
 $ScriptAuthor  = "Mike Redd"
 
 # ── Config ───────────────────────────────────────────────────
