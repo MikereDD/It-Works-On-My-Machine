@@ -14,7 +14,7 @@ browser. Part of the `personaltools/` toolkit.
 
 | Library &amp; search | Now playing |
 |:---:|:---:|
-| ![Library browser with queue search](docs/screenshot-library.png) | ![Playing a track with the live visualizer](docs/screenshot-playing.png) |
+| ![Library browser with queue search](docs/screenshot-library.png) | ![Playing a track with the live visualizer](docs/screenshot-playing.jpg) |
 
 ## Highlights
 - **Wide format support** — MP3, FLAC, M4A/AAC, WAV, WMA, OGG, OPUS via NAudio
