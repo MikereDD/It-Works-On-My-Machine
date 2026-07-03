@@ -1,9 +1,9 @@
 ﻿#--------------------------------------------
 # file:     brEncoder.ps1
 # author:   Mike Redd
-# version:  3.1.9
+# version:  3.2.0
 # created:  2026-02-11
-# updated:  2026-06-21
+# updated:  2026-07-03
 # desc:     Encode Blu-ray .m2ts files
 #           to H.265/HEVC on Windows
 #           using ffmpeg, then create a
@@ -13,11 +13,11 @@
 #           validates metadata, verifies final MKV
 #           language/default/forced tags
 #           remuxes final MKV with real track IDs
-# changes:  v3.1.9 - a post-encode tagging failure no longer discards the
-#                    finished MKV: the encode is kept and the job continues
-#                    with a warning (tags left at ffmpeg defaults). Also logs
-#                    the .clpi reader status so count-mismatch refusals are
-#                    diagnosable.
+# changes:  v3.2.0 - production-line stable pass: raw .m2ts stream mapping
+#                    now uses actual source/CLPI counts so every physical
+#                    audio and subtitle stream is mapped; CLPI/sidecar physical
+#                    languages are used for deterministic final tags; output
+#                    track counts are validated before the encode is marked done
 #           v3.1.8 - subtitle tags now driven by the source .mkv's own per-stream
 #                    language tags (in physical 0:s order) instead of the disc
 #                    sidecar, which over-counts when MakeMKV drops duplicate PGS
@@ -69,7 +69,7 @@ else {
 $ErrorActionPreference = 'Stop'
 
 $ScriptName    = "Blu-ray Encoder"
-$ScriptVersion = "3.1.9"
+$ScriptVersion = "3.2.0"
 $ScriptAuthor  = "Mike Redd"
 
 # ── Config ────────────────────────────────────────────────────
@@ -83,8 +83,8 @@ $Script:MetaRoot        = Join-Path $Script:RootPath 'meta'
 $Script:TxtRoot         = Join-Path $Script:RootPath 'txt'
 $Script:M2tsRoot        = Join-Path $Script:RootPath 'm2ts'
 
-# Video quality — veryslow+psy tuning for maximum fidelity
-# CRF 16 for HDR (more headroom for 10-bit HDR detail), 17 for SDR
+# Video quality — slow+psy tuning for high-fidelity Blu-ray encodes
+# CRF 18 for HDR, 19 for SDR. Lower these later if you want larger files.
 $Script:CRF_HDR         = 18
 $Script:CRF_SDR         = 19
 $Script:DefaultPreset   = 'slow'
@@ -125,7 +125,7 @@ function Show-Header {
     Write-UiRow "Meta"    "source folder first, then G:\Rip\meta / txt" $global:UI_GRY
     Write-UiRow "Preset"  "$($Script:DefaultPreset)  •  10-bit yuv420p10le" $global:UI_GRY
     Write-UiRow "CRF"     "HDR=$($Script:CRF_HDR)  /  SDR=$($Script:CRF_SDR)  (auto-detected)" $global:UI_GRY
-    Write-UiRow "Psy"     "rd=4  psy-rd=1.5  psy-rdoq=1.0  aq-mode=3" $global:UI_GRY
+    Write-UiRow "Psy"     "rd=3  psy-rd=1.5  psy-rdoq=1.0  aq-mode=3" $global:UI_GRY
     Write-UiRow "Audio"   "copy (lossless passthrough)" $global:UI_GRY
     Write-UiRow "Sample"  "$($Script:DefaultLength)s from finished MKV" $global:UI_GRY
     Write-UiBlankLine
@@ -910,84 +910,68 @@ function Resolve-LanguageCode {
     if ([string]::IsNullOrWhiteSpace($Code)) { return 'und' }
 
     $clean = $Code.Trim().ToLowerInvariant()
+    $clean = $clean -replace '[^a-z]', ''
+    if ([string]::IsNullOrWhiteSpace($clean)) { return 'und' }
 
-    # Already a valid 3-letter ISO 639-2 code — pass it straight through
-    if ($clean -match '^[a-z]{3}$') { return $clean }
+    # Normalize common ISO-639 aliases to the bibliographic 639-2 codes most
+    # often written by MakeMKV/MKVToolNix in older Blu-ray workflows.
+    switch ($clean) {
+        'fra' { return 'fre' }  'fre' { return 'fre' }  'french' { return 'fre' }  'fr' { return 'fre' }
+        'deu' { return 'ger' }  'ger' { return 'ger' }  'german' { return 'ger' }  'de' { return 'ger' }
+        'zho' { return 'chi' }  'chi' { return 'chi' }  'chinese' { return 'chi' } 'zh' { return 'chi' }
+        'nld' { return 'dut' }  'dut' { return 'dut' }  'dutch' { return 'dut' }   'nl' { return 'dut' }
+        'ell' { return 'gre' }  'gre' { return 'gre' }  'greek' { return 'gre' }   'el' { return 'gre' }
+        'ces' { return 'cze' }  'cze' { return 'cze' }  'czech' { return 'cze' }   'cs' { return 'cze' }
+        'slk' { return 'slo' }  'slo' { return 'slo' }  'slovak' { return 'slo' }  'sk' { return 'slo' }
+        'ron' { return 'rum' }  'rum' { return 'rum' }  'romanian' { return 'rum' } 'ro' { return 'rum' }
+        'msa' { return 'may' }  'may' { return 'may' }  'malay' { return 'may' }   'ms' { return 'may' }
+    }
 
     # Full language name → ISO 639-2/B code
     switch ($clean) {
         'english'    { return 'eng' }
         'spanish'    { return 'spa' }
-        'french'     { return 'fre' }
         'japanese'   { return 'jpn' }
-        'german'     { return 'ger' }
         'italian'    { return 'ita' }
         'portuguese' { return 'por' }
-        'chinese'    { return 'chi' }
         'korean'     { return 'kor' }
         'arabic'     { return 'ara' }
         'russian'    { return 'rus' }
-        'dutch'      { return 'dut' }
         'hindi'      { return 'hin' }
         'swedish'    { return 'swe' }
         'norwegian'  { return 'nor' }
         'danish'     { return 'dan' }
         'finnish'    { return 'fin' }
         'polish'     { return 'pol' }
-        'czech'      { return 'cze' }
         'hungarian'  { return 'hun' }
         'turkish'    { return 'tur' }
-        'greek'      { return 'gre' }
         'hebrew'     { return 'heb' }
         'thai'       { return 'tha' }
         'vietnamese' { return 'vie' }
         'indonesian' { return 'ind' }
-        'malay'      { return 'may' }
-        'romanian'   { return 'rum' }
         'ukrainian'  { return 'ukr' }
         'croatian'   { return 'hrv' }
-        'slovak'     { return 'slo' }
         'bulgarian'  { return 'bul' }
         'catalan'    { return 'cat' }
         # 2-letter ISO 639-1 codes — map to 639-2
-        'en'         { return 'eng' }
-        'es'         { return 'spa' }
-        'fr'         { return 'fre' }
-        'ja'         { return 'jpn' }
-        'de'         { return 'ger' }
-        'it'         { return 'ita' }
-        'pt'         { return 'por' }
-        'zh'         { return 'chi' }
-        'ko'         { return 'kor' }
-        'ar'         { return 'ara' }
-        'ru'         { return 'rus' }
-        'nl'         { return 'dut' }
-        'hi'         { return 'hin' }
-        'sv'         { return 'swe' }
-        'no'         { return 'nor' }
-        'da'         { return 'dan' }
-        'fi'         { return 'fin' }
-        'pl'         { return 'pol' }
-        'cs'         { return 'cze' }
-        'hu'         { return 'hun' }
-        'tr'         { return 'tur' }
-        'el'         { return 'gre' }
-        'he'         { return 'heb' }
-        'th'         { return 'tha' }
-        'vi'         { return 'vie' }
-        'id'         { return 'ind' }
-        'ms'         { return 'may' }
-        'ro'         { return 'rum' }
-        'uk'         { return 'ukr' }
-        'hr'         { return 'hrv' }
-        'sk'         { return 'slo' }
-        'bg'         { return 'bul' }
-        'ca'         { return 'cat' }
+        'en' { return 'eng' } 'es' { return 'spa' } 'ja' { return 'jpn' }
+        'it' { return 'ita' } 'pt' { return 'por' } 'ko' { return 'kor' }
+        'ar' { return 'ara' } 'ru' { return 'rus' } 'hi' { return 'hin' }
+        'sv' { return 'swe' } 'no' { return 'nor' } 'da' { return 'dan' }
+        'fi' { return 'fin' } 'pl' { return 'pol' } 'hu' { return 'hun' }
+        'tr' { return 'tur' } 'he' { return 'heb' } 'th' { return 'tha' }
+        'vi' { return 'vie' } 'id' { return 'ind' } 'uk' { return 'ukr' }
+        'hr' { return 'hrv' } 'bg' { return 'bul' } 'ca' { return 'cat' }
         # Explicit unknowns
-        'unknown'       { return 'und' }
-        'undetermined'  { return 'und' }
-        default         { return $clean }
+        'unknown'      { return 'und' }
+        'undetermined' { return 'und' }
+        'und'          { return 'und' }
     }
+
+    # Already a valid 3-letter ISO 639 code — pass it through after aliases.
+    if ($clean -match '^[a-z]{3}$') { return $clean }
+
+    return 'und'
 }
 
 
@@ -1053,14 +1037,14 @@ function Test-BRTrackMetadata {
 
     if ($audioMeta.Count -eq 0) { $warnings.Add('Metadata has no audio tracks.') }
     if ($TrackLayout.AudioCount -ne $audioMeta.Count) {
-        $warnings.Add("Audio count mismatch: output=$($TrackLayout.AudioCount), metadata=$($audioMeta.Count). Will apply the safe minimum.")
+        $warnings.Add("Audio count mismatch: output=$($TrackLayout.AudioCount), metadata=$($audioMeta.Count). Physical CLPI/source counts will be used when available.")
     }
     if ($TrackLayout.SubtitleCount -ne $subMeta.Count) {
-        $warnings.Add("Subtitle count mismatch: output=$($TrackLayout.SubtitleCount), metadata=$($subMeta.Count). Will apply the safe minimum.")
+        $warnings.Add("Subtitle count mismatch: output=$($TrackLayout.SubtitleCount), metadata=$($subMeta.Count). Physical CLPI/source counts will be used when available.")
     }
 
-    $knownAudio = @($audioMeta | Where-Object { (Resolve-LanguageCode -Code $_.LanguageCode) -ne 'und' })
-    $knownSubs  = @($subMeta   | Where-Object { (Resolve-LanguageCode -Code $_.LanguageCode) -ne 'und' })
+    $knownAudio = @($audioMeta | Where-Object { (Get-MetaLanguage -Track $_) -ne 'und' })
+    $knownSubs  = @($subMeta   | Where-Object { (Get-MetaLanguage -Track $_) -ne 'und' })
     if ($audioMeta.Count -gt 0 -and $knownAudio.Count -eq 0) { $warnings.Add('All metadata audio languages are und/unknown.') }
     if ($subMeta.Count   -gt 0 -and $knownSubs.Count  -eq 0) { $warnings.Add('All metadata subtitle languages are und/unknown.') }
 
@@ -1236,6 +1220,51 @@ function Get-SourceStreamLanguageMap {
     return [pscustomobject]@{ Audio = $audio; Sub = $sub }
 }
 
+
+function Get-MetaPhysicalStreamLanguages {
+    <#
+    .SYNOPSIS
+        Reads physical source-stream language lists saved in BRTrackMeta/1.1.
+
+    .DESCRIPTION
+        bluray-backup.ps1 v2.3 stores CLPI-derived audio/subtitle languages in
+        the sidecar. That gives repair/tagging a deterministic fallback even when
+        only the copied .m2ts remains and the original BDMV\CLIPINF folder is gone.
+    #>
+    param([object]$Meta)
+
+    $empty = [pscustomobject]@{ Audio = @(); Subtitle = @(); Status = 'sidecar physical: none' }
+    if (-not $Meta) { return $empty }
+
+    $physical = $null
+    if ($Meta.PSObject.Properties['PhysicalStreams'] -and $Meta.PhysicalStreams) {
+        $physical = $Meta.PhysicalStreams
+    }
+    elseif ($Meta.SourceFingerprint -and $Meta.SourceFingerprint.PSObject.Properties['PhysicalStreams'] -and $Meta.SourceFingerprint.PhysicalStreams) {
+        $physical = $Meta.SourceFingerprint.PhysicalStreams
+    }
+
+    if (-not $physical) { return $empty }
+
+    $audioRaw = @()
+    foreach ($prop in @('AudioLanguages','Audio','AudioLangs','AudioLanguageCodes')) {
+        $m = $physical.PSObject.Properties[$prop]
+        if ($m -and $m.Value) { $audioRaw = @($m.Value); break }
+    }
+
+    $subRaw = @()
+    foreach ($prop in @('SubtitleLanguages','Subtitles','Subtitle','SubtitleLangs','SubtitleLanguageCodes')) {
+        $m = $physical.PSObject.Properties[$prop]
+        if ($m -and $m.Value) { $subRaw = @($m.Value); break }
+    }
+
+    $audio = @($audioRaw | ForEach-Object { Resolve-LanguageCode -Code ([string]$_) })
+    $subs  = @($subRaw   | ForEach-Object { Resolve-LanguageCode -Code ([string]$_) })
+    $status = if ($physical.PSObject.Properties['Status'] -and $physical.Status) { [string]$physical.Status } else { 'sidecar physical stream languages' }
+
+    return [pscustomobject]@{ Audio = $audio; Subtitle = $subs; Status = $status }
+}
+
 function Read-ClpiSubtitleLanguages {
     <#
     .SYNOPSIS
@@ -1387,11 +1416,41 @@ function Read-ClpiStreamLanguages {
 
 function Get-LanguageDisplayName {
     param([string]$Code)
-    switch ($Code) {
-        'eng' { 'English' } 'spa' { 'Spanish' } 'fra' { 'French' } 'fre' { 'French' }
-        'jpn' { 'Japanese' } 'ger' { 'German' } 'deu' { 'German' } 'ita' { 'Italian' }
-        'por' { 'Portuguese' } 'rus' { 'Russian' } 'kor' { 'Korean' }
-        'chi' { 'Chinese' } 'zho' { 'Chinese' } 'dut' { 'Dutch' } 'nld' { 'Dutch' }
+    $lang = Resolve-LanguageCode -Code $Code
+    switch ($lang) {
+        'eng' { 'English' }
+        'spa' { 'Spanish' }
+        'fre' { 'French' }
+        'ger' { 'German' }
+        'jpn' { 'Japanese' }
+        'ita' { 'Italian' }
+        'por' { 'Portuguese' }
+        'rus' { 'Russian' }
+        'kor' { 'Korean' }
+        'chi' { 'Chinese' }
+        'dut' { 'Dutch' }
+        'ara' { 'Arabic' }
+        'hin' { 'Hindi' }
+        'swe' { 'Swedish' }
+        'nor' { 'Norwegian' }
+        'dan' { 'Danish' }
+        'fin' { 'Finnish' }
+        'pol' { 'Polish' }
+        'cze' { 'Czech' }
+        'hun' { 'Hungarian' }
+        'tur' { 'Turkish' }
+        'gre' { 'Greek' }
+        'heb' { 'Hebrew' }
+        'tha' { 'Thai' }
+        'vie' { 'Vietnamese' }
+        'ind' { 'Indonesian' }
+        'may' { 'Malay' }
+        'rum' { 'Romanian' }
+        'ukr' { 'Ukrainian' }
+        'hrv' { 'Croatian' }
+        'slo' { 'Slovak' }
+        'bul' { 'Bulgarian' }
+        'cat' { 'Catalan' }
         default { $null }
     }
 }
@@ -1430,7 +1489,8 @@ function Invoke-MKVLanguageRemux {
         [Parameter(Mandatory)][object[]]$AudioMeta,
         [Parameter(Mandatory)][object[]]$SubMeta,
         [string]$SourcePath,
-        [string]$OverridesFile
+        [string]$OverridesFile,
+        [object]$Meta
     )
 
     $propArgs = @($OutputFile)
@@ -1457,18 +1517,21 @@ function Invoke-MKVLanguageRemux {
     $audOutCount  = $TrackLayout.AudioTracks.Count
     $clpiAllLangs = if ($SourcePath) { Read-ClpiStreamLanguages -M2tsPath $SourcePath } else { $null }
     $clpiAudLangs = if ($clpiAllLangs) { @($clpiAllLangs.Audio) } else { @() }
+    $metaPhysical = Get-MetaPhysicalStreamLanguages -Meta $Meta
+    $metaAudLangs = @($metaPhysical.Audio)
+    $metaSubLangs = @($metaPhysical.Subtitle)
     $useClpiAudio = ($clpiAudLangs.Count -eq $audOutCount -and $audOutCount -gt 0)
-    if ($clpiAllLangs) { Write-Host "  $($global:UI_DIM)clpi$($global:UI_R)    $($clpiAllLangs.Status)" }
+    $useMetaAudio = (-not $useClpiAudio -and $metaAudLangs.Count -eq $audOutCount -and $audOutCount -gt 0)
 
-    if ($ovrAudio.Count -eq 0 -and -not $useClpiAudio -and $audOutCount -ne $AudioMeta.Count) {
-        $clpiNote = if ($clpiAllLangs) { $clpiAllLangs.Status } else { 'clpi: not read (no source path)' }
-        throw "Audio validation failed: output=$audOutCount, metadata=$($AudioMeta.Count); $clpiNote. Refusing unsafe partial tagging."
+    if ($ovrAudio.Count -eq 0 -and -not $useClpiAudio -and -not $useMetaAudio -and $audOutCount -ne $AudioMeta.Count) {
+        throw "Audio validation failed: output=$audOutCount, metadata=$($AudioMeta.Count), and no usable .clpi/sidecar physical languages. Refusing unsafe partial tagging."
     }
-    # Prefer authoritative subtitle languages from the Blu-ray clip info; the
-    # sidecar's subtitle order/count then no longer gates tagging.
+    # Prefer authoritative subtitle languages from the Blu-ray clip info; if the
+    # original CLPI is gone, use the CLPI-derived physical lists saved in sidecar.
     $subOutCount  = $TrackLayout.SubtitleTracks.Count
-    $clpiSubLangs = if ($SourcePath) { Read-ClpiSubtitleLanguages -M2tsPath $SourcePath } else { $null }
-    $useClpiSubs  = ($clpiSubLangs -and $clpiSubLangs.Count -eq $subOutCount)
+    $clpiSubLangs = if ($clpiAllLangs) { @($clpiAllLangs.Subtitle) } else { @() }
+    $useClpiSubs  = ($clpiSubLangs.Count -eq $subOutCount -and $subOutCount -gt 0)
+    $useMetaSubs  = (-not $useClpiSubs -and $metaSubLangs.Count -eq $subOutCount -and $subOutCount -gt 0)
 
     # Source-MKV subtitle languages: when encoding from a MakeMKV/remux .mkv (not
     # a raw BDMV), the source already carries per-stream ISO-639 tags in the exact
@@ -1486,8 +1549,8 @@ function Invoke-MKVLanguageRemux {
     $knownSrcSub = @($srcSubLangs | Where-Object { $_ -ne 'und' }).Count
     $useSrcSubs  = ($srcSubLangs.Count -eq $subOutCount -and $subOutCount -gt 0 -and $knownSrcSub -gt 0)
 
-    if ($ovrSub.Count -eq 0 -and -not $useClpiSubs -and -not $useSrcSubs -and $subOutCount -ne $SubMeta.Count) {
-        throw "Subtitle validation failed: output=$subOutCount, metadata=$($SubMeta.Count), and no usable .clpi/source languages or overrides. Refusing unsafe partial tagging."
+    if ($ovrSub.Count -eq 0 -and -not $useClpiSubs -and -not $useMetaSubs -and -not $useSrcSubs -and $subOutCount -ne $SubMeta.Count) {
+        throw "Subtitle validation failed: output=$subOutCount, metadata=$($SubMeta.Count), and no usable .clpi/sidecar physical/source languages or overrides. Refusing unsafe partial tagging."
     }
 
     # Default audio = best-sounding English that physically exists: rank lossless
@@ -1495,6 +1558,7 @@ function Invoke-MKVLanguageRemux {
     $audLangAt = {
         param([int]$ix)
         if     ($useClpiAudio)            { return [string]$clpiAudLangs[$ix] }
+        elseif ($useMetaAudio)            { return [string]$metaAudLangs[$ix] }
         elseif ($ix -lt $AudioMeta.Count) { return (Get-MetaLanguage -Track $AudioMeta[$ix]) }
         else                              { return 'und' }
     }
@@ -1526,12 +1590,12 @@ function Invoke-MKVLanguageRemux {
             $isComm    = [bool]$o.commentary
             $src       = 'override'
         }
-        elseif ($useClpiAudio) {
-            $lang      = [string]$clpiAudLangs[$i]
+        elseif ($useClpiAudio -or $useMetaAudio) {
+            $lang      = if ($useClpiAudio) { [string]$clpiAudLangs[$i] } else { [string]$metaAudLangs[$i] }
             $name      = New-AudioTrackName -Codec ([string]$TrackLayout.AudioTracks[$i].codec) -Channels ([int]$TrackLayout.AudioTracks[$i].properties.audio_channels) -Lang $lang
             $isDefault = (($i + 1) -eq $audDefaultIndex)
             $isComm    = $false
-            $src       = 'clpi'
+            $src       = if ($useClpiAudio) { 'clpi' } else { 'sidecar-physical' }
         }
         elseif ($metaTrack) {
             $lang      = Get-MetaLanguage -Track $metaTrack
@@ -1584,8 +1648,8 @@ function Invoke-MKVLanguageRemux {
         # repeated language (the second copy of a language is the forced/signs
         # track); English is forced default below.
         $o = $ovrSub[$i + 1]
-        if ($useClpiSubs) {
-            $lang   = [string]$clpiSubLangs[$i]
+        if ($useClpiSubs -or $useMetaSubs) {
+            $lang   = if ($useClpiSubs) { [string]$clpiSubLangs[$i] } else { [string]$metaSubLangs[$i] }
             $forced = [bool]$seenSubLang[$lang]
             $seenSubLang[$lang] = $true
             $isComm = $false
@@ -1650,7 +1714,7 @@ function Invoke-MKVLanguageRemux {
         }
     }
 
-    $langSrc = if ($useClpiSubs) { 'clpi' } elseif ($useSrcSubs) { 'source-mkv' } elseif ($ovrSub.Count -gt 0) { 'override' } else { 'sidecar' }
+    $langSrc = if ($useClpiSubs) { 'clpi' } elseif ($useMetaSubs) { 'sidecar-physical' } elseif ($useSrcSubs) { 'source-mkv' } elseif ($ovrSub.Count -gt 0) { 'override' } else { 'sidecar' }
     for ($i = 0; $i -lt $effSub.Count; $i++) {
         $t = $effSub[$i]
         $propArgs += '--edit'
@@ -1925,6 +1989,10 @@ function Select-TrackMetadata {
                 $langs = ($subList | ForEach-Object { Get-MetaLanguage -Track $_ }) -join ', '
                 Write-Host "  $($global:UI_DIM)S Langs$($global:UI_R) $langs"
             }
+            $phys = Get-MetaPhysicalStreamLanguages -Meta $autoMatch.Data
+            if ($phys.Audio.Count -gt 0 -or $phys.Subtitle.Count -gt 0) {
+                Write-Host "  $($global:UI_DIM)Physical$($global:UI_R) $($phys.Audio.Count) audio / $($phys.Subtitle.Count) subtitle language(s) saved"
+            }
         }
 
         return $autoMatch
@@ -1950,17 +2018,17 @@ function Select-TrackMetadata {
 function New-FFmpegMapArgsFromTrackMetadata {
     <#
     .SYNOPSIS
-        Builds explicit ffmpeg -map and metadata arguments from the required sidecar.
+        Builds explicit ffmpeg -map and metadata arguments from required sidecar
+        metadata plus the actual physical source stream count.
 
     .NOTES
-        v3.0 rule: for raw .m2ts sources the sidecar is the source of truth -
-        ffprobe/container language tags on a .m2ts are not trusted because some
-        Blu-ray streams lie or are incomplete, which collapsed subtitle languages
-        to the wrong value.
-        v3.1.8: a MakeMKV/remux .mkv source is the exception - its per-stream tags
-        are authoritative and in physical 0:a/0:s order, so for .mkv inputs the
-        map/metadata is built from the source streams (the disc sidecar can
-        over-count when MakeMKV drops duplicate PGS streams). .m2ts unchanged.
+        Stable rule: ffmpeg stream mapping must be driven by the source stream
+        count, not by MakeMKV sidecar count. The sidecar remains required because
+        it identifies the disc/title and supplies names/flags, but raw .m2ts
+        inputs can have physical stream order/count differences. For .m2ts we
+        use ffprobe counts first, then CLPI/sidecar physical counts, then sidecar
+        counts as the last fallback. For .mkv sources, mkvmerge source tags stay
+        authoritative because they are already remuxed in 0:a/0:s order.
     #>
     param(
         [object]$MetaInfo,
@@ -1983,22 +2051,20 @@ function New-FFmpegMapArgsFromTrackMetadata {
         throw "Track metadata contains no audio or subtitle tracks."
     }
 
-    # When the source is a MakeMKV/remux .mkv, its per-stream language tags are
-    # authoritative and already in physical 0:a/0:s order, so they line up 1:1
-    # with what ffmpeg muxes - even when the disc-level sidecar lists more (or
-    # differently-ordered) streams than the mkv actually kept. Raw .m2ts sources
-    # keep sidecar tagging: their streams carry no/unreliable tags (see NOTES).
+    $ffMapArgs = @('-map', '0:v:0')
+    $sourceLabel = 'sidecar'
+
+    # MakeMKV/remux MKV source: use the MKV's own physical track layout and tags.
     $srcAudLangs = @(); $srcSubLangs = @()
-    $srcAudNames = @(); $srcSubNames = @()
-    $srcSubForced = @()
+    $srcAudNames = @(); $srcSubNames = @(); $srcSubForced = @()
     $useSrcTags = $false
     if ($SourcePath -and ($SourcePath -match '\.mkv$') -and (Test-Path -LiteralPath $SourcePath)) {
         try {
             $sj = & $Script:MKVMergePath -J $SourcePath 2>$null | Out-String | ConvertFrom-Json
             $sa = @(@($sj.tracks) | Where-Object { $_.type -eq 'audio' })
             $ss = @(@($sj.tracks) | Where-Object { $_.type -eq 'subtitles' })
-            $srcAudLangs  = @($sa | ForEach-Object { if ($_.properties.language) { [string]$_.properties.language } else { 'und' } })
-            $srcSubLangs  = @($ss | ForEach-Object { if ($_.properties.language) { [string]$_.properties.language } else { 'und' } })
+            $srcAudLangs  = @($sa | ForEach-Object { if ($_.properties.language) { Resolve-LanguageCode -Code ([string]$_.properties.language) } else { 'und' } })
+            $srcSubLangs  = @($ss | ForEach-Object { if ($_.properties.language) { Resolve-LanguageCode -Code ([string]$_.properties.language) } else { 'und' } })
             $srcAudNames  = @($sa | ForEach-Object { if ($_.properties.track_name) { [string]$_.properties.track_name } else { '' } })
             $srcSubNames  = @($ss | ForEach-Object { if ($_.properties.track_name) { [string]$_.properties.track_name } else { '' } })
             $srcSubForced = @($ss | ForEach-Object { [bool]$_.properties.forced_track })
@@ -2006,15 +2072,68 @@ function New-FFmpegMapArgsFromTrackMetadata {
         } catch { $useSrcTags = $false }
     }
 
-    $audCount = if ($useSrcTags) { $srcAudLangs.Count } else { $audioMeta.Count }
-    $subCount = if ($useSrcTags) { $srcSubLangs.Count } else { $subMeta.Count }
     if ($useSrcTags) {
+        $audCount = $srcAudLangs.Count
+        $subCount = $srcSubLangs.Count
+        $sourceLabel = 'source-mkv'
         Write-Host "  $($global:UI_CYN)Source .mkv tags authoritative: $audCount audio / $subCount subtitle$($global:UI_R)"
     }
+    else {
+        # Raw .m2ts / BDMV source: count the physical streams. ffprobe count is
+        # the safest map count because ffmpeg will map the same indexes; CLPI and
+        # sidecar physical lists are used for languages when their counts match.
+        $srcMap = if ($SourcePath -and (Test-Path -LiteralPath $SourcePath)) { Get-SourceStreamLanguageMap -SourcePath $SourcePath } else { $null }
+        $probeAudLangs = if ($srcMap) { @($srcMap.Audio | ForEach-Object { Resolve-LanguageCode -Code ([string]$_) }) } else { @() }
+        $probeSubLangs = if ($srcMap) { @($srcMap.Sub   | ForEach-Object { Resolve-LanguageCode -Code ([string]$_) }) } else { @() }
 
-    $ffMapArgs = @(
-        '-map', '0:v:0'
-    )
+        $clpi = if ($SourcePath -and ($SourcePath -match '\.m2ts$') -and (Test-Path -LiteralPath $SourcePath)) { Read-ClpiStreamLanguages -M2tsPath $SourcePath } else { $null }
+        $clpiAudLangs = if ($clpi) { @($clpi.Audio) } else { @() }
+        $clpiSubLangs = if ($clpi) { @($clpi.Subtitle) } else { @() }
+
+        $metaPhysical = Get-MetaPhysicalStreamLanguages -Meta $MetaInfo.Data
+        $metaAudLangs = @($metaPhysical.Audio)
+        $metaSubLangs = @($metaPhysical.Subtitle)
+
+        $audPhysicalCount = (@($probeAudLangs.Count, $clpiAudLangs.Count, $metaAudLangs.Count) | Measure-Object -Maximum).Maximum
+        $subPhysicalCount = (@($probeSubLangs.Count, $clpiSubLangs.Count, $metaSubLangs.Count) | Measure-Object -Maximum).Maximum
+        $audCount = if ($audPhysicalCount -gt 0) { [int]$audPhysicalCount } else { $audioMeta.Count }
+        $subCount = if ($subPhysicalCount -gt 0) { [int]$subPhysicalCount } else { $subMeta.Count }
+
+        if ($audCount -eq 0) { throw "No audio streams were found in source or metadata. Encoding cancelled." }
+
+        $useClpiAudio = ($clpiAudLangs.Count -eq $audCount -and $audCount -gt 0)
+        $useMetaAudio = (-not $useClpiAudio -and $metaAudLangs.Count -eq $audCount -and $audCount -gt 0)
+        $useProbeAudio = (-not $useClpiAudio -and -not $useMetaAudio -and $probeAudLangs.Count -eq $audCount -and @($probeAudLangs | Where-Object { $_ -ne 'und' }).Count -gt 0)
+
+        $useClpiSubs = ($clpiSubLangs.Count -eq $subCount -and $subCount -gt 0)
+        $useMetaSubs = (-not $useClpiSubs -and $metaSubLangs.Count -eq $subCount -and $subCount -gt 0)
+        $useProbeSubs = (-not $useClpiSubs -and -not $useMetaSubs -and $probeSubLangs.Count -eq $subCount -and @($probeSubLangs | Where-Object { $_ -ne 'und' }).Count -gt 0)
+
+        $sourceLabel = if ($useClpiAudio -or $useClpiSubs) { 'source-clpi' } elseif ($useMetaAudio -or $useMetaSubs) { 'sidecar-physical' } elseif ($useProbeAudio -or $useProbeSubs) { 'source-probe' } else { 'sidecar' }
+
+        if ($audCount -ne $audioMeta.Count -or $subCount -ne $subMeta.Count) {
+            Write-Host "  $($global:UI_YLW)Physical stream count differs from sidecar: map=$audCount audio/$subCount subs, sidecar=$($audioMeta.Count) audio/$($subMeta.Count) subs$($global:UI_R)"
+        }
+
+        $physAudioAt = {
+            param([int]$ix)
+            if     ($useClpiAudio) { return [string]$clpiAudLangs[$ix] }
+            elseif ($useMetaAudio) { return [string]$metaAudLangs[$ix] }
+            elseif ($useProbeAudio){ return [string]$probeAudLangs[$ix] }
+            elseif ($ix -lt $audioMeta.Count) { return (Get-MetaLanguage -Track $audioMeta[$ix]) }
+            else { return 'und' }
+        }
+        $physSubAt = {
+            param([int]$ix)
+            if     ($useClpiSubs)  { return [string]$clpiSubLangs[$ix] }
+            elseif ($useMetaSubs)  { return [string]$metaSubLangs[$ix] }
+            elseif ($useProbeSubs) { return [string]$probeSubLangs[$ix] }
+            elseif ($ix -lt $subMeta.Count) { return (Get-MetaLanguage -Track $subMeta[$ix]) }
+            else { return 'und' }
+        }
+
+        $rawSeenSubLang = @{}
+    }
 
     for ($i = 0; $i -lt $audCount; $i++) {
         $ffMapArgs += '-map'
@@ -2031,8 +2150,8 @@ function New-FFmpegMapArgsFromTrackMetadata {
             $lang = $srcAudLangs[$i]
             $name = $srcAudNames[$i]
         } else {
-            $lang = Get-MetaLanguage -Track $audioMeta[$i]
-            $name = Get-MetaTrackName -Track $audioMeta[$i]
+            $lang = & $physAudioAt $i
+            $name = if ($i -lt $audioMeta.Count) { Get-MetaTrackName -Track $audioMeta[$i] } else { $null }
         }
 
         $ffMapArgs += ("-metadata:s:a:{0}" -f $i)
@@ -2052,15 +2171,23 @@ function New-FFmpegMapArgsFromTrackMetadata {
             $isDef    = $false
             if ([string]::IsNullOrWhiteSpace($name)) {
                 $ln = Get-LanguageDisplayName -Code $lang
-                if ($ln) {
-                    $name = if ($isForced) { "PGS $ln (forced only)" } else { "PGS $ln" }
-                }
+                if ($ln) { $name = if ($isForced) { "PGS $ln (forced only)" } else { "PGS $ln" } }
             }
         } else {
-            $lang     = Get-MetaLanguage -Track $subMeta[$i]
-            $name     = Get-MetaTrackName -Track $subMeta[$i]
-            $isForced = [bool]$subMeta[$i].Forced
-            $isDef    = [bool]$subMeta[$i].Default
+            $lang = & $physSubAt $i
+            $sidecarPositionSafe = ($subMeta.Count -eq $subCount -and -not ($sourceLabel -in @('source-clpi','sidecar-physical','source-probe')))
+            if ($sidecarPositionSafe -and $i -lt $subMeta.Count) {
+                $name     = Get-MetaTrackName -Track $subMeta[$i]
+                $isForced = [bool]$subMeta[$i].Forced
+                $isDef    = [bool]$subMeta[$i].Default
+            }
+            else {
+                $isForced = [bool]$rawSeenSubLang[$lang]
+                $rawSeenSubLang[$lang] = $true
+                $isDef = $false
+                $ln = Get-LanguageDisplayName -Code $lang
+                $name = if ($ln) { if ($isForced) { "PGS $ln (forced only)" } else { "PGS $ln" } } else { $null }
+            }
         }
 
         $ffMapArgs += ("-metadata:s:s:{0}" -f $i)
@@ -2085,16 +2212,18 @@ function New-FFmpegMapArgsFromTrackMetadata {
         Args       = $ffMapArgs
         AudioCount = $audCount
         SubCount   = $subCount
-        Source     = if ($useSrcTags) { 'source-mkv' } else { 'sidecar' }
+        Source     = $sourceLabel
     }
 }
+
 
 function Apply-TrackMetadata {
     param(
         [Parameter(Mandatory)][string]$OutputFile,
         [Parameter(Mandatory)][System.IO.FileInfo]$SourceFile,
         [Parameter(Mandatory)][string]$MovieName,
-        [object]$PreselectedMetaInfo = $null
+        [object]$PreselectedMetaInfo = $null,
+        [string]$OverridesFile
     )
 
     $metaInfo = if ($PreselectedMetaInfo) {
@@ -2154,7 +2283,7 @@ function Apply-TrackMetadata {
     # mkvmerge -J is still used to get the real audio/subtitle counts and ordering,
     # but the actual tag writes go through mkvpropedit --edit/--set which edits
     # headers in-place and has stable flag names across all MKVToolNix versions.
-    Invoke-MKVLanguageRemux -OutputFile $OutputFile -TrackLayout $trackLayout -AudioMeta $audioMeta -SubMeta $subMeta -SourcePath $SourceFile.FullName -OverridesFile $OverridesFile
+    Invoke-MKVLanguageRemux -OutputFile $OutputFile -TrackLayout $trackLayout -AudioMeta $audioMeta -SubMeta $subMeta -SourcePath $SourceFile.FullName -OverridesFile $OverridesFile -Meta $meta
 
     Write-UiBlankLine
     Write-Host "  $($global:UI_GRN)Track metadata applied.$($global:UI_R)"
@@ -2356,24 +2485,17 @@ function Encode-File {
 
     $encodedInfo = Wait-ForOutputFile -Path $outputFile
 
-    # The encode is the expensive artifact and has already succeeded here
-    # (ffmpeg exit 0, output verified). Track metadata is a best-effort
-    # enhancement, so a tagging failure must NOT discard a finished encode.
-    # Keep the file and continue; the validation step refuses to write
-    # mislabeled tags, so the worst case is a playable MKV with ffmpeg-default
-    # ('und') tags that can be re-tagged later via the standalone remux.
-    try {
-        $appliedMeta = Apply-TrackMetadata -OutputFile $encodedInfo.FullName -SourceFile $SourceFile -MovieName $MovieName -PreselectedMetaInfo $preselectedMeta
-        if ($appliedMeta) {
-            # Guard against stray pipeline output: keep only the last value and force to string.
-            if ($appliedMeta -is [array]) { $appliedMeta = $appliedMeta[-1] }
-            $trackMetaPath = [string]$appliedMeta
-        }
+    $encodedLayout = Get-OutputTrackLayout -Path $encodedInfo.FullName
+    if ($encodedLayout.AudioCount -ne $metadataMap.AudioCount -or $encodedLayout.SubtitleCount -ne $metadataMap.SubCount) {
+        throw ("Stream map validation failed: expected {0} audio / {1} subtitle, encoded {2} audio / {3} subtitle. Refusing to mark complete." -f `
+            $metadataMap.AudioCount, $metadataMap.SubCount, $encodedLayout.AudioCount, $encodedLayout.SubtitleCount)
     }
-    catch {
-        Write-Host "  $($global:UI_YLW)Track tagging skipped:$($global:UI_R) $($_.Exception.Message)"
-        Write-Host "  $($global:UI_GRY)Encode is complete and kept; tags left at ffmpeg defaults. Re-tag later via the standalone language remux once track languages are known.$($global:UI_R)"
-        $trackMetaPath = ""
+
+    $appliedMeta = Apply-TrackMetadata -OutputFile $encodedInfo.FullName -SourceFile $SourceFile -MovieName $MovieName -PreselectedMetaInfo $preselectedMeta -OverridesFile $OverridesFile
+    if ($appliedMeta) {
+        # Guard against stray pipeline output: keep only the last value and force to string.
+        if ($appliedMeta -is [array]) { $appliedMeta = $appliedMeta[-1] }
+        $trackMetaPath = [string]$appliedMeta
     }
 
     Create-SampleFromFinishedMkv -FinishedMkvPath $encodedInfo.FullName -MovieName $MovieName

@@ -1,7 +1,7 @@
 ﻿<#
 ================================================================
   BRencoder GUI  -  thin WinForms front end for BRencoder.ps1
-  version:  0.8.1  by Mike Redd
+  version:  0.8.2  by Mike Redd
 ----------------------------------------------------------------
   Reuses BRencoder.ps1's own functions (config, Get-M2tsFiles,
   Read-ClpiSubtitleLanguages, Encode-File) by dot-sourcing it.
@@ -85,8 +85,8 @@ $script:PreviewRs    = $null
 $script:PreviewAsync = $null
 $script:PreviewTimer = $null
 
-# Languages come from the BRTrackMeta sidecar (MakeMKV-sourced), resolved on the
-# UI thread via Resolve-SidecarLanguages using BRencoder's own loader. The preview
+# Languages come from BRencoder's physical CLPI/sidecar resolver when available,
+# then BRTrackMeta sidecar fallback. The preview
 # runspace only runs ffprobe, so a plain default session state is enough.
 $script:PreviewIss = [initialsessionstate]::CreateDefault2()
 
@@ -221,7 +221,7 @@ $form.Controls.Add($txtName)
 
 # --- track preview grid ---
 $lblGrid = New-Object System.Windows.Forms.Label
-$lblGrid.Text = "Tracks (audio + subtitle languages from BRTrackMeta sidecar)"
+$lblGrid.Text = "Tracks (audio + subtitle languages from physical source/BRTrackMeta)"
 $lblGrid.Location = '352,62'; $lblGrid.AutoSize = $true
 $form.Controls.Add($lblGrid)
 
@@ -307,8 +307,9 @@ function Set-Progress {
 
 function Resolve-SidecarLanguages {
     # Overlay audio/subtitle languages (and forced/default/name) onto the probed
-    # rows from the BRTrackMeta sidecar -- the same MakeMKV-sourced JSON the
-    # encoder reads. Mutates $Rows in place; returns a one-line status for the log.
+    # rows using the same priority as BRencoder: source CLPI > saved physical
+    # sidecar languages > normal BRTrackMeta title list. Mutates $Rows in place;
+    # returns a one-line status for the log.
     param([object[]]$Rows, [System.IO.FileInfo]$File, [string]$Name)
 
     if (-not $Rows -or @($Rows).Count -eq 0) { return $null }
@@ -324,7 +325,7 @@ function Resolve-SidecarLanguages {
     try { $mi = Load-TrackMetadata -SourceFile $File -MovieName $Name }
     catch { return "    meta: lookup error: $($_.Exception.Message)" }
     if (-not $mi) {
-        return "    meta: no BRTrackMeta sidecar for '$Name' - run Blu-ray Track Dump, or type the movie name / edit Lang below"
+        return "    meta: no BRTrackMeta sidecar for '$Name' - run Blu-ray Backup/Track Dump, or edit Lang below"
     }
 
     $title = $null
@@ -333,13 +334,42 @@ function Resolve-SidecarLanguages {
 
     $aMeta = @(Resolve-TrackList -Title $title -Kind audio)
     $sMeta = @(Resolve-TrackList -Title $title -Kind subtitle)
+    $aProbe = @($Rows | Where-Object { $_.Type -eq 'audio' }).Count
+    $sProbe = @($Rows | Where-Object { $_.Type -eq 'subtitle' }).Count
+
+    $physAudio = @(); $physSub = @(); $physSrc = $null
+    if ((Get-Command Read-ClpiStreamLanguages -ErrorAction SilentlyContinue) -and $File.FullName -match '\.m2ts$') {
+        try {
+            $clpi = Read-ClpiStreamLanguages -M2tsPath $File.FullName
+            if ($clpi) {
+                if (@($clpi.Audio).Count -eq $aProbe)    { $physAudio = @($clpi.Audio); $physSrc = 'clpi' }
+                if (@($clpi.Subtitle).Count -eq $sProbe) { $physSub   = @($clpi.Subtitle); $physSrc = 'clpi' }
+            }
+        } catch { }
+    }
+    if ((($physAudio.Count -eq 0 -and $aProbe -gt 0) -or ($physSub.Count -eq 0 -and $sProbe -gt 0)) -and (Get-Command Get-MetaPhysicalStreamLanguages -ErrorAction SilentlyContinue)) {
+        try {
+            $p = Get-MetaPhysicalStreamLanguages -Meta $mi.Data
+            if ($physAudio.Count -eq 0 -and @($p.Audio).Count -eq $aProbe)       { $physAudio = @($p.Audio); $physSrc = 'sidecar-physical' }
+            if ($physSub.Count -eq 0 -and @($p.Subtitle).Count -eq $sProbe)     { $physSub   = @($p.Subtitle); $physSrc = 'sidecar-physical' }
+        } catch { }
+    }
+
     $ai = 0; $si = 0
+    $seenSubLang = @{}
     foreach ($r in $Rows) {
         if ($r.Type -eq 'audio') {
-            if ($ai -lt $aMeta.Count) {
+            if ($physAudio.Count -eq $aProbe) {
+                $r.Lang = [string]$physAudio[$ai]
+            }
+            elseif ($ai -lt $aMeta.Count) {
                 $t = $aMeta[$ai]
                 $lang = Get-MetaLanguage -Track $t
                 if ($lang -and $lang -ne 'und') { $r.Lang = $lang }
+            }
+
+            if ($ai -lt $aMeta.Count) {
+                $t = $aMeta[$ai]
                 if ([bool]$t.Default) { $r.Default = $true }
                 if ([string]::IsNullOrWhiteSpace([string]$r.Title)) {
                     $nm = Get-MetaTrackName -Track $t; if ($nm) { $r.Title = $nm }
@@ -348,7 +378,16 @@ function Resolve-SidecarLanguages {
             $ai++
         }
         elseif ($r.Type -eq 'subtitle') {
-            if ($si -lt $sMeta.Count) {
+            if ($physSub.Count -eq $sProbe) {
+                $r.Lang = [string]$physSub[$si]
+                $r.Forced = [bool]$seenSubLang[$r.Lang]
+                $seenSubLang[$r.Lang] = $true
+                if ([string]::IsNullOrWhiteSpace([string]$r.Title)) {
+                    $ln = Get-LanguageDisplayName -Code $r.Lang
+                    if ($ln) { $r.Title = if ($r.Forced) { "PGS $ln (forced only)" } else { "PGS $ln" } }
+                }
+            }
+            elseif ($si -lt $sMeta.Count) {
                 $t = $sMeta[$si]
                 $lang = Get-MetaLanguage -Track $t
                 if ($lang -and $lang -ne 'und') { $r.Lang = $lang }
@@ -362,11 +401,12 @@ function Resolve-SidecarLanguages {
         }
     }
 
-    $aProbe = @($Rows | Where-Object { $_.Type -eq 'audio' }).Count
-    $sProbe = @($Rows | Where-Object { $_.Type -eq 'subtitle' }).Count
-    $note = "    meta: $([System.IO.Path]::GetFileName($mi.Path)) -> $($aMeta.Count) audio / $($sMeta.Count) subtitle langs"
+    $note = "    meta: $([System.IO.Path]::GetFileName($mi.Path)) -> $($aMeta.Count) audio / $($sMeta.Count) subtitle sidecar"
+    if ($physAudio.Count -eq $aProbe -or $physSub.Count -eq $sProbe) {
+        $note += " + $physSrc physical order"
+    }
     if ($aMeta.Count -ne $aProbe -or $sMeta.Count -ne $sProbe) {
-        $note += " (probe has $aProbe/$sProbe - mapped by order)"
+        $note += " (probe has $aProbe/$sProbe)"
     }
     return $note
 }

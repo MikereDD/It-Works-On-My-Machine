@@ -1,9 +1,9 @@
 ﻿#--------------------------------------------
 # file:     bluray-backup.ps1
 # author:   Mike Redd
-# version:  2.2
+# version:  2.3
 # created:  2026-04-11
-# updated:  2026-05-23
+# updated:  2026-07-03
 # desc:     Blu-ray backup + decrypt wrapper
 #           for MakeMKV
 #           ToolMenu-friendly version
@@ -11,7 +11,10 @@
 #           Outputs to G:\Rip\bluray
 #           and writes track metadata JSON/TXT
 #           for BREncoder
-# changes:  v2.2 - display saved JSON filename prominently after backup so the
+# changes:  v2.3 - store CLPI-derived physical audio/subtitle language lists
+#                  in the BRTrackMeta sidecar so BREncoder can map/tag every
+#                  actual source stream deterministically, even during repair
+#           v2.2 - display saved JSON filename prominently after backup so the
 #                  name is visible when launching BREncoder next
 #--------------------------------------------
 
@@ -64,7 +67,7 @@ else {
 }
 
 $ScriptName    = "Blu-ray Backup"
-$ScriptVersion = "2.2"
+$ScriptVersion = "2.3"
 $ScriptAuthor  = "Mike Redd"
 
 # ── Config ───────────────────────────────────────────────────
@@ -514,7 +517,7 @@ function Show-LanguagePicker {
     if ($input -match '^[Ss]$') { return 'und' }
 
     # Number pick
-    if ($Script:QuickLangs.Contains($input)) {
+    if ($Script:QuickLangs.Contains($input) -or $Script:QuickLangs.ContainsKey($input)) {
         return $Script:QuickLangs[$input][0]
     }
 
@@ -604,13 +607,120 @@ function Resolve-TrackLanguages {
     Write-Host "  Language assignment complete."
 }
 
+
+function Resolve-LanguageCode {
+    param([string]$Code)
+
+    if ([string]::IsNullOrWhiteSpace($Code)) { return 'und' }
+    $clean = $Code.Trim().ToLowerInvariant() -replace '[^a-z]', ''
+    if ([string]::IsNullOrWhiteSpace($clean)) { return 'und' }
+
+    switch ($clean) {
+        'fra' { return 'fre' } 'fre' { return 'fre' } 'french' { return 'fre' } 'fr' { return 'fre' }
+        'deu' { return 'ger' } 'ger' { return 'ger' } 'german' { return 'ger' } 'de' { return 'ger' }
+        'zho' { return 'chi' } 'chi' { return 'chi' } 'chinese' { return 'chi' } 'zh' { return 'chi' }
+        'nld' { return 'dut' } 'dut' { return 'dut' } 'dutch' { return 'dut' } 'nl' { return 'dut' }
+        'ell' { return 'gre' } 'gre' { return 'gre' } 'greek' { return 'gre' } 'el' { return 'gre' }
+        'ces' { return 'cze' } 'cze' { return 'cze' } 'czech' { return 'cze' } 'cs' { return 'cze' }
+        'slk' { return 'slo' } 'slo' { return 'slo' } 'slovak' { return 'slo' } 'sk' { return 'slo' }
+        'ron' { return 'rum' } 'rum' { return 'rum' } 'romanian' { return 'rum' } 'ro' { return 'rum' }
+        'english' { return 'eng' } 'en' { return 'eng' }
+        'spanish' { return 'spa' } 'es' { return 'spa' }
+        'japanese' { return 'jpn' } 'ja' { return 'jpn' }
+        'italian' { return 'ita' } 'it' { return 'ita' }
+        'portuguese' { return 'por' } 'pt' { return 'por' }
+        'korean' { return 'kor' } 'ko' { return 'kor' }
+        'arabic' { return 'ara' } 'ar' { return 'ara' }
+        'russian' { return 'rus' } 'ru' { return 'rus' }
+        'hindi' { return 'hin' } 'hi' { return 'hin' }
+        'unknown' { return 'und' } 'undetermined' { return 'und' } 'und' { return 'und' }
+    }
+
+    if ($clean -match '^[a-z]{3}$') { return $clean }
+    return 'und'
+}
+
+function Read-ClpiStreamLanguages {
+    <#
+    .SYNOPSIS
+        Reads physical audio and subtitle language order from BDMV\CLIPINF\*.clpi.
+    .DESCRIPTION
+        MakeMKV's sidecar title list is useful, but the encoded .m2ts stream map
+        follows physical PID order. Saving the CLPI language lists here gives the
+        encoder a deterministic fallback when the original CLPI is not available.
+    #>
+    param([Parameter(Mandatory)][string]$M2tsPath)
+
+    $audio = New-Object System.Collections.Generic.List[object]
+    $subs  = New-Object System.Collections.Generic.List[object]
+    try {
+        $streamDir = [System.IO.Path]::GetDirectoryName($M2tsPath)
+        $base      = [System.IO.Path]::GetFileNameWithoutExtension($M2tsPath)
+        $bdmv      = [System.IO.Path]::GetDirectoryName($streamDir)
+        if (-not $bdmv) { return [pscustomobject]@{ Audio=@(); Subtitle=@(); Status='clpi: no BDMV parent dir'; Source=$null } }
+        $clpi = Join-Path (Join-Path $bdmv 'CLIPINF') ('{0}.clpi' -f $base)
+        if (-not (Test-Path -LiteralPath $clpi)) {
+            return [pscustomobject]@{ Audio=@(); Subtitle=@(); Status=("clpi: not found -> {0}" -f $clpi); Source=$clpi }
+        }
+
+        $b = [System.IO.File]::ReadAllBytes($clpi)
+        if ($b.Length -lt 40 -or [System.Text.Encoding]::ASCII.GetString($b, 0, 4) -ne 'HDMV') {
+            return [pscustomobject]@{ Audio=@(); Subtitle=@(); Status='clpi: bad header'; Source=$clpi }
+        }
+
+        $progStart = ([int]$b[12] -shl 24) -bor ([int]$b[13] -shl 16) -bor ([int]$b[14] -shl 8) -bor [int]$b[15]
+        if ($progStart -le 0 -or ($progStart + 6) -ge $b.Length) {
+            return [pscustomobject]@{ Audio=@(); Subtitle=@(); Status='clpi: bad ProgramInfo offset'; Source=$clpi }
+        }
+
+        $p = $progStart + 4      # skip length (4)
+        $p += 1                  # reserved_for_word_align (1)
+        $numSeq = [int]$b[$p]; $p += 1
+        for ($sq = 0; $sq -lt $numSeq; $sq++) {
+            $p += 4              # SPN_program_sequence_start
+            $p += 2              # program_map_PID
+            $numStreams = [int]$b[$p]; $p += 1
+            $p += 1              # reserved
+            for ($k = 0; $k -lt $numStreams; $k++) {
+                if (($p + 3) -gt $b.Length) { break }
+                $pid   = ([int]$b[$p] -shl 8) -bor [int]$b[$p + 1]; $p += 2
+                $ciLen = [int]$b[$p]; $p += 1
+                $ciEnd = $p + $ciLen
+                if ($ciEnd -gt $b.Length) { break }
+                $ct = [int]$b[$p]
+
+                if ($ct -eq 0x03 -or $ct -eq 0x04 -or ($ct -ge 0x80 -and $ct -le 0x86) -or $ct -eq 0xA1 -or $ct -eq 0xA2) {
+                    $lang = [System.Text.Encoding]::ASCII.GetString($b, $p + 2, 3)
+                    $audio.Add([pscustomobject]@{ PID = $pid; Lang = $lang })
+                }
+                elseif ($ct -eq 0x90 -or $ct -eq 0x91) {
+                    $lang = [System.Text.Encoding]::ASCII.GetString($b, $p + 1, 3)
+                    $subs.Add([pscustomobject]@{ PID = $pid; Lang = $lang })
+                }
+                elseif ($ct -eq 0x92) {
+                    $lang = [System.Text.Encoding]::ASCII.GetString($b, $p + 2, 3)
+                    $subs.Add([pscustomobject]@{ PID = $pid; Lang = $lang })
+                }
+                $p = $ciEnd
+            }
+        }
+
+        $aL = @($audio | Sort-Object PID | ForEach-Object { Resolve-LanguageCode -Code ($_.Lang -replace '[^A-Za-z]', '') })
+        $sL = @($subs  | Sort-Object PID | ForEach-Object { Resolve-LanguageCode -Code ($_.Lang -replace '[^A-Za-z]', '') })
+        return [pscustomobject]@{ Audio=$aL; Subtitle=$sL; Status=("clpi: {0} audio / {1} subtitle langs" -f $aL.Count, $sL.Count); Source=$clpi }
+    }
+    catch {
+        return [pscustomobject]@{ Audio=@(); Subtitle=@(); Status=("clpi: parse error - {0}" -f $_.Exception.Message); Source=$null }
+    }
+}
+
 function New-BRTrackMetadataSchema {
     param([Parameter(Mandatory)][object]$Meta)
 
     $title = $Meta.Title
 
     return [pscustomobject]@{
-        SchemaVersion     = 'BRTrackMeta/1.0'
+        SchemaVersion     = 'BRTrackMeta/1.1'
         CreatedAt         = (Get-Date).ToString('s')
         CreatedBy         = ('bluray-backup.ps1 v' + $ScriptVersion)
         MovieName         = $Meta.MovieName
@@ -628,6 +738,7 @@ function New-BRTrackMetadataSchema {
             SegmentMap = $title.SegmentMap
             OutputName = $title.OutputName
         }
+        PhysicalStreams   = $Meta.PhysicalStreams
         MainTitle         = $title
         # Backward compatibility for older BREncoder versions.
         Title             = $title
@@ -802,6 +913,8 @@ function Start-Backup {
             $largest = Get-LargestM2TS -Path $stream
         }
 
+        $physicalStreams = if ($largest) { Read-ClpiStreamLanguages -M2tsPath $largest.FullName } else { [pscustomobject]@{ Audio=@(); Subtitle=@(); Status='clpi: no largest m2ts'; Source=$null } }
+
         $infoLines = Get-MakeMKVInfoLines -Exe $makeMKV -Source $Script:Drive
         $titles    = ConvertFrom-MakeMKVInfo -Lines $infoLines
         $mainTitle = Get-MainTitleFromInfo -Titles $titles
@@ -817,10 +930,16 @@ function Start-Backup {
         Resolve-TrackLanguages -Title $mainTitle
 
         $meta = [pscustomobject]@{
-            MovieName   = $name
-            LargestM2TS = $(if ($largest) { $largest.Name } else { "" })
-            LargestPath = $(if ($largest) { $largest.FullName } else { "" })
-            Title       = $mainTitle
+            MovieName       = $name
+            LargestM2TS     = $(if ($largest) { $largest.Name } else { "" })
+            LargestPath     = $(if ($largest) { $largest.FullName } else { "" })
+            PhysicalStreams = [pscustomobject]@{
+                Source            = $physicalStreams.Source
+                Status            = $physicalStreams.Status
+                AudioLanguages    = @($physicalStreams.Audio)
+                SubtitleLanguages = @($physicalStreams.Subtitle)
+            }
+            Title           = $mainTitle
         }
 
         Save-TrackMeta -Meta $meta -BasePath $metaBase
@@ -842,6 +961,7 @@ function Start-Backup {
         if ($largest) {
             Blank-Line
             Write-Host "  Largest .m2ts : $($largest.Name)"
+            Write-Host "  Physical langs: $($physicalStreams.Audio.Count) audio / $($physicalStreams.Subtitle.Count) subtitle ($($physicalStreams.Status))"
         }
 
         Write-Host "  Metadata title: $($mainTitle.TitleId) -> $($mainTitle.SourceFile)"

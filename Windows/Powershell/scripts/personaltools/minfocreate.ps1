@@ -1,7 +1,7 @@
 ﻿#--------------------------------------------
 # file:     minfocreate.ps1
 # author:   Mike Redd
-# version:  2.9
+# version:  2.10
 # created:  2026-04-11
 # updated:  2026-06-21
 # desc:     Create NFO, HTML, and poster data
