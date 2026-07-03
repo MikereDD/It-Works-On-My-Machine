@@ -13,7 +13,9 @@ $script:Engine = @{
     Volume      = 0.80
     TagLib      = $false
     Spectrum    = $null    # SpectrumTap instance (current track)
-    HasSpectrum = $false   # whether the spectrum tap compiled
+    HasSpectrum     = $false   # whether the spectrum tap compiled
+    OnlineArtLookup = $true    # if no embedded/sidecar art exists, try online metadata lookup
+    ArtCacheDir     = Join-Path $PSScriptRoot 'cadence.art-cache'
 }
 
 function Write-EngineLog {
@@ -282,17 +284,277 @@ function Get-PositionFraction {
     [Math]::Max(0.0, [Math]::Min(1.0, $script:Engine.Reader.CurrentTime.TotalSeconds / $t))
 }
 
+function New-CadenceImageFromBytes {
+    # System.Drawing.Image.FromStream keeps a dependency on the source stream.
+    # Clone to a Bitmap so the caller can freely dispose the MemoryStream.
+    param([byte[]]$Bytes)
+    if (-not $Bytes -or $Bytes.Length -le 0) { return $null }
+    $ms = $null
+    $raw = $null
+    try {
+        $ms = [IO.MemoryStream]::new($Bytes, $false)
+        $raw = [System.Drawing.Image]::FromStream($ms, $true, $true)
+        return [System.Drawing.Bitmap]::new($raw)
+    } catch {
+        Write-EngineLog ("album art byte decode failed: " + $_.Exception.Message)
+        return $null
+    } finally {
+        if ($raw) { try { $raw.Dispose() } catch {} }
+        if ($ms)  { try { $ms.Dispose()  } catch {} }
+    }
+}
+
+function New-CadenceImageFromFile {
+    # Load and clone sidecar cover art without locking cover.jpg/folder.jpg.
+    param([string]$ImagePath)
+    if (-not $ImagePath -or -not (Test-Path -LiteralPath $ImagePath -PathType Leaf)) { return $null }
+    $fs = $null
+    $raw = $null
+    try {
+        $fs = [IO.File]::Open($ImagePath, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+        $raw = [System.Drawing.Image]::FromStream($fs, $true, $true)
+        return [System.Drawing.Bitmap]::new($raw)
+    } catch {
+        Write-EngineLog ("sidecar album art decode failed for '$ImagePath': " + $_.Exception.Message)
+        return $null
+    } finally {
+        if ($raw) { try { $raw.Dispose() } catch {} }
+        if ($fs)  { try { $fs.Dispose()  } catch {} }
+    }
+}
+
+function Get-TagPictureBytes {
+    # TagLibSharp exposes picture bytes differently between versions/hosts.
+    # Try every safe route instead of assuming .Data.Data is always enough.
+    param($Picture)
+    if (-not $Picture -or -not $Picture.Data) { return $null }
+
+    foreach ($getter in @(
+        { param($p) $p.Data.Data },
+        { param($p) $p.Data.ToArray() },
+        { param($p) $p.Data }
+    )) {
+        try {
+            $raw = & $getter $Picture
+            if (-not $raw) { continue }
+            if ($raw -is [byte[]]) { return $raw }
+            return [byte[]]$raw
+        } catch {}
+    }
+    return $null
+}
+
+function Get-AlbumArtSearchDirs {
+    # Search beside the track first. Then step up a little because some
+    # libraries keep Folder.jpg at the artist folder while tracks live deeper.
+    param([string]$AudioPath)
+    $dirs = New-Object System.Collections.Generic.List[string]
+    try { $dir = [IO.Path]::GetDirectoryName($AudioPath) } catch { $dir = $null }
+    $cur = $dir
+    for ($i = 0; $i -lt 3 -and $cur; $i++) {
+        if ((Test-Path -LiteralPath $cur -PathType Container) -and -not $dirs.Contains($cur)) {
+            [void]$dirs.Add($cur)
+        }
+        try { $parent = [IO.Directory]::GetParent($cur) } catch { $parent = $null }
+        if ($parent) { $cur = $parent.FullName } else { $cur = $null }
+    }
+    return $dirs
+}
+
+function Find-SidecarAlbumArt {
+    # Common music-library cover conventions. Also handles Windows Media Player
+    # hidden AlbumArt_{guid}_Large.jpg files and folders with a single image.
+    param(
+        [string]$AudioPath,
+        [string]$Album = ''
+    )
+
+    $exts = @('.jpg', '.jpeg', '.png', '.bmp', '.gif', '.jfif', '.tif', '.tiff')
+    $preferredNames = @(
+        'cover', 'folder', 'front', 'album', 'albumart', 'artwork',
+        'AlbumArt', 'AlbumArtSmall', 'AlbumArtLarge'
+    )
+    if ($Album) { $preferredNames += $Album }
+
+    foreach ($dir in (Get-AlbumArtSearchDirs -AudioPath $AudioPath)) {
+        # Exact-name candidates first.
+        foreach ($name in $preferredNames) {
+            foreach ($ext in $exts) {
+                $candidate = Join-Path $dir ($name + $ext)
+                if (Test-Path -LiteralPath $candidate -PathType Leaf) { return $candidate }
+            }
+        }
+
+        try {
+            $images = @(Get-ChildItem -LiteralPath $dir -File -Force -ErrorAction SilentlyContinue |
+                Where-Object { $exts -contains $_.Extension.ToLowerInvariant() })
+            if ($images.Count -le 0) { continue }
+
+            # Strong fuzzy candidates: cover/folder/front/artwork/AlbumArt.
+            $match = $images |
+                Where-Object { $_.BaseName.ToLowerInvariant() -match 'cover|folder|front|albumart|artwork|album' } |
+                Sort-Object @{ Expression = { $_.Name.Length } }, Name |
+                Select-Object -First 1
+            if ($match) { return $match.FullName }
+
+            # If an album folder only has one image, that is almost always the cover.
+            if ($images.Count -eq 1) { return $images[0].FullName }
+        } catch {}
+    }
+
+    return $null
+}
+
+function Set-AlbumArtOnlineLookup {
+    param([bool]$Enabled)
+    $script:Engine.OnlineArtLookup = [bool]$Enabled
+}
+
+function Normalize-CadenceText {
+    param([string]$Text)
+    if (-not $Text) { return '' }
+    return (($Text.ToLowerInvariant() -replace '[^a-z0-9]+', ' ').Trim())
+}
+
+function Get-CadenceCacheKey {
+    param([string]$Text)
+    $sha = [System.Security.Cryptography.SHA1]::Create()
+    try {
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes([string]$Text)
+        return (([BitConverter]::ToString($sha.ComputeHash($bytes))) -replace '-', '').ToLowerInvariant()
+    } finally {
+        if ($sha) { try { $sha.Dispose() } catch {} }
+    }
+}
+
+function Get-OnlineAlbumArtCachePath {
+    param([string]$Artist, [string]$Album)
+    $key = Get-CadenceCacheKey (([string]$Artist).Trim() + '|' + ([string]$Album).Trim())
+    try {
+        if (-not (Test-Path -LiteralPath $script:Engine.ArtCacheDir -PathType Container)) {
+            New-Item -ItemType Directory -Path $script:Engine.ArtCacheDir -Force | Out-Null
+        }
+    } catch {}
+    return (Join-Path $script:Engine.ArtCacheDir ($key + '.jpg'))
+}
+
+function Find-OnlineAlbumArt {
+    # Last-resort cover lookup for tracks that have no embedded art and no
+    # local cover.jpg/folder.jpg. Uses Apple's public iTunes Search endpoint
+    # because it needs no API key, then caches the image beside Cadence so the
+    # same album is not looked up repeatedly.
+    param(
+        [string]$Artist = '',
+        [string]$Album = ''
+    )
+
+    if (-not $script:Engine.OnlineArtLookup) { return $null }
+    $artist = ([string]$Artist).Trim()
+    $album  = ([string]$Album).Trim()
+    if (-not $album) { return $null }
+
+    $cachePath = Get-OnlineAlbumArtCachePath -Artist $artist -Album $album
+    if (Test-Path -LiteralPath $cachePath -PathType Leaf) {
+        return [pscustomobject]@{ Path = $cachePath; Source = 'online cache' }
+    }
+
+    $term = if ($artist) { "$artist $album" } else { $album }
+    try {
+        try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
+        $encoded = [System.Uri]::EscapeDataString($term)
+        $uri = "https://itunes.apple.com/search?term=$encoded&entity=album&media=music&limit=12"
+        $resp = Invoke-RestMethod -Uri $uri -Method Get -TimeoutSec 5 -UseBasicParsing -ErrorAction Stop
+        $results = @($resp.results)
+        if (-not $results -or $results.Count -le 0) { return $null }
+
+        $wantArtist = Normalize-CadenceText $artist
+        $wantAlbum  = Normalize-CadenceText $album
+        $pick = $null
+
+        foreach ($r in $results) {
+            $ra = Normalize-CadenceText ([string]$r.artistName)
+            $rc = Normalize-CadenceText ([string]$r.collectionName)
+            if ($wantArtist -and $ra -eq $wantArtist -and ($rc -eq $wantAlbum -or $rc.Contains($wantAlbum) -or $wantAlbum.Contains($rc))) {
+                $pick = $r; break
+            }
+        }
+        if (-not $pick) {
+            foreach ($r in $results) {
+                $rc = Normalize-CadenceText ([string]$r.collectionName)
+                if ($rc -eq $wantAlbum -or $rc.Contains($wantAlbum) -or $wantAlbum.Contains($rc)) {
+                    $pick = $r; break
+                }
+            }
+        }
+        if (-not $pick) { $pick = $results[0] }
+
+        $artUrl = [string]$pick.artworkUrl100
+        if (-not $artUrl) { return $null }
+        $artUrl = $artUrl -replace '100x100bb', '600x600bb'
+        $artUrl = $artUrl -replace '100x100', '600x600'
+
+        Invoke-WebRequest -Uri $artUrl -OutFile $cachePath -TimeoutSec 8 -UseBasicParsing -ErrorAction Stop | Out-Null
+        if (Test-Path -LiteralPath $cachePath -PathType Leaf) {
+            return [pscustomobject]@{ Path = $cachePath; Source = 'online iTunes lookup' }
+        }
+    } catch {
+        Write-EngineLog ("online album art lookup failed for '$artist - $album': " + $_.Exception.Message)
+    }
+    return $null
+}
+
+function Get-EmbeddedAlbumArt {
+    param($TagFile)
+    try {
+        if (-not $TagFile -or -not $TagFile.Tag -or -not $TagFile.Tag.Pictures) { return $null }
+        $pictures = @($TagFile.Tag.Pictures)
+        if ($pictures.Count -le 0) { return $null }
+
+        # Prefer front cover, then try every embedded picture until one decodes.
+        $ordered = @()
+        $front = $pictures | Where-Object { "$($_.Type)" -eq 'FrontCover' } | Select-Object -First 1
+        if ($front) { $ordered += $front }
+        foreach ($pic in $pictures) { if (-not $front -or -not [object]::ReferenceEquals($pic, $front)) { $ordered += $pic } }
+
+        $n = 0
+        foreach ($pic in $ordered) {
+            $n++
+            $bytes = Get-TagPictureBytes -Picture $pic
+            if (-not $bytes -or $bytes.Length -le 0) { continue }
+            $img = New-CadenceImageFromBytes -Bytes $bytes
+            if ($img) {
+                $ptype = 'embedded'
+                try { $ptype = "$($pic.Type)" } catch {}
+                return [pscustomobject]@{
+                    Image  = $img
+                    Source = "embedded $ptype image #$n"
+                }
+            }
+        }
+        Write-EngineLog ("embedded album art present but none decoded; picture count=$($pictures.Count)")
+    } catch {
+        Write-EngineLog ("embedded album art read failed: " + $_.Exception.Message)
+    }
+    return $null
+}
+
 function Get-TrackMetadata {
     # Returns Title/Artist/Album/Duration/Art. Falls back to filename when
     # TagLib# isn't present. Art is a System.Drawing.Image (caller disposes).
+    # Album art source order: embedded front cover -> any embedded image ->
+    # sidecar cover image near the track (cover.jpg, Folder.jpg, one-image
+    # album folder, Windows Media Player AlbumArt_*.jpg, etc.).
     param($Path)
     $meta = [ordered]@{
-        Title    = [IO.Path]::GetFileNameWithoutExtension($Path)
-        Artist   = ''
-        Album    = ''
-        Duration = $null
-        Art      = $null
+        Title     = [IO.Path]::GetFileNameWithoutExtension($Path)
+        Artist    = ''
+        Album     = ''
+        Duration  = $null
+        Art       = $null
+        ArtSource = ''
     }
+
+    $f = $null
     if ($script:Engine.TagLib) {
         try {
             $f = [TagLib.File]::Create($Path)
@@ -300,13 +562,46 @@ function Get-TrackMetadata {
             if ($f.Tag.FirstPerformer) { $meta.Artist = $f.Tag.FirstPerformer }
             if ($f.Tag.Album)          { $meta.Album  = $f.Tag.Album }
             $meta.Duration = $f.Properties.Duration
-            if ($f.Tag.Pictures.Length -gt 0) {
-                $bytes = $f.Tag.Pictures[0].Data.Data
-                $ms = [IO.MemoryStream]::new([byte[]]$bytes)
-                $meta.Art = [System.Drawing.Image]::FromStream($ms)
+
+            $embedded = Get-EmbeddedAlbumArt -TagFile $f
+            if ($embedded -and $embedded.Image) {
+                $meta.Art = $embedded.Image
+                $meta.ArtSource = $embedded.Source
             }
-            $f.Dispose()
-        } catch {}
+        } catch {
+            Write-EngineLog ("metadata read failed for '$Path': " + $_.Exception.Message)
+        } finally {
+            if ($f) { try { $f.Dispose() } catch {} }
+        }
     }
+
+    if (-not $meta.Art) {
+        $sidecar = Find-SidecarAlbumArt -AudioPath $Path -Album ([string]$meta.Album)
+        if ($sidecar) {
+            $img = New-CadenceImageFromFile -ImagePath $sidecar
+            if ($img) {
+                $meta.Art = $img
+                $meta.ArtSource = "sidecar " + [IO.Path]::GetFileName($sidecar)
+            }
+        }
+    }
+
+    if (-not $meta.Art) {
+        $online = Find-OnlineAlbumArt -Artist ([string]$meta.Artist) -Album ([string]$meta.Album)
+        if ($online -and $online.Path) {
+            $img = New-CadenceImageFromFile -ImagePath ([string]$online.Path)
+            if ($img) {
+                $meta.Art = $img
+                $meta.ArtSource = [string]$online.Source
+            }
+        }
+    }
+
+    if ($meta.ArtSource) {
+        Write-EngineLog ("album art loaded for '$Path': $($meta.ArtSource)")
+    } else {
+        Write-EngineLog ("album art not found for '$Path' (no decodable embedded art or sidecar image)")
+    }
+
     [pscustomobject]$meta
 }

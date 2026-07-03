@@ -8,7 +8,7 @@ A sleek, fully owner-drawn local audio player for Windows — monochrome
 Material-style UI, NAudio engine, live FFT visualizer, and a real library
 browser. Part of the `personaltools/` toolkit.
 
-**Latest: v0.4.0** · [Changelog](https://github.com/MikereDD/It-Works-On-My-Machine/blob/main/Windows/Powershell/scripts/personaltools/Cadence/CHANGELOG.md)
+**Latest: v0.4.3** · [Changelog](https://github.com/MikereDD/It-Works-On-My-Machine/blob/main/Windows/Powershell/scripts/personaltools/Cadence/CHANGELOG.md)
 
 ## Screenshots
 
@@ -34,7 +34,7 @@ browser. Part of the `personaltools/` toolkit.
   and visualizer palette persist across launches.
 - **Monochrome Material UI** — tonal pill buttons, a FAB transport, toggle
   chips, recessed dark-grey wells, and a subtle depth gradient.
-- **Tags + album art** — via TagLibSharp when present, with a filename fallback.
+- **Tags + album art** — via TagLibSharp when present, with filename fallback, deeper embedded-art extraction, and broad sidecar cover fallback (`cover.jpg`, `folder.png`, `AlbumArt_*.jpg`, one-image album folders, etc.).
 
 ## Requirements
 - Windows with **Windows PowerShell 5.1** available — it's the reliable STA host
@@ -74,8 +74,14 @@ PowerShell `-STA` so only the player window shows.
 | Drag files / folders onto the window | Add to queue |
 | Right-click queue | Export queue as M3U |
 | Right-click visualizer | Switch palette (mono / spectrum / indigo) |
+| Right-click album art | Choose a local cover image, retry online lookup, or toggle online art lookup |
 | Right-click folder (tree) | Add recursively |
 | Library button | Add / remove / clear saved roots |
+
+## Album art
+Cadence first uses embedded artwork from the audio tag. It prefers a real front cover, then tries every other embedded picture until one decodes. If no embedded artwork is available, it looks near the playing file for common sidecar names such as `cover.jpg`, `folder.jpg`, `front.png`, `album.png`, `albumart.jpg`, `artwork.jpg`, `AlbumArt.jpg`, `AlbumArtSmall.jpg`, Windows Media Player `AlbumArt_*.jpg`, and one-image album folders.
+
+The window title and a small bottom-right label show the running version. Hover the album-art box to see whether the image came from embedded tags, a sidecar file, or was not found. The same result is logged to `cadence-startup.log`.
 
 ## Layout
 | File | Role |
@@ -86,8 +92,9 @@ PowerShell `-STA` so only the player window shows.
 | `setup-naudio.ps1` | NuGet dependency fetcher (`-> .\lib`) |
 
 Runtime files written next to the script: `cadence.config.json` (saved library
-roots plus volume / shuffle / repeat / visualizer palette) and
-`cadence-startup.log` (startup/exception log).
+roots plus volume / shuffle / repeat / visualizer palette / online art lookup),
+`cadence.art-cache` (cached online album covers), and `cadence-startup.log`
+(startup/exception log).
 
 ## Visualizer
 A compiled C# tap copies samples into a ring buffer as they play; a UI timer

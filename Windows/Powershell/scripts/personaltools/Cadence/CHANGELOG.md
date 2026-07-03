@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-07-03
+
+Album art fallback pass for libraries whose tracks have metadata but no embedded
+cover image.
+
+### Added
+- Optional online album-art lookup through Apple's public iTunes Search endpoint
+  when embedded art and local sidecar images are missing. Downloaded covers are
+  cached in `cadence.art-cache` so repeat plays do not hit the network.
+- Right-click album-art menu with:
+  - `Choose cover image for this album...` to copy a selected image beside the
+    current track as `folder.jpg`/`folder.png`.
+  - `Retry online art lookup`.
+  - `Online album art lookup` toggle, persisted in `cadence.config.json`.
+
+### Changed
+- Album art lookup order is now embedded tag art -> local sidecar image ->
+  cached/online cover lookup.
+
+## [0.4.2] - 2026-07-03
+
+Album art deep fix and visible build stamp.
+
+### Added
+- The running build is now visible in the window title and as a small bottom-right version stamp, so screenshots show the exact build being tested.
+- The album-art box now has a tooltip showing whether art came from embedded tags, a sidecar image, or nothing found.
+- Album-art attempts are written to `cadence-startup.log` for easy debugging.
+
+### Fixed
+- Embedded art extraction now tries every TagLibSharp byte-access path instead of only `.Data.Data`, which is more reliable across TagLibSharp versions and PowerShell hosts.
+- Embedded art now tries the front cover first, then every other embedded picture until one decodes.
+- Sidecar art lookup now searches hidden files, Windows Media Player `AlbumArt_*.jpg` files, common names, fuzzy cover names, and a one-image album folder.
+- Sidecar lookup now checks the track folder first and then nearby parent folders, covering common `Artist/Album/Tracks` layouts.
+
+## [0.4.1] - 2026-07-03
+
+Album art reliability pass.
+
+### Fixed
+- Album art now falls back to common sidecar images beside the track when no
+  embedded image is available: `cover`, `folder`, `front`, `album`,
+  `albumart`, `artwork`, `AlbumArt`, and `AlbumArtSmall` with `.jpg`, `.jpeg`,
+  `.png`, `.bmp`, or `.gif`.
+- Embedded art is cloned from the tag stream before the stream is disposed, so
+  the PictureBox is never holding an image backed by a closed stream.
+- Swapping, clearing, and closing tracks now detach the PictureBox before
+  disposing the old bitmap, preventing disposed-image repaint glitches during
+  fast track changes.
+
 ## [0.4.0] - 2026-06-27
 
 Drag-and-drop, persisted settings, queue export, and switchable visualizer
@@ -138,7 +187,10 @@ visualizer, a real library browser, playlist plumbing, the Windows PowerShell
 - `New-Visualizer` stub with the FFT integration recipe documented inline.
 
 [Unreleased]: https://github.com/MikereDD/It-Works-On-My-Machine/commits/main
-[0.4.0]: https://github.com/MikereDD/It-Works-On-My-Machine/tree/main/personaltools/audio-player
-[0.3.0]: https://github.com/MikereDD/It-Works-On-My-Machine/tree/main/personaltools/audio-player
-[0.2.0]: https://github.com/MikereDD/It-Works-On-My-Machine/tree/main/personaltools/audio-player
-[0.1.0]: https://github.com/MikereDD/It-Works-On-My-Machine/tree/main/personaltools/audio-player
+[0.4.3]: https://github.com/MikereDD/It-Works-On-My-Machine/tree/main/Windows/Powershell/scripts/personaltools/Cadence
+[0.4.2]: https://github.com/MikereDD/It-Works-On-My-Machine/tree/main/Windows/Powershell/scripts/personaltools/Cadence
+[0.4.1]: https://github.com/MikereDD/It-Works-On-My-Machine/tree/main/Windows/Powershell/scripts/personaltools/Cadence
+[0.4.0]: https://github.com/MikereDD/It-Works-On-My-Machine/tree/main/Windows/Powershell/scripts/personaltools/Cadence
+[0.3.0]: https://github.com/MikereDD/It-Works-On-My-Machine/tree/main/Windows/Powershell/scripts/personaltools/Cadence
+[0.2.0]: https://github.com/MikereDD/It-Works-On-My-Machine/tree/main/Windows/Powershell/scripts/personaltools/Cadence
+[0.1.0]: https://github.com/MikereDD/It-Works-On-My-Machine/tree/main/Windows/Powershell/scripts/personaltools/Cadence

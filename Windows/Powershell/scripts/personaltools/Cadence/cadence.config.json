@@ -1,9 +1,10 @@
-﻿{
-    "roots":  [
-                  "P:\\Music"
-              ],
-    "volume":  0.8,
-    "shuffle":  false,
-    "repeat":  false,
-    "palette":  "mono"
+{
+  "roots": [
+    "P:\\Music"
+  ],
+  "volume": 0.8,
+  "shuffle": false,
+  "repeat": false,
+  "palette": "mono",
+  "onlineArtLookup": true
 }

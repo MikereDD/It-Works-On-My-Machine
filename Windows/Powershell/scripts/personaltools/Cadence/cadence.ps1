@@ -1,5 +1,5 @@
 # ============================================================================
-#  cadence.ps1  -  Cadence  v0.3.0
+#  cadence.ps1  -  Cadence  v0.4.3
 #  A sleek local audio player (WinForms, owner-drawn, NAudio backend).
 #  Part of personaltools/ - mirrors the media-encoder-gui.ps1 layout:
 #    main GUI  +  dot-sourced engine/ui modules.
@@ -82,7 +82,8 @@ try {
 })
 
 $APP_NAME    = 'Cadence'
-$APP_VERSION = '0.4.0'
+$APP_VERSION = '0.4.3'
+$APP_TITLE   = "$APP_NAME v$APP_VERSION"
 $ROOT        = $PSScriptRoot
 $LIB         = Join-Path $ROOT 'lib'
 $AUDIO_EXT   = @('.mp3', '.flac', '.m4a', '.aac', '.wav', '.wma', '.ogg', '.opus')
@@ -128,7 +129,7 @@ $script:State = @{
 #  Layout
 # ============================================================================
 $form = [System.Windows.Forms.Form]::new()
-$form.Text = "$APP_NAME"
+$form.Text = $APP_TITLE
 # Window/taskbar/alt-tab icon (optional; ignored if the .ico isn't present).
 try {
     $icoPath = Join-Path $PSScriptRoot 'docs\cadence.ico'
@@ -162,6 +163,21 @@ $art.SetBounds($pad, $pad, $artSize, $artSize)
 $art.SizeMode = 'Zoom'
 $art.BackColor = $script:Theme.Panel
 $form.Controls.Add($art)
+$artTip = [System.Windows.Forms.ToolTip]::new()
+$artTip.SetToolTip($art, 'Album art: none loaded yet')
+
+# Album-art menu: online fallback can be retried/toggled, and a local image can
+# be assigned as folder.jpg/folder.png for albums that simply have no art.
+$artMenu = [System.Windows.Forms.ContextMenuStrip]::new()
+$artMenu.BackColor = $script:Theme.Panel
+$artMenu.ForeColor = $script:Theme.Text
+$miChooseArt = $artMenu.Items.Add('Choose cover image for this album...')
+$miRetryArt  = $artMenu.Items.Add('Retry online art lookup')
+$miOnlineArt = $artMenu.Items.Add('Online album art lookup')
+$miOnlineArt.CheckOnClick = $true
+$miOnlineArt.Checked = $true
+$art.ContextMenuStrip = $artMenu
+
 
 $textX = $pad + $artSize + 18
 $textW = $form.ClientSize.Width - $textX - $pad
@@ -358,6 +374,17 @@ $btnSetLib.Anchor   = 'Bottom,Left'
 $btnClear.Anchor    = 'Bottom,Right'
 $form.Controls.AddRange(@($btnAddFiles, $btnSetLib, $btnClear))
 
+# Small always-visible version stamp so test screenshots show the exact build.
+$lblVersion = [System.Windows.Forms.Label]::new()
+$lblVersion.Text = $APP_TITLE
+$lblVersion.Font = [System.Drawing.Font]::new('Segoe UI', 8.5)
+$lblVersion.ForeColor = $script:Theme.Muted
+$lblVersion.TextAlign = 'MiddleRight'
+$lblVersion.SetBounds($form.ClientSize.Width - $pad - 70 - 170, $byY + 9, 160, 20)
+$lblVersion.Anchor = 'Bottom,Right'
+$form.Controls.Add($lblVersion)
+
+
 # Library button menu: add / remove / clear saved roots (persisted to config)
 $libMenu = [System.Windows.Forms.ContextMenuStrip]::new()
 $libMenu.BackColor = $script:Theme.Panel
@@ -369,6 +396,51 @@ $miClearRoots = $libMenu.Items.Add('Clear all roots')
 # ============================================================================
 #  Behaviour
 # ============================================================================
+function Get-CurrentTrackPath {
+    if ($script:State.Index -ge 0 -and $script:State.Index -lt $script:State.Items.Count) {
+        return [string]$script:State.Items[$script:State.Index]
+    }
+    return $null
+}
+
+function Set-CurrentAlbumArtFromImage {
+    $path = Get-CurrentTrackPath
+    if (-not $path) { return }
+
+    $dlg = [System.Windows.Forms.OpenFileDialog]::new()
+    $dlg.Filter = 'Images|*.jpg;*.jpeg;*.png;*.bmp;*.gif;*.jfif;*.tif;*.tiff|All files|*.*'
+    $dlg.Multiselect = $false
+    if ($dlg.ShowDialog() -ne 'OK') { return }
+
+    try {
+        $dir = [IO.Path]::GetDirectoryName($path)
+        $ext = [IO.Path]::GetExtension($dlg.FileName)
+        if (-not $ext) { $ext = '.jpg' }
+        if ($ext.Equals('.jpeg', [StringComparison]::OrdinalIgnoreCase)) { $ext = '.jpg' }
+        $dest = Join-Path $dir ('folder' + $ext.ToLowerInvariant())
+
+        if ((Test-Path -LiteralPath $dest -PathType Leaf) -and
+            -not $dest.Equals($dlg.FileName, [StringComparison]::OrdinalIgnoreCase)) {
+            $ans = [System.Windows.Forms.MessageBox]::Show(
+                "Replace existing $([IO.Path]::GetFileName($dest))?",
+                $APP_NAME, 'YesNo', 'Question')
+            if ($ans -ne 'Yes') { return }
+        }
+
+        if (-not $dest.Equals($dlg.FileName, [StringComparison]::OrdinalIgnoreCase)) {
+            Copy-Item -LiteralPath $dlg.FileName -Destination $dest -Force
+        }
+
+        Update-NowPlaying -Path $path
+    } catch {
+        try {
+            [System.Windows.Forms.MessageBox]::Show(
+                "Could not set cover art.`n`n$($_.Exception.Message)",
+                $APP_NAME, 'OK', 'Error') | Out-Null
+        } catch {}
+    }
+}
+
 function Sync-PlayGlyph {
     $st = Get-PlaybackState
     $btnPlay.Glyph = if ($st -eq 'Playing') { 'pause' } else { 'play' }
@@ -381,10 +453,24 @@ function Update-NowPlaying {
     $lblTitle.Text  = $meta.Title
     $lblArtist.Text = $meta.Artist
     $lblAlbum.Text  = $meta.Album
-    if ($script:State.Art) { try { $script:State.Art.Dispose() } catch {} ; $script:State.Art = $null }
-    if ($meta.Art) { $script:State.Art = $meta.Art; $art.Image = $meta.Art }
-    else { $art.Image = $null }
-    $form.Text = "$APP_NAME  -  $($meta.Title)"
+
+    # Detach the PictureBox before disposing the old bitmap. Otherwise the
+    # control can repaint while holding a disposed Image during fast track
+    # changes.
+    $oldArt = $script:State.Art
+    $art.Image = $null
+    try { $artTip.SetToolTip($art, 'Album art: none loaded yet') } catch {}
+    $script:State.Art = $null
+    if ($oldArt) { try { $oldArt.Dispose() } catch {} }
+
+    if ($meta.Art) {
+        $script:State.Art = $meta.Art
+        $art.Image = $meta.Art
+    }
+
+    $src = if ($meta.ArtSource) { [string]$meta.ArtSource } else { 'no embedded, sidecar, cached, or online art found' }
+    try { $artTip.SetToolTip($art, "Album art: $src") } catch {}
+    $form.Text = "$APP_TITLE  -  $($meta.Title)"
 }
 
 function Invoke-PlayIndex {
@@ -576,7 +662,7 @@ function Expand-Node {
 }
 
 $script:ConfigPath = Join-Path $ROOT 'cadence.config.json'
-$script:Config     = @{ roots = @(); volume = 0.8; shuffle = $false; repeat = $false; palette = 'mono' }
+$script:Config     = @{ roots = @(); volume = 0.8; shuffle = $false; repeat = $false; palette = 'mono'; onlineArtLookup = $true }
 
 function Load-Config {
     if (-not (Test-Path -LiteralPath $script:ConfigPath)) { return }
@@ -588,8 +674,9 @@ function Load-Config {
             shuffle = [bool]$json.shuffle
             repeat  = [bool]$json.repeat
             palette = if ($json.palette) { [string]$json.palette } else { 'mono' }
+            onlineArtLookup = if ($null -ne $json.onlineArtLookup) { [bool]$json.onlineArtLookup } else { $true }
         }
-    } catch { $script:Config = @{ roots = @(); volume = 0.8; shuffle = $false; repeat = $false; palette = 'mono' } }
+    } catch { $script:Config = @{ roots = @(); volume = 0.8; shuffle = $false; repeat = $false; palette = 'mono'; onlineArtLookup = $true } }
 }
 
 function Save-Config {
@@ -600,6 +687,7 @@ function Save-Config {
             shuffle = [bool]$script:State.Shuffle
             repeat  = [bool]$script:State.Repeat
             palette = [string]$script:State.VisPalette
+            onlineArtLookup = [bool]$script:Engine.OnlineArtLookup
         } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $script:ConfigPath -Encoding UTF8
     } catch {}
 }
@@ -675,7 +763,7 @@ function Add-FolderToQueue {
     param($FolderPath)
     if (-not $FolderPath) { return }
     $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
-    $form.Text = "$APP_NAME  -  scanning..."
+    $form.Text = "$APP_TITLE  -  scanning..."
     [System.Windows.Forms.Application]::DoEvents()
     try {
         $before = $script:State.Items.Count
@@ -684,7 +772,7 @@ function Add-FolderToQueue {
             Sort-Object { Get-NaturalKey $_.FullName } | Select-Object -ExpandProperty FullName
         Add-Paths $files
         $n = $script:State.Items.Count - $before
-        $form.Text = "$APP_NAME  -  added $n track(s)"
+        $form.Text = "$APP_TITLE  -  added $n track(s)"
     } finally {
         $form.Cursor = [System.Windows.Forms.Cursors]::Default
     }
@@ -707,7 +795,7 @@ function Add-Dropped {
 # Export the current queue as an M3U playlist.
 function Export-QueueM3U {
     if ($script:State.Items.Count -eq 0) {
-        $form.Text = "$APP_NAME  -  nothing to export"
+        $form.Text = "$APP_TITLE  -  nothing to export"
         return
     }
     $dlg = [System.Windows.Forms.SaveFileDialog]::new()
@@ -720,9 +808,9 @@ function Export-QueueM3U {
             [void]$sb.AppendLine('#EXTM3U')
             foreach ($p in $script:State.Items) { [void]$sb.AppendLine($p) }
             [System.IO.File]::WriteAllText($dlg.FileName, $sb.ToString(), [System.Text.UTF8Encoding]::new($false))
-            $form.Text = "$APP_NAME  -  exported $($script:State.Items.Count) track(s)"
+            $form.Text = "$APP_TITLE  -  exported $($script:State.Items.Count) track(s)"
         } catch {
-            $form.Text = "$APP_NAME  -  export failed"
+            $form.Text = "$APP_TITLE  -  export failed"
         }
     }
 }
@@ -792,6 +880,23 @@ $script:miPalSpectrum.Add_Click({ Set-VisPalette 'spectrum' })
 $script:miPalIndigo.Add_Click({ Set-VisPalette 'indigo' })
 $vis.ContextMenuStrip = $visMenu
 
+$miChooseArt.Add_Click({ Set-CurrentAlbumArtFromImage })
+$miRetryArt.Add_Click({
+    Set-AlbumArtOnlineLookup $true
+    $miOnlineArt.Checked = $true
+    $script:Config.onlineArtLookup = $true
+    Save-Config
+    $path = Get-CurrentTrackPath
+    if ($path) { Update-NowPlaying -Path $path }
+})
+$miOnlineArt.Add_Click({
+    Set-AlbumArtOnlineLookup ([bool]$miOnlineArt.Checked)
+    $script:Config.onlineArtLookup = [bool]$miOnlineArt.Checked
+    Save-Config
+    $path = Get-CurrentTrackPath
+    if ($path) { Update-NowPlaying -Path $path }
+})
+
 $list.Add_DoubleClick({
     $vr = $list.SelectedIndex
     if ($vr -ge 0 -and $vr -lt $script:State.ViewMap.Count) { Invoke-PlayIndex $script:State.ViewMap[$vr] }
@@ -846,7 +951,7 @@ $tree.Add_NodeMouseDoubleClick({
     if ($ext -eq '.m3u' -or $ext -eq '.m3u8') {
         $tracks = Import-M3U $tag.Path
         if ($tracks.Count -eq 0) {
-            $form.Text = "$APP_NAME  -  playlist: no playable tracks found on this PC"
+            $form.Text = "$APP_TITLE  -  playlist: no playable tracks found on this PC"
             return
         }
         $before = $script:State.Items.Count
@@ -876,8 +981,13 @@ $btnClear.Add_Click({
     if ($script:SearchBox) { $script:SearchBox.Text = '' }
     $script:State.Index = -1; $script:State.Active = $false
     $lblTitle.Text = 'Nothing playing'; $lblArtist.Text = ''; $lblAlbum.Text = ''
-    $art.Image = $null; $lblPos.Text = '0:00'; $lblDur.Text = '0:00'
-    $seek.Fraction = 0; $seek.Invalidate(); $form.Text = $APP_NAME
+    $oldArt = $script:State.Art
+    $art.Image = $null
+    try { $artTip.SetToolTip($art, 'Album art: none loaded yet') } catch {}
+    $script:State.Art = $null
+    if ($oldArt) { try { $oldArt.Dispose() } catch {} }
+    $lblPos.Text = '0:00'; $lblDur.Text = '0:00'
+    $seek.Fraction = 0; $seek.Invalidate(); $form.Text = $APP_TITLE
     Sync-PlayGlyph
 })
 
@@ -972,7 +1082,11 @@ $form.Add_FormClosed({
     try { $timer.Stop(); $timer.Dispose() } catch {}
     try { $visTimer.Stop(); $visTimer.Dispose() } catch {}
     Close-Track
-    if ($script:State.Art) { try { $script:State.Art.Dispose() } catch {} }
+    $oldArt = $script:State.Art
+    $art.Image = $null
+    try { $artTip.SetToolTip($art, 'Album art: none loaded yet') } catch {}
+    $script:State.Art = $null
+    if ($oldArt) { try { $oldArt.Dispose() } catch {} }
 })
 
 # Center the transport row on resize (Anchor=Top keeps Y, we fix X).
@@ -999,6 +1113,8 @@ try {
     $script:State.Repeat = [bool]$script:Config.repeat
     $pillRepeat.Active = $script:State.Repeat; Update-PillVisual $pillRepeat
     Set-VisPalette ([string]$script:Config.palette)
+    Set-AlbumArtOnlineLookup ([bool]$script:Config.onlineArtLookup)
+    $miOnlineArt.Checked = [bool]$script:Config.onlineArtLookup
 } catch {}
 
 # Persist settings (incl. final volume) when the window closes.
