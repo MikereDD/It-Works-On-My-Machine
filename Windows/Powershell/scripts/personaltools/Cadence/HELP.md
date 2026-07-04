@@ -4,12 +4,13 @@ Cadence is a small local music player with a dark owner-drawn interface, a real
 library tree, a queue, saved playlists, album art, shuffle/repeat controls, and a live visualizer.
 
 This file explains the visible buttons, right-click menus, and keyboard
-shortcuts.
+shortcuts. Press `F1` or click the **Help** button in the app to open it.
 
 ## Main screen
 
 ### Album art
-The square image in the upper-left shows the current track's cover art.
+The square image in the upper-left shows the current track's cover art. When no
+cover is found, it shows the Cadence icon as a clean placeholder.
 
 Cadence tries cover art in this order:
 
@@ -164,6 +165,17 @@ or backed up outside the app.
 | Playlists | Save, load, append, or open custom playlists. |
 | Clear | Clear the queue. |
 
+## Help button
+
+The Help button near the top-right opens an app menu.
+
+| Help menu action | What it does |
+|------------------|--------------|
+| Open HELP.md | Opens this help file. |
+| About Cadence | Shows the app version, dependency status, and important local paths. |
+| Open app folder | Opens the Cadence folder in File Explorer. |
+| Open startup log | Opens or creates `cadence-startup.log`. |
+
 The version stamp at the bottom-right shows the running Cadence build.
 
 ## Keyboard shortcuts
@@ -178,6 +190,7 @@ The version stamp at the bottom-right shows the running Cadence build.
 | `R` | Cycle repeat mode: Off -> All -> One. |
 | `Ctrl+S` | Save the current queue as a named Cadence playlist. |
 | `Ctrl+O` | Open a playlist file and replace the queue. |
+| `F1` | Open `HELP.md`. |
 | `Esc` while in search box | Clear queue search. |
 | Type in search box | Filter the queue. |
 
@@ -216,7 +229,8 @@ Get-ChildItem . -Recurse -Include *.ps1,*.dll | Unblock-File
 Cadence expects Windows PowerShell 5.1 for the WinForms STA launch path.
 
 ### No album art appears
-Try these in order:
+If no cover art is found, Cadence shows the Cadence icon placeholder instead of
+a blank square. To add a real cover, try these in order:
 
 1. Right-click the album-art box and choose `Retry online art lookup`.
 2. Put a `folder.jpg` or `cover.jpg` inside the album folder.

@@ -8,7 +8,7 @@ A sleek, fully owner-drawn local audio player for Windows — monochrome
 Material-style UI, NAudio engine, live FFT visualizer, and a real library
 browser. Part of the `personaltools/` toolkit.
 
-**Latest: v0.4.6** · [Changelog](https://github.com/MikereDD/It-Works-On-My-Machine/blob/main/Windows/Powershell/scripts/personaltools/Cadence/CHANGELOG.md)
+**Latest: v0.4.7** · [Changelog](https://github.com/MikereDD/It-Works-On-My-Machine/blob/main/Windows/Powershell/scripts/personaltools/Cadence/CHANGELOG.md)
 
 ## Screenshots
 
@@ -35,7 +35,7 @@ browser. Part of the `personaltools/` toolkit.
 - **Monochrome Material UI** — tonal pill buttons, a FAB transport, toggle
   chips, recessed dark-grey wells, and a subtle depth gradient.
 - **Tags + album art** — via TagLibSharp when present, with filename fallback, deeper embedded-art extraction, and broad sidecar cover fallback (`cover.jpg`, `folder.png`, `AlbumArt_*.jpg`, one-image album folders, etc.).
-- **Built-in help doc** — `HELP.md` explains the screen layout, buttons, right-click menus, keyboard shortcuts, and troubleshooting.
+- **Built-in help** — a Help button opens `HELP.md`, About Cadence, the app folder, or the startup log.
 
 ## Requirements
 - Windows with **Windows PowerShell 5.1** available — it's the reliable STA host
@@ -75,6 +75,7 @@ For the full button guide, right-click menus, album-art behavior, and keyboard s
 | `R` | Cycle repeat mode: Off -> All -> One |
 | `Ctrl+S` | Save the current queue as a named Cadence playlist |
 | `Ctrl+O` | Open a playlist file and replace the queue |
+| `F1` | Open `HELP.md` |
 | Type in the search box | Live-filter the queue |
 | `Esc` (in search box) | Clear the filter |
 | Double-click file / `.m3u` | Play |
@@ -85,11 +86,12 @@ For the full button guide, right-click menus, album-art behavior, and keyboard s
 | Right-click folder (tree) | Add recursively |
 | Library button | Add / remove / clear saved roots |
 | Playlists button | New playlist, open playlist, save current queue, load saved playlists, or open the playlists folder |
+| Help button | Open `HELP.md`, About Cadence, the app folder, or the startup log |
 
 ## Album art
 Cadence first uses embedded artwork from the audio tag. It prefers a real front cover, then tries every other embedded picture until one decodes. If no embedded artwork is available, it looks near the playing file for common sidecar names such as `cover.jpg`, `folder.jpg`, `front.png`, `album.png`, `albumart.jpg`, `artwork.jpg`, `AlbumArt.jpg`, `AlbumArtSmall.jpg`, Windows Media Player `AlbumArt_*.jpg`, and one-image album folders.
 
-The window title and a small bottom-right label show the running version. Hover the album-art box to see whether the image came from embedded tags, a sidecar file, or was not found. The same result is logged to `cadence-startup.log`.
+The window title and a small bottom-right label show the running version. Hover the album-art box to see whether the image came from embedded tags, a sidecar file, or was not found. When no cover is available, the album-art panel shows the Cadence icon instead of an empty square. The same lookup result is logged to `cadence-startup.log`.
 
 ## Playlists
 Cadence can now keep named custom playlists in `cadence.playlists` next to the

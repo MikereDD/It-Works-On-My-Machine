@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.7] - 2026-07-04
+
+Help/About and blank-art polish pass.
+
+### Added
+- New in-app Help button with actions to open `HELP.md`, show About Cadence,
+  open the app folder, or open the startup log.
+- `F1` keyboard shortcut opens `HELP.md`.
+- Blank album-art panel now shows the Cadence icon instead of an empty square.
+
+### Changed
+- README and HELP now document the Help button, About dialog, F1 shortcut, and
+  Cadence-icon album-art placeholder.
+- Moved the bottom-right version stamp so it stays fully visible beside the
+  Clear button.
+
 ## [0.4.6] - 2026-07-04
 
 Custom playlist management pass.
@@ -231,6 +247,7 @@ visualizer, a real library browser, playlist plumbing, the Windows PowerShell
 - `New-Visualizer` stub with the FFT integration recipe documented inline.
 
 [Unreleased]: https://github.com/MikereDD/It-Works-On-My-Machine/commits/main
+[0.4.7]: https://github.com/MikereDD/It-Works-On-My-Machine/tree/main/Windows/Powershell/scripts/personaltools/Cadence
 [0.4.6]: https://github.com/MikereDD/It-Works-On-My-Machine/tree/main/Windows/Powershell/scripts/personaltools/Cadence
 [0.4.5]: https://github.com/MikereDD/It-Works-On-My-Machine/tree/main/Windows/Powershell/scripts/personaltools/Cadence
 [0.4.4]: https://github.com/MikereDD/It-Works-On-My-Machine/tree/main/Windows/Powershell/scripts/personaltools/Cadence

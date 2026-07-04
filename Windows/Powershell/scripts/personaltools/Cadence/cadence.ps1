@@ -1,5 +1,5 @@
 # ============================================================================
-#  cadence.ps1  -  Cadence  v0.4.6
+#  cadence.ps1  -  Cadence  v0.4.7
 #  A sleek local audio player (WinForms, owner-drawn, NAudio backend).
 #  Part of personaltools/ - mirrors the media-encoder-gui.ps1 layout:
 #    main GUI  +  dot-sourced engine/ui modules.
@@ -82,7 +82,7 @@ try {
 })
 
 $APP_NAME    = 'Cadence'
-$APP_VERSION = '0.4.6'
+$APP_VERSION = '0.4.7'
 $APP_TITLE   = "$APP_NAME v$APP_VERSION"
 $ROOT        = $PSScriptRoot
 $LIB         = Join-Path $ROOT 'lib'
@@ -113,6 +113,61 @@ try {
 }
 
 # --- App state --------------------------------------------------------------
+function New-CadenceUiImageFromFile {
+    param([string]$Path)
+    if (-not $Path -or -not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $null }
+    try {
+        $bytes = [IO.File]::ReadAllBytes($Path)
+        $ms = [IO.MemoryStream]::new($bytes, 0, $bytes.Length, $false, $true)
+        try {
+            $img = [System.Drawing.Image]::FromStream($ms)
+            try { return [System.Drawing.Bitmap]::new($img) }
+            finally { $img.Dispose() }
+        } finally { $ms.Dispose() }
+    } catch { return $null }
+}
+
+function Open-CadenceHelp {
+    $helpPath = Join-Path $ROOT 'HELP.md'
+    if (Test-Path -LiteralPath $helpPath -PathType Leaf) {
+        try { Start-Process -FilePath $helpPath } catch {
+            [System.Windows.Forms.MessageBox]::Show(
+                "Could not open HELP.md.`n`n$($_.Exception.Message)",
+                $APP_NAME, 'OK', 'Error') | Out-Null
+        }
+    } else {
+        [System.Windows.Forms.MessageBox]::Show(
+            "HELP.md was not found beside cadence.ps1.",
+            $APP_NAME, 'OK', 'Warning') | Out-Null
+    }
+}
+
+function Show-CadenceAbout {
+    $naudioCount = 0
+    try { $naudioCount = @(Get-ChildItem -Path $LIB -Filter 'NAudio*.dll' -ErrorAction SilentlyContinue).Count } catch {}
+    $tagStatus = if ($script:Engine.TagLib) { 'Loaded' } else { 'Missing or not loaded' }
+    $tapStatus = if ($script:Engine.HasSpectrum) { 'Available' } else { 'Idle fallback' }
+    $msg = @"
+$APP_TITLE
+
+A local PowerShell / WinForms music player.
+Part of It Works On My Machine / personaltools.
+
+Dependencies:
+NAudio DLLs: $naudioCount found
+TagLibSharp: $tagStatus
+Spectrum tap: $tapStatus
+
+Paths:
+App: $ROOT
+Config: $(Join-Path $ROOT 'cadence.config.json')
+Playlists: $PLAYLIST_DIR
+Art cache: $(Join-Path $ROOT 'cadence.art-cache')
+Help: $(Join-Path $ROOT 'HELP.md')
+"@
+    [System.Windows.Forms.MessageBox]::Show($msg.Trim(), 'About Cadence', 'OK', 'Information') | Out-Null
+}
+
 $script:State = @{
     Items   = New-Object System.Collections.Generic.List[string]   # full paths
     Seen    = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
@@ -168,6 +223,13 @@ $form.Controls.Add($art)
 $artTip = [System.Windows.Forms.ToolTip]::new()
 $artTip.SetToolTip($art, 'Album art: none loaded yet')
 
+$script:PlaceholderArt = New-CadenceUiImageFromFile (Join-Path $PSScriptRoot 'docs\cadence-icon-256.png')
+function Set-AlbumArtPlaceholder {
+    try { $art.Image = $script:PlaceholderArt } catch {}
+    try { $artTip.SetToolTip($art, 'Album art: no cover found; showing Cadence icon') } catch {}
+}
+Set-AlbumArtPlaceholder
+
 # Album-art menu: online fallback can be retried/toggled, and a local image can
 # be assigned as folder.jpg/folder.png for albums that simply have no art.
 $artMenu = [System.Windows.Forms.ContextMenuStrip]::new()
@@ -182,7 +244,7 @@ $art.ContextMenuStrip = $artMenu
 
 
 $textX = $pad + $artSize + 18
-$textW = $form.ClientSize.Width - $textX - $pad
+$textW = [Math]::Max(120, $form.ClientSize.Width - $textX - $pad - 80)
 
 $lblTitle = [System.Windows.Forms.Label]::new()
 $lblTitle.SetBounds($textX, $pad + 12, $textW, 36)
@@ -208,6 +270,12 @@ $lblAlbum.ForeColor = $script:Theme.Muted
 $lblAlbum.AutoEllipsis = $true
 $lblAlbum.Anchor = 'Top,Left,Right'
 $form.Controls.Add($lblAlbum)
+
+# In-app help / about access.
+$btnHelp = New-FlatButton 'Help' 62 30
+$btnHelp.Location = [System.Drawing.Point]::new($form.ClientSize.Width - $pad - 62, $pad)
+$btnHelp.Anchor = 'Top,Right'
+$form.Controls.Add($btnHelp)
 
 # Visualizer
 $visY = $pad + $artSize + 18
@@ -380,12 +448,22 @@ $btnClear.Anchor    = 'Bottom,Right'
 $form.Controls.AddRange(@($btnAddFiles, $btnSetLib, $btnPlaylist, $btnClear))
 
 # Small always-visible version stamp so test screenshots show the exact build.
+# Keep it above and to the left of Clear so the footer text never gets clipped
+# or hidden behind the bottom-right button.
 $lblVersion = [System.Windows.Forms.Label]::new()
 $lblVersion.Text = $APP_TITLE
 $lblVersion.Font = [System.Drawing.Font]::new('Segoe UI', 8.5)
 $lblVersion.ForeColor = $script:Theme.Muted
+$lblVersion.BackColor = [System.Drawing.Color]::Transparent
 $lblVersion.TextAlign = 'MiddleRight'
-$lblVersion.SetBounds($form.ClientSize.Width - $pad - 170, $byY - 22, 160, 20)
+$versionW = 150
+$versionGapFromClear = 14
+$lblVersion.SetBounds(
+    $form.ClientSize.Width - $pad - $btnClear.Width - $versionGapFromClear - $versionW,
+    $byY - 34,
+    $versionW,
+    24
+)
 $lblVersion.Anchor = 'Bottom,Right'
 $form.Controls.Add($lblVersion)
 
@@ -413,6 +491,17 @@ $playlistMenu.Items.Add($miLoadSavedPlaylist) | Out-Null
 $playlistMenu.Items.Add($miAddSavedPlaylist) | Out-Null
 $playlistMenu.Items.Add('-') | Out-Null
 $miOpenPlaylistsFolder = $playlistMenu.Items.Add('Open playlists folder')
+
+# Help button menu.
+$helpMenu = [System.Windows.Forms.ContextMenuStrip]::new()
+$helpMenu.BackColor = $script:Theme.Panel
+$helpMenu.ForeColor = $script:Theme.Text
+$miOpenHelp = $helpMenu.Items.Add('Open HELP.md')
+$miAboutCadence = $helpMenu.Items.Add('About Cadence')
+$helpMenu.Items.Add('-') | Out-Null
+$miOpenAppFolder = $helpMenu.Items.Add('Open app folder')
+$miOpenStartupLog = $helpMenu.Items.Add('Open startup log')
+$btnHelp.ContextMenuStrip = $helpMenu
 
 # ============================================================================
 #  Behaviour
@@ -487,10 +576,12 @@ function Update-NowPlaying {
     if ($meta.Art) {
         $script:State.Art = $meta.Art
         $art.Image = $meta.Art
+        $src = if ($meta.ArtSource) { [string]$meta.ArtSource } else { 'loaded' }
+        try { $artTip.SetToolTip($art, "Album art: $src") } catch {}
+    } else {
+        Set-AlbumArtPlaceholder
     }
 
-    $src = if ($meta.ArtSource) { [string]$meta.ArtSource } else { 'no embedded, sidecar, cached, or online art found' }
-    try { $artTip.SetToolTip($art, "Album art: $src") } catch {}
     $form.Text = "$APP_TITLE  -  $($meta.Title)"
 }
 
@@ -716,9 +807,9 @@ function Clear-Queue {
     $lblTitle.Text = 'Nothing playing'; $lblArtist.Text = ''; $lblAlbum.Text = ''
     $oldArt = $script:State.Art
     $art.Image = $null
-    try { $artTip.SetToolTip($art, 'Album art: none loaded yet') } catch {}
     $script:State.Art = $null
     if ($oldArt) { try { $oldArt.Dispose() } catch {} }
+    Set-AlbumArtPlaceholder
     $lblPos.Text = '0:00'; $lblDur.Text = '0:00'
     $seek.Fraction = 0; $seek.Invalidate(); $form.Text = $APP_TITLE
     Sync-PlayGlyph
@@ -1166,6 +1257,19 @@ $btnPlaylist.Add_Click({
         [System.Windows.Forms.ToolStripDropDownDirection]::AboveRight)
 })
 
+$btnHelp.Add_Click({
+    $helpMenu.Show($btnHelp, [System.Drawing.Point]::new(0, $btnHelp.Height),
+        [System.Windows.Forms.ToolStripDropDownDirection]::BelowRight)
+})
+$miOpenHelp.Add_Click({ Open-CadenceHelp })
+$miAboutCadence.Add_Click({ Show-CadenceAbout })
+$miOpenAppFolder.Add_Click({ try { Start-Process -FilePath $ROOT } catch {} })
+$miOpenStartupLog.Add_Click({
+    $log = Join-Path $ROOT 'cadence-startup.log'
+    if (-not (Test-Path -LiteralPath $log -PathType Leaf)) { try { New-Item -ItemType File -Path $log -Force | Out-Null } catch {} }
+    if (Test-Path -LiteralPath $log -PathType Leaf) { try { Start-Process -FilePath $log } catch {} }
+})
+
 $miNewPlaylist.Add_Click({ Clear-Queue })
 $miOpenPlaylistFile.Add_Click({ Open-PlaylistFileDialog $true })
 $miSaveSavedPlaylist.Add_Click({ Save-QueueAsSavedPlaylist })
@@ -1246,6 +1350,7 @@ $form.Add_KeyDown({
     # Don't hijack typing while the search box has focus.
     if ($script:SearchBox -and $script:SearchBox.Focused) { return }
     switch ($e.KeyCode) {
+        'F1'         { Open-CadenceHelp; $e.Handled = $true }
         'Space'      { Toggle-PlayPause; $e.Handled = $true }
         'MediaPlayPause' { Toggle-PlayPause; $e.Handled = $true }
         'Right'      { if ($e.Control) { Invoke-Next } }
@@ -1348,6 +1453,7 @@ $form.Add_FormClosed({
     try { $artTip.SetToolTip($art, 'Album art: none loaded yet') } catch {}
     $script:State.Art = $null
     if ($oldArt) { try { $oldArt.Dispose() } catch {} }
+    if ($script:PlaceholderArt) { try { $script:PlaceholderArt.Dispose() } catch {}; $script:PlaceholderArt = $null }
 })
 
 # Center the transport row on resize (Anchor=Top keeps Y, we fix X).
