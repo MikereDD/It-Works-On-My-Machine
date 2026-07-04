@@ -1,8 +1,8 @@
 ﻿# file:    parallax.ps1
 # author:  typezero
-# version: 0.8.6
+# version: 0.8.9
 # created: 2026-06-24
-# updated: 2026-06-26
+# updated: 2026-07-04
 # desc:    libmpv-backed WinForms video player (VLC-style), HWND embedding.
 #          Monochrome Material 3 UI: tracks, fullscreen, resume, disc playback.
 
@@ -20,6 +20,9 @@ if ($PSVersionTable.PSEdition -eq 'Core' -or $apartment -ne 'STA') {
 $MpvDir = $PSScriptRoot
 if ([string]::IsNullOrEmpty($MpvDir)) { $MpvDir = (Get-Location).Path }
 $MpvDllName = 'libmpv-2.dll'
+$script:AppName = 'Parallax'
+$script:AppVersion = '0.8.9'
+$script:AppTitle = $script:AppName + ' v' + $script:AppVersion
 
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
@@ -157,6 +160,107 @@ namespace VP {
     public override Color SeparatorLight { get { return bd; } }
   }
 
+  // Owner-drawn rounded command button used by the control bar.
+  // Keeps the single-file WinForms build while giving Parallax a cleaner,
+  // Cadence-style transport surface with proper hover/press states.
+  public class PillButton : Button {
+    private bool _hovered = false;
+    private bool _pressed = false;
+    private string _iconText = "";
+
+    public Color NormalColor = Color.FromArgb(40, 40, 40);
+    public Color HoverColor  = Color.FromArgb(56, 56, 56);
+    public Color DownColor   = Color.FromArgb(70, 70, 70);
+    public Color BorderColor = Color.FromArgb(68, 68, 68);
+    public Color TextColor   = Color.FromArgb(222, 222, 222);
+    public Color GlyphColor  = Color.FromArgb(245, 245, 245);
+    public int CornerRadius  = 13;
+
+    public string IconText {
+      get { return _iconText; }
+      set { _iconText = value ?? ""; Invalidate(); }
+    }
+
+    public PillButton() {
+      SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint
+        | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+      FlatStyle = FlatStyle.Flat;
+      FlatAppearance.BorderSize = 0;
+      Font = new Font("Segoe UI", 9.0f, FontStyle.Regular);
+      ForeColor = TextColor;
+      Cursor = Cursors.Hand;
+      TabStop = false;
+      Height = 34;
+    }
+
+    private GraphicsPath RoundRect(Rectangle r, int radius) {
+      int d = radius * 2;
+      GraphicsPath p = new GraphicsPath();
+      p.AddArc(r.X, r.Y, d, d, 180, 90);
+      p.AddArc(r.Right - d, r.Y, d, d, 270, 90);
+      p.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
+      p.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
+      p.CloseFigure();
+      return p;
+    }
+
+    protected override void OnMouseEnter(EventArgs e) {
+      base.OnMouseEnter(e); _hovered = true; Invalidate();
+    }
+    protected override void OnMouseLeave(EventArgs e) {
+      base.OnMouseLeave(e); _hovered = false; _pressed = false; Invalidate();
+    }
+    protected override void OnMouseDown(MouseEventArgs e) {
+      base.OnMouseDown(e); if (e.Button == MouseButtons.Left) { _pressed = true; Invalidate(); }
+    }
+    protected override void OnMouseUp(MouseEventArgs e) {
+      base.OnMouseUp(e); _pressed = false; Invalidate();
+    }
+    protected override void OnTextChanged(EventArgs e) {
+      base.OnTextChanged(e); Invalidate();
+    }
+
+    protected override void OnPaint(PaintEventArgs e) {
+      Graphics g = e.Graphics;
+      g.SmoothingMode = SmoothingMode.AntiAlias;
+      Color parent = (Parent != null) ? Parent.BackColor : BackColor;
+      using (SolidBrush clear = new SolidBrush(parent))
+        g.FillRectangle(clear, ClientRectangle);
+
+      Rectangle r = new Rectangle(1, 1, Width - 3, Height - 3);
+      int radius = Math.Min(CornerRadius, Math.Max(4, (Height - 4) / 2));
+      Color fill = NormalColor;
+      if (!Enabled) fill = Color.FromArgb(32, 32, 32);
+      else if (_pressed) fill = DownColor;
+      else if (_hovered) fill = HoverColor;
+
+      using (GraphicsPath path = RoundRect(r, radius)) {
+        using (SolidBrush b = new SolidBrush(fill)) g.FillPath(b, path);
+        using (Pen pen = new Pen(BorderColor)) g.DrawPath(pen, path);
+      }
+
+      string label = Text ?? "";
+      bool hasIcon = !String.IsNullOrEmpty(_iconText);
+      using (Font iconFont = new Font("Segoe UI Symbol", 10.5f, FontStyle.Regular)) {
+        SizeF iconSize = hasIcon ? g.MeasureString(_iconText, iconFont) : SizeF.Empty;
+        SizeF textSize = g.MeasureString(label, Font);
+        float gap = (hasIcon && label.Length > 0) ? 6.0f : 0.0f;
+        float totalW = iconSize.Width + gap + textSize.Width;
+        float x = (Width - totalW) / 2.0f;
+        float cy = Height / 2.0f;
+        using (SolidBrush glyph = new SolidBrush(Enabled ? GlyphColor : Color.FromArgb(115, 115, 115)))
+        using (SolidBrush textb = new SolidBrush(Enabled ? TextColor : Color.FromArgb(115, 115, 115))) {
+          if (hasIcon) {
+            g.DrawString(_iconText, iconFont, glyph, x, cy - iconSize.Height / 2.0f);
+            x += iconSize.Width + gap;
+          }
+          if (label.Length > 0)
+            g.DrawString(label, Font, textb, x, cy - textSize.Height / 2.0f);
+        }
+      }
+    }
+  }
+
   // Owner-drawn monochrome slider. Replaces the unthemable WinForms TrackBar.
   public class Slider : Control {
     private int _min = 0, _max = 1000, _val = 0;
@@ -267,6 +371,12 @@ $script:colMuted    = [System.Drawing.Color]::FromArgb(150, 150, 150)
 $script:menuColors  = New-Object VP.DarkMenuColors
 
 # --- Helpers ----------------------------------------------------------------
+function Get-AppWindowTitle {
+    param([string]$MediaTitle = '')
+    if ([string]::IsNullOrEmpty($MediaTitle)) { return $script:AppTitle }
+    return $script:AppTitle + '  -  ' + $MediaTitle
+}
+
 function Format-Time {
     param([double]$Seconds)
     if ($Seconds -lt 0 -or [double]::IsNaN($Seconds)) { $Seconds = 0 }
@@ -286,26 +396,79 @@ function Get-TrackLabel {
     return $label
 }
 
+
+function Get-Glyph {
+    param([ValidateSet('Open','Disc','Play','Pause','Tracks','Full','Window')][string]$Name)
+    switch ($Name) {
+        'Open'   { return ([string][char]0xFF0B) } # fullwidth plus
+        'Disc'   { return ([string][char]0x25C9) }
+        'Play'   { return ([string][char]0x25B6) }
+        'Pause'  { return ([string][char]0x23F8) }
+        'Tracks' { return ([string][char]0x2630) }
+        'Full'   { return ([string][char]0x26F6) }
+        'Window' { return ([string][char]0x2750) }
+    }
+}
+
 function Style-Button {
-    param($btn)
+    param($btn, [string]$Icon = '')
     $btn.FlatStyle = 'Flat'
     $btn.FlatAppearance.BorderSize = 0
     $btn.BackColor = $script:colBtn
     $btn.ForeColor = $script:colText
     $btn.Font = New-Object System.Drawing.Font('Segoe UI', 9)
     $btn.Cursor = 'Hand'
-    $btn.Add_MouseEnter({ $this.BackColor = $script:colBtnHover })
-    $btn.Add_MouseLeave({ $this.BackColor = $script:colBtn })
+    if ($btn -is [VP.PillButton]) {
+        $btn.IconText = $Icon
+        $btn.NormalColor = $script:colBtn
+        $btn.HoverColor  = $script:colBtnHover
+        $btn.DownColor   = [System.Drawing.Color]::FromArgb(70, 70, 70)
+        $btn.BorderColor = [System.Drawing.Color]::FromArgb(68, 68, 68)
+        $btn.TextColor   = $script:colText
+        $btn.GlyphColor  = [System.Drawing.Color]::FromArgb(245, 245, 245)
+        $btn.CornerRadius = 13
+    } else {
+        $btn.Add_MouseEnter({ $this.BackColor = $script:colBtnHover })
+        $btn.Add_MouseLeave({ $this.BackColor = $script:colBtn })
+    }
+}
+
+function Set-ButtonIcon {
+    param($btn, [string]$Icon)
+    if ($btn -is [VP.PillButton]) {
+        $btn.IconText = $Icon
+        $btn.Invalidate()
+    }
+}
+
+function Set-PlayButton {
+    if ($script:paused) {
+        $btnPlay.Text = 'Play'
+        Set-ButtonIcon $btnPlay (Get-Glyph 'Play')
+    } else {
+        $btnPlay.Text = 'Pause'
+        Set-ButtonIcon $btnPlay (Get-Glyph 'Pause')
+    }
+}
+
+function Set-FullButton {
+    if ($script:fullscreen) {
+        $btnFull.Text = 'Window'
+        Set-ButtonIcon $btnFull (Get-Glyph 'Window')
+    } else {
+        $btnFull.Text = 'Full'
+        Set-ButtonIcon $btnFull (Get-Glyph 'Full')
+    }
 }
 
 function Toggle-Pause {
     if ($script:ctx -eq [IntPtr]::Zero) { return }
     if ($script:paused) {
         [void][Mpv.Native]::SetPropertyString($script:ctx, 'pause', 'no')
-        $script:paused = $false; $btnPlay.Text = 'Pause'
+        $script:paused = $false; Set-PlayButton
     } else {
         [void][Mpv.Native]::SetPropertyString($script:ctx, 'pause', 'yes')
-        $script:paused = $true; $btnPlay.Text = 'Play'
+        $script:paused = $true; Set-PlayButton
     }
 }
 
@@ -332,7 +495,7 @@ $script:onSelectDisc = {
         [void][Mpv.Native]::Command($script:ctx, @('loadfile', 'dvd://'))
     }
     $script:paused = $false
-    $btnPlay.Text = 'Pause'
+    Set-PlayButton
     Set-SubPos
     $script:discWatch = $true
     $script:discWatchTicks = 0
@@ -345,7 +508,7 @@ $script:onSelectTitle = {
     if ($null -eq $t -or $script:ctx -eq [IntPtr]::Zero) { return }
     [void][Mpv.Native]::Command($script:ctx, @('loadfile', $t.Url))
     $script:paused = $false
-    $btnPlay.Text = 'Pause'
+    Set-PlayButton
     Set-SubPos
 }
 
@@ -694,7 +857,7 @@ function Enter-Fullscreen {
     $form.TopMost = $true
     $script:fullscreen = $true
     $script:idleCount = 0
-    $btnFull.Text = 'Windowed'
+    Set-FullButton
     Set-SubPos
 }
 
@@ -704,7 +867,7 @@ function Exit-Fullscreen {
     $form.FormBorderStyle = $script:prevBorder
     $form.WindowState = $script:prevState
     $script:fullscreen = $false
-    $btnFull.Text = 'Full'
+    Set-FullButton
     Set-SubPos
     Show-Controls
 }
@@ -748,7 +911,7 @@ function Show-DiscWarning {
            'This usually means the disc is AACS- or CSS-encrypted and the' + $nl +
            'matching decryption library is not present.' + $nl + $nl +
            'Rip the title with MakeMKV, then open the resulting file.'
-    [void][System.Windows.Forms.MessageBox]::Show($form, $msg, 'Parallax  -  Encrypted disc',
+    [void][System.Windows.Forms.MessageBox]::Show($form, $msg, (Get-AppWindowTitle 'Encrypted disc'),
         [System.Windows.Forms.MessageBoxButtons]::OK,
         [System.Windows.Forms.MessageBoxIcon]::Information)
 }
@@ -768,7 +931,7 @@ $script:discWarned     = $false
 
 # --- Form -------------------------------------------------------------------
 $form = New-Object System.Windows.Forms.Form
-$form.Text = 'Parallax'
+$form.Text = (Get-AppWindowTitle)
 $form.Size = New-Object System.Drawing.Size(960, 600)
 $form.MinimumSize = New-Object System.Drawing.Size(720, 360)
 $form.StartPosition = 'CenterScreen'
@@ -777,7 +940,7 @@ $form.Font = New-Object System.Drawing.Font('Segoe UI', 9)
 
 $bar = New-Object System.Windows.Forms.Panel
 $bar.Dock = 'Bottom'
-$bar.Height = 96
+$bar.Height = 100
 $bar.BackColor = $script:colBar
 $form.Controls.Add($bar)
 
@@ -797,46 +960,46 @@ $seek.BackColor = $script:colBar
 $bar.Controls.Add($seek)
 
 # Row 2: transport + tracks + time (left), volume (right)
-$btnOpen = New-Object System.Windows.Forms.Button
+$btnOpen = New-Object VP.PillButton
 $btnOpen.Text = 'Open'
 $btnOpen.Location = New-Object System.Drawing.Point(16, 52)
-$btnOpen.Size = New-Object System.Drawing.Size(70, 32)
-Style-Button $btnOpen
+$btnOpen.Size = New-Object System.Drawing.Size(76, 34)
+Style-Button $btnOpen (Get-Glyph 'Open')
 $bar.Controls.Add($btnOpen)
 
-$btnDisc = New-Object System.Windows.Forms.Button
+$btnDisc = New-Object VP.PillButton
 $btnDisc.Text = 'Disc'
-$btnDisc.Location = New-Object System.Drawing.Point(94, 52)
-$btnDisc.Size = New-Object System.Drawing.Size(70, 32)
-Style-Button $btnDisc
+$btnDisc.Location = New-Object System.Drawing.Point(100, 52)
+$btnDisc.Size = New-Object System.Drawing.Size(74, 34)
+Style-Button $btnDisc (Get-Glyph 'Disc')
 $bar.Controls.Add($btnDisc)
 
-$btnPlay = New-Object System.Windows.Forms.Button
+$btnPlay = New-Object VP.PillButton
 $btnPlay.Text = 'Play'
-$btnPlay.Location = New-Object System.Drawing.Point(172, 52)
-$btnPlay.Size = New-Object System.Drawing.Size(82, 32)
-Style-Button $btnPlay
+$btnPlay.Location = New-Object System.Drawing.Point(182, 52)
+$btnPlay.Size = New-Object System.Drawing.Size(88, 34)
+Style-Button $btnPlay (Get-Glyph 'Play')
 $bar.Controls.Add($btnPlay)
 
-$btnTracks = New-Object System.Windows.Forms.Button
+$btnTracks = New-Object VP.PillButton
 $btnTracks.Text = 'Tracks'
-$btnTracks.Location = New-Object System.Drawing.Point(262, 52)
-$btnTracks.Size = New-Object System.Drawing.Size(82, 32)
-Style-Button $btnTracks
+$btnTracks.Location = New-Object System.Drawing.Point(278, 52)
+$btnTracks.Size = New-Object System.Drawing.Size(90, 34)
+Style-Button $btnTracks (Get-Glyph 'Tracks')
 $bar.Controls.Add($btnTracks)
 
-$btnFull = New-Object System.Windows.Forms.Button
+$btnFull = New-Object VP.PillButton
 $btnFull.Text = 'Full'
-$btnFull.Location = New-Object System.Drawing.Point(352, 52)
-$btnFull.Size = New-Object System.Drawing.Size(72, 32)
-Style-Button $btnFull
+$btnFull.Location = New-Object System.Drawing.Point(376, 52)
+$btnFull.Size = New-Object System.Drawing.Size(82, 34)
+Style-Button $btnFull (Get-Glyph 'Full')
 $bar.Controls.Add($btnFull)
 
 $lblTime = New-Object System.Windows.Forms.Label
 $lblTime.Text = '0:00 / 0:00'
 $lblTime.ForeColor = $script:colText
 $lblTime.AutoSize = $true
-$lblTime.Location = New-Object System.Drawing.Point(436, 60)
+$lblTime.Location = New-Object System.Drawing.Point(470, 61)
 $bar.Controls.Add($lblTime)
 
 $vol = New-Object VP.Slider
@@ -897,7 +1060,7 @@ $btnOpen.Add_Click({
         [void][Mpv.Native]::Command($script:ctx, @('write-watch-later-config'))
         [void][Mpv.Native]::Command($script:ctx, @('loadfile', $dlg.FileName))
         $script:paused = $false
-        $btnPlay.Text = 'Pause'
+        Set-PlayButton
         $script:discProto = ''
         $script:discLabel = ''
         $script:discWatch = $false
@@ -1020,7 +1183,7 @@ $timer.Add_Tick({
     $mt = Get-MediaTitle
     if ($mt -ne $script:lastTitleShown) {
         $script:lastTitleShown = $mt
-        if ([string]::IsNullOrEmpty($mt)) { $form.Text = 'Parallax' } else { $form.Text = 'Parallax  -  ' + $mt }
+        if ([string]::IsNullOrEmpty($mt)) { $form.Text = (Get-AppWindowTitle) } else { $form.Text = (Get-AppWindowTitle $mt) }
     }
 })
 

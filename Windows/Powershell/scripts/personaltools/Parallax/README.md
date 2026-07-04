@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.8.6-2d2d2d">
+  <img src="https://img.shields.io/badge/version-0.8.9-2d2d2d">
   <img src="https://img.shields.io/badge/PowerShell-5.1-2d2d2d?logo=powershell&logoColor=white">
   <img src="https://img.shields.io/badge/backend-libmpv-2d2d2d">
   <img src="https://img.shields.io/badge/platform-Windows-2d2d2d">
@@ -20,14 +20,18 @@
 
 ## Features
 
+
 - Plays anything libmpv handles (MKV, MP4, M2TS, TS, WebM, ...) via HWND embedding
 - **Resume** &mdash; reopening a file picks up where you left off (per-file watch-later)
 - **Disc** &mdash; play DVDs and Blu-rays straight from the drive, with title,
   episode, and chapter navigation
 - **Tracks** popup for switching audio and subtitle streams, with Off for subs
+- App version shown beside the Parallax name in the Windows title bar
 - Now-playing name shown in the title bar and at the top of the Tracks popup
 - Fullscreen with auto-hiding controls and cursor
 - Owner-drawn monochrome seek + volume sliders (click-to-seek, drag-scrub)
+- Rounded owner-drawn command buttons with icon labels and hover/press polish
+- Unicode button glyphs now assigned safely so the icons render correctly in Windows PowerShell 5.1
 - DWM dark title bar, Material 3 monochrome styling
 
 ### Keyboard

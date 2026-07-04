@@ -5,6 +5,25 @@ All notable changes to Parallax are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.9] - 2026-07-04
+
+### Fixed
+- Restored the command button icons after they rendered as garbled characters on Windows.
+- Assign the button glyphs from code points instead of relying on raw Unicode source literals.
+- Save `parallax.ps1` as UTF-8 with BOM so Windows PowerShell 5.1 reads the script correctly.
+
+## [0.8.8] - 2026-07-04
+
+### Changed
+- Show the app version beside Parallax in the Windows title bar.
+- Keep the version visible when media is loaded by using `Parallax v0.8.8  -  <media title>`.
+
+## [0.8.7] - 2026-07-04
+
+### Changed
+- Polished the control bar command buttons with a rounded owner-drawn `VP.PillButton`, icon labels, subtle borders, and cleaner hover/press states.
+- Updated play/pause and fullscreen/window labels so the buttons visually track the current state.
+
 ## [0.8.6] - 2026-06-27
 
 ### Added
