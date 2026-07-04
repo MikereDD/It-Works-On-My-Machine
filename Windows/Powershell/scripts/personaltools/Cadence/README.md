@@ -8,7 +8,7 @@ A sleek, fully owner-drawn local audio player for Windows — monochrome
 Material-style UI, NAudio engine, live FFT visualizer, and a real library
 browser. Part of the `personaltools/` toolkit.
 
-**Latest: v0.4.3** · [Changelog](https://github.com/MikereDD/It-Works-On-My-Machine/blob/main/Windows/Powershell/scripts/personaltools/Cadence/CHANGELOG.md)
+**Latest: v0.4.4** · [Changelog](https://github.com/MikereDD/It-Works-On-My-Machine/blob/main/Windows/Powershell/scripts/personaltools/Cadence/CHANGELOG.md)
 
 ## Screenshots
 
@@ -27,10 +27,10 @@ browser. Part of the `personaltools/` toolkit.
   config, so a large collection is navigated rather than flattened.
 - **Queue search** — a live filter box narrows the queue to matching tracks as
   you type; playback stays correct while filtered.
-- **Playlist queue** — shuffle, repeat-all, auto-advance, full-path dedupe,
+- **Playlist queue** — shuffle, repeat off/all/one, auto-advance, full-path dedupe,
   M3U / M3U8 import, and drag-and-drop of files / folders / playlists onto the
   window. Export the queue back out as an `.m3u8`.
-- **Remembers your setup** — saved library roots plus volume, shuffle, repeat,
+- **Remembers your setup** — saved library roots plus volume, shuffle, repeat mode,
   and visualizer palette persist across launches.
 - **Monochrome Material UI** — tonal pill buttons, a FAB transport, toggle
   chips, recessed dark-grey wells, and a subtle depth gradient.
@@ -68,11 +68,13 @@ PowerShell `-STA` so only the player window shows.
 | `Space` | Play / pause |
 | `Ctrl+Left` / `Ctrl+Right` | Previous / next |
 | `M` | Mute toggle |
+| `S` | Toggle shuffle |
+| `R` | Cycle repeat mode: Off -> All -> One |
 | Type in the search box | Live-filter the queue |
 | `Esc` (in search box) | Clear the filter |
 | Double-click file / `.m3u` | Play |
 | Drag files / folders onto the window | Add to queue |
-| Right-click queue | Export queue as M3U |
+| Right-click queue | Toggle shuffle, choose repeat mode, or export queue as M3U |
 | Right-click visualizer | Switch palette (mono / spectrum / indigo) |
 | Right-click album art | Choose a local cover image, retry online lookup, or toggle online art lookup |
 | Right-click folder (tree) | Add recursively |
@@ -92,7 +94,7 @@ The window title and a small bottom-right label show the running version. Hover 
 | `setup-naudio.ps1` | NuGet dependency fetcher (`-> .\lib`) |
 
 Runtime files written next to the script: `cadence.config.json` (saved library
-roots plus volume / shuffle / repeat / visualizer palette / online art lookup),
+roots plus volume / shuffle / repeat mode / visualizer palette / online art lookup),
 `cadence.art-cache` (cached online album covers), and `cadence-startup.log`
 (startup/exception log).
 

@@ -1,5 +1,5 @@
 # ============================================================================
-#  cadence.ps1  -  Cadence  v0.4.3
+#  cadence.ps1  -  Cadence  v0.4.4
 #  A sleek local audio player (WinForms, owner-drawn, NAudio backend).
 #  Part of personaltools/ - mirrors the media-encoder-gui.ps1 layout:
 #    main GUI  +  dot-sourced engine/ui modules.
@@ -82,7 +82,7 @@ try {
 })
 
 $APP_NAME    = 'Cadence'
-$APP_VERSION = '0.4.3'
+$APP_VERSION = '0.4.4'
 $APP_TITLE   = "$APP_NAME v$APP_VERSION"
 $ROOT        = $PSScriptRoot
 $LIB         = Join-Path $ROOT 'lib'
@@ -120,7 +120,8 @@ $script:State = @{
     Index   = -1
     Active  = $false      # true while a track is meant to be playing/paused
     Shuffle = $false
-    Repeat  = $false      # repeat-all
+    RepeatMode = 'off'     # off | all | one
+    Repeat  = $false      # legacy bool; kept for old config compatibility
     VisPalette = 'mono'   # visualizer palette: mono | spectrum | indigo
     Art     = $null       # current album art Image (disposed on swap)
 }
@@ -254,13 +255,13 @@ foreach ($b in @($btnPrev, $btnPlay, $btnNext, $btnStop)) {
 
 # Shuffle / repeat + volume
 $rowY2 = $rowY + 76
-$pillShuffle = New-TogglePill -Text 'SHUFFLE'
+$pillShuffle = New-TogglePill -Text 'SHUFFLE' -Width 88
 $pillShuffle.Location = [System.Drawing.Point]::new($pad, $rowY2)
 $pillShuffle.Anchor = 'Top,Left'
 $form.Controls.Add($pillShuffle)
 
-$pillRepeat = New-TogglePill -Text 'REPEAT'
-$pillRepeat.Location = [System.Drawing.Point]::new($pad + 90, $rowY2)
+$pillRepeat = New-TogglePill -Text 'REPEAT OFF' -Width 112
+$pillRepeat.Location = [System.Drawing.Point]::new($pad + 96, $rowY2)
 $pillRepeat.Anchor = 'Top,Left'
 $form.Controls.Add($pillRepeat)
 
@@ -501,11 +502,48 @@ function Invoke-Next {
         Invoke-PlayIndex $j
     } elseif ($script:State.Index -lt $n - 1) {
         Invoke-PlayIndex ($script:State.Index + 1)
-    } elseif ($script:State.Repeat) {
+    } elseif ($script:State.RepeatMode -eq 'all') {
         Invoke-PlayIndex 0
     } else {
         $script:State.Active = $false; Sync-PlayGlyph
     }
+}
+
+function Invoke-TrackEnded {
+    if ($script:State.RepeatMode -eq 'one' -and $script:State.Index -ge 0) {
+        Invoke-PlayIndex $script:State.Index
+        return
+    }
+    $script:State.Active = $false
+    Invoke-Next
+}
+
+function Set-RepeatMode {
+    param([string]$Mode)
+    if (@('off','all','one') -notcontains $Mode) { $Mode = 'off' }
+    $script:State.RepeatMode = $Mode
+    $script:State.Repeat = ($Mode -ne 'off')
+    switch ($Mode) {
+        'all' { $pillRepeat.Label = 'REPEAT ALL'; $pillRepeat.Active = $true }
+        'one' { $pillRepeat.Label = 'REPEAT ONE'; $pillRepeat.Active = $true }
+        default { $pillRepeat.Label = 'REPEAT OFF'; $pillRepeat.Active = $false }
+    }
+    Update-PillVisual $pillRepeat
+    try {
+        $repeatTip.SetToolTip($pillRepeat, "Repeat: $Mode. Click to cycle Off -> All -> One.")
+        if ($script:miRepeatOff) { $script:miRepeatOff.Checked = ($Mode -eq 'off') }
+        if ($script:miRepeatAll) { $script:miRepeatAll.Checked = ($Mode -eq 'all') }
+        if ($script:miRepeatOne) { $script:miRepeatOne.Checked = ($Mode -eq 'one') }
+    } catch {}
+}
+
+function Cycle-RepeatMode {
+    switch ($script:State.RepeatMode) {
+        'off' { Set-RepeatMode 'all' }
+        'all' { Set-RepeatMode 'one' }
+        default { Set-RepeatMode 'off' }
+    }
+    Save-Config
 }
 
 function Invoke-Prev {
@@ -662,21 +700,26 @@ function Expand-Node {
 }
 
 $script:ConfigPath = Join-Path $ROOT 'cadence.config.json'
-$script:Config     = @{ roots = @(); volume = 0.8; shuffle = $false; repeat = $false; palette = 'mono'; onlineArtLookup = $true }
+$script:Config     = @{ roots = @(); volume = 0.8; shuffle = $false; repeat = $false; repeatMode = 'off'; palette = 'mono'; onlineArtLookup = $true }
 
 function Load-Config {
     if (-not (Test-Path -LiteralPath $script:ConfigPath)) { return }
     try {
         $json = Get-Content -LiteralPath $script:ConfigPath -Raw -ErrorAction Stop | ConvertFrom-Json
+        $rm = 'off'
+        if ($json.PSObject.Properties['repeatMode'] -and $json.repeatMode) { $rm = [string]$json.repeatMode }
+        elseif ($json.repeat) { $rm = 'all' }
+        if (@('off','all','one') -notcontains $rm) { $rm = 'off' }
         $script:Config = @{
             roots   = @($json.roots | Where-Object { $_ })
             volume  = if ($null -ne $json.volume) { [double]$json.volume } else { 0.8 }
             shuffle = [bool]$json.shuffle
-            repeat  = [bool]$json.repeat
+            repeat  = ($rm -ne 'off')
+            repeatMode = $rm
             palette = if ($json.palette) { [string]$json.palette } else { 'mono' }
             onlineArtLookup = if ($null -ne $json.onlineArtLookup) { [bool]$json.onlineArtLookup } else { $true }
         }
-    } catch { $script:Config = @{ roots = @(); volume = 0.8; shuffle = $false; repeat = $false; palette = 'mono'; onlineArtLookup = $true } }
+    } catch { $script:Config = @{ roots = @(); volume = 0.8; shuffle = $false; repeat = $false; repeatMode = 'off'; palette = 'mono'; onlineArtLookup = $true } }
 }
 
 function Save-Config {
@@ -685,7 +728,8 @@ function Save-Config {
             roots   = @($script:Config.roots)
             volume  = [double]$script:Engine.Volume
             shuffle = [bool]$script:State.Shuffle
-            repeat  = [bool]$script:State.Repeat
+            repeat  = ($script:State.RepeatMode -ne 'off')
+            repeatMode = [string]$script:State.RepeatMode
             palette = [string]$script:State.VisPalette
             onlineArtLookup = [bool]$script:Engine.OnlineArtLookup
         } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $script:ConfigPath -Encoding UTF8
@@ -836,16 +880,19 @@ $btnNext.Add_Click({ Invoke-Next })
 $btnPrev.Add_Click({ Invoke-Prev })
 $btnStop.Add_Click({ Stop-Playback; $script:State.Active = $false; Sync-PlayGlyph })
 
+$shuffleTip = [System.Windows.Forms.ToolTip]::new()
+$repeatTip  = [System.Windows.Forms.ToolTip]::new()
+try { $shuffleTip.SetToolTip($pillShuffle, 'Shuffle: off. Click to toggle.') } catch {}
+try { $repeatTip.SetToolTip($pillRepeat, 'Repeat: off. Click to cycle Off -> All -> One.') } catch {}
+
 $pillShuffle.Add_Click({
     $script:State.Shuffle = -not $script:State.Shuffle
     $pillShuffle.Active = $script:State.Shuffle; Update-PillVisual $pillShuffle
+    try { $shuffleTip.SetToolTip($pillShuffle, ('Shuffle: ' + $(if ($script:State.Shuffle) { 'on' } else { 'off' }) + '. Click to toggle.')) } catch {}
+    if ($script:miShuffle) { $script:miShuffle.Checked = [bool]$script:State.Shuffle }
     Save-Config
 })
-$pillRepeat.Add_Click({
-    $script:State.Repeat = -not $script:State.Repeat
-    $pillRepeat.Active = $script:State.Repeat; Update-PillVisual $pillRepeat
-    Save-Config
-})
+$pillRepeat.Add_Click({ Cycle-RepeatMode })
 
 # Drag-and-drop files / folders / playlists onto the window.
 $form.AllowDrop = $true
@@ -860,10 +907,27 @@ $form.Add_DragDrop({
     try { Add-Dropped ($e.Data.GetData([System.Windows.Forms.DataFormats]::FileDrop)) } catch {}
 })
 
-# Queue context menu: export as M3U.
+# Queue context menu: playback options + export as M3U.
 $listMenu = [System.Windows.Forms.ContextMenuStrip]::new()
 $listMenu.BackColor = $script:Theme.Panel
 $listMenu.ForeColor = $script:Theme.Text
+$script:miShuffle = $listMenu.Items.Add('Shuffle')
+$script:miShuffle.Add_Click({
+    $script:State.Shuffle = -not $script:State.Shuffle
+    $pillShuffle.Active = $script:State.Shuffle; Update-PillVisual $pillShuffle
+    try { $shuffleTip.SetToolTip($pillShuffle, ('Shuffle: ' + $(if ($script:State.Shuffle) { 'on' } else { 'off' }) + '. Click to toggle.')) } catch {}
+    $script:miShuffle.Checked = [bool]$script:State.Shuffle
+    Save-Config
+})
+$repeatMenu = [System.Windows.Forms.ToolStripMenuItem]::new('Repeat mode')
+$script:miRepeatOff = $repeatMenu.DropDownItems.Add('Off')
+$script:miRepeatAll = $repeatMenu.DropDownItems.Add('All')
+$script:miRepeatOne = $repeatMenu.DropDownItems.Add('One')
+$script:miRepeatOff.Add_Click({ Set-RepeatMode 'off'; Save-Config })
+$script:miRepeatAll.Add_Click({ Set-RepeatMode 'all'; Save-Config })
+$script:miRepeatOne.Add_Click({ Set-RepeatMode 'one'; Save-Config })
+$listMenu.Items.Add($repeatMenu) | Out-Null
+$listMenu.Items.Add('-') | Out-Null
 $miExport = $listMenu.Items.Add('Export queue as M3U...')
 $miExport.Add_Click({ Export-QueueM3U })
 $list.ContextMenuStrip = $listMenu
@@ -991,7 +1055,7 @@ $btnClear.Add_Click({
     Sync-PlayGlyph
 })
 
-# Keyboard: Space = play/pause, arrows = prev/next, M = mute toggle
+# Keyboard: Space = play/pause, arrows = prev/next, M = mute toggle, S/R = shuffle/repeat
 $script:lastVol = $script:Engine.Volume
 $form.Add_KeyDown({
     param($s, $e)
@@ -1002,6 +1066,15 @@ $form.Add_KeyDown({
         'MediaPlayPause' { Toggle-PlayPause; $e.Handled = $true }
         'Right'      { if ($e.Control) { Invoke-Next } }
         'Left'       { if ($e.Control) { Invoke-Prev } }
+        'S' {
+            $script:State.Shuffle = -not $script:State.Shuffle
+            $pillShuffle.Active = $script:State.Shuffle; Update-PillVisual $pillShuffle
+            try { $shuffleTip.SetToolTip($pillShuffle, ('Shuffle: ' + $(if ($script:State.Shuffle) { 'on' } else { 'off' }) + '. Click to toggle.')) } catch {}
+            if ($script:miShuffle) { $script:miShuffle.Checked = [bool]$script:State.Shuffle }
+            Save-Config
+            $e.Handled = $true
+        }
+        'R' { Cycle-RepeatMode; $e.Handled = $true }
         'M' {
             if ($script:Engine.Volume -gt 0) { $script:lastVol = $script:Engine.Volume; Set-Volume 0 }
             else { Set-Volume $script:lastVol }
@@ -1018,9 +1091,8 @@ $timer.Add_Tick({
     if (-not $script:State.Active) { return }
     $st = Get-PlaybackState
     if ($st -eq 'Stopped') {
-        # Reached natural end -> advance.
-        $script:State.Active = $false
-        Invoke-Next
+        # Reached natural end -> repeat-one or advance.
+        Invoke-TrackEnded
         return
     }
     if (-not $seek.Dragging) {
@@ -1103,15 +1175,16 @@ $form.Add_Resize({
 Load-Config
 Build-Tree
 
-# Apply persisted settings (volume / shuffle / repeat / visualizer palette).
+# Apply persisted settings (volume / shuffle / repeat mode / visualizer palette).
 try {
     Set-Volume ([double]$script:Config.volume)
     $vol.Fraction = $script:Engine.Volume; $vol.Invalidate()
     $script:lastVol = $script:Engine.Volume
     $script:State.Shuffle = [bool]$script:Config.shuffle
     $pillShuffle.Active = $script:State.Shuffle; Update-PillVisual $pillShuffle
-    $script:State.Repeat = [bool]$script:Config.repeat
-    $pillRepeat.Active = $script:State.Repeat; Update-PillVisual $pillRepeat
+    if ($script:miShuffle) { $script:miShuffle.Checked = [bool]$script:State.Shuffle }
+    try { $shuffleTip.SetToolTip($pillShuffle, ('Shuffle: ' + $(if ($script:State.Shuffle) { 'on' } else { 'off' }) + '. Click to toggle.')) } catch {}
+    Set-RepeatMode ([string]$script:Config.repeatMode)
     Set-VisPalette ([string]$script:Config.palette)
     Set-AlbumArtOnlineLookup ([bool]$script:Config.onlineArtLookup)
     $miOnlineArt.Checked = [bool]$script:Config.onlineArtLookup

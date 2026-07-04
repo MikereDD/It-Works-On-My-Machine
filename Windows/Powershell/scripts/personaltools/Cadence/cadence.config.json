@@ -1,10 +1,11 @@
 {
   "roots": [
-    "P:\\Music"
+    "G:\\Rip\\CD\\tracks\\The Mike Gunn\\Coduh A Collection of Live & Studio Tracks"
   ],
   "volume": 0.8,
   "shuffle": false,
   "repeat": false,
   "palette": "mono",
-  "onlineArtLookup": true
+  "onlineArtLookup": true,
+  "repeatMode": "off"
 }

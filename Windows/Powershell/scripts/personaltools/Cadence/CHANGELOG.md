@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.4] - 2026-07-04
+
+Shuffle and repeat controls pass.
+
+### Added
+- Repeat is now a three-state mode: Off, All, and One. The repeat pill cycles
+  through the modes and updates its label so the current mode is visible.
+- Right-click the queue to toggle Shuffle or choose a specific Repeat mode.
+- Keyboard shortcuts: `S` toggles Shuffle and `R` cycles Repeat mode.
+
+### Changed
+- Repeat state is persisted as `repeatMode` in `cadence.config.json` while still
+  reading the old boolean `repeat` setting for compatibility.
+
+
 ## [0.4.3] - 2026-07-03
 
 Album art fallback pass for libraries whose tracks have metadata but no embedded
@@ -187,6 +202,7 @@ visualizer, a real library browser, playlist plumbing, the Windows PowerShell
 - `New-Visualizer` stub with the FFT integration recipe documented inline.
 
 [Unreleased]: https://github.com/MikereDD/It-Works-On-My-Machine/commits/main
+[0.4.4]: https://github.com/MikereDD/It-Works-On-My-Machine/tree/main/Windows/Powershell/scripts/personaltools/Cadence
 [0.4.3]: https://github.com/MikereDD/It-Works-On-My-Machine/tree/main/Windows/Powershell/scripts/personaltools/Cadence
 [0.4.2]: https://github.com/MikereDD/It-Works-On-My-Machine/tree/main/Windows/Powershell/scripts/personaltools/Cadence
 [0.4.1]: https://github.com/MikereDD/It-Works-On-My-Machine/tree/main/Windows/Powershell/scripts/personaltools/Cadence
