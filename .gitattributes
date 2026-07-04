@@ -1,42 +1,68 @@
-# Auto-detect text files and normalize to LF in the repo.
+# Auto-detect text files and normalize line endings in the repo.
 * text=auto
 
 # Shell scripts run on Linux / the Pi — keep them LF everywhere,
 # regardless of any machine's core.autocrlf setting.
-*.sh        text eol=lf
-*.bash      text eol=lf
+*.sh             text eol=lf
+*.bash           text eol=lf
 
 # Extension-less scripts.
-infocat-pi  text eol=lf
+infocat-pi       text eol=lf
 
-# Extension-less shell config in ~/.bash.d/ (matches at any repo depth).
-**/bash.d/* text eol=lf
-aliases     text eol=lf
-env         text eol=lf
-motd        text eol=lf
-prompt      text eol=lf
-display     text eol=lf
+# Extension-less shell config in ~/.bash.d/ matches at any repo depth.
+**/bash.d/*      text eol=lf
+aliases          text eol=lf
+env              text eol=lf
+motd             text eol=lf
+prompt           text eol=lf
+display          text eol=lf
 
-# Vim config (extension-less vimrc + .vim files).
-vimrc       text eol=lf
-*.vim       text eol=lf
+# Vim config.
+vimrc            text eol=lf
+*.vim            text eol=lf
 
 # Other dotfile configs that must stay LF on Linux.
-*.conf      text eol=lf
-.xinitrc    text eol=lf
-.bashrc     text eol=lf
-.bash_profile text eol=lf
+*.conf           text eol=lf
+.xinitrc         text eol=lf
+.bashrc          text eol=lf
+.bash_profile    text eol=lf
 
-# Library/config that gets sourced.
-*.ps1       text eol=crlf
+# Repo text/config files — keep LF for clean cross-platform diffs.
+*.md             text eol=lf
+*.txt            text eol=lf
+*.json           text eol=lf
+*.yml            text eol=lf
+*.yaml           text eol=lf
+*.html           text eol=lf
+*.css            text eol=lf
+*.js             text eol=lf
 
-# Treat common binaries as binary (no EOL munging).
-*.png       binary
-*.jpg       binary
-*.jpeg      binary
-*.gif       binary
-*.webp      binary
-*.pdf       binary
-*.mkv       binary
-*.mp4       binary
-*.m2ts      binary
+# Windows scripts — keep CRLF in the working tree.
+*.ps1            text eol=crlf
+*.psm1           text eol=crlf
+*.psd1           text eol=crlf
+*.vbs            text eol=crlf
+*.bat            text eol=crlf
+*.cmd            text eol=crlf
+
+# Treat common binaries as binary, with no line-ending conversion.
+*.png            binary
+*.jpg            binary
+*.jpeg           binary
+*.gif            binary
+*.webp           binary
+*.ico            binary
+*.pdf            binary
+*.zip            binary
+*.7z             binary
+*.rar            binary
+*.exe            binary
+*.dll            binary
+*.mkv            binary
+*.mp4            binary
+*.m2ts           binary
+*.iso            binary
+*.flac           binary
+*.mp3            binary
+*.wav            binary
+*.cue            text eol=crlf
