@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.9] - 2026-07-04
+
+Queue right-click polish pass.
+
+### Added
+- Queue right-click menu now supports `Play selected`, `Remove selected from queue`,
+  `Open file location`, `Copy file path`, `Track info...`, and `Clear queue`.
+- Right-clicking a queue row now selects the row under the pointer before opening
+  the menu.
+- Added `Delete` to remove the selected queue item and `Ctrl+C` to copy its full
+  file path.
+
+### Changed
+- Queue right-click actions now enable/disable based on whether a track or queue
+  is available, so empty-list actions do not pretend to work.
+- README and HELP now document the expanded queue tools.
+
 ## [0.4.8] - 2026-07-04
 
 Last-session restore pass.
@@ -265,6 +282,8 @@ visualizer, a real library browser, playlist plumbing, the Windows PowerShell
 - `New-Visualizer` stub with the FFT integration recipe documented inline.
 
 [Unreleased]: https://github.com/MikereDD/It-Works-On-My-Machine/commits/main
+[0.4.9]: https://github.com/MikereDD/It-Works-On-My-Machine/tree/main/Windows/Powershell/scripts/personaltools/Cadence
+[0.4.8]: https://github.com/MikereDD/It-Works-On-My-Machine/tree/main/Windows/Powershell/scripts/personaltools/Cadence
 [0.4.7]: https://github.com/MikereDD/It-Works-On-My-Machine/tree/main/Windows/Powershell/scripts/personaltools/Cadence
 [0.4.6]: https://github.com/MikereDD/It-Works-On-My-Machine/tree/main/Windows/Powershell/scripts/personaltools/Cadence
 [0.4.5]: https://github.com/MikereDD/It-Works-On-My-Machine/tree/main/Windows/Powershell/scripts/personaltools/Cadence

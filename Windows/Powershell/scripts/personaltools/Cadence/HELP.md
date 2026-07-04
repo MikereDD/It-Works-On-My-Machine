@@ -1,7 +1,7 @@
 # Cadence Help
 
 Cadence is a small local music player with a dark owner-drawn interface, a real
-library tree, a queue, saved playlists, album art, shuffle/repeat controls, last-session restore, and a live visualizer.
+library tree, a queue, saved playlists, album art, shuffle/repeat controls, last-session restore, queue right-click tools, and a live visualizer.
 
 This file explains the visible buttons, right-click menus, and keyboard
 shortcuts. Press `F1` or click the **Help** button in the app to open it.
@@ -131,12 +131,18 @@ Queue right-click options:
 
 | Option | What it does |
 |--------|--------------|
+| Play selected | Play the selected queue item. |
+| Remove selected from queue | Remove only the selected item. If it is currently playing, playback stops and the next nearby item is selected. |
+| Open file location | Open File Explorer with the selected audio file highlighted. |
+| Copy file path | Copy the selected track's full path to the clipboard. |
+| Track info... | Show title, artist, album, duration, art source, file size, modified date, and full path. |
 | Shuffle | Toggle shuffle on or off. |
 | Repeat mode | Choose Off, All, or One. |
 | Save current queue as playlist... | Save the queue as a named Cadence playlist in `cadence.playlists`. |
 | Export queue as M3U file... | Save the current queue as a standalone `.m3u` / `.m3u8` playlist. |
+| Clear queue | Remove all queue entries. |
 
-The Clear button removes all queue entries.
+The Clear button also removes all queue entries.
 
 ## Playlists
 
@@ -200,6 +206,8 @@ The version stamp at the bottom-right shows the running Cadence build.
 | `R` | Cycle repeat mode: Off -> All -> One. |
 | `Ctrl+S` | Save the current queue as a named Cadence playlist. |
 | `Ctrl+O` | Open a playlist file and replace the queue. |
+| `Delete` | Remove the selected queue item. |
+| `Ctrl+C` | Copy the selected queue item path. |
 | `F1` | Open `HELP.md`. |
 | `Esc` while in search box | Clear queue search. |
 | Type in search box | Filter the queue. |

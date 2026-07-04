@@ -8,7 +8,7 @@ A sleek, fully owner-drawn local audio player for Windows — monochrome
 Material-style UI, NAudio engine, live FFT visualizer, and a real library
 browser. Part of the `personaltools/` toolkit.
 
-**Latest: v0.4.8** · [Changelog](https://github.com/MikereDD/It-Works-On-My-Machine/blob/main/Windows/Powershell/scripts/personaltools/Cadence/CHANGELOG.md)
+**Latest: v0.4.9** · [Changelog](https://github.com/MikereDD/It-Works-On-My-Machine/blob/main/Windows/Powershell/scripts/personaltools/Cadence/CHANGELOG.md)
 
 ## Screenshots
 
@@ -28,8 +28,8 @@ browser. Part of the `personaltools/` toolkit.
 - **Queue search** — a live filter box narrows the queue to matching tracks as
   you type; playback stays correct while filtered.
 - **Playlist queue** — shuffle, repeat off/all/one, auto-advance, full-path dedupe,
-  M3U / M3U8 import, drag-and-drop of files / folders / playlists, and app-managed
-  saved playlists in `cadence.playlists`.
+  M3U / M3U8 import, drag-and-drop of files / folders / playlists, app-managed
+  saved playlists in `cadence.playlists`, and a polished queue right-click menu.
 - **Remembers your setup** — saved library roots plus volume, shuffle, repeat mode,
   visualizer palette, queue, selected track, and last position persist across launches.
 - **Monochrome Material UI** — tonal pill buttons, a FAB transport, toggle
@@ -75,18 +75,23 @@ For the full button guide, right-click menus, album-art behavior, and keyboard s
 | `R` | Cycle repeat mode: Off -> All -> One |
 | `Ctrl+S` | Save the current queue as a named Cadence playlist |
 | `Ctrl+O` | Open a playlist file and replace the queue |
+| `Delete` | Remove the selected queue item |
+| `Ctrl+C` | Copy the selected queue item path |
 | `F1` | Open `HELP.md` |
 | Type in the search box | Live-filter the queue |
 | `Esc` (in search box) | Clear the filter |
 | Double-click file / `.m3u` | Play |
 | Drag files / folders onto the window | Add to queue |
-| Right-click queue | Toggle shuffle, choose repeat mode, save the queue as a Cadence playlist, or export queue as M3U |
+| Right-click queue | Play/remove selected tracks, open file location, copy path, show track info, toggle shuffle/repeat, save/export playlists, or clear the queue |
 | Right-click visualizer | Switch palette (mono / spectrum / indigo) |
 | Right-click album art | Choose a local cover image, retry online lookup, or toggle online art lookup |
 | Right-click folder (tree) | Add recursively |
 | Library button | Add / remove / clear saved roots |
 | Playlists button | New playlist, open playlist, save current queue, load saved playlists, toggle session restore, or open the playlists folder |
 | Help button | Open `HELP.md`, About Cadence, the app folder, or the startup log |
+
+## Queue tools
+Right-click a queue item for local-library actions: play it, remove it from the queue, open its file location in Explorer, copy the full path, or show track metadata. The same menu also keeps the queue-wide actions: shuffle, repeat mode, save current queue as a Cadence playlist, export M3U, and clear queue.
 
 ## Album art
 Cadence first uses embedded artwork from the audio tag. It prefers a real front cover, then tries every other embedded picture until one decodes. If no embedded artwork is available, it looks near the playing file for common sidecar names such as `cover.jpg`, `folder.jpg`, `front.png`, `album.png`, `albumart.jpg`, `artwork.jpg`, `AlbumArt.jpg`, `AlbumArtSmall.jpg`, Windows Media Player `AlbumArt_*.jpg`, and one-image album folders.

@@ -1,5 +1,5 @@
 # ============================================================================
-#  cadence.ps1  -  Cadence  v0.4.8
+#  cadence.ps1  -  Cadence  v0.4.9
 #  A sleek local audio player (WinForms, owner-drawn, NAudio backend).
 #  Part of personaltools/ - mirrors the media-encoder-gui.ps1 layout:
 #    main GUI  +  dot-sourced engine/ui modules.
@@ -82,7 +82,7 @@ try {
 })
 
 $APP_NAME    = 'Cadence'
-$APP_VERSION = '0.4.8'
+$APP_VERSION = '0.4.9'
 $APP_TITLE   = "$APP_NAME v$APP_VERSION"
 $ROOT        = $PSScriptRoot
 $LIB         = Join-Path $ROOT 'lib'
@@ -818,16 +818,8 @@ function Clear-Queue {
     $script:State.Items.Clear(); $script:State.Seen.Clear(); $list.Items.Clear()
     $script:State.ViewMap.Clear(); $script:State.Filter = ''
     if ($script:SearchBox) { $script:SearchBox.Text = '' }
-    $script:State.Index = -1; $script:State.Active = $false
-    $lblTitle.Text = 'Nothing playing'; $lblArtist.Text = ''; $lblAlbum.Text = ''
-    $oldArt = $script:State.Art
-    $art.Image = $null
-    $script:State.Art = $null
-    if ($oldArt) { try { $oldArt.Dispose() } catch {} }
-    Set-AlbumArtPlaceholder
-    $lblPos.Text = '0:00'; $lblDur.Text = '0:00'
-    $seek.Fraction = 0; $seek.Invalidate(); $form.Text = $APP_TITLE
-    Sync-PlayGlyph
+    Reset-NowPlayingDisplay
+    $form.Text = $APP_TITLE
     if (-not $Silent) { $form.Text = "$APP_TITLE  -  queue cleared" }
 }
 
@@ -1203,6 +1195,173 @@ function Get-PathIndex {
     -1
 }
 
+
+function Get-SelectedQueueIndex {
+    $vr = $list.SelectedIndex
+    if ($vr -lt 0 -or $vr -ge $script:State.ViewMap.Count) { return -1 }
+    return [int]$script:State.ViewMap[$vr]
+}
+
+function Get-SelectedQueuePath {
+    $i = Get-SelectedQueueIndex
+    if ($i -lt 0 -or $i -ge $script:State.Items.Count) { return $null }
+    return [string]$script:State.Items[$i]
+}
+
+function Select-QueueModelIndex {
+    param([int]$Index)
+    if ($Index -lt 0) { try { $list.ClearSelected() } catch {}; return }
+    $vr = $script:State.ViewMap.IndexOf($Index)
+    if ($vr -ge 0 -and $vr -lt $list.Items.Count) { $list.SelectedIndex = $vr }
+    else { try { $list.ClearSelected() } catch {} }
+}
+
+function Reset-NowPlayingDisplay {
+    $script:State.Index = -1
+    $script:State.Active = $false
+    $lblTitle.Text = 'Nothing playing'; $lblArtist.Text = ''; $lblAlbum.Text = ''
+    $oldArt = $script:State.Art
+    $art.Image = $null
+    $script:State.Art = $null
+    if ($oldArt) { try { $oldArt.Dispose() } catch {} }
+    Set-AlbumArtPlaceholder
+    $lblPos.Text = '0:00'; $lblDur.Text = '0:00'
+    $seek.Fraction = 0; $seek.Invalidate()
+    Sync-PlayGlyph
+}
+
+function Remove-QueueIndex {
+    param([int]$Index)
+    if ($Index -lt 0 -or $Index -ge $script:State.Items.Count) { return }
+
+    $removedPath = [string]$script:State.Items[$Index]
+    $removedName = [IO.Path]::GetFileNameWithoutExtension($removedPath)
+    $oldCurrent  = [int]$script:State.Index
+    $wasCurrent  = ($Index -eq $oldCurrent)
+
+    if ($wasCurrent) { try { Stop-Playback; Close-Track } catch {} }
+
+    [void]$script:State.Seen.Remove($removedPath)
+    $script:State.Items.RemoveAt($Index)
+
+    if ($script:State.Items.Count -eq 0) {
+        $script:State.ViewMap.Clear()
+        $list.Items.Clear()
+        Reset-NowPlayingDisplay
+        $form.Text = "$APP_TITLE  -  removed: $removedName"
+        Save-Config
+        return
+    }
+
+    if ($wasCurrent) {
+        $script:State.Active = $false
+        $script:State.Index = [Math]::Min($Index, $script:State.Items.Count - 1)
+        Sync-List
+        Select-QueueModelIndex $script:State.Index
+        try { Update-NowPlaying -Path ([string]$script:State.Items[$script:State.Index]) } catch {}
+        $lblPos.Text = '0:00'; $lblDur.Text = '0:00'
+        $seek.Fraction = 0; $seek.Invalidate()
+        Sync-PlayGlyph
+    } else {
+        if ($oldCurrent -gt $Index) { $script:State.Index = $oldCurrent - 1 }
+        else { $script:State.Index = $oldCurrent }
+        Sync-List
+        if ($script:State.Index -ge 0) {
+            Select-QueueModelIndex $script:State.Index
+        } else {
+            $target = [Math]::Min($Index, $script:State.Items.Count - 1)
+            Select-QueueModelIndex $target
+        }
+    }
+
+    $form.Text = "$APP_TITLE  -  removed: $removedName"
+    Save-Config
+}
+
+function Remove-SelectedQueueItem {
+    $i = Get-SelectedQueueIndex
+    if ($i -ge 0) { Remove-QueueIndex $i }
+}
+
+function Open-SelectedQueueFileLocation {
+    $path = Get-SelectedQueuePath
+    if (-not $path) { return }
+    try {
+        [System.Diagnostics.Process]::Start('explorer.exe', "/select,`"$path`"") | Out-Null
+    } catch {
+        try { Start-Process -FilePath ([IO.Path]::GetDirectoryName($path)) } catch {}
+    }
+}
+
+function Copy-SelectedQueuePath {
+    $path = Get-SelectedQueuePath
+    if (-not $path) { return }
+    try {
+        [System.Windows.Forms.Clipboard]::SetText($path)
+        $form.Text = "$APP_TITLE  -  copied path"
+    } catch {
+        $form.Text = "$APP_TITLE  -  copy failed"
+    }
+}
+
+function Format-FileSize {
+    param([double]$Bytes)
+    if ($Bytes -ge 1GB) { return ('{0:N2} GB' -f ($Bytes / 1GB)) }
+    if ($Bytes -ge 1MB) { return ('{0:N1} MB' -f ($Bytes / 1MB)) }
+    if ($Bytes -ge 1KB) { return ('{0:N1} KB' -f ($Bytes / 1KB)) }
+    return ('{0:N0} bytes' -f $Bytes)
+}
+
+function Show-SelectedQueueTrackInfo {
+    $path = Get-SelectedQueuePath
+    if (-not $path) { return }
+
+    $meta = $null
+    try { $meta = Get-TrackMetadata -Path $path } catch {}
+    try {
+        $fi = [System.IO.FileInfo]::new($path)
+        $duration = ''
+        if ($meta -and $meta.Duration) { $duration = Format-Time $meta.Duration }
+        $artSource = if ($meta -and $meta.ArtSource) { [string]$meta.ArtSource } else { 'none found' }
+        $msg = @"
+Title: $(if ($meta) { $meta.Title } else { [IO.Path]::GetFileNameWithoutExtension($path) })
+Artist: $(if ($meta) { $meta.Artist } else { '' })
+Album: $(if ($meta) { $meta.Album } else { '' })
+Duration: $duration
+Album art: $artSource
+
+File: $($fi.Name)
+Folder: $($fi.DirectoryName)
+Size: $(Format-FileSize $fi.Length)
+Modified: $($fi.LastWriteTime)
+
+Full path:
+$path
+"@
+        [System.Windows.Forms.MessageBox]::Show($msg.Trim(), 'Track info', 'OK', 'Information') | Out-Null
+    } catch {
+        [System.Windows.Forms.MessageBox]::Show($path, 'Track path', 'OK', 'Information') | Out-Null
+    } finally {
+        if ($meta -and $meta.Art) { try { $meta.Art.Dispose() } catch {} }
+    }
+}
+
+function Update-QueueContextMenu {
+    $hasItem  = ((Get-SelectedQueueIndex) -ge 0)
+    $hasQueue = ($script:State.Items.Count -gt 0)
+    try {
+        if ($script:miQueuePlay)         { $script:miQueuePlay.Enabled = $hasItem }
+        if ($script:miQueueRemove)       { $script:miQueueRemove.Enabled = $hasItem }
+        if ($script:miQueueOpenLocation) { $script:miQueueOpenLocation.Enabled = $hasItem }
+        if ($script:miQueueCopyPath)     { $script:miQueueCopyPath.Enabled = $hasItem }
+        if ($script:miQueueTrackInfo)    { $script:miQueueTrackInfo.Enabled = $hasItem }
+        if ($script:miQueueClear)        { $script:miQueueClear.Enabled = $hasQueue }
+        if ($script:miQueueSavePlaylist) { $script:miQueueSavePlaylist.Enabled = $hasQueue }
+        if ($script:miQueueExport)       { $script:miQueueExport.Enabled = $hasQueue }
+        if ($script:miShuffle)           { $script:miShuffle.Checked = [bool]$script:State.Shuffle }
+    } catch {}
+}
+
 function Add-FolderToQueue {
     param($FolderPath)
     if (-not $FolderPath) { return }
@@ -1304,10 +1463,25 @@ $form.Add_DragDrop({
     try { Add-Dropped ($e.Data.GetData([System.Windows.Forms.DataFormats]::FileDrop)) } catch {}
 })
 
-# Queue context menu: playback options + export as M3U.
+# Queue context menu: item actions, playback options, and playlist export.
 $listMenu = [System.Windows.Forms.ContextMenuStrip]::new()
 $listMenu.BackColor = $script:Theme.Panel
 $listMenu.ForeColor = $script:Theme.Text
+$script:miQueuePlay = $listMenu.Items.Add('Play selected')
+$script:miQueuePlay.Add_Click({
+    $i = Get-SelectedQueueIndex
+    if ($i -ge 0) { Invoke-PlayIndex $i }
+})
+$script:miQueueRemove = $listMenu.Items.Add('Remove selected from queue')
+$script:miQueueRemove.Add_Click({ Remove-SelectedQueueItem })
+$listMenu.Items.Add('-') | Out-Null
+$script:miQueueOpenLocation = $listMenu.Items.Add('Open file location')
+$script:miQueueOpenLocation.Add_Click({ Open-SelectedQueueFileLocation })
+$script:miQueueCopyPath = $listMenu.Items.Add('Copy file path')
+$script:miQueueCopyPath.Add_Click({ Copy-SelectedQueuePath })
+$script:miQueueTrackInfo = $listMenu.Items.Add('Track info...')
+$script:miQueueTrackInfo.Add_Click({ Show-SelectedQueueTrackInfo })
+$listMenu.Items.Add('-') | Out-Null
 $script:miShuffle = $listMenu.Items.Add('Shuffle')
 $script:miShuffle.Add_Click({
     $script:State.Shuffle = -not $script:State.Shuffle
@@ -1325,11 +1499,23 @@ $script:miRepeatAll.Add_Click({ Set-RepeatMode 'all'; Save-Config })
 $script:miRepeatOne.Add_Click({ Set-RepeatMode 'one'; Save-Config })
 $listMenu.Items.Add($repeatMenu) | Out-Null
 $listMenu.Items.Add('-') | Out-Null
-$miSaveQueuePlaylist = $listMenu.Items.Add('Save current queue as playlist...')
-$miSaveQueuePlaylist.Add_Click({ Save-QueueAsSavedPlaylist })
-$miExport = $listMenu.Items.Add('Export queue as M3U file...')
-$miExport.Add_Click({ Export-QueueM3U })
+$script:miQueueSavePlaylist = $listMenu.Items.Add('Save current queue as playlist...')
+$script:miQueueSavePlaylist.Add_Click({ Save-QueueAsSavedPlaylist })
+$script:miQueueExport = $listMenu.Items.Add('Export queue as M3U file...')
+$script:miQueueExport.Add_Click({ Export-QueueM3U })
+$script:miQueueClear = $listMenu.Items.Add('Clear queue')
+$script:miQueueClear.Add_Click({ Clear-Queue })
+$listMenu.Add_Opening({ Update-QueueContextMenu })
 $list.ContextMenuStrip = $listMenu
+
+$list.Add_MouseDown({
+    param($s, $e)
+    if ($e.Button -eq [System.Windows.Forms.MouseButtons]::Right) {
+        $idx = $list.IndexFromPoint([System.Drawing.Point]::new($e.X, $e.Y))
+        if ($idx -ge 0) { $list.SelectedIndex = $idx }
+        else { try { $list.ClearSelected() } catch {} }
+    }
+})
 
 # Visualizer context menu: palette picker.
 $visMenu = [System.Windows.Forms.ContextMenuStrip]::new()
@@ -1498,6 +1684,8 @@ $form.Add_KeyDown({
             $e.Handled = $true
         }
         'O' { if ($e.Control) { Open-PlaylistFileDialog $true; $e.Handled = $true } }
+        'Delete' { Remove-SelectedQueueItem; $e.Handled = $true }
+        'C' { if ($e.Control) { Copy-SelectedQueuePath; $e.Handled = $true } }
         'R' { Cycle-RepeatMode; $e.Handled = $true }
         'M' {
             if ($script:Engine.Volume -gt 0) { $script:lastVol = $script:Engine.Volume; Set-Volume 0 }
