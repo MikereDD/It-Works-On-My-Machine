@@ -3,3 +3,5 @@ cadence.config.json
 cadence-startup.log
 cadence.art-cache/
 cadence.playlists/
+cadence.config.json.tmp
+cadence.config.bad-*.json

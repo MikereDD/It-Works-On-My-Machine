@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-04
+
+Stability and polish release. No major feature push; this pass tightens the app
+so the existing player features are safer to use day to day.
+
+### Changed
+- Bumped Cadence to `v0.5.0` in the window title and footer stamp.
+- Config loading now validates and normalizes saved values, including volume,
+  repeat mode, visualizer palette, booleans, roots, and session data.
+- Config saves are now written atomically through a temporary file to reduce the
+  chance of a half-written `cadence.config.json` after a crash or forced close.
+- Playlist export/save now verifies that local tracks still exist before writing
+  the M3U file and creates the destination folder when needed.
+- Footer layout is recalculated on resize so bottom buttons and the version
+  stamp keep consistent spacing.
+- README and HELP now document the stability behavior and runtime backup files.
+
+### Fixed
+- Startup is safer when required module files are missing; Cadence now fails
+  with a logged, visible error instead of disappearing silently.
+- Unreadable or corrupt config files are backed up as
+  `cadence.config.bad-YYYYMMDD-HHMMSS.json`, logged, and replaced with safe
+  defaults for that run.
+- Engine and UI logging now share the same categorized `cadence-startup.log`
+  format, making album-art, config, playlist, and startup failures easier to
+  diagnose.
+
 ## [0.4.9] - 2026-07-04
 
 Queue right-click polish pass.

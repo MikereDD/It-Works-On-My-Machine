@@ -1,5 +1,5 @@
 # ============================================================================
-#  cadence.ps1  -  Cadence  v0.4.9
+#  cadence.ps1  -  Cadence  v0.5.0
 #  A sleek local audio player (WinForms, owner-drawn, NAudio backend).
 #  Part of personaltools/ - mirrors the media-encoder-gui.ps1 layout:
 #    main GUI  +  dot-sourced engine/ui modules.
@@ -29,14 +29,44 @@ Set-StrictMode -Off
 #  Catch-all: log any terminating error to cadence-startup.log AND surface it
 #  in a message box, so a child-window crash can't disappear silently.
 $script:StartupLog = Join-Path $PSScriptRoot 'cadence-startup.log'
-trap {
-    $msg = "[{0}] {1}`r`n{2}" -f (Get-Date -Format s), $_.Exception.Message, $_.ScriptStackTrace
-    try { Add-Content -Path $script:StartupLog -Value $msg } catch {}
+
+function Write-CadenceLog {
+    param(
+        [string]$Message,
+        [string]$Level = 'INFO'
+    )
+    try {
+        $line = "[{0}] [{1}] {2}" -f (Get-Date -Format s), $Level.ToUpperInvariant(), $Message
+        Add-Content -LiteralPath $script:StartupLog -Value $line
+    } catch {}
+}
+
+function Write-CadenceExceptionLog {
+    param(
+        [string]$Context,
+        [object]$ErrorRecord
+    )
+    try {
+        $ex = $ErrorRecord.Exception
+        $stack = if ($ErrorRecord.ScriptStackTrace) { $ErrorRecord.ScriptStackTrace } else { $ex.StackTrace }
+        Write-CadenceLog -Level 'ERROR' -Message ("{0}: {1}`r`n{2}" -f $Context, $ex.Message, $stack)
+    } catch {}
+}
+
+function Show-CadenceError {
+    param(
+        [string]$Message,
+        [string]$Title = 'Cadence error'
+    )
     try {
         Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue
-        [System.Windows.Forms.MessageBox]::Show(
-            $_.Exception.Message, 'Cadence - startup error', 'OK', 'Error') | Out-Null
+        [System.Windows.Forms.MessageBox]::Show($Message, $Title, 'OK', 'Error') | Out-Null
     } catch {}
+}
+
+trap {
+    Write-CadenceExceptionLog -Context 'startup trap' -ErrorRecord $_
+    Show-CadenceError -Message $_.Exception.Message -Title 'Cadence - startup error'
     break
 }
 
@@ -69,20 +99,18 @@ try {
 [System.Windows.Forms.Application]::add_ThreadException({
     param($s, $e)
     try {
-        Add-Content -Path (Join-Path $PSScriptRoot 'cadence-startup.log') -Value (
-            "[{0}] ThreadException: {1}`r`n{2}" -f (Get-Date -Format s), $e.Exception.Message, $e.Exception.StackTrace)
+        Write-CadenceLog -Level 'ERROR' -Message ("ThreadException: {0}`r`n{1}" -f $e.Exception.Message, $e.Exception.StackTrace)
     } catch {}
 })
 [System.AppDomain]::CurrentDomain.add_UnhandledException({
     param($s, $e)
     try {
-        Add-Content -Path (Join-Path $PSScriptRoot 'cadence-startup.log') -Value (
-            "[{0}] UnhandledException: {1}" -f (Get-Date -Format s), $e.ExceptionObject)
+        Write-CadenceLog -Level 'ERROR' -Message ("UnhandledException: {0}" -f $e.ExceptionObject)
     } catch {}
 })
 
 $APP_NAME    = 'Cadence'
-$APP_VERSION = '0.4.9'
+$APP_VERSION = '0.5.0'
 $APP_TITLE   = "$APP_NAME v$APP_VERSION"
 $ROOT        = $PSScriptRoot
 $LIB         = Join-Path $ROOT 'lib'
@@ -100,12 +128,27 @@ try {
         Unblock-File -ErrorAction SilentlyContinue
 } catch {}
 
+function Assert-CadenceStartupFiles {
+    $required = @('player.engine.ps1', 'player.ui.ps1')
+    foreach ($name in $required) {
+        $path = Join-Path $ROOT $name
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+            throw "Required Cadence file is missing: $name"
+        }
+    }
+    if (-not (Test-Path -LiteralPath $LIB -PathType Container)) {
+        Write-CadenceLog -Level 'WARN' -Message "lib folder not found yet: $LIB"
+    }
+}
+
+Assert-CadenceStartupFiles
 . (Join-Path $ROOT 'player.engine.ps1')
 . (Join-Path $ROOT 'player.ui.ps1')
 
 try {
     Initialize-AudioBackend -LibDir $LIB
 } catch {
+    Write-CadenceExceptionLog -Context 'Initialize-AudioBackend' -ErrorRecord $_
     [System.Windows.Forms.MessageBox]::Show(
         "$($_.Exception.Message)`n`nRun setup-naudio.ps1 to fetch the NAudio DLLs.",
         $APP_NAME, 'OK', 'Error') | Out-Null
@@ -436,11 +479,6 @@ $btnAddFiles = New-FlatButton 'Add Files'   100
 $btnSetLib   = New-FlatButton 'Library'     100
 $btnPlaylist = New-FlatButton 'Playlists'   100
 $btnClear    = New-FlatButton 'Clear'       70
-$byY = $form.ClientSize.Height - 44
-$btnAddFiles.Location = [System.Drawing.Point]::new($pad, $byY)
-$btnSetLib.Location   = [System.Drawing.Point]::new($pad + 108, $byY)
-$btnPlaylist.Location = [System.Drawing.Point]::new($pad + 216, $byY)
-$btnClear.Location    = [System.Drawing.Point]::new($form.ClientSize.Width - $pad - 70, $byY)
 $btnAddFiles.Anchor = 'Bottom,Left'
 $btnSetLib.Anchor   = 'Bottom,Left'
 $btnPlaylist.Anchor = 'Bottom,Left'
@@ -458,14 +496,24 @@ $lblVersion.BackColor = [System.Drawing.Color]::Transparent
 $lblVersion.TextAlign = 'MiddleRight'
 $versionW = 150
 $versionGapFromClear = 14
-$lblVersion.SetBounds(
-    $form.ClientSize.Width - $pad - $btnClear.Width - $versionGapFromClear - $versionW,
-    $byY - 34,
-    $versionW,
-    24
-)
 $lblVersion.Anchor = 'Bottom,Right'
 $form.Controls.Add($lblVersion)
+
+function Update-FooterLayout {
+    $gap = 8
+    $btnY = $form.ClientSize.Height - 44
+    $btnAddFiles.Location = [System.Drawing.Point]::new($pad, $btnY)
+    $btnSetLib.Location   = [System.Drawing.Point]::new($btnAddFiles.Right + $gap, $btnY)
+    $btnPlaylist.Location = [System.Drawing.Point]::new($btnSetLib.Right + $gap, $btnY)
+    $btnClear.Location    = [System.Drawing.Point]::new($form.ClientSize.Width - $pad - $btnClear.Width, $btnY)
+
+    # Version stamp lives above the footer row, right-aligned against Clear.
+    # Keeping it on its own row avoids clipping/overlap at the minimum width.
+    $x = $btnClear.Left - $versionGapFromClear - $versionW
+    if ($x -lt $pad) { $x = $pad }
+    $lblVersion.SetBounds($x, $btnY - 34, $versionW, 24)
+}
+Update-FooterLayout
 
 
 # Library button menu: add / remove / clear saved roots (persisted to config)
@@ -703,7 +751,10 @@ function Import-M3U {
     $out  = New-Object System.Collections.Generic.List[string]
     $enc  = if ($Path -match '\.m3u8$') { 'UTF8' } else { 'Default' }
     try { $lines = Get-Content -LiteralPath $Path -Encoding $enc -ErrorAction Stop }
-    catch { return ,$out }
+    catch {
+        Write-CadenceExceptionLog -Context ("Import-M3U '$Path'") -ErrorRecord $_
+        return ,$out
+    }
     foreach ($raw in $lines) {
         $line = "$raw".TrimStart([char]0xFEFF).Trim().Trim('"')   # BOM + quotes
         if ($line -eq '' -or $line.StartsWith('#')) { continue }      # blank / #EXTINF
@@ -771,9 +822,17 @@ function Get-SavedPlaylistPathFromPrompt {
 
 function Write-M3UPlaylist {
     param($Path, $Tracks)
+    if (-not $Path) { throw 'Playlist path was empty.' }
+    $dir = Split-Path -Parent $Path
+    if ($dir -and -not (Test-Path -LiteralPath $dir -PathType Container)) {
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+    }
+    $validTracks = @($Tracks | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) })
+    if ($validTracks.Count -eq 0) { throw 'Playlist has no existing local tracks to write.' }
+
     $sb = [System.Text.StringBuilder]::new()
     [void]$sb.AppendLine('#EXTM3U')
-    foreach ($p in $Tracks) { [void]$sb.AppendLine([string]$p) }
+    foreach ($p in $validTracks) { [void]$sb.AppendLine([string]$p) }
     [System.IO.File]::WriteAllText($Path, $sb.ToString(), [System.Text.UTF8Encoding]::new($false))
 }
 
@@ -801,6 +860,7 @@ function Save-QueueAsSavedPlaylist {
     }
     try {
         Write-M3UPlaylist -Path $path -Tracks $script:State.Items
+        Write-CadenceLog -Message "Saved playlist: $path"
         $form.Text = "$APP_TITLE  -  saved playlist: $([IO.Path]::GetFileNameWithoutExtension($path))"
     } catch {
         $form.Text = "$APP_TITLE  -  playlist save failed"
@@ -839,6 +899,7 @@ function Load-PlaylistFile {
         $list.SelectedIndex = 0
     }
     $verb = if ($ReplaceQueue) { 'loaded' } else { 'added' }
+    Write-CadenceLog -Message ("{0} playlist {1}; {2} track(s) added." -f $verb, $Path, $added)
     $form.Text = "$APP_TITLE  -  $verb playlist: $([IO.Path]::GetFileNameWithoutExtension($Path)) ($added added)"
 }
 
@@ -1008,48 +1069,126 @@ $script:ConfigPath = Join-Path $ROOT 'cadence.config.json'
 $script:Config     = New-DefaultConfig
 $script:SuppressConfigSave = $false
 
-function Load-Config {
-    if (-not (Test-Path -LiteralPath $script:ConfigPath)) { return }
+function Get-CadenceObjectProperty {
+    param($Object, [string]$Name, $Default = $null)
     try {
-        $json = Get-Content -LiteralPath $script:ConfigPath -Raw -ErrorAction Stop | ConvertFrom-Json
-        $rm = 'off'
-        if ($json.PSObject.Properties['repeatMode'] -and $json.repeatMode) { $rm = [string]$json.repeatMode }
-        elseif ($json.repeat) { $rm = 'all' }
-        if (@('off','all','one') -notcontains $rm) { $rm = 'off' }
-
-        $session = New-EmptySessionConfig
-        if ($json.PSObject.Properties['session'] -and $json.session) {
-            try {
-                if ($json.session.PSObject.Properties['queue']) {
-                    $session.queue = @($json.session.queue | Where-Object { $_ })
-                }
-                if ($json.session.PSObject.Properties['index']) {
-                    $session.index = [int]$json.session.index
-                }
-                if ($json.session.PSObject.Properties['path'] -and $json.session.path) {
-                    $session.path = [string]$json.session.path
-                }
-                if ($json.session.PSObject.Properties['positionSeconds']) {
-                    $session.positionSeconds = [double]$json.session.positionSeconds
-                }
-                if ($json.session.PSObject.Properties['savedAt'] -and $json.session.savedAt) {
-                    $session.savedAt = [string]$json.session.savedAt
-                }
-            } catch { $session = New-EmptySessionConfig }
+        if ($null -ne $Object -and $Object.PSObject.Properties[$Name]) {
+            return $Object.PSObject.Properties[$Name].Value
         }
+    } catch {}
+    return $Default
+}
 
-        $script:Config = @{
-            roots   = @($json.roots | Where-Object { $_ })
-            volume  = if ($null -ne $json.volume) { [double]$json.volume } else { 0.8 }
-            shuffle = [bool]$json.shuffle
-            repeat  = ($rm -ne 'off')
-            repeatMode = $rm
-            palette = if ($json.palette) { [string]$json.palette } else { 'mono' }
-            onlineArtLookup = if ($null -ne $json.onlineArtLookup) { [bool]$json.onlineArtLookup } else { $true }
-            restoreSession = if ($null -ne $json.restoreSession) { [bool]$json.restoreSession } else { $true }
-            session = $session
+function Get-CadenceBool {
+    param($Value, [bool]$Default)
+    if ($null -eq $Value) { return $Default }
+    try { return [bool]$Value } catch { return $Default }
+}
+
+function Get-CadenceDouble {
+    param($Value, [double]$Default, [double]$Min, [double]$Max)
+    $d = $Default
+    if ($null -ne $Value) {
+        try { $d = [double]$Value } catch { $d = $Default }
+    }
+    if ($d -lt $Min) { $d = $Min }
+    if ($d -gt $Max) { $d = $Max }
+    return $d
+}
+
+function Get-CadenceStringArray {
+    param($Value)
+    $out = New-Object System.Collections.Generic.List[string]
+    $seen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($v in @($Value)) {
+        $s = ([string]$v).Trim()
+        if ([string]::IsNullOrWhiteSpace($s)) { continue }
+        if ($seen.Add($s)) { $out.Add($s) }
+    }
+    $arr = New-Object 'string[]' $out.Count
+    if ($out.Count -gt 0) { $out.CopyTo($arr) }
+    return $arr
+}
+
+function Get-CadenceRepeatMode {
+    param($Value, $LegacyRepeat)
+    $mode = if ($Value) { ([string]$Value).Trim().ToLowerInvariant() } else { '' }
+    if (@('off','all','one') -contains $mode) { return $mode }
+    if (Get-CadenceBool -Value $LegacyRepeat -Default $false) { return 'all' }
+    return 'off'
+}
+
+function Get-CadencePalette {
+    param($Value)
+    $palette = if ($Value) { ([string]$Value).Trim().ToLowerInvariant() } else { 'mono' }
+    if (@('mono','spectrum','indigo') -notcontains $palette) { $palette = 'mono' }
+    return $palette
+}
+
+function New-SessionConfigFromObject {
+    param($Session)
+    $out = New-EmptySessionConfig
+    if (-not $Session) { return $out }
+
+    $out.queue = @(Get-CadenceStringArray (Get-CadenceObjectProperty $Session 'queue' @()))
+    try { $out.index = [int](Get-CadenceObjectProperty $Session 'index' -1) } catch { $out.index = -1 }
+    $out.path = [string](Get-CadenceObjectProperty $Session 'path' '')
+    $out.positionSeconds = Get-CadenceDouble -Value (Get-CadenceObjectProperty $Session 'positionSeconds' 0.0) -Default 0.0 -Min 0.0 -Max ([double]::MaxValue)
+    $out.savedAt = [string](Get-CadenceObjectProperty $Session 'savedAt' '')
+    return $out
+}
+
+function ConvertTo-CadenceConfig {
+    param($JsonObject)
+    $repeatMode = Get-CadenceRepeatMode `
+        -Value (Get-CadenceObjectProperty $JsonObject 'repeatMode' $null) `
+        -LegacyRepeat (Get-CadenceObjectProperty $JsonObject 'repeat' $false)
+
+    return @{
+        roots = @(Get-CadenceStringArray (Get-CadenceObjectProperty $JsonObject 'roots' @()))
+        volume = Get-CadenceDouble -Value (Get-CadenceObjectProperty $JsonObject 'volume' 0.8) -Default 0.8 -Min 0.0 -Max 1.0
+        shuffle = Get-CadenceBool -Value (Get-CadenceObjectProperty $JsonObject 'shuffle' $false) -Default $false
+        repeat = ($repeatMode -ne 'off')
+        repeatMode = $repeatMode
+        palette = Get-CadencePalette (Get-CadenceObjectProperty $JsonObject 'palette' 'mono')
+        onlineArtLookup = Get-CadenceBool -Value (Get-CadenceObjectProperty $JsonObject 'onlineArtLookup' $true) -Default $true
+        restoreSession = Get-CadenceBool -Value (Get-CadenceObjectProperty $JsonObject 'restoreSession' $true) -Default $true
+        session = (New-SessionConfigFromObject (Get-CadenceObjectProperty $JsonObject 'session' $null))
+    }
+}
+
+function Backup-BadConfig {
+    try {
+        if (Test-Path -LiteralPath $script:ConfigPath -PathType Leaf) {
+            $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+            $backup = Join-Path $ROOT ("cadence.config.bad-$stamp.json")
+            Copy-Item -LiteralPath $script:ConfigPath -Destination $backup -Force
+            Write-CadenceLog -Level 'WARN' -Message "Backed up unreadable config to $backup"
         }
-    } catch { $script:Config = New-DefaultConfig }
+    } catch {}
+}
+
+function Load-Config {
+    $script:Config = New-DefaultConfig
+    if (-not (Test-Path -LiteralPath $script:ConfigPath -PathType Leaf)) {
+        Write-CadenceLog -Message 'No cadence.config.json found; using defaults.'
+        return
+    }
+
+    try {
+        $raw = Get-Content -LiteralPath $script:ConfigPath -Raw -ErrorAction Stop
+        if ([string]::IsNullOrWhiteSpace($raw)) {
+            Write-CadenceLog -Level 'WARN' -Message 'Config file was empty; using defaults.'
+            return
+        }
+        $json = $raw | ConvertFrom-Json -ErrorAction Stop
+        $script:Config = ConvertTo-CadenceConfig $json
+        Write-CadenceLog -Message 'Config loaded.'
+    } catch {
+        Write-CadenceExceptionLog -Context 'Load-Config' -ErrorRecord $_
+        Backup-BadConfig
+        $script:Config = New-DefaultConfig
+    }
 }
 
 function Get-SessionSnapshot {
@@ -1065,10 +1204,23 @@ function Get-SessionSnapshot {
     }
 }
 
+function Save-CadenceJsonAtomic {
+    param($Path, $Object)
+    $dir = Split-Path -Parent $Path
+    if ($dir -and -not (Test-Path -LiteralPath $dir -PathType Container)) {
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+    }
+    $tmp = "$Path.tmp"
+    $json = $Object | ConvertTo-Json -Depth 8
+    $enc = [System.Text.UTF8Encoding]::new($false)
+    [System.IO.File]::WriteAllText($tmp, $json + [Environment]::NewLine, $enc)
+    Move-Item -LiteralPath $tmp -Destination $Path -Force
+}
+
 function Save-Config {
     if ($script:SuppressConfigSave) { return }
     try {
-        [pscustomobject]@{
+        $obj = [pscustomobject]@{
             roots   = @($script:Config.roots)
             volume  = [double]$script:Engine.Volume
             shuffle = [bool]$script:State.Shuffle
@@ -1078,8 +1230,12 @@ function Save-Config {
             onlineArtLookup = [bool]$script:Engine.OnlineArtLookup
             restoreSession = [bool]$script:Config.restoreSession
             session = (Get-SessionSnapshot)
-        } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $script:ConfigPath -Encoding UTF8
-    } catch {}
+        }
+        Save-CadenceJsonAtomic -Path $script:ConfigPath -Object $obj
+    } catch {
+        Write-CadenceExceptionLog -Context 'Save-Config' -ErrorRecord $_
+        try { Remove-Item -LiteralPath "$script:ConfigPath.tmp" -Force -ErrorAction SilentlyContinue } catch {}
+    }
 }
 
 function Restore-LastSession {
@@ -1087,10 +1243,14 @@ function Restore-LastSession {
     $session = $script:Config.session
     if (-not $session) { return }
 
-    $queue = @($session.queue | Where-Object {
+    $rawQueue = @($session.queue)
+    $queue = @($rawQueue | Where-Object {
         $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) -and
         ($AUDIO_EXT -contains [IO.Path]::GetExtension($_).ToLower())
     })
+    if ($rawQueue.Count -gt $queue.Count) {
+        Write-CadenceLog -Level 'WARN' -Message ("Restore skipped {0} missing/unsupported track(s)." -f ($rawQueue.Count - $queue.Count))
+    }
     if ($queue.Count -eq 0) { return }
 
     Add-Paths $queue
@@ -1124,7 +1284,7 @@ function Restore-LastSession {
         $seek.Invalidate()
         Sync-PlayGlyph
     } catch {
-        try { Add-Content -Path $script:StartupLog -Value ("[{0}] restore session failed: {1}" -f (Get-Date -Format s), $_.Exception.Message) } catch {}
+        Write-CadenceExceptionLog -Context 'Restore-LastSession' -ErrorRecord $_
     }
 }
 
@@ -1375,7 +1535,11 @@ function Add-FolderToQueue {
             Sort-Object { Get-NaturalKey $_.FullName } | Select-Object -ExpandProperty FullName
         Add-Paths $files
         $n = $script:State.Items.Count - $before
+        Write-CadenceLog -Message ("Scanned folder {0}; added {1} track(s)." -f $FolderPath, $n)
         $form.Text = "$APP_TITLE  -  added $n track(s)"
+    } catch {
+        Write-CadenceExceptionLog -Context ("Add-FolderToQueue '$FolderPath'") -ErrorRecord $_
+        $form.Text = "$APP_TITLE  -  scan failed"
     } finally {
         $form.Cursor = [System.Windows.Forms.Cursors]::Default
     }
@@ -1408,8 +1572,10 @@ function Export-QueueM3U {
     if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
         try {
             Write-M3UPlaylist -Path $dlg.FileName -Tracks $script:State.Items
+            Write-CadenceLog -Message "Exported queue playlist: $($dlg.FileName)"
             $form.Text = "$APP_TITLE  -  exported $($script:State.Items.Count) track(s)"
         } catch {
+            Write-CadenceExceptionLog -Context 'Export-QueueM3U' -ErrorRecord $_
             $form.Text = "$APP_TITLE  -  export failed"
         }
     }
@@ -1781,6 +1947,7 @@ $form.Add_Resize({
     $btnPrev.Left = $cx - 30 - 12 - 44
     $btnNext.Left = $cx + 30 + 12
     $btnStop.Left = $cx + 30 + 12 + 44 + 12
+    Update-FooterLayout
     $form.Invalidate()   # full repaint of the gradient ground -> clears ghosts
 })
 
@@ -1816,6 +1983,7 @@ $form.Add_FormClosing({ try { Save-Config } catch {} })
 
 # Apply Windows dark-mode scrollbars to the native tree + list once handles exist.
 $form.Add_Shown({
+    Write-CadenceLog -Message "$APP_TITLE shown."
     foreach ($c in @($tree, $list)) {
         try {
             [Cadence.Native]::SetWindowTheme($c.Handle, 'DarkMode_Explorer', $null) | Out-Null

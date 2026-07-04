@@ -8,7 +8,7 @@ A sleek, fully owner-drawn local audio player for Windows — monochrome
 Material-style UI, NAudio engine, live FFT visualizer, and a real library
 browser. Part of the `personaltools/` toolkit.
 
-**Latest: v0.4.9** · [Changelog](https://github.com/MikereDD/It-Works-On-My-Machine/blob/main/Windows/Powershell/scripts/personaltools/Cadence/CHANGELOG.md)
+**Latest: v0.5.0** · [Changelog](https://github.com/MikereDD/It-Works-On-My-Machine/blob/main/Windows/Powershell/scripts/personaltools/Cadence/CHANGELOG.md)
 
 ## Screenshots
 
@@ -32,6 +32,9 @@ browser. Part of the `personaltools/` toolkit.
   saved playlists in `cadence.playlists`, and a polished queue right-click menu.
 - **Remembers your setup** — saved library roots plus volume, shuffle, repeat mode,
   visualizer palette, queue, selected track, and last position persist across launches.
+- **Stability polish** — config is validated on load, saved atomically, unreadable
+  config files are backed up, playlist writes are safer, and errors are logged
+  with clearer categories.
 - **Monochrome Material UI** — tonal pill buttons, a FAB transport, toggle
   chips, recessed dark-grey wells, and a subtle depth gradient.
 - **Tags + album art** — via TagLibSharp when present, with filename fallback, deeper embedded-art extraction, and broad sidecar cover fallback (`cover.jpg`, `folder.png`, `AlbumArt_*.jpg`, one-image album folders, etc.).
@@ -127,6 +130,9 @@ Runtime files written next to the script: `cadence.config.json` (saved library
 roots plus volume / shuffle / repeat mode / visualizer palette / online art lookup / last-session snapshot),
 `cadence.playlists` (app-managed saved `.m3u8` playlists), `cadence.art-cache`
 (cached online album covers), and `cadence-startup.log` (startup/exception log).
+If `cadence.config.json` is corrupt or unreadable, Cadence backs it up as
+`cadence.config.bad-YYYYMMDD-HHMMSS.json` and starts with safe defaults instead
+of failing at launch.
 
 ## Visualizer
 A compiled C# tap copies samples into a ring buffer as they play; a UI timer

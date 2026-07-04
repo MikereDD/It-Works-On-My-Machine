@@ -21,8 +21,12 @@ $script:Engine = @{
 function Write-EngineLog {
     param($Message)
     try {
-        Add-Content -Path (Join-Path $PSScriptRoot 'cadence-startup.log') `
-            -Value ("[{0}] {1}" -f (Get-Date -Format s), $Message)
+        if (Get-Command Write-CadenceLog -ErrorAction SilentlyContinue) {
+            Write-CadenceLog -Level 'ENGINE' -Message $Message
+        } else {
+            Add-Content -Path (Join-Path $PSScriptRoot 'cadence-startup.log') `
+                -Value ("[{0}] [ENGINE] {1}" -f (Get-Date -Format s), $Message)
+        }
     } catch {}
 }
 

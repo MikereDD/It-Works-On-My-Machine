@@ -1,7 +1,7 @@
 # Cadence Help
 
 Cadence is a small local music player with a dark owner-drawn interface, a real
-library tree, a queue, saved playlists, album art, shuffle/repeat controls, last-session restore, queue right-click tools, and a live visualizer.
+library tree, a queue, saved playlists, album art, shuffle/repeat controls, last-session restore, queue right-click tools, safer config handling, clearer logging, and a live visualizer.
 
 This file explains the visible buttons, right-click menus, and keyboard
 shortcuts. Press `F1` or click the **Help** button in the app to open it.
@@ -232,10 +232,16 @@ Cadence writes a few local runtime files next to the script.
 | `cadence.config.json` | Saved roots, volume, shuffle, repeat mode, palette, online art setting, and last-session snapshot. |
 | `cadence.playlists` | Saved custom playlists created from the Playlists menu. |
 | `cadence.art-cache` | Cached online album covers. |
-| `cadence-startup.log` | Startup errors, exception logs, and album-art lookup notes. |
+| `cadence-startup.log` | Startup errors, exception logs, playlist/config notes, and album-art lookup notes. |
+| `cadence.config.bad-*.json` | Automatic backup of an unreadable/corrupt config file. |
 | `cadence.config.example.json` | Example config format for the repo. |
 
 ## Troubleshooting
+
+### Settings reset or config looks corrupt
+Cadence validates `cadence.config.json` at launch. If the file is empty,
+malformed, or unreadable, Cadence backs it up as `cadence.config.bad-*.json`,
+uses safe defaults, and writes the reason to `cadence-startup.log`.
 
 ### The app will not start
 Run the unblock command from the Cadence folder:
