@@ -8,13 +8,17 @@ A sleek, fully owner-drawn local audio player for Windows — monochrome
 Material-style UI, NAudio engine, live FFT visualizer, and a real library
 browser. Part of the `personaltools/` toolkit.
 
-**Latest: v0.5.0** · [Changelog](https://github.com/MikereDD/It-Works-On-My-Machine/blob/main/Windows/Powershell/scripts/personaltools/Cadence/CHANGELOG.md)
+**Latest: v0.5.2** · [Changelog](https://github.com/MikereDD/It-Works-On-My-Machine/blob/main/Windows/Powershell/scripts/personaltools/Cadence/CHANGELOG.md)
 
 ## Screenshots
 
 | Library &amp; search | Now playing |
 |:---:|:---:|
-| ![Library browser with queue search](docs/screenshot-library.png) | ![Playing a track with the live visualizer](docs/screenshot-playing.png)
+| ![Library browser with queue search](docs/screenshot-library.png) | ![Playing a track with the live visualizer](docs/screenshot-playing.jpg) |
+
+## What's new in v0.5.2
+- **Transport controls refined to closely match the approved glossy mockup** — previous, play/pause, next, and stop now use more dimensional circular buttons with a stronger center emphasis on the primary play/pause control.
+- **Shuffle / repeat chips refined** — the toggle pills now include icons and a fuller raised treatment so they read more clearly as player controls.
 
 ## Highlights
 - **Wide format support** — MP3, FLAC, M4A/AAC, WAV, WMA, OGG, OPUS via NAudio

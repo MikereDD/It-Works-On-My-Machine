@@ -110,7 +110,7 @@ try {
 })
 
 $APP_NAME    = 'Cadence'
-$APP_VERSION = '0.5.0'
+$APP_VERSION = '0.5.2'
 $APP_TITLE   = "$APP_NAME v$APP_VERSION"
 $ROOT        = $PSScriptRoot
 $LIB         = Join-Path $ROOT 'lib'
@@ -350,35 +350,39 @@ $lblDur.Text = '0:00'
 $form.Controls.Add($lblDur)
 
 # Transport row
-$rowY = $timeY + 28
-$btnPrev  = New-TransportButton -Glyph 'prev'  -Size 44
-$btnPlay  = New-TransportButton -Glyph 'play'  -Size 60 -Primary $true
-$btnNext  = New-TransportButton -Glyph 'next'  -Size 44
-$btnStop  = New-TransportButton -Glyph 'stop'  -Size 44
+$rowY = $timeY + 20
+$sideBtnSize = 56
+$playBtnSize = 84
+$transportGap = 18
+$btnPrev  = New-TransportButton -Glyph 'prev'  -Size $sideBtnSize
+$btnPlay  = New-TransportButton -Glyph 'play'  -Size $playBtnSize -Primary $true
+$btnNext  = New-TransportButton -Glyph 'next'  -Size $sideBtnSize
+$btnStop  = New-TransportButton -Glyph 'stop'  -Size $sideBtnSize
 
 $cx = [int]($form.ClientSize.Width / 2)
-$btnPlay.Location = [System.Drawing.Point]::new($cx - 30, $rowY)
-$btnPrev.Location = [System.Drawing.Point]::new($cx - 30 - 12 - 44, $rowY + 8)
-$btnNext.Location = [System.Drawing.Point]::new($cx + 30 + 12,       $rowY + 8)
-$btnStop.Location = [System.Drawing.Point]::new($cx + 30 + 12 + 44 + 12, $rowY + 8)
+$btnPlay.Location = [System.Drawing.Point]::new($cx - [int]($playBtnSize / 2), $rowY)
+$sideY = $rowY + [int](($playBtnSize - $sideBtnSize) / 2)
+$btnPrev.Location = [System.Drawing.Point]::new($btnPlay.Left - $transportGap - $sideBtnSize, $sideY)
+$btnNext.Location = [System.Drawing.Point]::new($btnPlay.Right + $transportGap, $sideY)
+$btnStop.Location = [System.Drawing.Point]::new($btnNext.Right + $transportGap, $sideY)
 foreach ($b in @($btnPrev, $btnPlay, $btnNext, $btnStop)) {
     $b.Anchor = 'Top'; $form.Controls.Add($b)
 }
 
 # Shuffle / repeat + volume
-$rowY2 = $rowY + 76
-$pillShuffle = New-TogglePill -Text 'SHUFFLE' -Width 88
-$pillShuffle.Location = [System.Drawing.Point]::new($pad, $rowY2)
+$rowY2 = $rowY + 102
+$pillShuffle = New-TogglePill -Text 'SHUFFLE' -Icon 'shuffle' -Width 140 -Height 36
+$pillShuffle.Location = [System.Drawing.Point]::new($pad + 20, $rowY2)
 $pillShuffle.Anchor = 'Top,Left'
 $form.Controls.Add($pillShuffle)
 
-$pillRepeat = New-TogglePill -Text 'REPEAT OFF' -Width 112
-$pillRepeat.Location = [System.Drawing.Point]::new($pad + 96, $rowY2)
+$pillRepeat = New-TogglePill -Text 'REPEAT OFF' -Icon 'repeat' -Width 178 -Height 36
+$pillRepeat.Location = [System.Drawing.Point]::new($pillShuffle.Right + 14, $rowY2)
 $pillRepeat.Anchor = 'Top,Left'
 $form.Controls.Add($pillRepeat)
 
 $vol = New-Slider -Width 120 -Height 18
-$vol.Location = [System.Drawing.Point]::new($form.ClientSize.Width - $pad - 120, $rowY2 + 4)
+$vol.Location = [System.Drawing.Point]::new($form.ClientSize.Width - $pad - 120, $rowY2 + 10)
 $vol.Anchor = 'Top,Right'
 $vol.Fraction = $script:Engine.Volume
 $form.Controls.Add($vol)
@@ -1943,10 +1947,10 @@ $form.Add_FormClosed({
 # Center the transport row on resize (Anchor=Top keeps Y, we fix X).
 $form.Add_Resize({
     $cx = [int]($form.ClientSize.Width / 2)
-    $btnPlay.Left = $cx - 30
-    $btnPrev.Left = $cx - 30 - 12 - 44
-    $btnNext.Left = $cx + 30 + 12
-    $btnStop.Left = $cx + 30 + 12 + 44 + 12
+    $btnPlay.Left = $cx - [int]($playBtnSize / 2)
+    $btnPrev.Left = $btnPlay.Left - $transportGap - $sideBtnSize
+    $btnNext.Left = $btnPlay.Right + $transportGap
+    $btnStop.Left = $btnNext.Right + $transportGap
     Update-FooterLayout
     $form.Invalidate()   # full repaint of the gradient ground -> clears ghosts
 })

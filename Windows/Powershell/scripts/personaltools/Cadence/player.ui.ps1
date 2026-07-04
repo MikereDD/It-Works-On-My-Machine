@@ -189,84 +189,179 @@ function Invoke-DrawGlyph {
     $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
     $w = $s.ClientSize.Width; $h = $s.ClientSize.Height
     $cx = $w / 2.0; $cy = $h / 2.0
-    $u = [Math]::Min($w, $h) * 0.30
+    $u = [Math]::Min($w, $h) * 0.28
 
+    $shadow = [System.Drawing.SolidBrush]::new([System.Drawing.Color]::FromArgb(56, 0, 0, 0))
     if ($s.Primary) {
-        $fb = [System.Drawing.SolidBrush]::new($script:Theme.Accent)
-        $g.FillEllipse($fb, 0, 0, $w, $h); $fb.Dispose()
-        $sheen = [System.Drawing.SolidBrush]::new([System.Drawing.Color]::FromArgb(34, 255, 255, 255))
-        $g.FillEllipse($sheen, [single]($w * 0.12), [single](-$h * 0.28), [single]($w * 0.76), [single]($h * 0.72)); $sheen.Dispose()
+        $g.FillEllipse($shadow, [single]4, [single]6, [single]($w - 8), [single]($h - 8))
+
+        $outer = [System.Drawing.Drawing2D.LinearGradientBrush]::new(
+            [System.Drawing.Rectangle]::new(0, 0, $w, $h),
+            [System.Drawing.Color]::FromArgb(0x63, 0x68, 0x73),
+            [System.Drawing.Color]::FromArgb(0x1C, 0x1F, 0x27), 90.0)
+        $g.FillEllipse($outer, [single]1.2, [single]1.2, [single]($w - 2.4), [single]($h - 2.4)); $outer.Dispose()
+
+        $inner = [System.Drawing.Drawing2D.LinearGradientBrush]::new(
+            [System.Drawing.Rectangle]::new(0, 0, $w, $h),
+            [System.Drawing.Color]::FromArgb(0x3E, 0x43, 0x4D),
+            [System.Drawing.Color]::FromArgb(0x11, 0x14, 0x1B), 90.0)
+        $g.FillEllipse($inner, [single]5.2, [single]5.2, [single]($w - 10.4), [single]($h - 10.4)); $inner.Dispose()
+
+        $sheen = [System.Drawing.Drawing2D.LinearGradientBrush]::new(
+            [System.Drawing.Rectangle]::new(0, 0, $w, [Math]::Max(1, [int]($h * 0.46))),
+            [System.Drawing.Color]::FromArgb(44, 255, 255, 255),
+            [System.Drawing.Color]::FromArgb(0, 255, 255, 255), 90.0)
+        $g.FillEllipse($sheen, [single]($w * 0.18), [single]($h * 0.10), [single]($w * 0.56), [single]($h * 0.30)); $sheen.Dispose()
+
         if ($s.Press -or $s.Hover) {
-            $a = if ($s.Press) { 30 } else { 18 }
+            $a = if ($s.Press) { 34 } else { 16 }
             $sl = [System.Drawing.SolidBrush]::new([System.Drawing.Color]::FromArgb($a, 255, 255, 255))
-            $g.FillEllipse($sl, 0, 0, $w, $h); $sl.Dispose()
+            $g.FillEllipse($sl, [single]5.2, [single]5.2, [single]($w - 10.4), [single]($h - 10.4)); $sl.Dispose()
         }
-        $rp = [System.Drawing.Pen]::new([System.Drawing.Color]::FromArgb(120, $script:Theme.AccentHi.R, $script:Theme.AccentHi.G, $script:Theme.AccentHi.B), 1.4)
-        $g.DrawEllipse($rp, 0.8, 0.8, [single]($w - 1.6), [single]($h - 1.6)); $rp.Dispose()
-        $col = $script:Theme.GlyphOn
+
+        $outerPen = [System.Drawing.Pen]::new([System.Drawing.Color]::FromArgb(210, $script:Theme.AccentHi.R, $script:Theme.AccentHi.G, $script:Theme.AccentHi.B), 1.8)
+        $g.DrawEllipse($outerPen, [single]1.4, [single]1.4, [single]($w - 2.8), [single]($h - 2.8)); $outerPen.Dispose()
+        $innerPen = [System.Drawing.Pen]::new([System.Drawing.Color]::FromArgb(78, 255, 255, 255), 1.0)
+        $g.DrawEllipse($innerPen, [single]5.5, [single]5.5, [single]($w - 11.0), [single]($h - 11.0)); $innerPen.Dispose()
+        $col = [System.Drawing.Color]::FromArgb(245, 247, 250)
     } else {
-        # Paint the exact gradient slice behind this button so the circular
-        # region melts into the form ground (no visible disc).
-        $p = $s.Parent
-        if ($p) {
-            $H = [double]$p.ClientSize.Height; if ($H -lt 1) { $H = 1 }
-            $T = [System.Drawing.Color]::FromArgb(0x16, 0x17, 0x1E)
-            $B = [System.Drawing.Color]::FromArgb(0x0B, 0x0C, 0x10)
-            $c0 = Blend-Color $T $B ([Math]::Max(0.0, [Math]::Min(1.0, $s.Top / $H)))
-            $c1 = Blend-Color $T $B ([Math]::Max(0.0, [Math]::Min(1.0, ($s.Top + $s.Height) / $H)))
-            $bgrad = [System.Drawing.Drawing2D.LinearGradientBrush]::new(
-                [System.Drawing.Rectangle]::new(0, 0, $w, [Math]::Max(1, $h)), $c0, $c1, 90.0)
-            $g.FillRectangle($bgrad, 0, 0, $w, $h); $bgrad.Dispose()
-        }
+        $g.FillEllipse($shadow, [single]3, [single]5, [single]($w - 6), [single]($h - 6))
+
+        $disc = [System.Drawing.Drawing2D.LinearGradientBrush]::new(
+            [System.Drawing.Rectangle]::new(0, 0, $w, $h),
+            [System.Drawing.Color]::FromArgb(0x46, 0x4B, 0x56),
+            [System.Drawing.Color]::FromArgb(0x15, 0x18, 0x20), 90.0)
+        $g.FillEllipse($disc, [single]1.0, [single]1.0, [single]($w - 2.0), [single]($h - 2.0)); $disc.Dispose()
+
+        $sheen = [System.Drawing.Drawing2D.LinearGradientBrush]::new(
+            [System.Drawing.Rectangle]::new(0, 0, $w, [Math]::Max(1, [int]($h * 0.42))),
+            [System.Drawing.Color]::FromArgb(26, 255, 255, 255),
+            [System.Drawing.Color]::FromArgb(0, 255, 255, 255), 90.0)
+        $g.FillEllipse($sheen, [single]($w * 0.16), [single]($h * 0.10), [single]($w * 0.48), [single]($h * 0.24)); $sheen.Dispose()
+
         if ($s.Press -or $s.Hover) {
-            $a = if ($s.Press) { 26 } else { 14 }
+            $a = if ($s.Press) { 26 } else { 12 }
             $sl = [System.Drawing.SolidBrush]::new([System.Drawing.Color]::FromArgb($a, 255, 255, 255))
-            $g.FillEllipse($sl, 0, 0, $w, $h); $sl.Dispose()
+            $g.FillEllipse($sl, [single]1.0, [single]1.0, [single]($w - 2.0), [single]($h - 2.0)); $sl.Dispose()
         }
-        $col = $script:Theme.Text
+
+        $pen = [System.Drawing.Pen]::new([System.Drawing.Color]::FromArgb(175, $script:Theme.AccentHi.R, $script:Theme.AccentHi.G, $script:Theme.AccentHi.B), 1.1)
+        $g.DrawEllipse($pen, [single]1.0, [single]1.0, [single]($w - 2.0), [single]($h - 2.0)); $pen.Dispose()
+        $innerPen = [System.Drawing.Pen]::new([System.Drawing.Color]::FromArgb(55, 255, 255, 255), 1.0)
+        $g.DrawEllipse($innerPen, [single]4.0, [single]4.0, [single]($w - 8.0), [single]($h - 8.0)); $innerPen.Dispose()
+        $col = [System.Drawing.Color]::FromArgb(241, 243, 247)
     }
+    $shadow.Dispose()
 
     $brush = [System.Drawing.SolidBrush]::new($col)
     switch ($s.Glyph) {
         'play' {
+            $triW = $u * 1.06; $triH = $u * 1.08
             $pts = @(
-                [System.Drawing.PointF]::new($cx - $u * 0.7, $cy - $u),
-                [System.Drawing.PointF]::new($cx - $u * 0.7, $cy + $u),
-                [System.Drawing.PointF]::new($cx + $u,        $cy))
+                [System.Drawing.PointF]::new($cx - $triW * 0.60, $cy - $triH),
+                [System.Drawing.PointF]::new($cx - $triW * 0.60, $cy + $triH),
+                [System.Drawing.PointF]::new($cx + $triW,        $cy))
             $g.FillPolygon($brush, $pts)
         }
         'pause' {
-            $bw = $u * 0.62
-            $g.FillRectangle($brush, [single]($cx - $u),       [single]($cy - $u), [single]$bw, [single]($u * 2))
-            $g.FillRectangle($brush, [single]($cx + $u - $bw), [single]($cy - $u), [single]$bw, [single]($u * 2))
+            $barH = $u * 1.82; $barW = [Math]::Max(3.0, $u * 0.44); $gap = $u * 0.42
+            $g.FillRectangle($brush, [single]($cx - $gap - $barW), [single]($cy - $barH * 0.5), [single]$barW, [single]$barH)
+            $g.FillRectangle($brush, [single]($cx + $gap),         [single]($cy - $barH * 0.5), [single]$barW, [single]$barH)
         }
         'stop' {
-            $rr = New-RoundedRect ($cx - $u) ($cy - $u) ($u * 2) ($u * 2) ($u * 0.28)
+            $sq = $u * 1.40
+            $rr = New-RoundedRect ($cx - $sq * 0.5) ($cy - $sq * 0.5) $sq $sq ($sq * 0.16)
             $g.FillPath($brush, $rr); $rr.Dispose()
         }
         'next' {
+            $triW = $u * 0.70; $triH = $u * 0.84; $barW = [Math]::Max(3.0, $u * 0.18); $gap = $u * 0.12
             $pts = @(
-                [System.Drawing.PointF]::new($cx - $u,       $cy - $u),
-                [System.Drawing.PointF]::new($cx - $u,       $cy + $u),
-                [System.Drawing.PointF]::new($cx + $u * 0.3, $cy))
+                [System.Drawing.PointF]::new($cx - $triW * 0.82, $cy - $triH),
+                [System.Drawing.PointF]::new($cx - $triW * 0.82, $cy + $triH),
+                [System.Drawing.PointF]::new($cx + $triW * 0.35, $cy))
             $g.FillPolygon($brush, $pts)
-            $g.FillRectangle($brush, [single]($cx + $u * 0.45), [single]($cy - $u), [single]($u * 0.5), [single]($u * 2))
+            $g.FillRectangle($brush, [single]($cx + $triW * 0.52 + $gap), [single]($cy - $triH), [single]$barW, [single]($triH * 2))
         }
         'prev' {
+            $triW = $u * 0.70; $triH = $u * 0.84; $barW = [Math]::Max(3.0, $u * 0.18); $gap = $u * 0.12
             $pts = @(
-                [System.Drawing.PointF]::new($cx + $u,        $cy - $u),
-                [System.Drawing.PointF]::new($cx + $u,        $cy + $u),
-                [System.Drawing.PointF]::new($cx - $u * 0.3,  $cy))
+                [System.Drawing.PointF]::new($cx + $triW * 0.82, $cy - $triH),
+                [System.Drawing.PointF]::new($cx + $triW * 0.82, $cy + $triH),
+                [System.Drawing.PointF]::new($cx - $triW * 0.35, $cy))
             $g.FillPolygon($brush, $pts)
-            $g.FillRectangle($brush, [single]($cx - $u * 0.95), [single]($cy - $u), [single]($u * 0.5), [single]($u * 2))
+            $g.FillRectangle($brush, [single]($cx - $triW * 0.52 - $gap - $barW), [single]($cy - $triH), [single]$barW, [single]($triH * 2))
         }
     }
     $brush.Dispose()
 }
 
+function Draw-ToggleIcon {
+    param($g, $Kind, $Rect, $Color)
+    $pen = [System.Drawing.Pen]::new($Color, 2.0)
+    $pen.StartCap = [System.Drawing.Drawing2D.LineCap]::Round
+    $pen.EndCap   = [System.Drawing.Drawing2D.LineCap]::Round
+    $x = [single]$Rect.X; $y = [single]$Rect.Y; $w = [single]$Rect.Width; $h = [single]$Rect.Height
+    switch ($Kind) {
+        'shuffle' {
+            $g.DrawLine($pen, $x + $w*0.06, $y + $h*0.28, $x + $w*0.34, $y + $h*0.28)
+            $g.DrawLine($pen, $x + $w*0.34, $y + $h*0.28, $x + $w*0.76, $y + $h*0.72)
+            $g.DrawLine($pen, $x + $w*0.50, $y + $h*0.72, $x + $w*0.76, $y + $h*0.72)
+            $g.DrawLine($pen, $x + $w*0.76, $y + $h*0.72, $x + $w*0.66, $y + $h*0.62)
+            $g.DrawLine($pen, $x + $w*0.76, $y + $h*0.72, $x + $w*0.66, $y + $h*0.82)
+            $g.DrawLine($pen, $x + $w*0.06, $y + $h*0.72, $x + $w*0.22, $y + $h*0.72)
+            $g.DrawLine($pen, $x + $w*0.22, $y + $h*0.72, $x + $w*0.40, $y + $h*0.54)
+            $g.DrawLine($pen, $x + $w*0.58, $y + $h*0.28, $x + $w*0.76, $y + $h*0.28)
+            $g.DrawLine($pen, $x + $w*0.76, $y + $h*0.28, $x + $w*0.66, $y + $h*0.18)
+            $g.DrawLine($pen, $x + $w*0.76, $y + $h*0.28, $x + $w*0.66, $y + $h*0.38)
+        }
+        'repeat' {
+            $g.DrawArc($pen, $x + $w*0.10, $y + $h*0.18, $w*0.46, $h*0.46, 190, 220)
+            $g.DrawArc($pen, $x + $w*0.44, $y + $h*0.36, $w*0.46, $h*0.46, 10, 220)
+            $g.DrawLine($pen, $x + $w*0.61, $y + $h*0.16, $x + $w*0.76, $y + $h*0.16)
+            $g.DrawLine($pen, $x + $w*0.76, $y + $h*0.16, $x + $w*0.69, $y + $h*0.09)
+            $g.DrawLine($pen, $x + $w*0.76, $y + $h*0.16, $x + $w*0.69, $y + $h*0.23)
+            $g.DrawLine($pen, $x + $w*0.39, $y + $h*0.84, $x + $w*0.24, $y + $h*0.84)
+            $g.DrawLine($pen, $x + $w*0.24, $y + $h*0.84, $x + $w*0.31, $y + $h*0.77)
+            $g.DrawLine($pen, $x + $w*0.24, $y + $h*0.84, $x + $w*0.31, $y + $h*0.91)
+        }
+    }
+    $pen.Dispose()
+} {
+    param($g, $Kind, $Rect, $Color)
+    $pen = [System.Drawing.Pen]::new($Color, 1.8)
+    $pen.StartCap = [System.Drawing.Drawing2D.LineCap]::Round
+    $pen.EndCap   = [System.Drawing.Drawing2D.LineCap]::Round
+    $x = [single]$Rect.X; $y = [single]$Rect.Y; $w = [single]$Rect.Width; $h = [single]$Rect.Height
+    switch ($Kind) {
+        'shuffle' {
+            $g.DrawLine($pen, $x, $y + $h * 0.28, $x + $w * 0.32, $y + $h * 0.28)
+            $g.DrawLine($pen, $x + $w * 0.32, $y + $h * 0.28, $x + $w * 0.72, $y + $h * 0.72)
+            $g.DrawLine($pen, $x + $w * 0.46, $y + $h * 0.72, $x + $w * 0.72, $y + $h * 0.72)
+            $g.DrawLine($pen, $x, $y + $h * 0.72, $x + $w * 0.20, $y + $h * 0.72)
+            $g.DrawLine($pen, $x + $w * 0.20, $y + $h * 0.72, $x + $w * 0.42, $y + $h * 0.50)
+            $g.DrawLine($pen, $x + $w * 0.58, $y + $h * 0.28, $x + $w * 0.72, $y + $h * 0.28)
+            $g.DrawLine($pen, $x + $w * 0.57, $y + $h * 0.28, $x + $w * 0.46, $y + $h * 0.17)
+            $g.DrawLine($pen, $x + $w * 0.57, $y + $h * 0.28, $x + $w * 0.46, $y + $h * 0.39)
+            $g.DrawLine($pen, $x + $w * 0.57, $y + $h * 0.72, $x + $w * 0.46, $y + $h * 0.61)
+            $g.DrawLine($pen, $x + $w * 0.57, $y + $h * 0.72, $x + $w * 0.46, $y + $h * 0.83)
+        }
+        'repeat' {
+            $g.DrawArc($pen, $x + $w * 0.10, $y + $h * 0.16, $w * 0.48, $h * 0.48, 200, 210)
+            $g.DrawArc($pen, $x + $w * 0.42, $y + $h * 0.36, $w * 0.48, $h * 0.48, 20, 210)
+            $g.DrawLine($pen, $x + $w * 0.62, $y + $h * 0.16, $x + $w * 0.76, $y + $h * 0.16)
+            $g.DrawLine($pen, $x + $w * 0.76, $y + $h * 0.16, $x + $w * 0.68, $y + $h * 0.08)
+            $g.DrawLine($pen, $x + $w * 0.76, $y + $h * 0.16, $x + $w * 0.68, $y + $h * 0.24)
+            $g.DrawLine($pen, $x + $w * 0.38, $y + $h * 0.84, $x + $w * 0.24, $y + $h * 0.84)
+            $g.DrawLine($pen, $x + $w * 0.24, $y + $h * 0.84, $x + $w * 0.32, $y + $h * 0.76)
+            $g.DrawLine($pen, $x + $w * 0.24, $y + $h * 0.84, $x + $w * 0.32, $y + $h * 0.92)
+        }
+    }
+    $pen.Dispose()
+}
+
 # --- M3 toggle chip (shuffle / repeat) --------------------------------------
 function New-TogglePill {
-    param($Text, $Width = 82, $Height = 30)
+    param($Text, $Width = 82, $Height = 30, $Icon = '')
     $b = [System.Windows.Forms.Button]::new()
     $b.Width = $Width; $b.Height = $Height
     $b.FlatStyle = 'Flat'; $b.FlatAppearance.BorderSize = 0
@@ -277,6 +372,7 @@ function New-TogglePill {
     $b.TabStop = $false; $b.Text = ''
     Set-DoubleBuffered $b
     $b | Add-Member -NotePropertyName Label  -NotePropertyValue $Text  -Force
+    $b | Add-Member -NotePropertyName Icon   -NotePropertyValue $Icon  -Force
     $b | Add-Member -NotePropertyName Active -NotePropertyValue $false -Force
     $b | Add-Member -NotePropertyName Hover  -NotePropertyValue $false -Force
     $r = [int]($Height / 2); $gp = New-RoundedRect 0 0 $Width $Height $r; $b.Region = [System.Drawing.Region]::new($gp); $gp.Dispose()
@@ -292,18 +388,44 @@ function Draw-TogglePill {
     $w = $s.ClientSize.Width; $h = $s.ClientSize.Height
     $r = [single]($h / 2.0)
     $rect = New-RoundedRect 0.7 0.7 ($w - 1.4) ($h - 1.4) ($r - 0.7)
-    if ($s.Active) {
-        $fb = [System.Drawing.SolidBrush]::new($script:Theme.Accent); $g.FillPath($fb, $rect); $fb.Dispose()
-        if ($s.Hover) { $sl = [System.Drawing.SolidBrush]::new([System.Drawing.Color]::FromArgb(16, 255, 255, 255)); $g.FillPath($sl, $rect); $sl.Dispose() }
-        $tc = $script:Theme.GlyphOn
-    } else {
-        if ($s.Hover) { $sl = [System.Drawing.SolidBrush]::new([System.Drawing.Color]::FromArgb(10, 255, 255, 255)); $g.FillPath($sl, $rect); $sl.Dispose() }
-        $pen = [System.Drawing.Pen]::new($script:Theme.Contour, 1.2); $g.DrawPath($pen, $rect); $pen.Dispose()
-        $tc = $script:Theme.Muted
+
+    $bgTop = if ($s.Active) { [System.Drawing.Color]::FromArgb(0x36, 0x3A, 0x43) } else { [System.Drawing.Color]::FromArgb(0x2E, 0x32, 0x3A) }
+    $bgBot = if ($s.Active) { [System.Drawing.Color]::FromArgb(0x16, 0x19, 0x20) } else { [System.Drawing.Color]::FromArgb(0x14, 0x16, 0x1C) }
+    $lg = [System.Drawing.Drawing2D.LinearGradientBrush]::new([System.Drawing.Rectangle]::new(0, 0, $w, $h), $bgTop, $bgBot, 90.0)
+    $g.FillPath($lg, $rect); $lg.Dispose()
+
+    $sheen = [System.Drawing.Drawing2D.LinearGradientBrush]::new([System.Drawing.Rectangle]::new(0, 0, $w, [Math]::Max(1, [int]($h * 0.48))), [System.Drawing.Color]::FromArgb(22, 255, 255, 255), [System.Drawing.Color]::FromArgb(0, 255, 255, 255), 90.0)
+    $g.FillEllipse($sheen, [single]($w * 0.10), [single]($h * 0.06), [single]($w * 0.42), [single]($h * 0.34)); $sheen.Dispose()
+
+    if ($s.Hover) {
+        $hoverAlpha = if ($s.Active) { 16 } else { 10 }
+        $sl = [System.Drawing.SolidBrush]::new([System.Drawing.Color]::FromArgb($hoverAlpha, 255, 255, 255))
+        $g.FillPath($sl, $rect); $sl.Dispose()
     }
-    $sf = [System.Drawing.StringFormat]::new(); $sf.Alignment = 'Center'; $sf.LineAlignment = 'Center'
+
+    $borderColor = if ($s.Active) { [System.Drawing.Color]::FromArgb(155, $script:Theme.AccentHi.R, $script:Theme.AccentHi.G, $script:Theme.AccentHi.B) } else { [System.Drawing.Color]::FromArgb(128, $script:Theme.Contour.R, $script:Theme.Contour.G, $script:Theme.Contour.B) }
+    $pen = [System.Drawing.Pen]::new($borderColor, 1.1); $g.DrawPath($pen, $rect); $pen.Dispose()
+    $inner = [System.Drawing.Pen]::new([System.Drawing.Color]::FromArgb(40, 255, 255, 255), 1.0); $g.DrawPath($inner, $rect); $inner.Dispose()
+
+    $tc = if ($s.Active) { [System.Drawing.Color]::FromArgb(245, 247, 250) } else { [System.Drawing.Color]::FromArgb(232, 236, 242) }
     $tb = [System.Drawing.SolidBrush]::new($tc)
-    $g.DrawString($s.Label, $s.Font, $tb, [System.Drawing.RectangleF]::new(0, 0, $w, $h), $sf)
+    $sf = [System.Drawing.StringFormat]::new(); $sf.Alignment = 'Near'; $sf.LineAlignment = 'Center'
+
+    if ($s.Icon) {
+        $iconSize = [single]15
+        $gap = [single]10
+        $textSize = $g.MeasureString($s.Label, $s.Font)
+        $groupW = $iconSize + $gap + $textSize.Width
+        $startX = [single](($w - $groupW) / 2.0)
+        $iconRect = [System.Drawing.RectangleF]::new($startX, [single](($h - $iconSize) / 2.0), $iconSize, $iconSize)
+        Draw-ToggleIcon $g $s.Icon $iconRect $tc
+        $textRect = [System.Drawing.RectangleF]::new($startX + $iconSize + $gap, 0, [single]($w - ($startX + $iconSize + $gap) - 6), [single]$h)
+        $g.DrawString($s.Label, $s.Font, $tb, $textRect, $sf)
+    } else {
+        $sf.Alignment = 'Center'
+        $g.DrawString($s.Label, $s.Font, $tb, [System.Drawing.RectangleF]::new(0, 0, $w, $h), $sf)
+    }
+
     $tb.Dispose(); $sf.Dispose(); $rect.Dispose()
 }
 

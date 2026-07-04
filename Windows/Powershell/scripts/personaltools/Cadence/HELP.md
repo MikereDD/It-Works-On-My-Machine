@@ -269,3 +269,11 @@ still play the correct file. If it does not, clear the search box and try again.
 ### Visualizer does not move
 Playback should still work even if the visualizer tap fails. Check
 `cadence-startup.log` for startup or compiler errors.
+
+## UI polish note (v0.5.1)
+- Transport buttons now use the updated glossy circular style shown in the current mockup.
+- Shuffle and repeat now render as icon chips for clearer state and a more consistent control row.
+
+## UI polish note (v0.5.2)
+- Transport buttons were refined again to more closely match the approved Cadence control mockup.
+- Shuffle and repeat chips now use brighter icons and a more polished glossy pill treatment.

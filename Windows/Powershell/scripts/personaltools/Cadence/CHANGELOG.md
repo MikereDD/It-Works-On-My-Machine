@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-07-04
+
+Transport-control mockup matching pass.
+
+### Changed
+- Refined previous, play/pause, next, and stop controls to better match the approved glossy mockup.
+- Enlarged the primary play/pause button and increased transport spacing for a more centered media-player look.
+- Tightened the previous/next glyph proportions and stop-button padding so the icons read cleaner at a glance.
+- Restyled shuffle and repeat chips with brighter icons, stronger contrast, and more polished pill sizing.
+- Updated README and HELP for the control-refinement release.
+
+## [0.5.1] - 2026-07-04
+
+Transport and control-button polish pass.
+
+### Changed
+- Previous, play/pause, next, and stop now use a more dimensional circular control treatment, with a larger emphasized primary play/pause button.
+- Shuffle and repeat pills were restyled with icons, fuller raised surfaces, and clearer control-state contrast.
+- The transport row spacing was adjusted so the larger control buttons still sit cleanly in the center of the app.
+- README and HELP were updated for the control polish pass.
+
 ## [0.5.0] - 2026-07-04
 
 Stability and polish release. No major feature push; this pass tightens the app
