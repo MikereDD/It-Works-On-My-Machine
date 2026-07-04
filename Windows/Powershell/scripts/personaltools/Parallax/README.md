@@ -16,10 +16,9 @@
   <img src="https://img.shields.io/badge/platform-Windows-2d2d2d">
 </p>
 
-![Parallax](docs/parallax.png)
+![Parallax](docs/Screenshot-2.jpg)
 
 ## Features
-
 
 - Plays anything libmpv handles (MKV, MP4, M2TS, TS, WebM, ...) via HWND embedding
 - **Resume** &mdash; reopening a file picks up where you left off (per-file watch-later)
@@ -50,8 +49,24 @@ See the [changelog](https://github.com/MikereDD/It-Works-On-My-Machine/blob/main
 
 <table>
   <tr>
-    <td><img src="docs/fullscreen.png" alt="Fullscreen playback"><br><sub>Fullscreen with auto-hiding controls</sub></td>
-    <td><img src="docs/interface.png" alt="Interface at rest"><br><sub>The interface at rest</sub></td>
+    <td align="center" width="50%">
+      <img src="docs/Screenshot-1.jpg" alt="Blank opened app" width="100%"><br>
+      <sub><b>1. Blank opened app</b></sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="docs/Screenshot-2.jpg" alt="App playing in a minimal window" width="100%"><br>
+      <sub><b>2. App playing in minimal window</b></sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <img src="docs/Screenshot-3.jpg" alt="App playing in fullscreen with controls visible" width="100%"><br>
+      <sub><b>3. App playing in full screen showing the buttons at the bottom</b></sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="docs/Screenshot-4.jpg" alt="App in fullscreen" width="100%"><br>
+      <sub><b>4. App full screen</b></sub>
+    </td>
   </tr>
 </table>
 
