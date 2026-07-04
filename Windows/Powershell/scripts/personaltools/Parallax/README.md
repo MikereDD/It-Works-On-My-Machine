@@ -16,7 +16,7 @@
   <img src="https://img.shields.io/badge/platform-Windows-2d2d2d">
 </p>
 
-![Parallax](docs/parallax.png)
+![Parallax](docs/Screenshot-2.png)
 
 ## Features
 
