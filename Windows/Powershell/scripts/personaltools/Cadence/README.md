@@ -14,7 +14,7 @@ browser. Part of the `personaltools/` toolkit.
 
 | Library &amp; search | Now playing |
 |:---:|:---:|
-| ![Library browser with queue search](docs/screenshot-library.png) | ![Playing a track with the live visualizer](docs/screenshot-playing.jpg) |
+| ![Library browser with queue search](docs/screenshot-library.png) | ![Playing a track with the live visualizer](docs/screenshot-playing.png)
 
 ## What's new in v0.5.2
 - **Transport controls refined to closely match the approved glossy mockup** — previous, play/pause, next, and stop now use more dimensional circular buttons with a stronger center emphasis on the primary play/pause control.
