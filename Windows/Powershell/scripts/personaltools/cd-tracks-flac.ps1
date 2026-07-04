@@ -1,12 +1,12 @@
 #--------------------------------------------
 # file:     cd-tracks-flac.ps1
 # author:   Mike Redd
-# version:  1.7.0
+# version:  1.8.0
 # created:  2026-04-12
 # updated:  2026-07-04
 # desc:     Rip audio CD to one FLAC per track
 #           + MusicBrainz metadata fallback
-#           + album.json + Cover Art Archive/Discogs album art + per-track covers + CD NFO
+#           + album.json + Cover Art Archive/Discogs album art + per-track tags/covers + CD NFO
 #           Uses shared core/ui helpers
 #--------------------------------------------
 
@@ -21,6 +21,7 @@ param(
     [string]$LibDiscidDll = (Join-Path $HOME "Apps\libdiscid\discid.dll"),
     [string]$CoverPath = "",
     [string]$TrackCoverMapPath = "",
+    [string]$TrackMetaMapPath = "",
     [string]$DiscogsUrl = "",
     [string]$DiscogsToken = $env:DISCOGS_TOKEN,
     [switch]$NoAlbumArt,
@@ -58,7 +59,7 @@ if ($corePath) { . $corePath }
 if ($uiPath)   { . $uiPath }
 
 # ── Config ──────────────────────────────────
-$VER = "1.7.0"
+$VER = "1.8.0"
 
 $global:RipRoot   = $RipRoot
 $global:TempRoot  = Join-Path $global:RipRoot "temp"
@@ -74,7 +75,7 @@ $global:FLAC_EXE     = $FlacExe
 $global:METAFLAC_EXE = $MetaFlacExe
 
 $global:LIBDISCID_DLL = $LibDiscidDll
-$global:MB_USER_AGENT = "MikeRedd-CDTracksFlac/1.7.0"
+$global:MB_USER_AGENT = "MikeRedd-CDTracksFlac/1.8.0"
 $global:DISCOGS_TOKEN = $DiscogsToken
 
 # ── UI helpers ──────────────────────────────
@@ -771,22 +772,30 @@ function Encode-TrackFlac {
         [Parameter(Mandatory)] [string]$FlacPath,
         [Parameter(Mandatory)] [hashtable]$AlbumInfo,
         [Parameter(Mandatory)] [string]$TrackTitle,
-        [Parameter(Mandatory)] [int]$TrackNumber
+        [Parameter(Mandatory)] [int]$TrackNumber,
+        [hashtable]$TrackInfo = $null
     )
 
     $logPath = Join-Path $global:LogRoot ("flac_track_{0:D2}.log" -f $TrackNumber)
     if (Test-Path $logPath) { Remove-Item $logPath -Force -ErrorAction SilentlyContinue }
     New-Item -ItemType File -Path $logPath -Force | Out-Null
 
+    $tagArtist = if ($TrackInfo -and -not [string]::IsNullOrWhiteSpace([string]$TrackInfo.Artist)) { [string]$TrackInfo.Artist } else { [string]$AlbumInfo.Artist }
+    $tagAlbum  = if ($TrackInfo -and -not [string]::IsNullOrWhiteSpace([string]$TrackInfo.Album))  { [string]$TrackInfo.Album  } else { [string]$AlbumInfo.Album }
+    $tagYear   = if ($TrackInfo -and -not [string]::IsNullOrWhiteSpace([string]$TrackInfo.Year))   { [string]$TrackInfo.Year   } else { [string]$AlbumInfo.Year }
+    $tagGenre  = if ($TrackInfo -and -not [string]::IsNullOrWhiteSpace([string]$TrackInfo.Genre))  { [string]$TrackInfo.Genre  } else { [string]$AlbumInfo.Genre }
+    $tagTitle  = if ($TrackInfo -and -not [string]::IsNullOrWhiteSpace([string]$TrackInfo.Title))  { [string]$TrackInfo.Title  } else { [string]$TrackTitle }
+
     $args = @(
         "-8"
         "--verify"
-        "--tag=ARTIST=$($AlbumInfo.Artist)"
-        "--tag=ALBUM=$($AlbumInfo.Album)"
-        "--tag=TITLE=$TrackTitle"
+        "--tag=ARTIST=$tagArtist"
+        "--tag=ALBUMARTIST=$($AlbumInfo.Artist)"
+        "--tag=ALBUM=$tagAlbum"
+        "--tag=TITLE=$tagTitle"
         "--tag=TRACKNUMBER=$TrackNumber"
-        "--tag=DATE=$($AlbumInfo.Year)"
-        "--tag=GENRE=$($AlbumInfo.Genre)"
+        "--tag=DATE=$tagYear"
+        "--tag=GENRE=$tagGenre"
         "--output-name=$FlacPath"
         $WavPath
     )
@@ -802,6 +811,50 @@ function Encode-TrackFlac {
     return $LASTEXITCODE
 }
 
+# ── per-track metadata helpers ────────────────
+function Get-ObjectValue {
+    param($Object, [string]$Name)
+    if ($null -eq $Object -or [string]::IsNullOrWhiteSpace($Name)) { return "" }
+    if ($Object -is [hashtable] -and $Object.ContainsKey($Name)) { return [string]$Object[$Name] }
+    $prop = $Object.PSObject.Properties[$Name]
+    if ($prop) { return [string]$prop.Value }
+    return ""
+}
+
+function Get-TrackMetaAt {
+    param([object[]]$TrackMeta = @(), [int]$Index, $AlbumInfo = $null, [string]$FallbackTitle = "")
+    $m = $null
+    if ($TrackMeta -and $Index -ge 0 -and $Index -lt @($TrackMeta).Count) { $m = @($TrackMeta)[$Index] }
+    $title = Get-ObjectValue $m "Title"
+    $artist = Get-ObjectValue $m "Artist"
+    $album = Get-ObjectValue $m "Album"
+    $year = Get-ObjectValue $m "Year"
+    $genre = Get-ObjectValue $m "Genre"
+    $cover = Get-ObjectValue $m "Cover"
+    if ([string]::IsNullOrWhiteSpace($title))  { $title = $FallbackTitle }
+    if ($AlbumInfo) {
+        if ([string]::IsNullOrWhiteSpace($artist)) { $artist = Get-AlbumInfoValue -AlbumInfo $AlbumInfo -Name "Artist" }
+        if ([string]::IsNullOrWhiteSpace($album))  { $album  = Get-AlbumInfoValue -AlbumInfo $AlbumInfo -Name "Album" }
+        if ([string]::IsNullOrWhiteSpace($year))   { $year   = Get-AlbumInfoValue -AlbumInfo $AlbumInfo -Name "Year" }
+        if ([string]::IsNullOrWhiteSpace($genre))  { $genre  = Get-AlbumInfoValue -AlbumInfo $AlbumInfo -Name "Genre" }
+    }
+    return [PSCustomObject]@{ Title=$title; Artist=$artist; Album=$album; Year=$year; Genre=$genre; Cover=$cover }
+}
+
+function Import-TrackMetaMap {
+    param([string]$Path)
+    if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path $Path)) { return @() }
+    try {
+        $raw = Get-Content -LiteralPath $Path -Raw -ErrorAction Stop
+        if ([string]::IsNullOrWhiteSpace($raw)) { return @() }
+        return @($raw | ConvertFrom-Json -ErrorAction Stop)
+    }
+    catch {
+        Write-Status "Could not read per-track tag map: $($_.Exception.Message)" "Warn"
+        return @()
+    }
+}
+
 # ── JSON / cover ────────────────────────────
 function Save-AlbumMetadataJson {
     param(
@@ -810,7 +863,8 @@ function Save-AlbumMetadataJson {
         [Parameter(Mandatory)] [string[]]$TrackTitles,
         [Parameter(Mandatory)] [string[]]$FlacFiles,
         [string]$DiscId = "",
-        [object[]]$TrackCoverMap = @()
+        [object[]]$TrackCoverMap = @(),
+        [object[]]$TrackMeta = @()
     )
 
     $trackObjects = @()
@@ -819,9 +873,14 @@ function Save-AlbumMetadataJson {
         $coverFile = Get-TrackCoverMapValue -TrackCoverMap $TrackCoverMap -TrackNumber ($i + 1)
         if (-not [string]::IsNullOrWhiteSpace($coverFile)) { $coverFile = [System.IO.Path]::GetFileName($coverFile) }
 
+        $tm = Get-TrackMetaAt -TrackMeta $TrackMeta -Index $i -AlbumInfo $AlbumInfo -FallbackTitle $TrackTitles[$i]
         $trackObjects += [PSCustomObject]@{
             number   = $i + 1
-            title    = $TrackTitles[$i]
+            title    = $tm.Title
+            artist   = $tm.Artist
+            album    = $tm.Album
+            year     = $tm.Year
+            genre    = $tm.Genre
             flacFile = $fileName
             trackCoverFile = $coverFile
         }
@@ -1347,7 +1406,8 @@ function Write-CDNfo {
         [string[]]$Files = @(),
         [string]$DiscId = "",
         [string]$CoverPath = "",
-        [object[]]$TrackCoverMap = @()
+        [object[]]$TrackCoverMap = @(),
+        [object[]]$TrackMeta = @()
     )
 
     try {
@@ -1594,6 +1654,7 @@ function Start-Job {
 
     $coverPath = Resolve-AlbumCoverPath -AlbumInfo $albumInfo -AlbumDir $albumDir -ManualCoverPath $CoverPath -DiscogsUrl $DiscogsUrl -AllowDownload:(!$NoAlbumArt) -AllowPrompt:(!$NoAlbumArt)
     $trackCoverSourceMap = Import-TrackCoverSourceMap -Path $TrackCoverMapPath
+    $trackMetaMap = Import-TrackMetaMap -Path $TrackMetaMapPath
     $trackCoverMap = New-Object System.Collections.Generic.List[object]
 
     $flacFiles = New-Object System.Collections.Generic.List[string]
@@ -1603,6 +1664,9 @@ function Start-Job {
     for ($i = 0; $i -lt $trackCount; $i++) {
         $trackNum   = $i + 1
         $trackTitle = $tracks[$i]
+        $tm = Get-TrackMetaAt -TrackMeta $trackMetaMap -Index $i -AlbumInfo $albumInfo -FallbackTitle $trackTitle
+        if (-not [string]::IsNullOrWhiteSpace($tm.Title)) { $trackTitle = [string]$tm.Title }
+        $trackInfo = @{ Title=$tm.Title; Artist=$tm.Artist; Album=$tm.Album; Year=$tm.Year; Genre=$tm.Genre }
         $safeTitle  = Get-SafeName $trackTitle
 
         $wavPath  = Join-Path $global:TempRoot ("{0:D2} - {1}.wav" -f $trackNum, $safeTitle)
@@ -1626,7 +1690,7 @@ function Start-Job {
 
         Write-Status ("Encoding track {0:D2}: {1}" -f $trackNum, $trackTitle) "Info"
 
-        $encCode = Encode-TrackFlac -WavPath $wavPath -FlacPath $flacWork -AlbumInfo $albumInfo -TrackTitle $trackTitle -TrackNumber $trackNum
+        $encCode = Encode-TrackFlac -WavPath $wavPath -FlacPath $flacWork -AlbumInfo $albumInfo -TrackTitle $trackTitle -TrackNumber $trackNum -TrackInfo $trackInfo
         if ($encCode -ne 0) {
             Write-Status ("Failed to encode track {0:D2}" -f $trackNum) "Bad"
             [void]$failedTracks.Add($trackNum)
@@ -1643,12 +1707,16 @@ function Start-Job {
         }
 
         $embedCoverPath = $coverPath
-        if ($trackCoverSourceMap.ContainsKey($trackNum)) {
+        $savedTrackCover = ""
+        if (-not [string]::IsNullOrWhiteSpace([string]$tm.Cover) -and (Test-Path ([string]$tm.Cover))) {
+            $savedTrackCover = Save-TrackCoverToAlbumDir -TrackCoverPath ([string]$tm.Cover) -AlbumDir $albumDir -TrackNumber $trackNum -TrackTitle $trackTitle
+        }
+        elseif ($trackCoverSourceMap.ContainsKey($trackNum)) {
             $savedTrackCover = Save-TrackCoverToAlbumDir -TrackCoverPath ([string]$trackCoverSourceMap[$trackNum]) -AlbumDir $albumDir -TrackNumber $trackNum -TrackTitle $trackTitle
-            if (-not [string]::IsNullOrWhiteSpace($savedTrackCover) -and (Test-Path $savedTrackCover)) {
-                $embedCoverPath = $savedTrackCover
-                [void]$trackCoverMap.Add([PSCustomObject]@{ Track = $trackNum; Title = $trackTitle; Cover = $savedTrackCover })
-            }
+        }
+        if (-not [string]::IsNullOrWhiteSpace($savedTrackCover) -and (Test-Path $savedTrackCover)) {
+            $embedCoverPath = $savedTrackCover
+            [void]$trackCoverMap.Add([PSCustomObject]@{ Track = $trackNum; Title = $trackTitle; Artist = $tm.Artist; Album = $tm.Album; Cover = $savedTrackCover })
         }
         if ($embedCoverPath) {
             Embed-Cover -FlacPath $flacPath -ImagePath $embedCoverPath
@@ -1671,7 +1739,8 @@ function Start-Job {
                                -TrackTitles $tracks `
                                -FlacFiles $flacFiles.ToArray() `
                                -DiscId $discId `
-                               -TrackCoverMap ($trackCoverMap.ToArray())
+                               -TrackCoverMap ($trackCoverMap.ToArray()) `
+                               -TrackMeta $trackMetaMap
         Write-Status "Saved metadata sidecar." "Good"
     }
     catch {
@@ -1689,7 +1758,8 @@ function Start-Job {
                     -Files $nfoFiles `
                     -DiscId $discId `
                     -CoverPath $coverPath `
-                    -TrackCoverMap ($trackCoverMap.ToArray())
+                    -TrackCoverMap ($trackCoverMap.ToArray()) `
+                    -TrackMeta $trackMetaMap
     }
 
     Write-Host ""

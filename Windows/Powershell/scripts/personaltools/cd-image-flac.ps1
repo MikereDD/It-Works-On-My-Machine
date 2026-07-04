@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file:     cd-image-flac.ps1
 # author:   Mike Redd
-# version:  3.4.2
+# version:  3.4.3
 # created:  2026-04-11
 # updated:  2026-07-04
 # desc:     CD → FLAC + CUE + JSON + Cover Art
@@ -40,7 +40,7 @@ if (-not $NoElevate -and -not $isAdmin) {
 }
 
 # ── Paths ───────────────────────────────────
-$VER = "3.4.2"
+$VER = "3.4.3"
 
 $global:RipRoot   = $RipRoot
 $global:TempRoot  = Join-Path $global:RipRoot "temp"
@@ -56,7 +56,7 @@ $global:METAFLAC_EXE = $MetaFlacExe
 
 # ── MusicBrainz / DiscID ────────────────────
 $global:LIBDISCID_DLL = $LibDiscidDll
-$global:MB_USER_AGENT = "MikeRedd-CDImageFlac/3.4.2"
+$global:MB_USER_AGENT = "MikeRedd-CDImageFlac/3.4.3"
 $global:DISCOGS_TOKEN = $DiscogsToken
 
 # ── Helpers ─────────────────────────────────
