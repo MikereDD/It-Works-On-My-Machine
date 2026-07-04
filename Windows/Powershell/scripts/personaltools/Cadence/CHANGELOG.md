@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.5] - 2026-07-04
+
+Documentation pass for the player UI.
+
+### Added
+- New `HELP.md` with a full guide to the app layout, buttons, right-click menus,
+  keyboard shortcuts, album-art behavior, runtime files, and troubleshooting.
+
+### Changed
+- README now links to `HELP.md` from the Controls section and lists it in the
+  project layout table.
+
 ## [0.4.4] - 2026-07-04
 
 Shuffle and repeat controls pass.

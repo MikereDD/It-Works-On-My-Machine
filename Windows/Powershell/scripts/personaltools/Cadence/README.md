@@ -8,7 +8,7 @@ A sleek, fully owner-drawn local audio player for Windows — monochrome
 Material-style UI, NAudio engine, live FFT visualizer, and a real library
 browser. Part of the `personaltools/` toolkit.
 
-**Latest: v0.4.4** · [Changelog](https://github.com/MikereDD/It-Works-On-My-Machine/blob/main/Windows/Powershell/scripts/personaltools/Cadence/CHANGELOG.md)
+**Latest: v0.4.5** · [Changelog](https://github.com/MikereDD/It-Works-On-My-Machine/blob/main/Windows/Powershell/scripts/personaltools/Cadence/CHANGELOG.md)
 
 ## Screenshots
 
@@ -35,6 +35,7 @@ browser. Part of the `personaltools/` toolkit.
 - **Monochrome Material UI** — tonal pill buttons, a FAB transport, toggle
   chips, recessed dark-grey wells, and a subtle depth gradient.
 - **Tags + album art** — via TagLibSharp when present, with filename fallback, deeper embedded-art extraction, and broad sidecar cover fallback (`cover.jpg`, `folder.png`, `AlbumArt_*.jpg`, one-image album folders, etc.).
+- **Built-in help doc** — `HELP.md` explains the screen layout, buttons, right-click menus, keyboard shortcuts, and troubleshooting.
 
 ## Requirements
 - Windows with **Windows PowerShell 5.1** available — it's the reliable STA host
@@ -63,6 +64,8 @@ PowerShell `-STA` so only the player window shows.
 > itself. Don't `& .\*.ps1`, or the modules and the setup script run too.
 
 ## Controls
+For the full button guide, right-click menus, album-art behavior, and keyboard shortcuts, see [HELP.md](HELP.md).
+
 | Input | Action |
 |-------|--------|
 | `Space` | Play / pause |
@@ -89,6 +92,7 @@ The window title and a small bottom-right label show the running version. Hover 
 | File | Role |
 |------|------|
 | `cadence.ps1` | Main GUI — layout, wiring, position + visualizer timers |
+| `HELP.md` | Button guide, right-click menus, keyboard shortcuts, and troubleshooting |
 | `player.engine.ps1` | NAudio playback engine + FFT spectrum tap |
 | `player.ui.ps1` | Theme palette, owner-drawn controls, live visualizer |
 | `setup-naudio.ps1` | NuGet dependency fetcher (`-> .\lib`) |
