@@ -1,8 +1,8 @@
-﻿'--------------------------------------------
+'--------------------------------------------
 ' file:    cd-ripper-gui.vbs
 ' author:  Mike Redd
-' version: 1.1.4
-' updated: 2026-07-03
+' version: 1.3.1
+' updated: 2026-07-04
 ' desc:    Silent launcher for cd-ripper-gui.ps1
 '          (no console window flash). The PS1
 '          self-elevates to admin on launch.

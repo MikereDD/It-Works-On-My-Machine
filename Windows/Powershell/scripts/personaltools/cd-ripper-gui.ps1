@@ -1,15 +1,15 @@
-﻿#--------------------------------------------
+#--------------------------------------------
 # file:     cd-ripper-gui.ps1
 # author:   Mike Redd
-# version:  1.1.4
+# version:  1.3.1
 # created:  2026-06-17
-# updated:  2026-07-03
+# updated:  2026-07-04
 # desc:     WinForms GUI front-end for the CD -> FLAC
 #           archiving toolchain. Wraps both modes:
 #             * Single FLAC image + CUE (cd-image-flac.ps1)
 #             * One FLAC per track       (cd-tracks-flac.ps1)
 #           DiscID + MusicBrainz lookup, editable metadata
-#           + track grid, cover embed, JSON sidecar.
+#           + track grid, Cover Art Archive fetch, cover embed, JSON sidecar, CD NFO + Discogs cover fallback.
 #           Background runspaces keep the UI responsive.
 #--------------------------------------------
 
@@ -146,6 +146,416 @@ function Publish-ValidatedAudioFile {
     [void](Test-AudioOutputFile -Path $FinalPath)
 }
 
+
+function Get-AlbumInfoValue {
+    param(
+        [Parameter(Mandatory)] $AlbumInfo,
+        [Parameter(Mandatory)] [string]$Name
+    )
+    if ($null -eq $AlbumInfo) { return "" }
+    if ($AlbumInfo -is [hashtable] -and $AlbumInfo.ContainsKey($Name)) { return [string]$AlbumInfo[$Name] }
+    $prop = $AlbumInfo.PSObject.Properties[$Name]
+    if ($prop) { return [string]$prop.Value }
+    return ""
+}
+
+function Get-MBReleaseLabel {
+    param($Release)
+    if ($Release.'label-info') {
+        foreach ($li in $Release.'label-info') {
+            if ($li.label -and $li.label.name) { return [string]$li.label.name }
+        }
+    }
+    return ""
+}
+
+
+function Get-DiscogsReleaseIdFromText {
+    param([string[]]$Texts)
+
+    foreach ($text in $Texts) {
+        if ([string]::IsNullOrWhiteSpace($text)) { continue }
+        $value = [string]$text
+        if ($value -match '(?i)discogs\.com/(?:[^\s?#]+/)?release/(\d+)') { return $Matches[1] }
+        if ($value -match '(?i)\brelease/(\d+)') { return $Matches[1] }
+    }
+
+    return ""
+}
+
+function Get-DiscogsAuthHeaders {
+    $cfg = $global:sync.Cfg
+    $headers = @{ "User-Agent" = $cfg.UserAgent; "Accept" = "application/json" }
+    $token = ""
+    try { if ($cfg.DiscogsToken) { $token = [string]$cfg.DiscogsToken } } catch { }
+    if ([string]::IsNullOrWhiteSpace($token)) { $token = [Environment]::GetEnvironmentVariable("DISCOGS_TOKEN") }
+    if (-not [string]::IsNullOrWhiteSpace($token)) { $headers["Authorization"] = "Discogs token=$token" }
+    return $headers
+}
+
+function Get-DiscogsImageUrlFromHtml {
+    param([Parameter(Mandatory)] [string]$Html)
+
+    $patterns = @(
+        '<meta\s+property=["'']og:image["'']\s+content=["'']([^"'']+)["'']',
+        '<meta\s+content=["'']([^"'']+)["'']\s+property=["'']og:image["'']',
+        '<meta\s+name=["'']twitter:image["'']\s+content=["'']([^"'']+)["'']',
+        '"image"\s*:\s*"([^"]+)"'
+    )
+
+    foreach ($p in $patterns) {
+        $m = [regex]::Match($Html, $p, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+        if ($m.Success) { return [System.Net.WebUtility]::HtmlDecode($m.Groups[1].Value) }
+    }
+
+    return ""
+}
+
+function Get-DiscogsImageUrl {
+    param(
+        [string]$DiscogsUrl = "",
+        [string]$ReleaseId = ""
+    )
+
+    if ([string]::IsNullOrWhiteSpace($ReleaseId)) {
+        $ReleaseId = Get-DiscogsReleaseIdFromText -Texts @($DiscogsUrl)
+    }
+    if ([string]::IsNullOrWhiteSpace($ReleaseId)) { return "" }
+
+    $headers = Get-DiscogsAuthHeaders
+    $apiUrl = "https://api.discogs.com/releases/$ReleaseId"
+    Send-Log "Querying Discogs release art: $ReleaseId" "Info"
+    Start-Sleep -Milliseconds 1100
+
+    try {
+        $release = Invoke-RestMethod -Uri $apiUrl -Headers $headers -TimeoutSec 25
+        if ($release.images) {
+            $primary = @($release.images | Where-Object { $_.type -match 'primary' } | Select-Object -First 1)
+            $img = if ($primary -and $primary.Count -gt 0) { $primary[0] } else { @($release.images | Select-Object -First 1)[0] }
+            if ($img.uri) { return [string]$img.uri }
+            if ($img.uri150) { return [string]$img.uri150 }
+            if ($img.resource_url) { return [string]$img.resource_url }
+        }
+        if ($release.cover_image) { return [string]$release.cover_image }
+        if ($release.thumb) { return [string]$release.thumb }
+    } catch {
+        $statusCode = $null
+        try { if ($_.Exception.Response -and $_.Exception.Response.StatusCode) { $statusCode = [int]$_.Exception.Response.StatusCode } } catch { }
+        if ($statusCode -eq 401 -or $statusCode -eq 403) {
+            Send-Log "Discogs API image lookup needs a Discogs token; trying public page image instead." "Warn"
+        } else {
+            Send-Log "Discogs API image lookup failed: $($_.Exception.Message)" "Warn"
+        }
+    }
+
+    if ([string]::IsNullOrWhiteSpace($DiscogsUrl)) { $DiscogsUrl = "https://www.discogs.com/release/$ReleaseId" }
+    try {
+        Send-Log "Checking Discogs page image metadata..." "Info"
+        $page = Invoke-WebRequest -Uri $DiscogsUrl -UseBasicParsing -Headers @{ "User-Agent" = $global:sync.Cfg.UserAgent; "Accept" = "text/html,*/*" } -TimeoutSec 25
+        $html = [string]$page.Content
+        $fromHtml = Get-DiscogsImageUrlFromHtml -Html $html
+        if (-not [string]::IsNullOrWhiteSpace($fromHtml)) { return $fromHtml }
+    } catch {
+        Send-Log "Discogs page image lookup failed: $($_.Exception.Message)" "Warn"
+    }
+
+    return ""
+}
+
+function Save-DownloadedCover {
+    param(
+        [Parameter(Mandatory)] [string]$ImageUrl,
+        [Parameter(Mandatory)] [string]$AlbumDir,
+        [Parameter(Mandatory)] [string]$SourceName
+    )
+
+    try {
+        $dest = Join-Path $AlbumDir "cover.jpg"
+        Send-Log "Downloading album art from $SourceName..." "Info"
+        Invoke-WebRequest -Uri $ImageUrl -OutFile $dest -UseBasicParsing -Headers @{ "User-Agent" = $global:sync.Cfg.UserAgent; "Accept" = "image/*,*/*" } -TimeoutSec 45 | Out-Null
+        if ((Test-Path $dest) -and ((Get-Item -LiteralPath $dest).Length -gt 0)) {
+            Send-Log "Saved album art: $dest" "Good"
+            return $dest
+        }
+        Send-Log "$SourceName album art download did not create a valid file." "Warn"
+    } catch {
+        Send-Log "$SourceName album art download failed: $($_.Exception.Message)" "Warn"
+    }
+
+    return ""
+}
+
+function Save-CoverArtFromDiscogs {
+    param(
+        [Parameter(Mandatory)] $AlbumInfo,
+        [Parameter(Mandatory)] [string]$AlbumDir,
+        [string]$DiscogsUrl = ""
+    )
+
+    $releaseId = Get-AlbumInfoValue -AlbumInfo $AlbumInfo -Name "DiscogsReleaseId"
+    if ([string]::IsNullOrWhiteSpace($releaseId)) { $releaseId = Get-DiscogsReleaseIdFromText -Texts @($DiscogsUrl, (Get-AlbumInfoValue -AlbumInfo $AlbumInfo -Name "DiscogsUrl")) }
+    $url = if (-not [string]::IsNullOrWhiteSpace($DiscogsUrl)) { $DiscogsUrl } else { Get-AlbumInfoValue -AlbumInfo $AlbumInfo -Name "DiscogsUrl" }
+
+    if ([string]::IsNullOrWhiteSpace($releaseId) -and [string]::IsNullOrWhiteSpace($url)) { return "" }
+
+    $imgUrl = Get-DiscogsImageUrl -DiscogsUrl $url -ReleaseId $releaseId
+    if ([string]::IsNullOrWhiteSpace($imgUrl)) {
+        Send-Log "No downloadable Discogs image found; use the Cover browse button/manual path if needed." "Warn"
+        return ""
+    }
+
+    return (Save-DownloadedCover -ImageUrl $imgUrl -AlbumDir $AlbumDir -SourceName "Discogs")
+}
+
+function Save-ManualCoverToAlbumDir {
+    param(
+        [Parameter(Mandatory)] [string]$ManualCoverPath,
+        [Parameter(Mandatory)] [string]$AlbumDir
+    )
+
+    if ([string]::IsNullOrWhiteSpace($ManualCoverPath) -or -not (Test-Path $ManualCoverPath)) { return "" }
+
+    try {
+        $sourceItem = Get-Item -LiteralPath $ManualCoverPath -ErrorAction Stop
+        $jpgDest = Join-Path $AlbumDir "cover.jpg"
+        if ($sourceItem.FullName.Equals($jpgDest, [System.StringComparison]::OrdinalIgnoreCase)) { return $sourceItem.FullName }
+
+        try {
+            Add-Type -AssemblyName System.Drawing -ErrorAction SilentlyContinue
+            $img = [System.Drawing.Image]::FromFile($sourceItem.FullName)
+            try { $img.Save($jpgDest, [System.Drawing.Imaging.ImageFormat]::Jpeg) } finally { $img.Dispose() }
+            if ((Test-Path $jpgDest) -and ((Get-Item -LiteralPath $jpgDest).Length -gt 0)) {
+                Send-Log "Saved manual cover as: $jpgDest" "Good"
+                return $jpgDest
+            }
+        } catch {
+            $ext = $sourceItem.Extension
+            if ([string]::IsNullOrWhiteSpace($ext)) { $ext = ".jpg" }
+            $dest = Join-Path $AlbumDir ("cover" + $ext.ToLowerInvariant())
+            if (-not $sourceItem.FullName.Equals($dest, [System.StringComparison]::OrdinalIgnoreCase)) {
+                Copy-Item -LiteralPath $sourceItem.FullName -Destination $dest -Force -ErrorAction Stop
+            }
+            if ((Test-Path $dest) -and ((Get-Item -LiteralPath $dest).Length -gt 0)) {
+                Send-Log "Saved manual cover as: $dest" "Good"
+                return $dest
+            }
+        }
+    } catch {
+        Send-Log "Manual cover copy failed: $($_.Exception.Message)" "Warn"
+    }
+
+    return ""
+}
+
+function Get-CoverArtArchiveImageUrl {
+    param(
+        [Parameter(Mandatory)] [string]$Mbid,
+        [ValidateSet("release", "release-group")] [string]$Entity = "release"
+    )
+    $cfg = $global:sync.Cfg
+    $encodedMbid = [uri]::EscapeDataString($Mbid)
+    $url = "https://coverartarchive.org/${Entity}/${encodedMbid}"
+    Send-Log "Querying Cover Art Archive ${Entity} art..." "Info"
+    Start-Sleep -Milliseconds 1100
+    try {
+        $r = Invoke-RestMethod -Uri $url -Headers @{ "User-Agent" = $cfg.UserAgent; "Accept" = "application/json" } -TimeoutSec 25
+        if (-not $r.images) { return "" }
+        $front = @($r.images | Where-Object { $_.front -eq $true } | Select-Object -First 1)
+        $img = if ($front -and $front.Count -gt 0) { $front[0] } else { @($r.images | Select-Object -First 1)[0] }
+        if (-not $img) { return "" }
+        if ($img.thumbnails) {
+            if ($img.thumbnails.large)  { return [string]$img.thumbnails.large }
+            if ($img.thumbnails.'1200') { return [string]$img.thumbnails.'1200' }
+            if ($img.thumbnails.'500')  { return [string]$img.thumbnails.'500' }
+            if ($img.thumbnails.small)  { return [string]$img.thumbnails.small }
+        }
+        if ($img.image) { return [string]$img.image }
+        return ""
+    } catch {
+        $statusCode = $null
+        try { if ($_.Exception.Response -and $_.Exception.Response.StatusCode) { $statusCode = [int]$_.Exception.Response.StatusCode } } catch { }
+        if ($statusCode -eq 404) {
+            Send-Log "No Cover Art Archive ${Entity} art found (404); checking next cover source." "Warn"
+        } else {
+            Send-Log "Cover Art Archive ${Entity} lookup failed: $($_.Exception.Message)" "Warn"
+        }
+        return ""
+    }
+}
+
+function Save-CoverArtFromMusicBrainz {
+    param(
+        [Parameter(Mandatory)] $AlbumInfo,
+        [Parameter(Mandatory)] [string]$AlbumDir
+    )
+    $releaseId = Get-AlbumInfoValue -AlbumInfo $AlbumInfo -Name "ReleaseId"
+    $releaseGroupId = Get-AlbumInfoValue -AlbumInfo $AlbumInfo -Name "ReleaseGroupId"
+
+    $lookups = New-Object System.Collections.Generic.List[object]
+    if (-not [string]::IsNullOrWhiteSpace($releaseId)) {
+        [void]$lookups.Add([PSCustomObject]@{ Entity = "release"; Id = $releaseId })
+    }
+    if (-not [string]::IsNullOrWhiteSpace($releaseGroupId)) {
+        [void]$lookups.Add([PSCustomObject]@{ Entity = "release-group"; Id = $releaseGroupId })
+    }
+
+    if ($lookups.Count -lt 1) {
+        Send-Log "No MusicBrainz release or release-group ID available for cover art lookup." "Warn"
+        return ""
+    }
+
+    foreach ($lookup in $lookups) {
+        $imgUrl = Get-CoverArtArchiveImageUrl -Mbid $lookup.Id -Entity $lookup.Entity
+        if ([string]::IsNullOrWhiteSpace($imgUrl)) { continue }
+        $saved = Save-DownloadedCover -ImageUrl $imgUrl -AlbumDir $AlbumDir -SourceName "Cover Art Archive"
+        if (-not [string]::IsNullOrWhiteSpace($saved) -and (Test-Path $saved)) { return $saved }
+    }
+
+    Send-Log "No downloadable Cover Art Archive image found; continuing to next cover source." "Warn"
+    return ""
+}
+
+function Resolve-AlbumCoverPath {
+    param(
+        [Parameter(Mandatory)] $AlbumInfo,
+        [Parameter(Mandatory)] [string]$AlbumDir,
+        [string]$ManualCoverPath = "",
+        [string]$DiscogsUrl = "",
+        [bool]$Fetch = $true
+    )
+    if (-not [string]::IsNullOrWhiteSpace($ManualCoverPath) -and (Test-Path $ManualCoverPath)) {
+        $manual = Save-ManualCoverToAlbumDir -ManualCoverPath $ManualCoverPath -AlbumDir $AlbumDir
+        if (-not [string]::IsNullOrWhiteSpace($manual) -and (Test-Path $manual)) { return $manual }
+        return $ManualCoverPath
+    }
+    foreach ($candidate in @((Join-Path $AlbumDir "cover.jpg"),(Join-Path $AlbumDir "cover.png"),(Join-Path $AlbumDir "folder.jpg"),(Join-Path $AlbumDir "folder.png"))) {
+        if (Test-Path $candidate) { return $candidate }
+    }
+    if ($Fetch) {
+        $discogs = Save-CoverArtFromDiscogs -AlbumInfo $AlbumInfo -AlbumDir $AlbumDir -DiscogsUrl $DiscogsUrl
+        if (-not [string]::IsNullOrWhiteSpace($discogs) -and (Test-Path $discogs)) { return $discogs }
+
+        $downloaded = Save-CoverArtFromMusicBrainz -AlbumInfo $AlbumInfo -AlbumDir $AlbumDir
+        if (-not [string]::IsNullOrWhiteSpace($downloaded) -and (Test-Path $downloaded)) { return $downloaded }
+    }
+    return ""
+}
+
+function Format-CDFileSize {
+    param([long]$Bytes)
+    if ($Bytes -ge 1GB) { return ("{0:N2} GB" -f ($Bytes / 1GB)) }
+    if ($Bytes -ge 1MB) { return ("{0:N2} MB" -f ($Bytes / 1MB)) }
+    if ($Bytes -ge 1KB) { return ("{0:N2} KB" -f ($Bytes / 1KB)) }
+    return "$Bytes B"
+}
+
+function Format-CDDuration {
+    param([double]$Seconds)
+    if ($Seconds -le 0) { return "" }
+    $ts = [TimeSpan]::FromSeconds($Seconds)
+    if ($ts.TotalHours -ge 1) { return ("{0:D2}:{1:D2}:{2:D2}" -f [int]$ts.TotalHours, $ts.Minutes, $ts.Seconds) }
+    return ("{0:D2}:{1:D2}" -f $ts.Minutes, $ts.Seconds)
+}
+
+function Get-FlacTechnicalInfo {
+    param([Parameter(Mandatory)] [string]$Path)
+    $cfg = $global:sync.Cfg
+    $info = [ordered]@{ SampleRate = ""; Channels = ""; BitDepth = ""; Duration = "" }
+    if ([string]::IsNullOrWhiteSpace($cfg.METAFLAC) -or -not (Test-Path $cfg.METAFLAC) -or -not (Test-Path $Path)) { return $info }
+    try {
+        $sr = (& $cfg.METAFLAC --show-sample-rate $Path 2>$null | Select-Object -First 1)
+        $ch = (& $cfg.METAFLAC --show-channels $Path 2>$null | Select-Object -First 1)
+        $bd = (& $cfg.METAFLAC --show-bps $Path 2>$null | Select-Object -First 1)
+        $samples = (& $cfg.METAFLAC --show-total-samples $Path 2>$null | Select-Object -First 1)
+        if ($sr) { $info.SampleRate = "$sr Hz" }
+        if ($ch) { $info.Channels = "$ch" }
+        if ($bd) { $info.BitDepth = "$bd-bit" }
+        if ($sr -and $samples) { $info.Duration = Format-CDDuration -Seconds ([double]$samples / [double]$sr) }
+    } catch { }
+    return $info
+}
+
+function Write-CDNfo {
+    param(
+        [Parameter(Mandatory)] [string]$NfoPath,
+        [Parameter(Mandatory)] [string]$Mode,
+        [Parameter(Mandatory)] $AlbumInfo,
+        [Parameter(Mandatory)] [string[]]$TrackTitles,
+        [string[]]$Files = @(),
+        [string]$DiscId = "",
+        [string]$CoverPath = ""
+    )
+    $cfg = $global:sync.Cfg
+    try {
+        $lines = New-Object System.Collections.Generic.List[string]
+        $lines.Add("  ______ _____       ______ _            _____  _                       ")
+        $lines.Add(" / _____|  __ \     |  ____| |          |  __ \(_)                      ")
+        $lines.Add("| |     | |  | |____| |__  | | __ _  ___| |__) |_ _ __  _ __   ___ _ __ ")
+        $lines.Add("| |     | |  | |____|  __| | |/ _` |/ __|  _  /| | '_ \| '_ \ / _ \ '__|")
+        $lines.Add("| |____ | |__| |    | |    | | (_| | (__| | \ \| | |_) | |_) |  __/ |   ")
+        $lines.Add(" \_____|_____/     |_|    |_|\__,_|\___|_|  \_\_| .__/| .__/ \___|_|   ")
+        $lines.Add("                                                 | |   | |              ")
+        $lines.Add("                                                 |_|   |_|              ")
+        $lines.Add("")
+        $lines.Add("CD -> FLAC Ripper v1.3.1")
+        $lines.Add("Generated: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')")
+        $lines.Add("Mode     : $Mode")
+        $lines.Add("Source   : Audio CD")
+        $lines.Add("")
+        $lines.Add("Album Information")
+        $lines.Add("-----------------")
+        $lines.Add("Artist   : $(Get-AlbumInfoValue -AlbumInfo $AlbumInfo -Name 'Artist')")
+        $lines.Add("Album    : $(Get-AlbumInfoValue -AlbumInfo $AlbumInfo -Name 'Album')")
+        $lines.Add("Year     : $(Get-AlbumInfoValue -AlbumInfo $AlbumInfo -Name 'Year')")
+        $lines.Add("Genre    : $(Get-AlbumInfoValue -AlbumInfo $AlbumInfo -Name 'Genre')")
+        $lines.Add("Label    : $(Get-AlbumInfoValue -AlbumInfo $AlbumInfo -Name 'Label')")
+        $lines.Add("Country  : $(Get-AlbumInfoValue -AlbumInfo $AlbumInfo -Name 'Country')")
+        $lines.Add("Status   : $(Get-AlbumInfoValue -AlbumInfo $AlbumInfo -Name 'Status')")
+        $lines.Add("DiscID   : $DiscId")
+        $lines.Add("MBID     : $(Get-AlbumInfoValue -AlbumInfo $AlbumInfo -Name 'ReleaseId')")
+        $lines.Add("MB URL   : $(Get-AlbumInfoValue -AlbumInfo $AlbumInfo -Name 'MusicBrainzUrl')")
+        $lines.Add("RG MBID  : $(Get-AlbumInfoValue -AlbumInfo $AlbumInfo -Name 'ReleaseGroupId')")
+        $lines.Add("RG URL   : $(Get-AlbumInfoValue -AlbumInfo $AlbumInfo -Name 'ReleaseGroupUrl')")
+        $lines.Add("Discogs : $(Get-AlbumInfoValue -AlbumInfo $AlbumInfo -Name 'DiscogsUrl')")
+        if ($CoverPath) { $lines.Add("Cover    : $([System.IO.Path]::GetFileName($CoverPath))") }
+        $lines.Add("")
+        $lines.Add("Tools")
+        $lines.Add("-----")
+        $lines.Add("cdda2wav : $($cfg.CDDA2WAV)")
+        $lines.Add("flac     : $($cfg.FLAC)")
+        $lines.Add("metaflac : $($cfg.METAFLAC)")
+        $lines.Add("libdiscid: $($cfg.LIBDISCID)")
+        $lines.Add("")
+        $lines.Add("Track List")
+        $lines.Add("----------")
+        for ($i = 0; $i -lt $TrackTitles.Count; $i++) { $lines.Add(("{0:D2}. {1}" -f ($i + 1), $TrackTitles[$i])) }
+        $lines.Add("")
+        $lines.Add("Files")
+        $lines.Add("-----")
+        $safeFiles = @($Files) | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Select-Object -Unique
+        foreach ($file in $safeFiles) {
+            if (-not (Test-Path $file)) { continue }
+            $item = Get-Item -LiteralPath $file
+            $lines.Add("$($item.Name)  [$((Format-CDFileSize -Bytes $item.Length))]")
+            if ($item.Extension -ieq ".flac") {
+                $tech = Get-FlacTechnicalInfo -Path $item.FullName
+                $details = @()
+                if ($tech.Duration)   { $details += "Duration $($tech.Duration)" }
+                if ($tech.SampleRate) { $details += "Sample Rate $($tech.SampleRate)" }
+                if ($tech.Channels)   { $details += "Channels $($tech.Channels)" }
+                if ($tech.BitDepth)   { $details += "Bit Depth $($tech.BitDepth)" }
+                if ($details.Count -gt 0) { $lines.Add("  " + ($details -join " | ")) }
+            }
+        }
+        $lines.Add("")
+        $lines.Add("It Works On My Machine")
+        [System.IO.File]::WriteAllLines($NfoPath, $lines, [System.Text.Encoding]::UTF8)
+        Send-Log "Created NFO: $NfoPath" "Good"
+    } catch {
+        Send-Log "NFO creation failed: $($_.Exception.Message)" "Warn"
+    }
+}
+
 function Initialize-LibDiscid {
     $cfg = $global:sync.Cfg
     if (-not (Test-Path $cfg.LIBDISCID)) {
@@ -200,12 +610,38 @@ function Get-DiscId {
     }
 }
 
+
+function Get-MBDiscogsUrl {
+    param($Release)
+
+    try {
+        if ($Release -and $Release.relations) {
+            foreach ($rel in $Release.relations) {
+                $resource = ""
+                try {
+                    if ($rel.url -and $rel.url.resource) { $resource = [string]$rel.url.resource }
+                } catch { }
+
+                if (-not [string]::IsNullOrWhiteSpace($resource)) {
+                    if ($resource -match '(?i)discogs\.com/(?:[^\s?#]+/)?release/\d+') { return $resource }
+                    if ($rel.type -and ([string]$rel.type) -match '(?i)discogs') { return $resource }
+                }
+            }
+        }
+    } catch { }
+
+    return ""
+}
+
 function ConvertFrom-MBRelease {
     param([Parameter(Mandatory)] $rel)
     $artist = ""
     if ($rel.'artist-credit' -and $rel.'artist-credit'.Count -gt 0) {
         $artist = $rel.'artist-credit'[0].name
     }
+    $label = Get-MBReleaseLabel -Release $rel
+    $discogsUrl = Get-MBDiscogsUrl -Release $rel
+
     $tracks = @()
     if ($rel.media) {
         foreach ($m in $rel.media) {
@@ -219,12 +655,22 @@ function ConvertFrom-MBRelease {
     }
     return @{
         Album = @{
-            Artist    = $artist
-            Album     = $rel.title
-            Year      = if ($rel.date) { ($rel.date -split "-")[0] } else { "" }
-            Genre     = ""
-            DiscTitle = $rel.title
-            Performer = $artist
+            Artist          = $artist
+            Album           = $rel.title
+            Year            = if ($rel.date) { ($rel.date -split "-")[0] } else { "" }
+            Genre           = ""
+            DiscTitle       = $rel.title
+            Performer       = $artist
+            ReleaseId       = if ($rel.id) { [string]$rel.id } else { "" }
+            MusicBrainzUrl  = if ($rel.id) { "https://musicbrainz.org/release/$($rel.id)" } else { "" }
+            ReleaseGroupId  = if ($rel.'release-group' -and $rel.'release-group'.id) { [string]$rel.'release-group'.id } else { "" }
+            ReleaseGroupUrl = if ($rel.'release-group' -and $rel.'release-group'.id) { "https://musicbrainz.org/release-group/$($rel.'release-group'.id)" } else { "" }
+            DiscogsUrl      = $discogsUrl
+            DiscogsReleaseId = Get-DiscogsReleaseIdFromText -Texts @($discogsUrl)
+            Date            = if ($rel.date) { [string]$rel.date } else { "" }
+            Country         = if ($rel.country) { [string]$rel.country } else { "" }
+            Status          = if ($rel.status) { [string]$rel.status } else { "" }
+            Label           = $label
         }
         Tracks = $tracks
     }
@@ -234,7 +680,7 @@ function Get-MBMetadata {
     param([Parameter(Mandatory)] [string]$discId)
     $cfg = $global:sync.Cfg
     $encoded = [uri]::EscapeDataString($discId)
-    $url = "https://musicbrainz.org/ws/2/discid/$encoded`?inc=artist-credits+labels+recordings+media+discids&fmt=json"
+    $url = "https://musicbrainz.org/ws/2/discid/$encoded`?inc=artist-credits+labels+recordings+media+discids+release-groups+url-rels&fmt=json"
     Send-Log "Querying MusicBrainz disc endpoint..." "Dim"
     Start-Sleep -Milliseconds 1100
     $r = Invoke-RestMethod -Uri $url -Headers @{ "User-Agent" = $cfg.UserAgent; "Accept" = "application/json" } -TimeoutSec 20
@@ -379,7 +825,7 @@ function Invoke-MBReleaseLookupRaw {
 
     $cfg = $global:sync.Cfg
     $encoded = [uri]::EscapeDataString($ReleaseId)
-    $url = "https://musicbrainz.org/ws/2/release/$encoded`?inc=artist-credits+labels+recordings+media+discids&fmt=json"
+    $url = "https://musicbrainz.org/ws/2/release/$encoded`?inc=artist-credits+labels+recordings+media+discids+release-groups+url-rels&fmt=json"
     Send-Log "MusicBrainz release URL/ID lookup: $ReleaseId" "Dim"
     Start-Sleep -Milliseconds 1100
     return Invoke-RestMethod -Uri $url -Headers @{ "User-Agent" = $cfg.UserAgent; "Accept" = "application/json" } -TimeoutSec 20
@@ -472,7 +918,7 @@ function Get-MBMetadataByReleaseId {
     param([Parameter(Mandatory)] [string]$ReleaseId)
     $cfg = $global:sync.Cfg
     $encoded = [uri]::EscapeDataString($ReleaseId)
-    $url = "https://musicbrainz.org/ws/2/release/$encoded`?inc=artist-credits+labels+recordings+media+discids&fmt=json"
+    $url = "https://musicbrainz.org/ws/2/release/$encoded`?inc=artist-credits+labels+recordings+media+discids+release-groups+url-rels&fmt=json"
     Send-Log "Querying MusicBrainz release endpoint..." "Dim"
     Start-Sleep -Milliseconds 1100
     $rel = Invoke-RestMethod -Uri $url -Headers @{ "User-Agent" = $cfg.UserAgent; "Accept" = "application/json" } -TimeoutSec 20
@@ -688,8 +1134,16 @@ function Save-ImageJson {
         $trackObjects += [PSCustomObject]@{ number = $i + 1; title = $TrackTitles[$i]; sector = $StartSectors[$i] }
     }
     $payload = [PSCustomObject]@{
-        discId = $DiscId; artist = $AlbumInfo.Artist; album = $AlbumInfo.Album
-        year = $AlbumInfo.Year; genre = $AlbumInfo.Genre; discTitle = $AlbumInfo.DiscTitle
+        discId = $DiscId; musicBrainzReleaseId = Get-AlbumInfoValue -AlbumInfo $AlbumInfo -Name "ReleaseId"
+        musicBrainzReleaseGroupId = Get-AlbumInfoValue -AlbumInfo $AlbumInfo -Name "ReleaseGroupId"
+        musicBrainzUrl = Get-AlbumInfoValue -AlbumInfo $AlbumInfo -Name "MusicBrainzUrl"
+        musicBrainzReleaseGroupUrl = Get-AlbumInfoValue -AlbumInfo $AlbumInfo -Name "ReleaseGroupUrl"
+        discogsReleaseId = Get-AlbumInfoValue -AlbumInfo $AlbumInfo -Name "DiscogsReleaseId"
+        discogsUrl = Get-AlbumInfoValue -AlbumInfo $AlbumInfo -Name "DiscogsUrl"
+        artist = $AlbumInfo.Artist; album = $AlbumInfo.Album; year = $AlbumInfo.Year
+        date = Get-AlbumInfoValue -AlbumInfo $AlbumInfo -Name "Date"; genre = $AlbumInfo.Genre
+        label = Get-AlbumInfoValue -AlbumInfo $AlbumInfo -Name "Label"; country = Get-AlbumInfoValue -AlbumInfo $AlbumInfo -Name "Country"
+        status = Get-AlbumInfoValue -AlbumInfo $AlbumInfo -Name "Status"; discTitle = $AlbumInfo.DiscTitle
         performer = $AlbumInfo.Performer; flacFile = $FlacFileName; cueFile = $CueFileName; tracks = $trackObjects
     }
     $payload | ConvertTo-Json -Depth 5 | Set-Content -Path $JsonPath -Encoding UTF8
@@ -703,8 +1157,16 @@ function Save-TracksJson {
         $trackObjects += [PSCustomObject]@{ number = $i + 1; title = $TrackTitles[$i]; flacFile = $fileName }
     }
     $payload = [PSCustomObject]@{
-        discId = $DiscId; artist = $AlbumInfo.Artist; album = $AlbumInfo.Album
-        year = $AlbumInfo.Year; genre = $AlbumInfo.Genre; discTitle = $AlbumInfo.DiscTitle
+        discId = $DiscId; musicBrainzReleaseId = Get-AlbumInfoValue -AlbumInfo $AlbumInfo -Name "ReleaseId"
+        musicBrainzReleaseGroupId = Get-AlbumInfoValue -AlbumInfo $AlbumInfo -Name "ReleaseGroupId"
+        musicBrainzUrl = Get-AlbumInfoValue -AlbumInfo $AlbumInfo -Name "MusicBrainzUrl"
+        musicBrainzReleaseGroupUrl = Get-AlbumInfoValue -AlbumInfo $AlbumInfo -Name "ReleaseGroupUrl"
+        discogsReleaseId = Get-AlbumInfoValue -AlbumInfo $AlbumInfo -Name "DiscogsReleaseId"
+        discogsUrl = Get-AlbumInfoValue -AlbumInfo $AlbumInfo -Name "DiscogsUrl"
+        artist = $AlbumInfo.Artist; album = $AlbumInfo.Album; year = $AlbumInfo.Year
+        date = Get-AlbumInfoValue -AlbumInfo $AlbumInfo -Name "Date"; genre = $AlbumInfo.Genre
+        label = Get-AlbumInfoValue -AlbumInfo $AlbumInfo -Name "Label"; country = Get-AlbumInfoValue -AlbumInfo $AlbumInfo -Name "Country"
+        status = Get-AlbumInfoValue -AlbumInfo $AlbumInfo -Name "Status"; discTitle = $AlbumInfo.DiscTitle
         performer = $AlbumInfo.Performer; tracks = $trackObjects
     }
     $payload | ConvertTo-Json -Depth 5 | Set-Content -Path $JsonPath -Encoding UTF8
@@ -719,6 +1181,8 @@ function Invoke-Detect {
     $artist = ""; $album = ""; $year = ""; $genre = ""
     $tracks = @()
     $trackCount = 0
+    $releaseId = ""
+    $releaseGroupId = ""
     $searchResults = @()
 
     $fallbackArtist = ""
@@ -744,6 +1208,10 @@ function Invoke-Detect {
                 $year   = $lookup.Album.Year
                 $genre  = $lookup.Album.Genre
                 $tracks = $lookup.Tracks
+                $releaseId = $lookup.Album.ReleaseId
+                $releaseGroupId = $lookup.Album.ReleaseGroupId
+                $discogsUrl = $lookup.Album.DiscogsUrl
+                if (-not [string]::IsNullOrWhiteSpace($discogsUrl)) { Send-Log "MusicBrainz linked Discogs release: $discogsUrl" "Good" }
                 Send-Log "MusicBrainz match: $artist - $album ($($tracks.Count) tracks)" "Good"
             } else {
                 Send-Log "No exact MusicBrainz disc match found." "Warn"
@@ -782,7 +1250,7 @@ function Invoke-Detect {
     }
 
     return @{
-        DiscId = $discId; Artist = $artist; Album = $album; Year = $year; Genre = $genre
+        DiscId = $discId; ReleaseId = $releaseId; ReleaseGroupId = $releaseGroupId; DiscogsUrl = $discogsUrl; Artist = $artist; Album = $album; Year = $year; Genre = $genre
         Tracks = $tracks; TrackCount = $trackCount; SearchResults = $searchResults
     }
 }
@@ -801,7 +1269,7 @@ function Invoke-Release {
     $lookup = Get-MBMetadataByReleaseId -ReleaseId $job.ReleaseId
     if (-not $lookup) { return $null }
     return @{
-        DiscId = ""; Artist = $lookup.Album.Artist; Album = $lookup.Album.Album
+        DiscId = ""; ReleaseId = $lookup.Album.ReleaseId; ReleaseGroupId = $lookup.Album.ReleaseGroupId; DiscogsUrl = $lookup.Album.DiscogsUrl; Artist = $lookup.Album.Artist; Album = $lookup.Album.Album
         Year = $lookup.Album.Year; Genre = $lookup.Album.Genre
         Tracks = $lookup.Tracks; TrackCount = $lookup.Tracks.Count
     }
@@ -822,6 +1290,16 @@ function Invoke-Rip {
     $albumInfo = @{
         Artist = $job.Artist; Album = $job.Album; Year = $job.Year; Genre = $job.Genre
         DiscTitle = $job.Album; Performer = $job.Artist
+        ReleaseId = $job.ReleaseId
+        MusicBrainzUrl = if ($job.ReleaseId) { "https://musicbrainz.org/release/$($job.ReleaseId)" } else { "" }
+        ReleaseGroupId = $job.ReleaseGroupId
+        ReleaseGroupUrl = if ($job.ReleaseGroupId) { "https://musicbrainz.org/release-group/$($job.ReleaseGroupId)" } else { "" }
+        DiscogsReleaseId = Get-DiscogsReleaseIdFromText -Texts @($job.DiscogsUrl)
+        DiscogsUrl = $job.DiscogsUrl
+        Date = $job.Year
+        Country = ""
+        Status = ""
+        Label = ""
     }
     $tracks = $job.Tracks
     $artistSafe = Get-SafeName $albumInfo.Artist
@@ -839,6 +1317,7 @@ function Invoke-Rip {
         $cue  = Join-Path $dir "$base.cue"
         $json = Join-Path $dir "album.json"
         $ripLog = Join-Path $logRoot "cdda2wav_rip.log"
+        $coverPath = Resolve-AlbumCoverPath -AlbumInfo $albumInfo -AlbumDir $dir -ManualCoverPath $job.Cover -DiscogsUrl $job.DiscogsUrl -Fetch:$cfg.FetchArt
 
         foreach ($f in @($wav, $flac, $flacWork, $cue, $json)) {
             if (Test-Path $f) { Remove-Item $f -Force -ErrorAction SilentlyContinue }
@@ -878,7 +1357,13 @@ function Invoke-Rip {
         }
 
         Embed-Cue $flac $cue
-        if ($job.Cover -and (Test-Path $job.Cover)) { Embed-Cover $flac $job.Cover }
+        if ($coverPath -and (Test-Path $coverPath)) { Embed-Cover $flac $coverPath }
+
+        $nfo = Join-Path $dir ("$base.nfo")
+        if ($cfg.CreateNfo) {
+            $nfoFiles = @($flac, $cue, $json, $coverPath) | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }
+            Write-CDNfo -NfoPath $nfo -Mode "Single FLAC image + CUE" -AlbumInfo $albumInfo -TrackTitles $tracks -Files $nfoFiles -DiscId $job.DiscId -CoverPath $coverPath
+        }
 
         Send-Log "Done." "Good"
         Send-Log "FLAC: $flac" "Dim"
@@ -890,8 +1375,10 @@ function Invoke-Rip {
         $albumDir = Join-Path $trackRoot "$artistSafe\$albumSafe"
         New-Item -ItemType Directory -Force -Path $albumDir | Out-Null
         $json = Join-Path $albumDir "album.json"
+        $coverPath = Resolve-AlbumCoverPath -AlbumInfo $albumInfo -AlbumDir $albumDir -ManualCoverPath $job.Cover -DiscogsUrl $job.DiscogsUrl -Fetch:$cfg.FetchArt
 
         $flacFiles = New-Object System.Collections.Generic.List[string]
+        $flacPaths = New-Object System.Collections.Generic.List[string]
         $failedTracks = New-Object System.Collections.Generic.List[int]
         for ($i = 0; $i -lt $tracks.Count; $i++) {
             $trackNum = $i + 1
@@ -922,9 +1409,10 @@ function Invoke-Rip {
                 Send-Log ("Track {0:D2} validation/publish failed: {1}" -f $trackNum, $_.Exception.Message) "Bad"; [void]$failedTracks.Add($trackNum); continue
             }
 
-            if ($job.Cover -and (Test-Path $job.Cover)) { Embed-Cover $flacPath $job.Cover }
+            if ($coverPath -and (Test-Path $coverPath)) { Embed-Cover $flacPath $coverPath }
             Remove-Item $wavPath -Force -ErrorAction SilentlyContinue
             [void]$flacFiles.Add([System.IO.Path]::GetFileName($flacPath))
+            [void]$flacPaths.Add($flacPath)
             Send-Log ("Created {0:D2} - {1}.flac" -f $trackNum, $trackTitle) "Good"
         }
 
@@ -937,6 +1425,12 @@ function Invoke-Rip {
             Send-Log "Saved metadata sidecar." "Good"
         } catch {
             Send-Log "Failed to save JSON: $($_.Exception.Message)" "Warn"
+        }
+
+        $nfo = Join-Path $albumDir ("$artistSafe - $albumSafe.nfo")
+        if ($cfg.CreateNfo) {
+            $nfoFiles = (@($flacPaths.ToArray()) + @($json, $coverPath)) | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }
+            Write-CDNfo -NfoPath $nfo -Mode "One FLAC per track" -AlbumInfo $albumInfo -TrackTitles $tracks -Files $nfoFiles -DiscId $job.DiscId -CoverPath $coverPath
         }
 
         if ($failedTracks.Count -gt 0 -or $flacFiles.Count -ne $tracks.Count) {
@@ -1005,8 +1499,8 @@ function New-Group {
 
 # ── Form ────────────────────────────────────
 $form = New-Object System.Windows.Forms.Form
-$form.Text = "CD -> FLAC Ripper v1.1.4"
-$form.Size = "1000,980"
+$form.Text = "CD -> FLAC Ripper v1.3.1"
+$form.Size = "1000,1020"
 $form.MinimumSize = "900,840"
 $form.StartPosition = "CenterScreen"
 $form.BackColor = $clrBack
@@ -1016,12 +1510,14 @@ $form.Font = $fontUI
 $header = New-Object System.Windows.Forms.Panel
 $header.Dock = "Top"; $header.Height = 52; $header.BackColor = $clrPanel
 $hLabel = New-Object System.Windows.Forms.Label
-$hLabel.Text = "  CD -> FLAC Ripper v1.1.4"; $hLabel.ForeColor = $clrAccent
+$hLabel.Text = "  CD -> FLAC Ripper v1.3.1"; $hLabel.ForeColor = $clrAccent
 $hLabel.Font = $fontHead; $hLabel.Dock = "Fill"; $hLabel.TextAlign = "MiddleLeft"
 $header.Controls.Add($hLabel)
 $form.Controls.Add($header)
 
 $W = 964   # inner content width baseline
+$script:CurrentReleaseId = ""
+$script:CurrentReleaseGroupId = ""
 
 
 # ── Default paths ───────────────────────────
@@ -1136,7 +1632,7 @@ $btnClrRows = New-Button "Clear" 852 88 90 26; $btnClrRows.Anchor = "Top,Right";
 $form.Controls.Add($gTracks)
 
 # ── Group: Output ───────────────────────────
-$gOut = New-Group "Output" 8 640 $W 96
+$gOut = New-Group "Output" 8 640 $W 126
 $gOut.Anchor = "Top,Left,Right"
 
 $rbImage = New-Object System.Windows.Forms.RadioButton
@@ -1145,16 +1641,26 @@ $rbImage.ForeColor = $clrText; $gOut.Controls.Add($rbImage)
 $rbTracks = New-Object System.Windows.Forms.RadioButton
 $rbTracks.Text = "One FLAC per track"; $rbTracks.Location = "240,26"; $rbTracks.Size = "180,22"
 $rbTracks.ForeColor = $clrText; $gOut.Controls.Add($rbTracks)
+$chkFetchArt = New-Object System.Windows.Forms.CheckBox
+$chkFetchArt.Text = "Fetch album art"; $chkFetchArt.Location = "440,26"; $chkFetchArt.Size = "140,22"
+$chkFetchArt.ForeColor = $clrText; $chkFetchArt.Checked = $true; $gOut.Controls.Add($chkFetchArt)
+$chkNfo = New-Object System.Windows.Forms.CheckBox
+$chkNfo.Text = "Create NFO"; $chkNfo.Location = "590,26"; $chkNfo.Size = "120,22"
+$chkNfo.ForeColor = $clrText; $chkNfo.Checked = $true; $gOut.Controls.Add($chkNfo)
 if ($Mode -eq "tracks") { $rbTracks.Checked = $true } else { $rbImage.Checked = $true }
 
-$gOut.Controls.Add((New-Label "Cover" 14 60 44))
-$txtCover = New-Text 62 59 800; $txtCover.Anchor = "Top,Left,Right"; $gOut.Controls.Add($txtCover)
-$btnCover = New-Button "..." 868 58 32 24; $btnCover.Anchor = "Top,Right"; $gOut.Controls.Add($btnCover)
+$gOut.Controls.Add((New-Label "Discogs URL" 14 60 76))
+$txtDiscogs = New-Text 94 59 746; $txtDiscogs.Anchor = "Top,Left,Right"; $gOut.Controls.Add($txtDiscogs)
+$btnOpenDiscogs = New-Button "Open" 848 58 52 24; $btnOpenDiscogs.Anchor = "Top,Right"; $gOut.Controls.Add($btnOpenDiscogs)
+
+$gOut.Controls.Add((New-Label "Cover" 14 90 44))
+$txtCover = New-Text 62 89 800; $txtCover.Anchor = "Top,Left,Right"; $gOut.Controls.Add($txtCover)
+$btnCover = New-Button "..." 868 88 32 24; $btnCover.Anchor = "Top,Right"; $gOut.Controls.Add($btnCover)
 $form.Controls.Add($gOut)
 
 # ── Action row ──────────────────────────────
 $pAct = New-Object System.Windows.Forms.Panel
-$pAct.Location = "8,742"; $pAct.Size = "$W,36"; $pAct.BackColor = $clrBack
+$pAct.Location = "8,772"; $pAct.Size = "$W,36"; $pAct.BackColor = $clrBack
 $pAct.Anchor = "Top,Left,Right"
 $btnStart = New-Button "Start Rip" 6 2 160 32 $clrBtnGo
 $btnStart.Font = New-Object System.Drawing.Font("Segoe UI Semibold",10); $pAct.Controls.Add($btnStart)
@@ -1164,7 +1670,7 @@ $btnClear = New-Button "Clear Log" 828 2 110 32 $clrBtn; $btnClear.Anchor = "Top
 $form.Controls.Add($pAct)
 
 # ── Log ─────────────────────────────────────
-$gLog = New-Group "Log" 8 784 $W 150
+$gLog = New-Group "Log" 8 814 $W 150
 $gLog.Anchor = "Top,Left,Right,Bottom"
 $rtb = New-Object System.Windows.Forms.RichTextBox
 $rtb.Location = "12,22"; $rtb.Size = "940,116"; $rtb.Anchor = "Top,Left,Right,Bottom"
@@ -1223,13 +1729,16 @@ function Get-Cfg {
         FLAC      = $txtFlac.Text.Trim()
         METAFLAC  = $txtMeta.Text.Trim()
         LIBDISCID = $txtDisc.Text.Trim()
-        UserAgent = "MikeRedd-CDRipperGUI/1.1.4"
+        FetchArt  = $chkFetchArt.Checked
+        CreateNfo = $chkNfo.Checked
+        DiscogsToken = [Environment]::GetEnvironmentVariable("DISCOGS_TOKEN")
+        UserAgent = "MikeRedd-CDRipperGUI/1.3.1"
     }
 }
 
 function Set-Busy {
     param([bool]$busy, [string]$msg = "")
-    $controls = @($btnDetect, $btnSearch, $btnUseResult, $btnOpenMB, $btnStart, $btnAddRow, $btnDelRow, $btnClrRows)
+    $controls = @($btnDetect, $btnSearch, $btnUseResult, $btnOpenMB, $btnOpenDiscogs, $btnStart, $btnAddRow, $btnDelRow, $btnClrRows)
     foreach ($c in $controls) { $c.Enabled = -not $busy }
     $lblBusy.Text = $msg
     if ($busy) { $form.Cursor = "AppStarting" } else { $form.Cursor = "Default" }
@@ -1306,6 +1815,9 @@ function Complete-Op {
                 if ($res.Album)  { $txtAlbum.Text  = $res.Album }
                 if ($res.Year)   { $txtYear.Text   = $res.Year }
                 if ($res.Genre)  { $txtGenre.Text  = $res.Genre }
+                if ($res.ReleaseId) { $script:CurrentReleaseId = $res.ReleaseId; Add-LogLine "MusicBrainz release ID: $($res.ReleaseId)" "Dim" }
+                if ($res.ReleaseGroupId) { $script:CurrentReleaseGroupId = $res.ReleaseGroupId; Add-LogLine "MusicBrainz release group ID: $($res.ReleaseGroupId)" "Dim" }
+                if ($res.DiscogsUrl -and [string]::IsNullOrWhiteSpace($txtDiscogs.Text)) { $txtDiscogs.Text = $res.DiscogsUrl; Add-LogLine "Discogs cover source found from MusicBrainz." "Good" }
 
                 if ([string]::IsNullOrWhiteSpace($txtSearchArtist.Text) -and -not [string]::IsNullOrWhiteSpace($txtArtist.Text)) {
                     $txtSearchArtist.Text = $txtArtist.Text
@@ -1324,6 +1836,9 @@ function Complete-Op {
                 if ($res.Album)  { $txtAlbum.Text  = $res.Album }
                 if ($res.Year)   { $txtYear.Text   = $res.Year }
                 if ($res.Genre)  { $txtGenre.Text  = $res.Genre }
+                if ($res.ReleaseId) { $script:CurrentReleaseId = $res.ReleaseId; Add-LogLine "MusicBrainz release ID: $($res.ReleaseId)" "Dim" }
+                if ($res.ReleaseGroupId) { $script:CurrentReleaseGroupId = $res.ReleaseGroupId; Add-LogLine "MusicBrainz release group ID: $($res.ReleaseGroupId)" "Dim" }
+                if ($res.DiscogsUrl -and [string]::IsNullOrWhiteSpace($txtDiscogs.Text)) { $txtDiscogs.Text = $res.DiscogsUrl; Add-LogLine "Discogs cover source found from MusicBrainz." "Good" }
                 Set-Tracks $res.Tracks $res.TrackCount
             }
         }
@@ -1365,6 +1880,20 @@ $btnCover.Add_Click({
     $dlg = New-Object System.Windows.Forms.OpenFileDialog
     $dlg.Filter = "Images|*.jpg;*.jpeg;*.png|All files|*.*"
     if ($dlg.ShowDialog() -eq "OK") { $txtCover.Text = $dlg.FileName }
+})
+$btnOpenDiscogs.Add_Click({
+    $url = $txtDiscogs.Text.Trim()
+    if ([string]::IsNullOrWhiteSpace($url)) {
+        $queryText = ("{0} {1}" -f $txtArtist.Text.Trim(), $txtAlbum.Text.Trim()).Trim()
+        if ([string]::IsNullOrWhiteSpace($queryText)) {
+            Add-LogLine "Enter a Discogs release URL, or fill Artist and Album before opening Discogs." "Warn"
+            return
+        }
+        $q = [uri]::EscapeDataString($queryText)
+        $url = "https://www.discogs.com/search/?q=$q&type=release"
+    }
+    Add-LogLine "Opening Discogs in your browser." "Info"
+    Start-Process $url
 })
 
 $btnDetect.Add_Click({
@@ -1462,8 +1991,11 @@ $btnStart.Add_Click({
         Year   = $txtYear.Text.Trim()
         Genre  = $txtGenre.Text.Trim()
         DiscId = ($lblDiscId.Text -replace '^DiscID:\s*', '')
+        ReleaseId = $script:CurrentReleaseId
+        ReleaseGroupId = $script:CurrentReleaseGroupId
         Tracks = $titles
         Cover  = $txtCover.Text.Trim()
+        DiscogsUrl = $txtDiscogs.Text.Trim()
     }
     if ($sync.Job.DiscId -eq "-" -or $sync.Job.DiscId -like "(not read)*") { $sync.Job.DiscId = "" }
 
