@@ -1,9 +1,9 @@
-﻿#--------------------------------------------
+#--------------------------------------------
 # file:     brEncoder.ps1
 # author:   Mike Redd
-# version:  3.2.2
+# version:  3.2.3
 # created:  2026-02-11
-# updated:  2026-07-03
+# updated:  2026-07-04
 # desc:     Encode Blu-ray .m2ts files
 #           to H.265/HEVC on Windows
 #           using ffmpeg, then create a
@@ -13,9 +13,7 @@
 #           validates metadata, verifies final MKV
 #           language/default/forced tags
 #           remuxes final MKV with real track IDs
-# changes:  v3.2.2 - fix here-string pipeline layout for Windows PowerShell 5.1 parser
-#           v3.2.1 - media-gui production pass: self-contained UI/core fallback
-#                    so dot-sourcing from media-encoder-gui never aborts on fresh systems
+# changes:  v3.2.3 - fix CLPI parser variable collision with PowerShell $PID
 #           v3.2.0 - production-line stable pass: raw .m2ts stream mapping
 #                    now uses actual source/CLPI counts so every physical
 #                    audio and subtitle stream is mapped; CLPI/sidecar physical
@@ -37,68 +35,42 @@
 
 param()
 
-# ── Load custom UI/core helpers, with production-safe fallbacks ──
-# Prefer the user's shared profile helpers, but never abort the encoder/GUI
-# just because those personal UI files are missing on a fresh machine.
-$profileRoot = Join-Path $HOME 'PS\profile.d'
-$uiPath      = Join-Path $profileRoot 'ui.ps1'
-$corePath    = Join-Path $profileRoot 'core.ps1'
-
-if (Test-Path -LiteralPath $uiPath) {
-    try { . $uiPath }
-    catch { Write-Host "Failed to load ui.ps1, using fallback UI: $($_.Exception.Message)" }
-}
-if (Test-Path -LiteralPath $corePath) {
-    try { . $corePath }
-    catch { Write-Host "Failed to load core.ps1, using fallback core helpers: $($_.Exception.Message)" }
-}
-
-# ANSI colors are optional. Define harmless fallbacks when the shared UI was
-# not loaded so dot-sourcing from the GUI stays reliable.
-foreach ($pair in @{
-    UI_R=''; UI_GRY=''; UI_DIM=''; UI_GRN=''; UI_YLW=''; UI_MAG=''; UI_CYN=''; UI_RED=''
-}.GetEnumerator()) {
-    if (-not (Get-Variable -Name $pair.Key -Scope Global -ErrorAction SilentlyContinue)) {
-        Set-Variable -Name $pair.Key -Value $pair.Value -Scope Global
+# ── Load custom UI ────────────────────────────────────────────
+$uiPath = "$env:USERPROFILE\PS\profile.d\ui.ps1"
+if (Test-Path $uiPath) {
+    try {
+        . $uiPath
+    }
+    catch {
+        Write-Host "Failed to load ui.ps1: $($_.Exception.Message)"
+        return
     }
 }
+else {
+    Write-Host "Missing ui.ps1: $uiPath"
+    return
+}
 
-if (-not (Get-Command Clear-UiScreen -ErrorAction SilentlyContinue)) {
-    function Clear-UiScreen { try { Clear-Host } catch { } }
+# ── Load core helper ──────────────────────────────────────────
+$corePath = "$env:USERPROFILE\PS\profile.d\core.ps1"
+if (Test-Path $corePath) {
+    try {
+        . $corePath
+    }
+    catch {
+        Write-Host "Failed to load core.ps1: $($_.Exception.Message)"
+        return
+    }
 }
-if (-not (Get-Command Get-UiBoxWidth -ErrorAction SilentlyContinue)) {
-    function Get-UiBoxWidth { param([int]$MaxWidth = 70, [int]$MinWidth = 48) return $MaxWidth }
-}
-if (-not (Get-Command Write-UiHeader -ErrorAction SilentlyContinue)) {
-    function Write-UiHeader { param([string]$Title, [string]$Subtitle = '', [int]$Width = 70) Write-Host "=== $Title ==="; if ($Subtitle) { Write-Host "    $Subtitle" } }
-}
-if (-not (Get-Command Write-UiRow -ErrorAction SilentlyContinue)) {
-    function Write-UiRow { param([string]$Label, [string]$Value, [string]$Color = '', [string]$ValueColor = '') Write-Host ("  {0,-14} {1}" -f $Label, $Value) }
-}
-if (-not (Get-Command Write-UiBlankLine -ErrorAction SilentlyContinue)) {
-    function Write-UiBlankLine { Write-Host '' }
-}
-if (-not (Get-Command Write-UiDivider -ErrorAction SilentlyContinue)) {
-    function Write-UiDivider { Write-Host ('-' * 60) }
-}
-if (-not (Get-Command Write-UiSection -ErrorAction SilentlyContinue)) {
-    function Write-UiSection { param([string]$Text = '', [string]$Title = '', [string]$Color = '') $t = if ($Title) { $Title } else { $Text }; Write-Host ''; Write-Host ("-- {0} --" -f $t) }
-}
-if (-not (Get-Command Write-CoreError -ErrorAction SilentlyContinue)) {
-    function Write-CoreError { param([string]$Message) Write-Host "ERROR: $Message" }
-}
-if (-not (Get-Command Pause-Core -ErrorAction SilentlyContinue)) {
-    function Pause-Core { param([string]$Message = 'Press Enter to continue...') [void](Read-Host $Message) }
-}
-if (-not (Get-Command Pause-UiReturn -ErrorAction SilentlyContinue)) {
-    function Pause-UiReturn { param([string]$Message = 'Press Enter to continue...') [void](Read-Host $Message) }
+else {
+    Write-Host "Missing core.ps1: $corePath"
+    return
 }
 
 $ErrorActionPreference = 'Stop'
 
-
 $ScriptName    = "Blu-ray Encoder"
-$ScriptVersion = "3.2.2"
+$ScriptVersion = "3.2.0"
 $ScriptAuthor  = "Mike Redd"
 
 # ── Config ────────────────────────────────────────────────────
@@ -541,7 +513,7 @@ function Write-MetaFile {
     $masterDisplay  = if ($VideoProfile -and $VideoProfile.MasterDisplay) { $VideoProfile.MasterDisplay } else { 'n/a' }
     $maxCLL         = if ($VideoProfile -and $VideoProfile.MaxCLL)        { $VideoProfile.MaxCLL }        else { 'n/a' }
 
-$metaText = @"
+@"
 MovieName      : $MovieName
 Source         : $($SourceFile.FullName)
 Output         : $OutputFile
@@ -561,9 +533,7 @@ Audio          : $($Script:DefaultAudio)
 Duration       : $DurationSeconds
 Sample         : $($Script:DefaultLength) sec
 TrackMeta      : $TrackMetaPath
-"@
-
-    $metaText | Microsoft.PowerShell.Management\Set-Content -Path $metaFile -Encoding UTF8
+"@ | Microsoft.PowerShell.Management\Set-Content -Path $metaFile -Encoding UTF8
 }
 
 function Wait-ForOutputFile {
@@ -1338,7 +1308,7 @@ function Read-ClpiSubtitleLanguages {
             $p += 1                  # reserved
             for ($k = 0; $k -lt $numStreams; $k++) {
                 if (($p + 3) -gt $b.Length) { return $null }
-                $pid   = ([int]$b[$p] -shl 8) -bor [int]$b[$p + 1]; $p += 2
+                $streamPid = ([int]$b[$p] -shl 8) -bor [int]$b[$p + 1]; $p += 2
                 $ciLen = [int]$b[$p]; $p += 1     # StreamCodingInfo length
                 $ciEnd = $p + $ciLen
                 if ($ciEnd -gt $b.Length) { return $null }
@@ -1346,12 +1316,12 @@ function Read-ClpiSubtitleLanguages {
                 if ($codingType -eq 0x90 -or $codingType -eq 0x91) {
                     # PG/IG subtitle: 3-byte language_code right after coding type.
                     $lang = [System.Text.Encoding]::ASCII.GetString($b, $p + 1, 3)
-                    $subs.Add([pscustomobject]@{ PID = $pid; Lang = $lang })
+                    $subs.Add([pscustomobject]@{ PID = $streamPid; Lang = $lang })
                 }
                 elseif ($codingType -eq 0x92) {
                     # Text subtitle: char_code (1) then 3-byte language_code.
                     $lang = [System.Text.Encoding]::ASCII.GetString($b, $p + 2, 3)
-                    $subs.Add([pscustomobject]@{ PID = $pid; Lang = $lang })
+                    $subs.Add([pscustomobject]@{ PID = $streamPid; Lang = $lang })
                 }
                 $p = $ciEnd
             }
@@ -1410,7 +1380,7 @@ function Read-ClpiStreamLanguages {
             $p += 1              # reserved
             for ($k = 0; $k -lt $numStreams; $k++) {
                 if (($p + 3) -gt $b.Length) { break }
-                $pid   = ([int]$b[$p] -shl 8) -bor [int]$b[$p + 1]; $p += 2
+                $streamPid = ([int]$b[$p] -shl 8) -bor [int]$b[$p + 1]; $p += 2
                 $ciLen = [int]$b[$p]; $p += 1     # StreamCodingInfo length
                 $ciEnd = $p + $ciLen
                 if ($ciEnd -gt $b.Length) { break }
@@ -1421,17 +1391,17 @@ function Read-ClpiStreamLanguages {
                 # audio_format/sample_rate (1 byte) then 3-byte ISO-639 language.
                 if ($ct -eq 0x03 -or $ct -eq 0x04 -or ($ct -ge 0x80 -and $ct -le 0x86) -or $ct -eq 0xA1 -or $ct -eq 0xA2) {
                     $lang = [System.Text.Encoding]::ASCII.GetString($b, $p + 2, 3)
-                    $audio.Add([pscustomobject]@{ PID = $pid; Lang = $lang })
+                    $audio.Add([pscustomobject]@{ PID = $streamPid; Lang = $lang })
                 }
                 elseif ($ct -eq 0x90 -or $ct -eq 0x91) {
                     # PG/IG subtitle: 3-byte language right after coding type.
                     $lang = [System.Text.Encoding]::ASCII.GetString($b, $p + 1, 3)
-                    $subs.Add([pscustomobject]@{ PID = $pid; Lang = $lang })
+                    $subs.Add([pscustomobject]@{ PID = $streamPid; Lang = $lang })
                 }
                 elseif ($ct -eq 0x92) {
                     # Text subtitle: char_code (1) then 3-byte language.
                     $lang = [System.Text.Encoding]::ASCII.GetString($b, $p + 2, 3)
-                    $subs.Add([pscustomobject]@{ PID = $pid; Lang = $lang })
+                    $subs.Add([pscustomobject]@{ PID = $streamPid; Lang = $lang })
                 }
                 $p = $ciEnd
             }
