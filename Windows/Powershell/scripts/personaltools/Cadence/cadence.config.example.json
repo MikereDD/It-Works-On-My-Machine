@@ -1,0 +1,19 @@
+{
+  "roots": [
+    "P:\\Music"
+  ],
+  "volume": 0.8,
+  "shuffle": false,
+  "repeat": false,
+  "repeatMode": "off",
+  "palette": "mono",
+  "onlineArtLookup": true,
+  "restoreSession": true,
+  "session": {
+    "queue": [],
+    "index": -1,
+    "path": "",
+    "positionSeconds": 0.0,
+    "savedAt": ""
+  }
+}

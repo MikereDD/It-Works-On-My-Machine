@@ -8,7 +8,7 @@ A sleek, fully owner-drawn local audio player for Windows — monochrome
 Material-style UI, NAudio engine, live FFT visualizer, and a real library
 browser. Part of the `personaltools/` toolkit.
 
-**Latest: v0.4.7** · [Changelog](https://github.com/MikereDD/It-Works-On-My-Machine/blob/main/Windows/Powershell/scripts/personaltools/Cadence/CHANGELOG.md)
+**Latest: v0.4.8** · [Changelog](https://github.com/MikereDD/It-Works-On-My-Machine/blob/main/Windows/Powershell/scripts/personaltools/Cadence/CHANGELOG.md)
 
 ## Screenshots
 
@@ -31,7 +31,7 @@ browser. Part of the `personaltools/` toolkit.
   M3U / M3U8 import, drag-and-drop of files / folders / playlists, and app-managed
   saved playlists in `cadence.playlists`.
 - **Remembers your setup** — saved library roots plus volume, shuffle, repeat mode,
-  and visualizer palette persist across launches.
+  visualizer palette, queue, selected track, and last position persist across launches.
 - **Monochrome Material UI** — tonal pill buttons, a FAB transport, toggle
   chips, recessed dark-grey wells, and a subtle depth gradient.
 - **Tags + album art** — via TagLibSharp when present, with filename fallback, deeper embedded-art extraction, and broad sidecar cover fallback (`cover.jpg`, `folder.png`, `AlbumArt_*.jpg`, one-image album folders, etc.).
@@ -85,7 +85,7 @@ For the full button guide, right-click menus, album-art behavior, and keyboard s
 | Right-click album art | Choose a local cover image, retry online lookup, or toggle online art lookup |
 | Right-click folder (tree) | Add recursively |
 | Library button | Add / remove / clear saved roots |
-| Playlists button | New playlist, open playlist, save current queue, load saved playlists, or open the playlists folder |
+| Playlists button | New playlist, open playlist, save current queue, load saved playlists, toggle session restore, or open the playlists folder |
 | Help button | Open `HELP.md`, About Cadence, the app folder, or the startup log |
 
 ## Album art
@@ -100,17 +100,26 @@ script. Use the **Playlists** button to start a new empty queue, open an existin
 saved playlist, add a saved playlist to the current queue, export the queue as a
 standalone M3U file, or open the playlists folder in Explorer.
 
+## Last session restore
+On exit, Cadence saves the current queue, selected track, playback position,
+volume, shuffle/repeat mode, visualizer palette, and album-art lookup setting in
+`cadence.config.json`. On the next launch it restores the queue and selected
+track without autoplaying. Press **Play** to resume from the saved position. Use
+**Playlists -> Restore last session on launch** to toggle this behavior.
+
 ## Layout
 | File | Role |
 |------|------|
 | `cadence.ps1` | Main GUI — layout, wiring, position + visualizer timers |
 | `HELP.md` | Button guide, right-click menus, keyboard shortcuts, and troubleshooting |
+| `cadence.config.example.json` | Example config format; real `cadence.config.json` is runtime-only |
+| `.gitignore` | Keeps Cadence runtime/cache files out of the repo |
 | `player.engine.ps1` | NAudio playback engine + FFT spectrum tap |
 | `player.ui.ps1` | Theme palette, owner-drawn controls, live visualizer |
 | `setup-naudio.ps1` | NuGet dependency fetcher (`-> .\lib`) |
 
 Runtime files written next to the script: `cadence.config.json` (saved library
-roots plus volume / shuffle / repeat mode / visualizer palette / online art lookup),
+roots plus volume / shuffle / repeat mode / visualizer palette / online art lookup / last-session snapshot),
 `cadence.playlists` (app-managed saved `.m3u8` playlists), `cadence.art-cache`
 (cached online album covers), and `cadence-startup.log` (startup/exception log).
 

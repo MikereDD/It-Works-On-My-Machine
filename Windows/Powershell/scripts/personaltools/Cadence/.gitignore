@@ -1,0 +1,5 @@
+# Cadence runtime/user-local files
+cadence.config.json
+cadence-startup.log
+cadence.art-cache/
+cadence.playlists/

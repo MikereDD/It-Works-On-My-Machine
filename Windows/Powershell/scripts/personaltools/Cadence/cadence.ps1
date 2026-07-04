@@ -1,5 +1,5 @@
 # ============================================================================
-#  cadence.ps1  -  Cadence  v0.4.7
+#  cadence.ps1  -  Cadence  v0.4.8
 #  A sleek local audio player (WinForms, owner-drawn, NAudio backend).
 #  Part of personaltools/ - mirrors the media-encoder-gui.ps1 layout:
 #    main GUI  +  dot-sourced engine/ui modules.
@@ -82,7 +82,7 @@ try {
 })
 
 $APP_NAME    = 'Cadence'
-$APP_VERSION = '0.4.7'
+$APP_VERSION = '0.4.8'
 $APP_TITLE   = "$APP_NAME v$APP_VERSION"
 $ROOT        = $PSScriptRoot
 $LIB         = Join-Path $ROOT 'lib'
@@ -491,6 +491,10 @@ $playlistMenu.Items.Add($miLoadSavedPlaylist) | Out-Null
 $playlistMenu.Items.Add($miAddSavedPlaylist) | Out-Null
 $playlistMenu.Items.Add('-') | Out-Null
 $miOpenPlaylistsFolder = $playlistMenu.Items.Add('Open playlists folder')
+$playlistMenu.Items.Add('-') | Out-Null
+$miRestoreSession = $playlistMenu.Items.Add('Restore last session on launch')
+$miRestoreSession.CheckOnClick = $true
+$miRestoreSession.Checked = $true
 
 # Help button menu.
 $helpMenu = [System.Windows.Forms.ContextMenuStrip]::new()
@@ -674,7 +678,18 @@ function Toggle-PlayPause {
         Start-Playback; $script:State.Active = $true
     } else {
         $i = if ($script:State.Index -ge 0) { $script:State.Index } else { 0 }
-        Invoke-PlayIndex $i
+        $curPath = $null
+        if ($i -ge 0 -and $i -lt $script:State.Items.Count) { $curPath = [string]$script:State.Items[$i] }
+
+        # If a previous session restored the reader at the saved position, resume
+        # that already-open reader instead of reopening the track from 0:00.
+        if ($script:Engine.Reader -and $script:Engine.Path -and $curPath -and
+            [string]::Equals([string]$script:Engine.Path, $curPath, [System.StringComparison]::OrdinalIgnoreCase)) {
+            Start-Playback
+            $script:State.Active = $true
+        } else {
+            Invoke-PlayIndex $i
+        }
     }
     Sync-PlayGlyph
 }
@@ -973,8 +988,33 @@ function Expand-Node {
     } finally { $tree.EndUpdate() }
 }
 
+function New-EmptySessionConfig {
+    @{
+        queue = @()
+        index = -1
+        path  = ''
+        positionSeconds = 0.0
+        savedAt = ''
+    }
+}
+
+function New-DefaultConfig {
+    @{
+        roots = @()
+        volume = 0.8
+        shuffle = $false
+        repeat = $false
+        repeatMode = 'off'
+        palette = 'mono'
+        onlineArtLookup = $true
+        restoreSession = $true
+        session = (New-EmptySessionConfig)
+    }
+}
+
 $script:ConfigPath = Join-Path $ROOT 'cadence.config.json'
-$script:Config     = @{ roots = @(); volume = 0.8; shuffle = $false; repeat = $false; repeatMode = 'off'; palette = 'mono'; onlineArtLookup = $true }
+$script:Config     = New-DefaultConfig
+$script:SuppressConfigSave = $false
 
 function Load-Config {
     if (-not (Test-Path -LiteralPath $script:ConfigPath)) { return }
@@ -984,6 +1024,28 @@ function Load-Config {
         if ($json.PSObject.Properties['repeatMode'] -and $json.repeatMode) { $rm = [string]$json.repeatMode }
         elseif ($json.repeat) { $rm = 'all' }
         if (@('off','all','one') -notcontains $rm) { $rm = 'off' }
+
+        $session = New-EmptySessionConfig
+        if ($json.PSObject.Properties['session'] -and $json.session) {
+            try {
+                if ($json.session.PSObject.Properties['queue']) {
+                    $session.queue = @($json.session.queue | Where-Object { $_ })
+                }
+                if ($json.session.PSObject.Properties['index']) {
+                    $session.index = [int]$json.session.index
+                }
+                if ($json.session.PSObject.Properties['path'] -and $json.session.path) {
+                    $session.path = [string]$json.session.path
+                }
+                if ($json.session.PSObject.Properties['positionSeconds']) {
+                    $session.positionSeconds = [double]$json.session.positionSeconds
+                }
+                if ($json.session.PSObject.Properties['savedAt'] -and $json.session.savedAt) {
+                    $session.savedAt = [string]$json.session.savedAt
+                }
+            } catch { $session = New-EmptySessionConfig }
+        }
+
         $script:Config = @{
             roots   = @($json.roots | Where-Object { $_ })
             volume  = if ($null -ne $json.volume) { [double]$json.volume } else { 0.8 }
@@ -992,11 +1054,27 @@ function Load-Config {
             repeatMode = $rm
             palette = if ($json.palette) { [string]$json.palette } else { 'mono' }
             onlineArtLookup = if ($null -ne $json.onlineArtLookup) { [bool]$json.onlineArtLookup } else { $true }
+            restoreSession = if ($null -ne $json.restoreSession) { [bool]$json.restoreSession } else { $true }
+            session = $session
         }
-    } catch { $script:Config = @{ roots = @(); volume = 0.8; shuffle = $false; repeat = $false; repeatMode = 'off'; palette = 'mono'; onlineArtLookup = $true } }
+    } catch { $script:Config = New-DefaultConfig }
+}
+
+function Get-SessionSnapshot {
+    $currentPath = Get-CurrentTrackPath
+    $pos = 0.0
+    try { $pos = [Math]::Round((Get-Position).TotalSeconds, 2) } catch {}
+    [pscustomobject]@{
+        queue = @($script:State.Items)
+        index = [int]$script:State.Index
+        path  = if ($currentPath) { [string]$currentPath } else { '' }
+        positionSeconds = [double]$pos
+        savedAt = (Get-Date).ToString('s')
+    }
 }
 
 function Save-Config {
+    if ($script:SuppressConfigSave) { return }
     try {
         [pscustomobject]@{
             roots   = @($script:Config.roots)
@@ -1006,8 +1084,56 @@ function Save-Config {
             repeatMode = [string]$script:State.RepeatMode
             palette = [string]$script:State.VisPalette
             onlineArtLookup = [bool]$script:Engine.OnlineArtLookup
-        } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $script:ConfigPath -Encoding UTF8
+            restoreSession = [bool]$script:Config.restoreSession
+            session = (Get-SessionSnapshot)
+        } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $script:ConfigPath -Encoding UTF8
     } catch {}
+}
+
+function Restore-LastSession {
+    if (-not [bool]$script:Config.restoreSession) { return }
+    $session = $script:Config.session
+    if (-not $session) { return }
+
+    $queue = @($session.queue | Where-Object {
+        $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) -and
+        ($AUDIO_EXT -contains [IO.Path]::GetExtension($_).ToLower())
+    })
+    if ($queue.Count -eq 0) { return }
+
+    Add-Paths $queue
+    if ($script:State.Items.Count -eq 0) { return }
+
+    $idx = -1
+    if ($session.path) { $idx = Get-PathIndex ([string]$session.path) }
+    if ($idx -lt 0 -and $session.index -ge 0 -and $session.index -lt $script:State.Items.Count) {
+        $idx = [int]$session.index
+    }
+    if ($idx -lt 0) { $idx = 0 }
+
+    $script:State.Index = $idx
+    $vr = $script:State.ViewMap.IndexOf($idx)
+    if ($vr -ge 0) { $list.SelectedIndex = $vr }
+
+    $path = [string]$script:State.Items[$idx]
+    try {
+        Open-Track -Path $path
+        $pos = 0.0
+        try { $pos = [double]$session.positionSeconds } catch {}
+        $dur = Get-Duration
+        if ($pos -gt 0 -and $dur.TotalSeconds -gt 0) {
+            Seek-To ([Math]::Max(0.0, [Math]::Min(1.0, $pos / $dur.TotalSeconds)))
+        }
+        $script:State.Active = $false
+        Update-NowPlaying -Path $path
+        $lblDur.Text = Format-Time (Get-Duration)
+        $lblPos.Text = Format-Time (Get-Position)
+        $seek.Fraction = Get-PositionFraction
+        $seek.Invalidate()
+        Sync-PlayGlyph
+    } catch {
+        try { Add-Content -Path $script:StartupLog -Value ("[{0}] restore session failed: {1}" -f (Get-Date -Format s), $_.Exception.Message) } catch {}
+    }
 }
 
 function Build-Tree {
@@ -1280,6 +1406,10 @@ $miOpenPlaylistsFolder.Add_Click({
     Initialize-PlaylistStore
     try { Start-Process -FilePath $PLAYLIST_DIR } catch {}
 })
+$miRestoreSession.Add_Click({
+    $script:Config.restoreSession = [bool]$miRestoreSession.Checked
+    Save-Config
+})
 
 $miAddRoot.Add_Click({
     $dlg = [System.Windows.Forms.FolderBrowserDialog]::new()
@@ -1468,6 +1598,7 @@ $form.Add_Resize({
 
 # Load saved library roots and build the tree (falls back to drives if none).
 Initialize-PlaylistStore
+$script:SuppressConfigSave = $true
 Load-Config
 Build-Tree
 
@@ -1484,9 +1615,15 @@ try {
     Set-VisPalette ([string]$script:Config.palette)
     Set-AlbumArtOnlineLookup ([bool]$script:Config.onlineArtLookup)
     $miOnlineArt.Checked = [bool]$script:Config.onlineArtLookup
+    $miRestoreSession.Checked = [bool]$script:Config.restoreSession
 } catch {}
+$script:SuppressConfigSave = $false
 
-# Persist settings (incl. final volume) when the window closes.
+# Restore the previous queue/track/position without autoplaying. Press Play to
+# resume from the saved position.
+try { Restore-LastSession } catch {}
+
+# Persist settings (incl. final volume and session snapshot) when the window closes.
 $form.Add_FormClosing({ try { Save-Config } catch {} })
 
 # Apply Windows dark-mode scrollbars to the native tree + list once handles exist.

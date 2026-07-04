@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.8] - 2026-07-04
+
+Last-session restore pass.
+
+### Added
+- Cadence now saves the current queue, selected track, playback position, and
+  session timestamp into `cadence.config.json` when the app closes.
+- On launch, Cadence restores the previous queue and selected track without
+  autoplaying. Press Play to resume from the saved position.
+- Playlists menu now includes `Restore last session on launch` as a persistent
+  toggle.
+- Added `cadence.config.example.json` and a Cadence-local `.gitignore` for
+  runtime config/cache files.
+
+### Changed
+- README and HELP now document last-session restore behavior and the new
+  Playlists menu toggle.
+
 ## [0.4.7] - 2026-07-04
 
 Help/About and blank-art polish pass.

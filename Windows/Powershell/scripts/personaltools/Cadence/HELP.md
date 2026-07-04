@@ -1,7 +1,7 @@
 # Cadence Help
 
 Cadence is a small local music player with a dark owner-drawn interface, a real
-library tree, a queue, saved playlists, album art, shuffle/repeat controls, and a live visualizer.
+library tree, a queue, saved playlists, album art, shuffle/repeat controls, last-session restore, and a live visualizer.
 
 This file explains the visible buttons, right-click menus, and keyboard
 shortcuts. Press `F1` or click the **Help** button in the app to open it.
@@ -152,9 +152,19 @@ The Playlists button manages custom playlists saved by Cadence. These are normal
 | Load saved playlist | Replaces the queue with one of your saved Cadence playlists. |
 | Add saved playlist to queue | Appends one of your saved Cadence playlists to the current queue. |
 | Open playlists folder | Opens `cadence.playlists` in File Explorer. |
+| Restore last session on launch | Saves and restores the queue, selected track, and playback position between launches. |
 
 Saved Cadence playlists are regular local M3U8 files, so they can still be edited
 or backed up outside the app.
+
+## Last session restore
+
+Cadence saves the current queue, selected track, and playback position when the
+window closes. The next launch restores the queue and selected track without
+autoplaying. Press **Play** to resume from the saved position.
+
+Use **Playlists -> Restore last session on launch** to turn this behavior on or
+off. If restored tracks no longer exist on disk, Cadence skips them.
 
 ## Bottom buttons
 
@@ -162,7 +172,7 @@ or backed up outside the app.
 |--------|--------------|
 | Add Files | Add audio files, folders, or playlists to the queue. |
 | Library | Add, remove, or clear saved library roots. |
-| Playlists | Save, load, append, or open custom playlists. |
+| Playlists | Save, load, append, open custom playlists, or toggle last-session restore. |
 | Clear | Clear the queue. |
 
 ## Help button
@@ -211,10 +221,11 @@ Cadence writes a few local runtime files next to the script.
 
 | File/folder | Purpose |
 |-------------|---------|
-| `cadence.config.json` | Saved roots, volume, shuffle, repeat mode, palette, and online art setting. |
+| `cadence.config.json` | Saved roots, volume, shuffle, repeat mode, palette, online art setting, and last-session snapshot. |
 | `cadence.playlists` | Saved custom playlists created from the Playlists menu. |
 | `cadence.art-cache` | Cached online album covers. |
 | `cadence-startup.log` | Startup errors, exception logs, and album-art lookup notes. |
+| `cadence.config.example.json` | Example config format for the repo. |
 
 ## Troubleshooting
 
