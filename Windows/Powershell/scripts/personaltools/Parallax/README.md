@@ -51,21 +51,21 @@ See the [changelog](https://github.com/MikereDD/It-Works-On-My-Machine/blob/main
 <table>
   <tr>
     <td align="center">
-      <img src="docs/Screenshot-1.jpg" alt="Blank opened app"><br>
+      <img src="docs/Screenshot-1.png" alt="Blank opened app"><br>
       <sub><b>1. Blank opened app</b></sub>
     </td>
     <td align="center">
-      <img src="docs/Screenshot-2.jpg" alt="App playing in a minimal window"><br>
+      <img src="docs/Screenshot-2.png" alt="App playing in a minimal window"><br>
       <sub><b>2. App playing in minimal window</b></sub>
     </td>
   </tr>
   <tr>
     <td align="center">
-      <img src="docs/Screenshot-3.jpg" alt="App playing in fullscreen with controls visible"><br>
+      <img src="docs/Screenshot-3.png" alt="App playing in fullscreen with controls visible"><br>
       <sub><b>3. App playing in full screen showing the buttons at the bottom</b></sub>
     </td>
     <td align="center">
-      <img src="docs/Screenshot-4.jpg" alt="App in fullscreen"><br>
+      <img src="docs/Screenshot-4.png" alt="App in fullscreen"><br>
       <sub><b>4. App full screen</b></sub>
     </td>
   </tr>
