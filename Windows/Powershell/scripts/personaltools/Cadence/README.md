@@ -8,7 +8,7 @@ A sleek, fully owner-drawn local audio player for Windows — monochrome
 Material-style UI, NAudio engine, live FFT visualizer, and a real library
 browser. Part of the `personaltools/` toolkit.
 
-**Latest: v0.4.5** · [Changelog](https://github.com/MikereDD/It-Works-On-My-Machine/blob/main/Windows/Powershell/scripts/personaltools/Cadence/CHANGELOG.md)
+**Latest: v0.4.6** · [Changelog](https://github.com/MikereDD/It-Works-On-My-Machine/blob/main/Windows/Powershell/scripts/personaltools/Cadence/CHANGELOG.md)
 
 ## Screenshots
 
@@ -28,8 +28,8 @@ browser. Part of the `personaltools/` toolkit.
 - **Queue search** — a live filter box narrows the queue to matching tracks as
   you type; playback stays correct while filtered.
 - **Playlist queue** — shuffle, repeat off/all/one, auto-advance, full-path dedupe,
-  M3U / M3U8 import, and drag-and-drop of files / folders / playlists onto the
-  window. Export the queue back out as an `.m3u8`.
+  M3U / M3U8 import, drag-and-drop of files / folders / playlists, and app-managed
+  saved playlists in `cadence.playlists`.
 - **Remembers your setup** — saved library roots plus volume, shuffle, repeat mode,
   and visualizer palette persist across launches.
 - **Monochrome Material UI** — tonal pill buttons, a FAB transport, toggle
@@ -73,20 +73,30 @@ For the full button guide, right-click menus, album-art behavior, and keyboard s
 | `M` | Mute toggle |
 | `S` | Toggle shuffle |
 | `R` | Cycle repeat mode: Off -> All -> One |
+| `Ctrl+S` | Save the current queue as a named Cadence playlist |
+| `Ctrl+O` | Open a playlist file and replace the queue |
 | Type in the search box | Live-filter the queue |
 | `Esc` (in search box) | Clear the filter |
 | Double-click file / `.m3u` | Play |
 | Drag files / folders onto the window | Add to queue |
-| Right-click queue | Toggle shuffle, choose repeat mode, or export queue as M3U |
+| Right-click queue | Toggle shuffle, choose repeat mode, save the queue as a Cadence playlist, or export queue as M3U |
 | Right-click visualizer | Switch palette (mono / spectrum / indigo) |
 | Right-click album art | Choose a local cover image, retry online lookup, or toggle online art lookup |
 | Right-click folder (tree) | Add recursively |
 | Library button | Add / remove / clear saved roots |
+| Playlists button | New playlist, open playlist, save current queue, load saved playlists, or open the playlists folder |
 
 ## Album art
 Cadence first uses embedded artwork from the audio tag. It prefers a real front cover, then tries every other embedded picture until one decodes. If no embedded artwork is available, it looks near the playing file for common sidecar names such as `cover.jpg`, `folder.jpg`, `front.png`, `album.png`, `albumart.jpg`, `artwork.jpg`, `AlbumArt.jpg`, `AlbumArtSmall.jpg`, Windows Media Player `AlbumArt_*.jpg`, and one-image album folders.
 
 The window title and a small bottom-right label show the running version. Hover the album-art box to see whether the image came from embedded tags, a sidecar file, or was not found. The same result is logged to `cadence-startup.log`.
+
+## Playlists
+Cadence can now keep named custom playlists in `cadence.playlists` next to the
+script. Use the **Playlists** button to start a new empty queue, open an existing
+`.m3u` / `.m3u8`, save the current queue as a named Cadence playlist, load a
+saved playlist, add a saved playlist to the current queue, export the queue as a
+standalone M3U file, or open the playlists folder in Explorer.
 
 ## Layout
 | File | Role |
@@ -99,8 +109,8 @@ The window title and a small bottom-right label show the running version. Hover 
 
 Runtime files written next to the script: `cadence.config.json` (saved library
 roots plus volume / shuffle / repeat mode / visualizer palette / online art lookup),
-`cadence.art-cache` (cached online album covers), and `cadence-startup.log`
-(startup/exception log).
+`cadence.playlists` (app-managed saved `.m3u8` playlists), `cadence.art-cache`
+(cached online album covers), and `cadence-startup.log` (startup/exception log).
 
 ## Visualizer
 A compiled C# tap copies samples into a ring buffer as they play; a UI timer

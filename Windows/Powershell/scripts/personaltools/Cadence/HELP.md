@@ -1,7 +1,7 @@
 # Cadence Help
 
 Cadence is a small local music player with a dark owner-drawn interface, a real
-library tree, a queue, album art, shuffle/repeat controls, and a live visualizer.
+library tree, a queue, saved playlists, album art, shuffle/repeat controls, and a live visualizer.
 
 This file explains the visible buttons, right-click menus, and keyboard
 shortcuts.
@@ -132,9 +132,28 @@ Queue right-click options:
 |--------|--------------|
 | Shuffle | Toggle shuffle on or off. |
 | Repeat mode | Choose Off, All, or One. |
-| Export queue as M3U... | Save the current queue as an `.m3u` / `.m3u8` playlist. |
+| Save current queue as playlist... | Save the queue as a named Cadence playlist in `cadence.playlists`. |
+| Export queue as M3U file... | Save the current queue as a standalone `.m3u` / `.m3u8` playlist. |
 
 The Clear button removes all queue entries.
+
+## Playlists
+
+The Playlists button manages custom playlists saved by Cadence. These are normal
+`.m3u8` playlist files stored in `cadence.playlists` next to the script.
+
+| Playlist menu action | What it does |
+|----------------------|--------------|
+| New empty playlist | Clears the current queue so you can build a new playlist. |
+| Open playlist file... | Opens an `.m3u` / `.m3u8` file and replaces the queue. |
+| Save current queue as playlist... | Saves the current queue as a named playlist inside `cadence.playlists`. |
+| Export queue as M3U file... | Saves the current queue to any location you choose. |
+| Load saved playlist | Replaces the queue with one of your saved Cadence playlists. |
+| Add saved playlist to queue | Appends one of your saved Cadence playlists to the current queue. |
+| Open playlists folder | Opens `cadence.playlists` in File Explorer. |
+
+Saved Cadence playlists are regular local M3U8 files, so they can still be edited
+or backed up outside the app.
 
 ## Bottom buttons
 
@@ -142,6 +161,7 @@ The Clear button removes all queue entries.
 |--------|--------------|
 | Add Files | Add audio files, folders, or playlists to the queue. |
 | Library | Add, remove, or clear saved library roots. |
+| Playlists | Save, load, append, or open custom playlists. |
 | Clear | Clear the queue. |
 
 The version stamp at the bottom-right shows the running Cadence build.
@@ -156,6 +176,8 @@ The version stamp at the bottom-right shows the running Cadence build.
 | `M` | Mute / unmute. |
 | `S` | Toggle shuffle. |
 | `R` | Cycle repeat mode: Off -> All -> One. |
+| `Ctrl+S` | Save the current queue as a named Cadence playlist. |
+| `Ctrl+O` | Open a playlist file and replace the queue. |
 | `Esc` while in search box | Clear queue search. |
 | Type in search box | Filter the queue. |
 
@@ -177,6 +199,7 @@ Cadence writes a few local runtime files next to the script.
 | File/folder | Purpose |
 |-------------|---------|
 | `cadence.config.json` | Saved roots, volume, shuffle, repeat mode, palette, and online art setting. |
+| `cadence.playlists` | Saved custom playlists created from the Playlists menu. |
 | `cadence.art-cache` | Cached online album covers. |
 | `cadence-startup.log` | Startup errors, exception logs, and album-art lookup notes. |
 

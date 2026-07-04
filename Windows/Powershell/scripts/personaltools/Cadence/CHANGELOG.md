@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.6] - 2026-07-04
+
+Custom playlist management pass.
+
+### Added
+- New Playlists button with actions to start a new empty playlist, open an
+  `.m3u` / `.m3u8`, save the current queue as a named Cadence playlist, export
+  the queue as an M3U file, load saved playlists, append saved playlists, and
+  open the playlists folder.
+- App-managed saved playlists live in `cadence.playlists` next to the script.
+- Queue right-click menu now includes `Save current queue as playlist...`.
+- Keyboard shortcuts: `Ctrl+S` saves the current queue as a named playlist and
+  `Ctrl+O` opens a playlist file.
+
+### Changed
+- README and HELP now document custom playlist behavior.
+
 ## [0.4.5] - 2026-07-04
 
 Documentation pass for the player UI.
@@ -214,6 +231,8 @@ visualizer, a real library browser, playlist plumbing, the Windows PowerShell
 - `New-Visualizer` stub with the FFT integration recipe documented inline.
 
 [Unreleased]: https://github.com/MikereDD/It-Works-On-My-Machine/commits/main
+[0.4.6]: https://github.com/MikereDD/It-Works-On-My-Machine/tree/main/Windows/Powershell/scripts/personaltools/Cadence
+[0.4.5]: https://github.com/MikereDD/It-Works-On-My-Machine/tree/main/Windows/Powershell/scripts/personaltools/Cadence
 [0.4.4]: https://github.com/MikereDD/It-Works-On-My-Machine/tree/main/Windows/Powershell/scripts/personaltools/Cadence
 [0.4.3]: https://github.com/MikereDD/It-Works-On-My-Machine/tree/main/Windows/Powershell/scripts/personaltools/Cadence
 [0.4.2]: https://github.com/MikereDD/It-Works-On-My-Machine/tree/main/Windows/Powershell/scripts/personaltools/Cadence

@@ -1,5 +1,5 @@
 # ============================================================================
-#  cadence.ps1  -  Cadence  v0.4.5
+#  cadence.ps1  -  Cadence  v0.4.6
 #  A sleek local audio player (WinForms, owner-drawn, NAudio backend).
 #  Part of personaltools/ - mirrors the media-encoder-gui.ps1 layout:
 #    main GUI  +  dot-sourced engine/ui modules.
@@ -82,12 +82,13 @@ try {
 })
 
 $APP_NAME    = 'Cadence'
-$APP_VERSION = '0.4.5'
+$APP_VERSION = '0.4.6'
 $APP_TITLE   = "$APP_NAME v$APP_VERSION"
 $ROOT        = $PSScriptRoot
 $LIB         = Join-Path $ROOT 'lib'
 $AUDIO_EXT   = @('.mp3', '.flac', '.m4a', '.aac', '.wav', '.wma', '.ogg', '.opus')
 $BROWSE_EXT  = $AUDIO_EXT + @('.m3u', '.m3u8')   # what the tree shows as files
+$PLAYLIST_DIR = Join-Path $ROOT 'cadence.playlists'
 
 # Strip mark-of-web from our own files. The execution-policy GPO blocks zoned
 # (downloaded) files regardless of -ExecutionPolicy Bypass, which makes the
@@ -365,15 +366,18 @@ $list.Add_DrawItem({
 # Bottom buttons (M3 pills via New-FlatButton in the UI module)
 $btnAddFiles = New-FlatButton 'Add Files'   100
 $btnSetLib   = New-FlatButton 'Library'     100
+$btnPlaylist = New-FlatButton 'Playlists'   100
 $btnClear    = New-FlatButton 'Clear'       70
 $byY = $form.ClientSize.Height - 44
 $btnAddFiles.Location = [System.Drawing.Point]::new($pad, $byY)
 $btnSetLib.Location   = [System.Drawing.Point]::new($pad + 108, $byY)
+$btnPlaylist.Location = [System.Drawing.Point]::new($pad + 216, $byY)
 $btnClear.Location    = [System.Drawing.Point]::new($form.ClientSize.Width - $pad - 70, $byY)
 $btnAddFiles.Anchor = 'Bottom,Left'
 $btnSetLib.Anchor   = 'Bottom,Left'
+$btnPlaylist.Anchor = 'Bottom,Left'
 $btnClear.Anchor    = 'Bottom,Right'
-$form.Controls.AddRange(@($btnAddFiles, $btnSetLib, $btnClear))
+$form.Controls.AddRange(@($btnAddFiles, $btnSetLib, $btnPlaylist, $btnClear))
 
 # Small always-visible version stamp so test screenshots show the exact build.
 $lblVersion = [System.Windows.Forms.Label]::new()
@@ -381,7 +385,7 @@ $lblVersion.Text = $APP_TITLE
 $lblVersion.Font = [System.Drawing.Font]::new('Segoe UI', 8.5)
 $lblVersion.ForeColor = $script:Theme.Muted
 $lblVersion.TextAlign = 'MiddleRight'
-$lblVersion.SetBounds($form.ClientSize.Width - $pad - 70 - 170, $byY + 9, 160, 20)
+$lblVersion.SetBounds($form.ClientSize.Width - $pad - 170, $byY - 22, 160, 20)
 $lblVersion.Anchor = 'Bottom,Right'
 $form.Controls.Add($lblVersion)
 
@@ -393,6 +397,22 @@ $libMenu.ForeColor = $script:Theme.Text
 $miAddRoot    = $libMenu.Items.Add('Add root folder...')
 $miRemoveRoot = $libMenu.Items.Add('Remove selected root')
 $miClearRoots = $libMenu.Items.Add('Clear all roots')
+
+# Playlist button menu: app-managed saved playlists plus normal M3U import/export.
+$playlistMenu = [System.Windows.Forms.ContextMenuStrip]::new()
+$playlistMenu.BackColor = $script:Theme.Panel
+$playlistMenu.ForeColor = $script:Theme.Text
+$miNewPlaylist       = $playlistMenu.Items.Add('New empty playlist')
+$miOpenPlaylistFile  = $playlistMenu.Items.Add('Open playlist file...')
+$miSaveSavedPlaylist = $playlistMenu.Items.Add('Save current queue as playlist...')
+$miExportPlaylist    = $playlistMenu.Items.Add('Export queue as M3U file...')
+$playlistMenu.Items.Add('-') | Out-Null
+$miLoadSavedPlaylist = [System.Windows.Forms.ToolStripMenuItem]::new('Load saved playlist')
+$miAddSavedPlaylist  = [System.Windows.Forms.ToolStripMenuItem]::new('Add saved playlist to queue')
+$playlistMenu.Items.Add($miLoadSavedPlaylist) | Out-Null
+$playlistMenu.Items.Add($miAddSavedPlaylist) | Out-Null
+$playlistMenu.Items.Add('-') | Out-Null
+$miOpenPlaylistsFolder = $playlistMenu.Items.Add('Open playlists folder')
 
 # ============================================================================
 #  Behaviour
@@ -588,6 +608,169 @@ function Import-M3U {
         if (Test-Path -LiteralPath $full -PathType Leaf) { $out.Add($full) }
     }
     return ,$out
+}
+
+
+function Initialize-PlaylistStore {
+    try {
+        if (-not (Test-Path -LiteralPath $PLAYLIST_DIR -PathType Container)) {
+            New-Item -ItemType Directory -Path $PLAYLIST_DIR -Force | Out-Null
+        }
+    } catch {}
+}
+
+function Get-SafePlaylistFileName {
+    param([string]$Name)
+    $n = if ($Name) { $Name.Trim() } else { '' }
+    if ([string]::IsNullOrWhiteSpace($n)) { $n = 'Cadence Playlist ' + (Get-Date -Format 'yyyy-MM-dd HHmm') }
+    foreach ($ch in [IO.Path]::GetInvalidFileNameChars()) { $n = $n.Replace([string]$ch, '_') }
+    $n = [regex]::Replace($n, '\s+', ' ').Trim().Trim('.')
+    if ([string]::IsNullOrWhiteSpace($n)) { $n = 'Cadence Playlist ' + (Get-Date -Format 'yyyy-MM-dd HHmm') }
+    return $n
+}
+
+function Get-DefaultPlaylistName {
+    $base = 'Cadence Playlist'
+    $path = Get-CurrentTrackPath
+    if ($path) {
+        try {
+            $m = Get-TrackMetadata -Path $path
+            if ($m.Album -and $m.Album -ne '') { $base = [string]$m.Album }
+            elseif ($m.Artist -and $m.Artist -ne '') { $base = [string]$m.Artist }
+        } catch {}
+    }
+    return (Get-SafePlaylistFileName ("$base " + (Get-Date -Format 'yyyy-MM-dd')))
+}
+
+function Get-SavedPlaylistPathFromPrompt {
+    Initialize-PlaylistStore
+    $default = Get-DefaultPlaylistName
+    try {
+        Add-Type -AssemblyName Microsoft.VisualBasic -ErrorAction SilentlyContinue
+        $name = [Microsoft.VisualBasic.Interaction]::InputBox(
+            'Playlist name:', 'Save playlist', $default)
+        if ([string]::IsNullOrWhiteSpace($name)) { return $null }
+        $safe = Get-SafePlaylistFileName $name
+        return (Join-Path $PLAYLIST_DIR ($safe + '.m3u8'))
+    } catch {
+        $dlg = [System.Windows.Forms.SaveFileDialog]::new()
+        $dlg.Title = 'Save playlist'
+        $dlg.InitialDirectory = $PLAYLIST_DIR
+        $dlg.Filter = 'M3U8 playlist (*.m3u8)|*.m3u8|M3U playlist (*.m3u)|*.m3u'
+        $dlg.FileName = ($default + '.m3u8')
+        if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { return $dlg.FileName }
+    }
+    return $null
+}
+
+function Write-M3UPlaylist {
+    param($Path, $Tracks)
+    $sb = [System.Text.StringBuilder]::new()
+    [void]$sb.AppendLine('#EXTM3U')
+    foreach ($p in $Tracks) { [void]$sb.AppendLine([string]$p) }
+    [System.IO.File]::WriteAllText($Path, $sb.ToString(), [System.Text.UTF8Encoding]::new($false))
+}
+
+function Get-SavedPlaylists {
+    Initialize-PlaylistStore
+    try {
+        return @(Get-ChildItem -LiteralPath $PLAYLIST_DIR -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.Extension.ToLower() -eq '.m3u' -or $_.Extension.ToLower() -eq '.m3u8' } |
+            Sort-Object { Get-NaturalKey $_.BaseName })
+    } catch { return @() }
+}
+
+function Save-QueueAsSavedPlaylist {
+    if ($script:State.Items.Count -eq 0) {
+        $form.Text = "$APP_TITLE  -  nothing to save"
+        return
+    }
+    $path = Get-SavedPlaylistPathFromPrompt
+    if (-not $path) { return }
+    if (Test-Path -LiteralPath $path -PathType Leaf) {
+        $ans = [System.Windows.Forms.MessageBox]::Show(
+            "Replace existing playlist '$([IO.Path]::GetFileNameWithoutExtension($path))'?",
+            $APP_NAME, 'YesNo', 'Question')
+        if ($ans -ne 'Yes') { return }
+    }
+    try {
+        Write-M3UPlaylist -Path $path -Tracks $script:State.Items
+        $form.Text = "$APP_TITLE  -  saved playlist: $([IO.Path]::GetFileNameWithoutExtension($path))"
+    } catch {
+        $form.Text = "$APP_TITLE  -  playlist save failed"
+        try {
+            [System.Windows.Forms.MessageBox]::Show(
+                "Could not save playlist.`n`n$($_.Exception.Message)",
+                $APP_NAME, 'OK', 'Error') | Out-Null
+        } catch {}
+    }
+}
+
+function Clear-Queue {
+    param([switch]$Silent)
+    Stop-Playback; Close-Track
+    $script:State.Items.Clear(); $script:State.Seen.Clear(); $list.Items.Clear()
+    $script:State.ViewMap.Clear(); $script:State.Filter = ''
+    if ($script:SearchBox) { $script:SearchBox.Text = '' }
+    $script:State.Index = -1; $script:State.Active = $false
+    $lblTitle.Text = 'Nothing playing'; $lblArtist.Text = ''; $lblAlbum.Text = ''
+    $oldArt = $script:State.Art
+    $art.Image = $null
+    try { $artTip.SetToolTip($art, 'Album art: none loaded yet') } catch {}
+    $script:State.Art = $null
+    if ($oldArt) { try { $oldArt.Dispose() } catch {} }
+    $lblPos.Text = '0:00'; $lblDur.Text = '0:00'
+    $seek.Fraction = 0; $seek.Invalidate(); $form.Text = $APP_TITLE
+    Sync-PlayGlyph
+    if (-not $Silent) { $form.Text = "$APP_TITLE  -  queue cleared" }
+}
+
+function Load-PlaylistFile {
+    param($Path, [bool]$ReplaceQueue)
+    if (-not $Path -or -not (Test-Path -LiteralPath $Path -PathType Leaf)) { return }
+    $tracks = Import-M3U $Path
+    if ($tracks.Count -eq 0) {
+        $form.Text = "$APP_TITLE  -  playlist: no playable tracks found"
+        return
+    }
+    if ($ReplaceQueue) { Clear-Queue -Silent }
+    $before = $script:State.Items.Count
+    Add-Paths $tracks
+    $added = $script:State.Items.Count - $before
+    if ($script:State.Items.Count -gt 0 -and $list.SelectedIndex -lt 0 -and $script:State.ViewMap.Count -gt 0) {
+        $list.SelectedIndex = 0
+    }
+    $verb = if ($ReplaceQueue) { 'loaded' } else { 'added' }
+    $form.Text = "$APP_TITLE  -  $verb playlist: $([IO.Path]::GetFileNameWithoutExtension($Path)) ($added added)"
+}
+
+function Open-PlaylistFileDialog {
+    param([bool]$ReplaceQueue)
+    $dlg = [System.Windows.Forms.OpenFileDialog]::new()
+    $dlg.Multiselect = $false
+    $dlg.Filter = 'Playlists|*.m3u;*.m3u8|All files|*.*'
+    if ($dlg.ShowDialog() -eq 'OK') { Load-PlaylistFile -Path $dlg.FileName -ReplaceQueue $ReplaceQueue }
+}
+
+function Refresh-SavedPlaylistMenus {
+    $miLoadSavedPlaylist.DropDownItems.Clear()
+    $miAddSavedPlaylist.DropDownItems.Clear()
+    $playlists = Get-SavedPlaylists
+    if ($playlists.Count -eq 0) {
+        [void]$miLoadSavedPlaylist.DropDownItems.Add('(no saved playlists)')
+        [void]$miAddSavedPlaylist.DropDownItems.Add('(no saved playlists)')
+        $miLoadSavedPlaylist.DropDownItems[0].Enabled = $false
+        $miAddSavedPlaylist.DropDownItems[0].Enabled = $false
+        return
+    }
+    foreach ($pl in $playlists) {
+        $file = [string]$pl.FullName
+        $label = [string]$pl.BaseName
+        $loadItem = $miLoadSavedPlaylist.DropDownItems.Add($label)
+        $loadItem.Add_Click({ Load-PlaylistFile -Path $file -ReplaceQueue $true }.GetNewClosure())
+        $addItem = $miAddSavedPlaylist.DropDownItems.Add($label)
+        $addItem.Add_Click({ Load-PlaylistFile -Path $file -ReplaceQueue $false }.GetNewClosure())
+    }
 }
 
 # Does a display name pass the active search filter?
@@ -848,10 +1031,7 @@ function Export-QueueM3U {
     $dlg.FileName = 'cadence-queue.m3u8'
     if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
         try {
-            $sb = [System.Text.StringBuilder]::new()
-            [void]$sb.AppendLine('#EXTM3U')
-            foreach ($p in $script:State.Items) { [void]$sb.AppendLine($p) }
-            [System.IO.File]::WriteAllText($dlg.FileName, $sb.ToString(), [System.Text.UTF8Encoding]::new($false))
+            Write-M3UPlaylist -Path $dlg.FileName -Tracks $script:State.Items
             $form.Text = "$APP_TITLE  -  exported $($script:State.Items.Count) track(s)"
         } catch {
             $form.Text = "$APP_TITLE  -  export failed"
@@ -928,7 +1108,9 @@ $script:miRepeatAll.Add_Click({ Set-RepeatMode 'all'; Save-Config })
 $script:miRepeatOne.Add_Click({ Set-RepeatMode 'one'; Save-Config })
 $listMenu.Items.Add($repeatMenu) | Out-Null
 $listMenu.Items.Add('-') | Out-Null
-$miExport = $listMenu.Items.Add('Export queue as M3U...')
+$miSaveQueuePlaylist = $listMenu.Items.Add('Save current queue as playlist...')
+$miSaveQueuePlaylist.Add_Click({ Save-QueueAsSavedPlaylist })
+$miExport = $listMenu.Items.Add('Export queue as M3U file...')
 $miExport.Add_Click({ Export-QueueM3U })
 $list.ContextMenuStrip = $listMenu
 
@@ -976,6 +1158,23 @@ $btnAddFiles.Add_Click({
 $btnSetLib.Add_Click({
     $libMenu.Show($btnSetLib, [System.Drawing.Point]::new(0, 0),
         [System.Windows.Forms.ToolStripDropDownDirection]::AboveRight)
+})
+
+$btnPlaylist.Add_Click({
+    Refresh-SavedPlaylistMenus
+    $playlistMenu.Show($btnPlaylist, [System.Drawing.Point]::new(0, 0),
+        [System.Windows.Forms.ToolStripDropDownDirection]::AboveRight)
+})
+
+$miNewPlaylist.Add_Click({ Clear-Queue })
+$miOpenPlaylistFile.Add_Click({ Open-PlaylistFileDialog $true })
+$miSaveSavedPlaylist.Add_Click({ Save-QueueAsSavedPlaylist })
+$miExportPlaylist.Add_Click({ Export-QueueM3U })
+$miLoadSavedPlaylist.Add_DropDownOpening({ Refresh-SavedPlaylistMenus })
+$miAddSavedPlaylist.Add_DropDownOpening({ Refresh-SavedPlaylistMenus })
+$miOpenPlaylistsFolder.Add_Click({
+    Initialize-PlaylistStore
+    try { Start-Process -FilePath $PLAYLIST_DIR } catch {}
 })
 
 $miAddRoot.Add_Click({
@@ -1038,24 +1237,9 @@ $miAddFolder.Add_Click({
     if ($n -and $n.Tag -and $n.Tag.Kind -eq 'dir') { Add-FolderToQueue $n.Tag.Path }
 })
 
-$btnClear.Add_Click({
-    Stop-Playback; Close-Track
-    $script:State.Items.Clear(); $script:State.Seen.Clear(); $list.Items.Clear()
-    $script:State.ViewMap.Clear(); $script:State.Filter = ''
-    if ($script:SearchBox) { $script:SearchBox.Text = '' }
-    $script:State.Index = -1; $script:State.Active = $false
-    $lblTitle.Text = 'Nothing playing'; $lblArtist.Text = ''; $lblAlbum.Text = ''
-    $oldArt = $script:State.Art
-    $art.Image = $null
-    try { $artTip.SetToolTip($art, 'Album art: none loaded yet') } catch {}
-    $script:State.Art = $null
-    if ($oldArt) { try { $oldArt.Dispose() } catch {} }
-    $lblPos.Text = '0:00'; $lblDur.Text = '0:00'
-    $seek.Fraction = 0; $seek.Invalidate(); $form.Text = $APP_TITLE
-    Sync-PlayGlyph
-})
+$btnClear.Add_Click({ Clear-Queue })
 
-# Keyboard: Space = play/pause, arrows = prev/next, M = mute toggle, S/R = shuffle/repeat
+# Keyboard: Space = play/pause, arrows = prev/next, M = mute toggle, S/R = shuffle/repeat, Ctrl+S/O = playlists
 $script:lastVol = $script:Engine.Volume
 $form.Add_KeyDown({
     param($s, $e)
@@ -1067,13 +1251,18 @@ $form.Add_KeyDown({
         'Right'      { if ($e.Control) { Invoke-Next } }
         'Left'       { if ($e.Control) { Invoke-Prev } }
         'S' {
-            $script:State.Shuffle = -not $script:State.Shuffle
-            $pillShuffle.Active = $script:State.Shuffle; Update-PillVisual $pillShuffle
-            try { $shuffleTip.SetToolTip($pillShuffle, ('Shuffle: ' + $(if ($script:State.Shuffle) { 'on' } else { 'off' }) + '. Click to toggle.')) } catch {}
-            if ($script:miShuffle) { $script:miShuffle.Checked = [bool]$script:State.Shuffle }
-            Save-Config
+            if ($e.Control) {
+                Save-QueueAsSavedPlaylist
+            } else {
+                $script:State.Shuffle = -not $script:State.Shuffle
+                $pillShuffle.Active = $script:State.Shuffle; Update-PillVisual $pillShuffle
+                try { $shuffleTip.SetToolTip($pillShuffle, ('Shuffle: ' + $(if ($script:State.Shuffle) { 'on' } else { 'off' }) + '. Click to toggle.')) } catch {}
+                if ($script:miShuffle) { $script:miShuffle.Checked = [bool]$script:State.Shuffle }
+                Save-Config
+            }
             $e.Handled = $true
         }
+        'O' { if ($e.Control) { Open-PlaylistFileDialog $true; $e.Handled = $true } }
         'R' { Cycle-RepeatMode; $e.Handled = $true }
         'M' {
             if ($script:Engine.Volume -gt 0) { $script:lastVol = $script:Engine.Volume; Set-Volume 0 }
@@ -1172,6 +1361,7 @@ $form.Add_Resize({
 })
 
 # Load saved library roots and build the tree (falls back to drives if none).
+Initialize-PlaylistStore
 Load-Config
 Build-Tree
 
