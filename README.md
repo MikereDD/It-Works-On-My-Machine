@@ -27,7 +27,13 @@ Shell: `tool-menu.sh`, `arakiel-tmux.sh`, dotfiles (`vimrc`, `tmux.conf`, `bashr
 * **Siphon** — audio extractor for local video files and remote links.
 
 ### 🔌 [Bots/](https://github.com/MikereDD/It-Works-On-My-Machine/blob/main/Bots) — Telegram (arakiel)
-`ytbot`, `musicbot`, `aibot`, `cardbot` (URL → preview cards), `forwardbot`
+* **Raziel** (`ytbot`) — video downloader / group-watch bot.
+* **Sandalphon** (`musicbot`) — music library, requests, album art, and dashboard.
+* **Zaphkiel** (`aibot`) — AI chat, image generation, conversion, and style prompts.
+* **Gabriel** — news / messenger bot.
+* **Selaphiel** — bot project entry.
+* **CardBot** (`cardbot`) — URL → preview cards.
+* **ForwardBot** (`forwardbot`) — forwarding helper.
 
 ### 🎮 [Games/](https://github.com/MikereDD/It-Works-On-My-Machine/blob/main/Games)
 Android: **Road Pursuit**, **TacoBros**, **TetBlockRis**
