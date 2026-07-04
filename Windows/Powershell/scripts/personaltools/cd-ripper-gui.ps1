@@ -1,7 +1,7 @@
 ﻿#--------------------------------------------
 # file:     cd-ripper-gui.ps1
 # author:   Mike Redd
-# version:  1.1.0
+# version:  1.1.4
 # created:  2026-06-17
 # updated:  2026-07-03
 # desc:     WinForms GUI front-end for the CD -> FLAC
@@ -14,7 +14,14 @@
 #--------------------------------------------
 
 [CmdletBinding()]
-param()
+param(
+    [string]$CdDrive = "D:",
+    [ValidateSet("image","tracks")]
+    [string]$Mode = "image",
+    [switch]$AutoDetect
+)
+
+if ($CdDrive -and $CdDrive -notmatch ':$') { $CdDrive += ':' }
 
 # ── Elevate if needed (raw device access for cdda2wav/libdiscid) ──
 $isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).
@@ -22,10 +29,22 @@ $isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIde
 
 if (-not $isAdmin) {
     # Match the tool-menu convention: WinForms GUIs run under Windows PowerShell
-    # in STA (pwsh is MTA and unreliable for WinForms). Re-launch the same host.
+    # in STA (pwsh is MTA and unreliable for WinForms). Preserve caller args
+    # from media-encoder-gui, including drive/mode/autodetect.
     $psExe = (Get-Command powershell.exe -ErrorAction SilentlyContinue).Source
     if (-not $psExe) { $psExe = "powershell.exe" }
-    Start-Process $psExe -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -STA -File `"$PSCommandPath`""
+
+    $relaunchArgs = @(
+        '-NoProfile',
+        '-ExecutionPolicy', 'Bypass',
+        '-STA',
+        '-File', ('"{0}"' -f $PSCommandPath),
+        '-CdDrive', ('"{0}"' -f $CdDrive),
+        '-Mode', $Mode
+    )
+    if ($AutoDetect) { $relaunchArgs += '-AutoDetect' }
+
+    Start-Process $psExe -Verb RunAs -ArgumentList $relaunchArgs
     exit
 }
 
@@ -215,7 +234,7 @@ function Get-MBMetadata {
     param([Parameter(Mandatory)] [string]$discId)
     $cfg = $global:sync.Cfg
     $encoded = [uri]::EscapeDataString($discId)
-    $url = "https://musicbrainz.org/ws/2/discid/$encoded`?inc=aliases+artist-credits+labels+discids+recordings&fmt=json"
+    $url = "https://musicbrainz.org/ws/2/discid/$encoded`?inc=artist-credits+labels+recordings+media+discids&fmt=json"
     Send-Log "Querying MusicBrainz disc endpoint..." "Dim"
     Start-Sleep -Milliseconds 1100
     $r = Invoke-RestMethod -Uri $url -Headers @{ "User-Agent" = $cfg.UserAgent; "Accept" = "application/json" } -TimeoutSec 20
@@ -223,22 +242,237 @@ function Get-MBMetadata {
     return (ConvertFrom-MBRelease $r.releases[0])
 }
 
-function Search-MBRelease {
-    param([Parameter(Mandatory)] [string]$Artist, [Parameter(Mandatory)] [string]$Album)
+function Get-MBReleaseIdFromText {
+    param([string[]]$Texts)
+
+    foreach ($text in $Texts) {
+        if ([string]::IsNullOrWhiteSpace($text)) { continue }
+        $value = [string]$text
+        if ($value -match '/release/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})') { return $Matches[1] }
+        if ($value -match '^\s*([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\s*$') { return $Matches[1] }
+    }
+
+    return ""
+}
+
+function Get-MBArtistCreditName {
+    param($Release)
+
+    $names = @()
+    if ($Release.'artist-credit') {
+        foreach ($credit in $Release.'artist-credit') {
+            if ($credit.name) { $names += [string]$credit.name }
+            elseif ($credit.artist -and $credit.artist.name) { $names += [string]$credit.artist.name }
+        }
+    }
+
+    return (($names | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) -join " ").Trim()
+}
+
+function Get-MBTrackCount {
+    param($Release)
+
+    $trackCount = 0
+    if ($Release.media) {
+        foreach ($m in $Release.media) {
+            if ($m.'track-count') { $trackCount += [int]$m.'track-count' }
+            elseif ($m.tracks) { $trackCount += [int]$m.tracks.Count }
+        }
+    }
+
+    return $trackCount
+}
+
+function Get-MBSearchVariants {
+    param([string]$Text)
+
+    $variants = New-Object System.Collections.Generic.List[string]
+    if ([string]::IsNullOrWhiteSpace($Text)) { return @() }
+
+    $clean = (($Text -replace '[“”]', '"') -replace '[\r\n\t]+', ' ').Trim()
+    $clean = ($clean -replace '\s+', ' ').Trim()
+    if (-not [string]::IsNullOrWhiteSpace($clean)) { $variants.Add($clean) }
+
+    if ($clean -match '(?i)^the\s+(.+)$') { $variants.Add($Matches[1].Trim()) }
+    else { $variants.Add("The $clean") }
+
+    $noPunct = ($clean -replace '[:;,_/\\\-]+', ' ').Trim()
+    $noPunct = ($noPunct -replace '\s+', ' ').Trim()
+    if (-not [string]::IsNullOrWhiteSpace($noPunct)) { $variants.Add($noPunct) }
+
+    return @($variants | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)
+}
+
+function Get-MBSearchQueries {
+    param(
+        [Parameter(Mandatory)] [string]$Artist,
+        [Parameter(Mandatory)] [string]$Album
+    )
+
+    $queries = New-Object System.Collections.Generic.List[string]
+    $artistVariants = @(Get-MBSearchVariants -Text $Artist)
+    $albumVariants  = @(Get-MBSearchVariants -Text $Album)
+
+    if ($artistVariants.Count -gt 0 -and $albumVariants.Count -gt 0) {
+        $a0 = $artistVariants[0]
+        $b0 = $albumVariants[0]
+        $queries.Add("artist:`"$a0`" AND release:`"$b0`"")
+        $queries.Add("artistname:`"$a0`" AND release:`"$b0`"")
+        $queries.Add("$a0 $b0")
+        $queries.Add("$b0 $a0")
+        $queries.Add("`"$a0`" `"$b0`"")
+        $queries.Add("release:`"$b0`"")
+        $queries.Add($b0)
+    }
+
+    foreach ($a in $artistVariants) {
+        foreach ($b in $albumVariants) {
+            $queries.Add("artist:`"$a`" AND release:`"$b`"")
+            $queries.Add("artistname:`"$a`" AND release:`"$b`"")
+            $queries.Add("$a $b")
+            $queries.Add("$b $a")
+        }
+    }
+
+    foreach ($b in $albumVariants) {
+        $queries.Add("release:`"$b`"")
+        $queries.Add($b)
+    }
+
+    return @($queries | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)
+}
+
+function Get-MBReleaseScore {
+    param(
+        [Parameter(Mandatory)] $Release,
+        [Parameter(Mandatory)] [string]$Artist,
+        [Parameter(Mandatory)] [string]$Album
+    )
+
+    $artistNeedle = $Artist.ToLowerInvariant().Trim()
+    $albumNeedle  = $Album.ToLowerInvariant().Trim()
+    $titleHay     = ([string]$Release.title).ToLowerInvariant()
+    $artistHay    = (Get-MBArtistCreditName -Release $Release).ToLowerInvariant()
+    $score = 0
+
+    if ($albumNeedle -and $titleHay.Contains($albumNeedle)) { $score += 120 }
+    if ($albumNeedle -and $titleHay.StartsWith($albumNeedle)) { $score += 30 }
+    if ($artistNeedle -and $artistHay.Contains($artistNeedle)) { $score += 100 }
+    if ($artistNeedle -and $artistNeedle.Contains($artistHay) -and $artistHay.Length -gt 2) { $score += 40 }
+
+    foreach ($word in ($albumNeedle -split '\s+')) {
+        if ($word.Length -ge 3 -and $titleHay.Contains($word)) { $score += 10 }
+    }
+    foreach ($word in ($artistNeedle -split '\s+')) {
+        if ($word.Length -ge 3 -and $artistHay.Contains($word)) { $score += 10 }
+    }
+
+    if ($Release.status -eq 'Official') { $score += 5 }
+    if ($Release.date) { $score += 2 }
+    if ((Get-MBTrackCount -Release $Release) -gt 0) { $score += 2 }
+
+    return $score
+}
+
+function Invoke-MBReleaseLookupRaw {
+    param([Parameter(Mandatory)] [string]$ReleaseId)
+
     $cfg = $global:sync.Cfg
-    $query = [uri]::EscapeDataString("artist:`"$Artist`" AND release:`"$Album`"")
-    $url = "https://musicbrainz.org/ws/2/release?query=$query&fmt=json&limit=10"
+    $encoded = [uri]::EscapeDataString($ReleaseId)
+    $url = "https://musicbrainz.org/ws/2/release/$encoded`?inc=artist-credits+labels+recordings+media+discids&fmt=json"
+    Send-Log "MusicBrainz release URL/ID lookup: $ReleaseId" "Dim"
     Start-Sleep -Milliseconds 1100
-    $r = Invoke-RestMethod -Uri $url -Headers @{ "User-Agent" = $cfg.UserAgent; "Accept" = "application/json" } -TimeoutSec 20
-    if (-not $r.releases -or $r.releases.Count -lt 1) { return $null }
-    return $r.releases
+    return Invoke-RestMethod -Uri $url -Headers @{ "User-Agent" = $cfg.UserAgent; "Accept" = "application/json" } -TimeoutSec 20
+}
+
+function Search-MBRelease {
+    param(
+        [Parameter(Mandatory)] [string]$Artist,
+        [Parameter(Mandatory)] [string]$Album
+    )
+
+    $cfg = $global:sync.Cfg
+    $artistClean = $Artist.Trim()
+    $albumClean  = $Album.Trim()
+    if ([string]::IsNullOrWhiteSpace($artistClean) -or [string]::IsNullOrWhiteSpace($albumClean)) { return $null }
+
+    $releaseId = Get-MBReleaseIdFromText -Texts @($artistClean, $albumClean)
+    if ($releaseId) {
+        try {
+            $rel = Invoke-MBReleaseLookupRaw -ReleaseId $releaseId
+            if ($rel -and $rel.id) { return @($rel) }
+        } catch {
+            Send-Log "MusicBrainz release URL/ID lookup failed: $($_.Exception.Message)" "Warn"
+        }
+    }
+
+    $found = @{}
+    $queries = @(Get-MBSearchQueries -Artist $artistClean -Album $albumClean)
+
+    foreach ($q in $queries) {
+        $query = [uri]::EscapeDataString($q)
+        $url = "https://musicbrainz.org/ws/2/release?query=$query&fmt=json&limit=25"
+        Send-Log "MusicBrainz text search: $q" "Dim"
+        Start-Sleep -Milliseconds 1100
+        try {
+            $r = Invoke-RestMethod -Uri $url -Headers @{ "User-Agent" = $cfg.UserAgent; "Accept" = "application/json" } -TimeoutSec 20
+            if ($r.releases) {
+                foreach ($rel in $r.releases) {
+                    if ($rel.id -and -not $found.ContainsKey($rel.id)) { $found[$rel.id] = $rel }
+                }
+            }
+            if ($found.Count -ge 10) { break }
+        } catch {
+            Send-Log "MusicBrainz text search attempt failed: $($_.Exception.Message)" "Warn"
+        }
+    }
+
+    if ($found.Count -lt 1) { return $null }
+
+    $ranked = foreach ($rel in $found.Values) {
+        [PSCustomObject]@{
+            Release = $rel
+            Score   = Get-MBReleaseScore -Release $rel -Artist $artistClean -Album $albumClean
+        }
+    }
+
+    return @($ranked | Sort-Object Score -Descending | Select-Object -First 15 | ForEach-Object { $_.Release })
+}
+
+function Convert-MBReleasesToCandidates {
+    param($Releases)
+
+    $list = @()
+    if (-not $Releases) { return $list }
+
+    foreach ($rel in $Releases) {
+        $a = ""
+        if ($rel.'artist-credit' -and $rel.'artist-credit'.Count -gt 0) { $a = $rel.'artist-credit'[0].name }
+        $trackCount = 0
+        if ($rel.media) {
+            foreach ($m in $rel.media) {
+                if ($m.'track-count') { $trackCount += [int]$m.'track-count' }
+                elseif ($m.tracks) { $trackCount += [int]$m.tracks.Count }
+            }
+        }
+        $list += [PSCustomObject]@{
+            Id = $rel.id
+            Artist = $a
+            Title = $rel.title
+            Date = if ($rel.date) { $rel.date } else { "" }
+            Country = if ($rel.country) { $rel.country } else { "" }
+            TrackCount = $trackCount
+        }
+    }
+
+    return $list
 }
 
 function Get-MBMetadataByReleaseId {
     param([Parameter(Mandatory)] [string]$ReleaseId)
     $cfg = $global:sync.Cfg
     $encoded = [uri]::EscapeDataString($ReleaseId)
-    $url = "https://musicbrainz.org/ws/2/release/$encoded`?inc=aliases+artist-credits+labels+discids+recordings&fmt=json"
+    $url = "https://musicbrainz.org/ws/2/release/$encoded`?inc=artist-credits+labels+recordings+media+discids&fmt=json"
     Send-Log "Querying MusicBrainz release endpoint..." "Dim"
     Start-Sleep -Milliseconds 1100
     $rel = Invoke-RestMethod -Uri $url -Headers @{ "User-Agent" = $cfg.UserAgent; "Accept" = "application/json" } -TimeoutSec 20
@@ -480,10 +714,19 @@ function Save-TracksJson {
 function Invoke-Detect {
     Test-WorkerTools -RequireRip -WarnMetadataTools
 
+    $job = $global:sync.Job
     $discId = ""
     $artist = ""; $album = ""; $year = ""; $genre = ""
     $tracks = @()
     $trackCount = 0
+    $searchResults = @()
+
+    $fallbackArtist = ""
+    $fallbackAlbum  = ""
+    if ($job) {
+        if ($job.SearchArtist) { $fallbackArtist = [string]$job.SearchArtist }
+        if ($job.SearchAlbum)  { $fallbackAlbum  = [string]$job.SearchAlbum }
+    }
 
     try {
         $discId = Get-DiscId
@@ -507,6 +750,7 @@ function Invoke-Detect {
             }
         } catch {
             Send-Log "Disc lookup failed: $($_.Exception.Message)" "Warn"
+            Send-Log "Exact DiscID lookup failed. Use Search MB or Open MB for artist/album lookup." "Warn"
         }
     }
 
@@ -518,26 +762,36 @@ function Invoke-Detect {
         Send-Log "Disc probe failed: $($_.Exception.Message)" "Warn"
     }
 
+    if (($tracks.Count -lt 1) -and
+        -not [string]::IsNullOrWhiteSpace($fallbackArtist) -and
+        -not [string]::IsNullOrWhiteSpace($fallbackAlbum)) {
+        try {
+            Send-Log "Offering MusicBrainz search candidates for: $fallbackArtist - $fallbackAlbum" "Info"
+            $results = Search-MBRelease -Artist $fallbackArtist -Album $fallbackAlbum
+            $searchResults = Convert-MBReleasesToCandidates $results
+            if ($searchResults.Count -gt 0) {
+                Send-Log "Found $($searchResults.Count) MusicBrainz candidate release(s). Pick one from the dropdown and click Use." "Good"
+            } else {
+                Send-Log "No MusicBrainz search candidates found for the fallback artist/album." "Warn"
+            }
+        } catch {
+            Send-Log "MusicBrainz fallback search failed: $($_.Exception.Message)" "Warn"
+        }
+    } elseif ($tracks.Count -lt 1) {
+        Send-Log "No exact MusicBrainz match. Enter Artist + Album, then click Search MB." "Warn"
+    }
+
     return @{
         DiscId = $discId; Artist = $artist; Album = $album; Year = $year; Genre = $genre
-        Tracks = $tracks; TrackCount = $trackCount
+        Tracks = $tracks; TrackCount = $trackCount; SearchResults = $searchResults
     }
 }
 
 function Invoke-Search {
     $job = $global:sync.Job
     $results = Search-MBRelease -Artist $job.SearchArtist -Album $job.SearchAlbum
-    if (-not $results) { Send-Log "No MusicBrainz text matches found." "Warn"; return @() }
-    $list = @()
-    foreach ($rel in $results) {
-        $a = ""
-        if ($rel.'artist-credit' -and $rel.'artist-credit'.Count -gt 0) { $a = $rel.'artist-credit'[0].name }
-        $list += [PSCustomObject]@{
-            Id = $rel.id; Artist = $a; Title = $rel.title
-            Date = if ($rel.date) { $rel.date } else { "" }
-            Country = if ($rel.country) { $rel.country } else { "" }
-        }
-    }
+    $list = Convert-MBReleasesToCandidates $results
+    if (-not $list -or $list.Count -lt 1) { Send-Log "No MusicBrainz text matches found." "Warn"; return @() }
     Send-Log "Found $($list.Count) candidate release(s)." "Good"
     return $list
 }
@@ -751,7 +1005,7 @@ function New-Group {
 
 # ── Form ────────────────────────────────────
 $form = New-Object System.Windows.Forms.Form
-$form.Text = "CD -> FLAC Ripper v1.1.0"
+$form.Text = "CD -> FLAC Ripper v1.1.4"
 $form.Size = "1000,980"
 $form.MinimumSize = "900,840"
 $form.StartPosition = "CenterScreen"
@@ -762,7 +1016,7 @@ $form.Font = $fontUI
 $header = New-Object System.Windows.Forms.Panel
 $header.Dock = "Top"; $header.Height = 52; $header.BackColor = $clrPanel
 $hLabel = New-Object System.Windows.Forms.Label
-$hLabel.Text = "  CD -> FLAC Ripper v1.1.0"; $hLabel.ForeColor = $clrAccent
+$hLabel.Text = "  CD -> FLAC Ripper v1.1.4"; $hLabel.ForeColor = $clrAccent
 $hLabel.Font = $fontHead; $hLabel.Dock = "Fill"; $hLabel.TextAlign = "MiddleLeft"
 $header.Controls.Add($hLabel)
 $form.Controls.Add($header)
@@ -782,7 +1036,7 @@ $gPaths = New-Group "Tools and Paths" 8 60 $W 178
 $gPaths.Anchor = "Top,Left,Right"
 
 $gPaths.Controls.Add((New-Label "CD Drive" 14 26 64))
-$txtDrive = New-Text 80 25 70 "D:"; $gPaths.Controls.Add($txtDrive)
+$txtDrive = New-Text 80 25 70 $CdDrive; $gPaths.Controls.Add($txtDrive)
 $gPaths.Controls.Add((New-Label "CDDA Dev" 170 26 70))
 $txtDevice = New-Text 242 25 80 "0,0,0"; $gPaths.Controls.Add($txtDevice)
 $gPaths.Controls.Add((New-Label "Rip Root" 342 26 60))
@@ -837,12 +1091,13 @@ $txtSearchArtist = New-Text 88 133 180; $txtSearchArtist.Text = ""; $gMeta.Contr
 $lblSA = New-Label "artist" 88 156 180; $lblSA.ForeColor = $clrDim; $lblSA.Font = (New-Object System.Drawing.Font("Segoe UI",7)); $gMeta.Controls.Add($lblSA)
 $txtSearchAlbum = New-Text 274 133 180; $gMeta.Controls.Add($txtSearchAlbum)
 $lblSB = New-Label "album" 274 156 180; $lblSB.ForeColor = $clrDim; $lblSB.Font = (New-Object System.Drawing.Font("Segoe UI",7)); $gMeta.Controls.Add($lblSB)
-$btnSearch = New-Button "Search" 460 132 80 26; $gMeta.Controls.Add($btnSearch)
+$btnSearch = New-Button "Search MB" 460 132 78 26; $gMeta.Controls.Add($btnSearch)
 $cmbResults = New-Object System.Windows.Forms.ComboBox
-$cmbResults.Location = "548,133"; $cmbResults.Size = "320,24"; $cmbResults.DropDownStyle = "DropDownList"
+$cmbResults.Location = "544,133"; $cmbResults.Size = "250,24"; $cmbResults.DropDownStyle = "DropDownList"
 $cmbResults.BackColor = $clrInput; $cmbResults.ForeColor = $clrText; $cmbResults.Anchor = "Top,Left,Right"
 $cmbResults.FlatStyle = "Flat"; $gMeta.Controls.Add($cmbResults)
-$btnUseResult = New-Button "Use" 872 132 70 26; $btnUseResult.Anchor = "Top,Right"; $gMeta.Controls.Add($btnUseResult)
+$btnUseResult = New-Button "Use" 802 132 60 26; $btnUseResult.Anchor = "Top,Right"; $gMeta.Controls.Add($btnUseResult)
+$btnOpenMB = New-Button "Open MB" 872 132 70 26; $btnOpenMB.Anchor = "Top,Right"; $gMeta.Controls.Add($btnOpenMB)
 $form.Controls.Add($gMeta)
 
 # ── Group: Tracks ───────────────────────────
@@ -886,10 +1141,11 @@ $gOut.Anchor = "Top,Left,Right"
 
 $rbImage = New-Object System.Windows.Forms.RadioButton
 $rbImage.Text = "Single FLAC image + CUE"; $rbImage.Location = "14,26"; $rbImage.Size = "210,22"
-$rbImage.ForeColor = $clrText; $rbImage.Checked = $true; $gOut.Controls.Add($rbImage)
+$rbImage.ForeColor = $clrText; $gOut.Controls.Add($rbImage)
 $rbTracks = New-Object System.Windows.Forms.RadioButton
 $rbTracks.Text = "One FLAC per track"; $rbTracks.Location = "240,26"; $rbTracks.Size = "180,22"
 $rbTracks.ForeColor = $clrText; $gOut.Controls.Add($rbTracks)
+if ($Mode -eq "tracks") { $rbTracks.Checked = $true } else { $rbImage.Checked = $true }
 
 $gOut.Controls.Add((New-Label "Cover" 14 60 44))
 $txtCover = New-Text 62 59 800; $txtCover.Anchor = "Top,Left,Right"; $gOut.Controls.Add($txtCover)
@@ -967,13 +1223,13 @@ function Get-Cfg {
         FLAC      = $txtFlac.Text.Trim()
         METAFLAC  = $txtMeta.Text.Trim()
         LIBDISCID = $txtDisc.Text.Trim()
-        UserAgent = "MikeRedd-CDRipperGUI/1.1.0"
+        UserAgent = "MikeRedd-CDRipperGUI/1.1.4"
     }
 }
 
 function Set-Busy {
     param([bool]$busy, [string]$msg = "")
-    $controls = @($btnDetect, $btnSearch, $btnUseResult, $btnStart, $btnAddRow, $btnDelRow, $btnClrRows)
+    $controls = @($btnDetect, $btnSearch, $btnUseResult, $btnOpenMB, $btnStart, $btnAddRow, $btnDelRow, $btnClrRows)
     foreach ($c in $controls) { $c.Enabled = -not $busy }
     $lblBusy.Text = $msg
     if ($busy) { $form.Cursor = "AppStarting" } else { $form.Cursor = "Default" }
@@ -1020,6 +1276,25 @@ function Start-Op {
     $sync.Handle = $ps.BeginInvoke()
 }
 
+function Set-SearchResults {
+    param($results)
+
+    $cmbResults.Items.Clear()
+    $script:SearchMap = @()
+
+    if ($results -and $results.Count -gt 0) {
+        foreach ($r in $results) {
+            $label = "$($r.Artist) - $($r.Title)"
+            if ($r.Date)    { $label += "  ($($r.Date))" }
+            if ($r.Country) { $label += " [$($r.Country)]" }
+            if ($r.TrackCount -gt 0) { $label += "  {$($r.TrackCount) tracks}" }
+            [void]$cmbResults.Items.Add($label)
+            $script:SearchMap += $r.Id
+        }
+        $cmbResults.SelectedIndex = 0
+    }
+}
+
 # ── Completion dispatch ─────────────────────
 function Complete-Op {
     param([string]$op, $res)
@@ -1031,7 +1306,16 @@ function Complete-Op {
                 if ($res.Album)  { $txtAlbum.Text  = $res.Album }
                 if ($res.Year)   { $txtYear.Text   = $res.Year }
                 if ($res.Genre)  { $txtGenre.Text  = $res.Genre }
+
+                if ([string]::IsNullOrWhiteSpace($txtSearchArtist.Text) -and -not [string]::IsNullOrWhiteSpace($txtArtist.Text)) {
+                    $txtSearchArtist.Text = $txtArtist.Text
+                }
+                if ([string]::IsNullOrWhiteSpace($txtSearchAlbum.Text) -and -not [string]::IsNullOrWhiteSpace($txtAlbum.Text)) {
+                    $txtSearchAlbum.Text = $txtAlbum.Text
+                }
+
                 Set-Tracks $res.Tracks $res.TrackCount
+                if ($res.SearchResults -and $res.SearchResults.Count -gt 0) { Set-SearchResults $res.SearchResults }
             }
         }
         "release" {
@@ -1044,18 +1328,7 @@ function Complete-Op {
             }
         }
         "search" {
-            $cmbResults.Items.Clear()
-            $script:SearchMap = @()
-            if ($res -and $res.Count -gt 0) {
-                foreach ($r in $res) {
-                    $label = "$($r.Artist) - $($r.Title)"
-                    if ($r.Date)    { $label += "  ($($r.Date))" }
-                    if ($r.Country) { $label += " [$($r.Country)]" }
-                    [void]$cmbResults.Items.Add($label)
-                    $script:SearchMap += $r.Id
-                }
-                $cmbResults.SelectedIndex = 0
-            }
+            Set-SearchResults $res
         }
         "rip" { }
     }
@@ -1095,18 +1368,42 @@ $btnCover.Add_Click({
 })
 
 $btnDetect.Add_Click({
+    $fallbackArtist = if ([string]::IsNullOrWhiteSpace($txtSearchArtist.Text)) { $txtArtist.Text.Trim() } else { $txtSearchArtist.Text.Trim() }
+    $fallbackAlbum  = if ([string]::IsNullOrWhiteSpace($txtSearchAlbum.Text))  { $txtAlbum.Text.Trim()  } else { $txtSearchAlbum.Text.Trim() }
+    $sync.Job = @{ SearchArtist = $fallbackArtist; SearchAlbum = $fallbackAlbum }
     Set-Busy $true "Reading disc and querying MusicBrainz..."
     Add-LogLine "Detecting disc..." "Info"
     Start-Op "detect"
 })
 
 $btnSearch.Add_Click({
+    if ([string]::IsNullOrWhiteSpace($txtSearchArtist.Text) -and -not [string]::IsNullOrWhiteSpace($txtArtist.Text)) {
+        $txtSearchArtist.Text = $txtArtist.Text.Trim()
+    }
+    if ([string]::IsNullOrWhiteSpace($txtSearchAlbum.Text) -and -not [string]::IsNullOrWhiteSpace($txtAlbum.Text)) {
+        $txtSearchAlbum.Text = $txtAlbum.Text.Trim()
+    }
     if ([string]::IsNullOrWhiteSpace($txtSearchArtist.Text) -or [string]::IsNullOrWhiteSpace($txtSearchAlbum.Text)) {
-        Add-LogLine "Enter both a search artist and album." "Warn"; return
+        Add-LogLine "Enter Artist and Album, then click Search MB." "Warn"; return
     }
     $sync.Job = @{ SearchArtist = $txtSearchArtist.Text.Trim(); SearchAlbum = $txtSearchAlbum.Text.Trim() }
     Set-Busy $true "Searching MusicBrainz..."
+    Add-LogLine "Searching MusicBrainz for: $($sync.Job.SearchArtist) - $($sync.Job.SearchAlbum)" "Info"
     Start-Op "search"
+})
+
+$btnOpenMB.Add_Click({
+    $artist = if ([string]::IsNullOrWhiteSpace($txtSearchArtist.Text)) { $txtArtist.Text.Trim() } else { $txtSearchArtist.Text.Trim() }
+    $album  = if ([string]::IsNullOrWhiteSpace($txtSearchAlbum.Text))  { $txtAlbum.Text.Trim()  } else { $txtSearchAlbum.Text.Trim() }
+    $queryText = ("{0} {1}" -f $artist, $album).Trim()
+    if ([string]::IsNullOrWhiteSpace($queryText)) {
+        Add-LogLine "Enter Artist and Album before opening MusicBrainz search." "Warn"
+        return
+    }
+    $q = [uri]::EscapeDataString($queryText)
+    $url = "https://musicbrainz.org/search?query=$q&type=release&method=indexed"
+    Add-LogLine "Opening MusicBrainz release search in your browser." "Info"
+    Start-Process $url
 })
 
 $btnUseResult.Add_Click({
@@ -1179,6 +1476,13 @@ $form.Add_FormClosing({
     $timer.Stop()
     try { if ($sync.PS) { $sync.PS.Dispose() } } catch { }
     try { if ($sync.RS) { $sync.RS.Close() } } catch { }
+})
+
+$form.Add_Shown({
+    if ($AutoDetect) {
+        Add-LogLine "Auto-detect requested from Media Encoder GUI." "Info"
+        $btnDetect.PerformClick()
+    }
 })
 
 Add-LogLine "Ready. Insert a disc, then Detect or fill metadata manually." "Dim"

@@ -1,7 +1,7 @@
-#--------------------------------------------
+﻿#--------------------------------------------
 # file:     cd-tracks-flac.ps1
 # author:   Mike Redd
-# version:  1.4.0
+# version:  1.4.2
 # created:  2026-04-12
 # updated:  2026-07-03
 # desc:     Rip audio CD to one FLAC per track
@@ -68,7 +68,7 @@ $global:FLAC_EXE     = $FlacExe
 $global:METAFLAC_EXE = $MetaFlacExe
 
 $global:LIBDISCID_DLL = $LibDiscidDll
-$global:MB_USER_AGENT = "MikeRedd-CDTracksFlac/1.4.0"
+$global:MB_USER_AGENT = "MikeRedd-CDTracksFlac/1.4.2"
 
 # ── UI helpers ──────────────────────────────
 function Show-Header {
@@ -283,7 +283,7 @@ function Get-MBMetadata {
     param([Parameter(Mandatory)] [string]$discId)
 
     $encodedDiscId = [uri]::EscapeDataString($discId)
-    $url = "https://musicbrainz.org/ws/2/discid/${encodedDiscId}?inc=aliases+artist-credits+labels+discids+recordings&fmt=json"
+    $url = "https://musicbrainz.org/ws/2/discid/${encodedDiscId}?inc=artist-credits+labels+recordings+media+discids&fmt=json"
 
     Write-Host "MB disc lookup URL: $url" -ForegroundColor DarkGray
     Start-Sleep -Milliseconds 1100
@@ -330,28 +330,208 @@ function Get-MBMetadata {
     }
 }
 
+function Get-MBReleaseIdFromText {
+    param([string[]]$Texts)
+
+    foreach ($text in $Texts) {
+        if ([string]::IsNullOrWhiteSpace($text)) { continue }
+        $value = [string]$text
+        if ($value -match '/release/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})') { return $Matches[1] }
+        if ($value -match '^\s*([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\s*$') { return $Matches[1] }
+    }
+
+    return ""
+}
+
+function Get-MBArtistCreditName {
+    param($Release)
+
+    $names = @()
+    if ($Release.'artist-credit') {
+        foreach ($credit in $Release.'artist-credit') {
+            if ($credit.name) { $names += [string]$credit.name }
+            elseif ($credit.artist -and $credit.artist.name) { $names += [string]$credit.artist.name }
+        }
+    }
+
+    return (($names | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) -join " ").Trim()
+}
+
+function Get-MBTrackCount {
+    param($Release)
+
+    $trackCount = 0
+    if ($Release.media) {
+        foreach ($m in $Release.media) {
+            if ($m.'track-count') { $trackCount += [int]$m.'track-count' }
+            elseif ($m.tracks) { $trackCount += [int]$m.tracks.Count }
+        }
+    }
+
+    return $trackCount
+}
+
+function Get-MBSearchVariants {
+    param([string]$Text)
+
+    $variants = New-Object System.Collections.Generic.List[string]
+    if ([string]::IsNullOrWhiteSpace($Text)) { return @() }
+
+    $clean = (($Text -replace '[“”]', '"') -replace '[\r\n\t]+', ' ').Trim()
+    $clean = ($clean -replace '\s+', ' ').Trim()
+    if (-not [string]::IsNullOrWhiteSpace($clean)) { $variants.Add($clean) }
+
+    if ($clean -match '(?i)^the\s+(.+)$') { $variants.Add($Matches[1].Trim()) }
+    else { $variants.Add("The $clean") }
+
+    $noPunct = ($clean -replace '[:;,_/\\\-]+', ' ').Trim()
+    $noPunct = ($noPunct -replace '\s+', ' ').Trim()
+    if (-not [string]::IsNullOrWhiteSpace($noPunct)) { $variants.Add($noPunct) }
+
+    return @($variants | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)
+}
+
+function Get-MBSearchQueries {
+    param(
+        [Parameter(Mandatory)] [string]$Artist,
+        [Parameter(Mandatory)] [string]$Album
+    )
+
+    $queries = New-Object System.Collections.Generic.List[string]
+    $artistVariants = @(Get-MBSearchVariants -Text $Artist)
+    $albumVariants  = @(Get-MBSearchVariants -Text $Album)
+
+    if ($artistVariants.Count -gt 0 -and $albumVariants.Count -gt 0) {
+        $a0 = $artistVariants[0]
+        $b0 = $albumVariants[0]
+        $queries.Add("artist:`"$a0`" AND release:`"$b0`"")
+        $queries.Add("artistname:`"$a0`" AND release:`"$b0`"")
+        $queries.Add("$a0 $b0")
+        $queries.Add("$b0 $a0")
+        $queries.Add("`"$a0`" `"$b0`"")
+        $queries.Add("release:`"$b0`"")
+        $queries.Add($b0)
+    }
+
+    foreach ($a in $artistVariants) {
+        foreach ($b in $albumVariants) {
+            $queries.Add("artist:`"$a`" AND release:`"$b`"")
+            $queries.Add("artistname:`"$a`" AND release:`"$b`"")
+            $queries.Add("$a $b")
+            $queries.Add("$b $a")
+        }
+    }
+
+    foreach ($b in $albumVariants) {
+        $queries.Add("release:`"$b`"")
+        $queries.Add($b)
+    }
+
+    return @($queries | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)
+}
+
+function Get-MBReleaseScore {
+    param(
+        [Parameter(Mandatory)] $Release,
+        [Parameter(Mandatory)] [string]$Artist,
+        [Parameter(Mandatory)] [string]$Album
+    )
+
+    $artistNeedle = $Artist.ToLowerInvariant().Trim()
+    $albumNeedle  = $Album.ToLowerInvariant().Trim()
+    $titleHay     = ([string]$Release.title).ToLowerInvariant()
+    $artistHay    = (Get-MBArtistCreditName -Release $Release).ToLowerInvariant()
+    $score = 0
+
+    if ($albumNeedle -and $titleHay.Contains($albumNeedle)) { $score += 120 }
+    if ($albumNeedle -and $titleHay.StartsWith($albumNeedle)) { $score += 30 }
+    if ($artistNeedle -and $artistHay.Contains($artistNeedle)) { $score += 100 }
+    if ($artistNeedle -and $artistNeedle.Contains($artistHay) -and $artistHay.Length -gt 2) { $score += 40 }
+
+    foreach ($word in ($albumNeedle -split '\s+')) {
+        if ($word.Length -ge 3 -and $titleHay.Contains($word)) { $score += 10 }
+    }
+    foreach ($word in ($artistNeedle -split '\s+')) {
+        if ($word.Length -ge 3 -and $artistHay.Contains($word)) { $score += 10 }
+    }
+
+    if ($Release.status -eq 'Official') { $score += 5 }
+    if ($Release.date) { $score += 2 }
+    if ((Get-MBTrackCount -Release $Release) -gt 0) { $score += 2 }
+
+    return $score
+}
+
+function Get-MBReleaseRawById {
+    param([Parameter(Mandatory)] [string]$ReleaseId)
+
+    $encodedReleaseId = [uri]::EscapeDataString($ReleaseId)
+    $url = "https://musicbrainz.org/ws/2/release/${encodedReleaseId}?inc=artist-credits+labels+recordings+media+discids&fmt=json"
+    Write-Host "MB release lookup URL: $url" -ForegroundColor DarkGray
+    Start-Sleep -Milliseconds 1100
+    return Invoke-RestMethod -Uri $url -Headers @{
+        "User-Agent" = $global:MB_USER_AGENT
+        "Accept"     = "application/json"
+    } -TimeoutSec 20
+}
+
 function Search-MBRelease {
     param(
         [Parameter(Mandatory)] [string]$Artist,
         [Parameter(Mandatory)] [string]$Album
     )
 
-    $query = [uri]::EscapeDataString("artist:`"$Artist`" AND release:`"$Album`"")
-    $url = "https://musicbrainz.org/ws/2/release?query=$query&fmt=json&limit=10"
+    $artistClean = $Artist.Trim()
+    $albumClean  = $Album.Trim()
+    if ([string]::IsNullOrWhiteSpace($artistClean) -or [string]::IsNullOrWhiteSpace($albumClean)) { return $null }
 
-    Start-Sleep -Milliseconds 1100
-
-    $r = Invoke-RestMethod -Uri $url -Headers @{
-        "User-Agent" = $global:MB_USER_AGENT
-        "Accept"     = "application/json"
-    } -TimeoutSec 20
-
-    if (-not $r.releases -or $r.releases.Count -lt 1) {
-        return $null
+    $releaseId = Get-MBReleaseIdFromText -Texts @($artistClean, $albumClean)
+    if ($releaseId) {
+        try {
+            $rel = Get-MBReleaseRawById -ReleaseId $releaseId
+            if ($rel -and $rel.id) { return @($rel) }
+        } catch {
+            Write-Status "MusicBrainz release URL/ID lookup failed: $($_.Exception.Message)" "Warn"
+        }
     }
 
-    return $r.releases
+    $found = @{}
+    $queries = @(Get-MBSearchQueries -Artist $artistClean -Album $albumClean)
+
+    foreach ($q in $queries) {
+        $query = [uri]::EscapeDataString($q)
+        $url = "https://musicbrainz.org/ws/2/release?query=$query&fmt=json&limit=25"
+        Write-Host "MB text search URL: $url" -ForegroundColor DarkGray
+        Start-Sleep -Milliseconds 1100
+        try {
+            $r = Invoke-RestMethod -Uri $url -Headers @{
+                "User-Agent" = $global:MB_USER_AGENT
+                "Accept"     = "application/json"
+            } -TimeoutSec 20
+
+            if ($r.releases) {
+                foreach ($rel in $r.releases) {
+                    if ($rel.id -and -not $found.ContainsKey($rel.id)) { $found[$rel.id] = $rel }
+                }
+            }
+            if ($found.Count -ge 10) { break }
+        } catch {
+            Write-Status "MusicBrainz text search attempt failed: $($_.Exception.Message)" "Warn"
+        }
+    }
+
+    if ($found.Count -lt 1) { return $null }
+
+    $ranked = foreach ($rel in $found.Values) {
+        [PSCustomObject]@{
+            Release = $rel
+            Score   = Get-MBReleaseScore -Release $rel -Artist $artistClean -Album $albumClean
+        }
+    }
+
+    return @($ranked | Sort-Object Score -Descending | Select-Object -First 15 | ForEach-Object { $_.Release })
 }
+
 
 function Select-MBRelease {
     param([Parameter(Mandatory)] $Releases)
@@ -399,7 +579,7 @@ function Get-MBMetadataByReleaseId {
     )
 
     $encodedReleaseId = [uri]::EscapeDataString($ReleaseId)
-    $url = "https://musicbrainz.org/ws/2/release/${encodedReleaseId}?inc=aliases+artist-credits+labels+discids+recordings&fmt=json"
+    $url = "https://musicbrainz.org/ws/2/release/${encodedReleaseId}?inc=artist-credits+labels+recordings+media+discids&fmt=json"
 
     Write-Host "MB release lookup URL: $url" -ForegroundColor DarkGray
     Start-Sleep -Milliseconds 1100
