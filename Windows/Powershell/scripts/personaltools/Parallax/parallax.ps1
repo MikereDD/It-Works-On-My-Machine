@@ -1,6 +1,6 @@
-﻿# file:    parallax.ps1
+# file:    parallax.ps1
 # author:  typezero
-# version: 0.8.9
+# version: 0.8.11
 # created: 2026-06-24
 # updated: 2026-07-04
 # desc:    libmpv-backed WinForms video player (VLC-style), HWND embedding.
@@ -21,11 +21,22 @@ $MpvDir = $PSScriptRoot
 if ([string]::IsNullOrEmpty($MpvDir)) { $MpvDir = (Get-Location).Path }
 $MpvDllName = 'libmpv-2.dll'
 $script:AppName = 'Parallax'
-$script:AppVersion = '0.8.9'
+$script:AppVersion = '0.8.11'
 $script:AppTitle = $script:AppName + ' v' + $script:AppVersion
+$script:formIconHandle = [IntPtr]::Zero
+$script:formIcon = $null
 
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
+Add-Type @'
+using System;
+using System.Runtime.InteropServices;
+public static class IconUtil {
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern bool DestroyIcon(IntPtr hIcon);
+}
+'@
+
 
 # --- Native interop: libmpv + DWM dark title bar + owner-drawn controls ------
 $cs = @'
@@ -375,6 +386,39 @@ function Get-AppWindowTitle {
     param([string]$MediaTitle = '')
     if ([string]::IsNullOrEmpty($MediaTitle)) { return $script:AppTitle }
     return $script:AppTitle + '  -  ' + $MediaTitle
+}
+
+
+function Set-AppIcon {
+    param([System.Windows.Forms.Form]$TargetForm)
+
+    $candidates = @(
+        (Join-Path $PSScriptRoot 'docs\icon.ico'),
+        (Join-Path $PSScriptRoot 'docs\icon.png')
+    )
+
+    foreach ($iconPath in $candidates) {
+        if (-not (Test-Path $iconPath)) { continue }
+        try {
+            if ([System.IO.Path]::GetExtension($iconPath).ToLowerInvariant() -eq '.ico') {
+                $script:formIcon = New-Object System.Drawing.Icon($iconPath)
+                $TargetForm.Icon = $script:formIcon
+                return
+            }
+
+            $bmp = [System.Drawing.Bitmap]::FromFile($iconPath)
+            try {
+                $script:formIconHandle = $bmp.GetHicon()
+            } finally {
+                $bmp.Dispose()
+            }
+            $script:formIcon = [System.Drawing.Icon]::FromHandle($script:formIconHandle)
+            $TargetForm.Icon = $script:formIcon
+            return
+        } catch {
+            continue
+        }
+    }
 }
 
 function Format-Time {
@@ -937,6 +981,7 @@ $form.MinimumSize = New-Object System.Drawing.Size(720, 360)
 $form.StartPosition = 'CenterScreen'
 $form.BackColor = $script:colBg
 $form.Font = New-Object System.Drawing.Font('Segoe UI', 9)
+Set-AppIcon $form
 
 $bar = New-Object System.Windows.Forms.Panel
 $bar.Dock = 'Bottom'
@@ -1194,6 +1239,18 @@ $form.Add_FormClosing({
         [void][Mpv.Native]::Command($script:ctx, @('write-watch-later-config'))
         [Mpv.Native]::Destroy($script:ctx)
         $script:ctx = [IntPtr]::Zero
+    }
+})
+
+
+$form.Add_FormClosed({
+    if ($script:formIcon -ne $null) {
+        try { $script:formIcon.Dispose() } catch {}
+        $script:formIcon = $null
+    }
+    if ($script:formIconHandle -ne [IntPtr]::Zero) {
+        try { [void][IconUtil]::DestroyIcon($script:formIconHandle) } catch {}
+        $script:formIconHandle = [IntPtr]::Zero
     }
 })
 

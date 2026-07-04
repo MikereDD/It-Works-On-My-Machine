@@ -5,6 +5,18 @@ All notable changes to Parallax are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.11] - 2026-07-04
+
+### Fixed
+- Remove the UTF-8 BOM from `parallax.ps1` so Windows PowerShell does not try to execute the first comment line as `﻿#`.
+- Keep the safe Unicode code-point icon handling from v0.8.9, so button glyphs still render correctly without needing a BOM.
+
+## [0.8.10] - 2026-07-04
+
+### Changed
+- Use the Parallax app icon in the window title bar instead of the generic WinForms icon.
+- Load the form icon from `docs/icon.png` (or `docs/icon.ico` if added later).
+
 ## [0.8.9] - 2026-07-04
 
 ### Fixed

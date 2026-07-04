@@ -10,15 +10,16 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.8.9-2d2d2d">
+  <img src="https://img.shields.io/badge/version-0.8.11-2d2d2d">
   <img src="https://img.shields.io/badge/PowerShell-5.1-2d2d2d?logo=powershell&logoColor=white">
   <img src="https://img.shields.io/badge/backend-libmpv-2d2d2d">
   <img src="https://img.shields.io/badge/platform-Windows-2d2d2d">
 </p>
 
-![Parallax](docs/Screenshot-2.jpg)
+![Parallax](docs/parallax.png)
 
 ## Features
+
 
 - Plays anything libmpv handles (MKV, MP4, M2TS, TS, WebM, ...) via HWND embedding
 - **Resume** &mdash; reopening a file picks up where you left off (per-file watch-later)
@@ -49,22 +50,22 @@ See the [changelog](https://github.com/MikereDD/It-Works-On-My-Machine/blob/main
 
 <table>
   <tr>
-    <td align="center" width="50%">
-      <img src="docs/Screenshot-1.jpg" alt="Blank opened app" width="100%"><br>
+    <td align="center">
+      <img src="docs/Screenshot-1.jpg" alt="Blank opened app"><br>
       <sub><b>1. Blank opened app</b></sub>
     </td>
-    <td align="center" width="50%">
-      <img src="docs/Screenshot-2.jpg" alt="App playing in a minimal window" width="100%"><br>
+    <td align="center">
+      <img src="docs/Screenshot-2.jpg" alt="App playing in a minimal window"><br>
       <sub><b>2. App playing in minimal window</b></sub>
     </td>
   </tr>
   <tr>
-    <td align="center" width="50%">
-      <img src="docs/Screenshot-3.jpg" alt="App playing in fullscreen with controls visible" width="100%"><br>
+    <td align="center">
+      <img src="docs/Screenshot-3.jpg" alt="App playing in fullscreen with controls visible"><br>
       <sub><b>3. App playing in full screen showing the buttons at the bottom</b></sub>
     </td>
-    <td align="center" width="50%">
-      <img src="docs/Screenshot-4.jpg" alt="App in fullscreen" width="100%"><br>
+    <td align="center">
+      <img src="docs/Screenshot-4.jpg" alt="App in fullscreen"><br>
       <sub><b>4. App full screen</b></sub>
     </td>
   </tr>
