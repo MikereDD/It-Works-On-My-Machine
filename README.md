@@ -19,7 +19,7 @@ Media: `bluray-backup` / `bluray-trackdump`, `brencoder`, `dvd-ripper-encoder`, 
 Shell: `tool-menu.sh`, `arakiel-tmux.sh`, dotfiles (`vimrc`, `tmux.conf`, `bashrc`, `Xresources`)
 
 ### 🤖 [Android/](https://github.com/MikereDD/It-Works-On-My-Machine/blob/main/Android) — Kotlin / Jetpack Compose
-* **pCloud TV** — streams pCloud video & audio to Google TV / Android via LibVLC. Plays **MKV** and virtually any format LibVLC handles; recursive search, per-folder & custom playlists, in-app `.nfo` / `.htm` viewer, and an audio-reactive visualizer.
+* **Cloud Player** — unified cloud media player for Android & Google TV. Browse Movies, TV Shows, Documentaries, Music, and Audiobooks from supported cloud providers through a normalized media library with background indexing, cached library, LibVLC playback, custom playlists, and in-app `.nfo` / `.htm` viewers.
 * **CloudTV** — M3U / IPTV live-TV player (Media3 / ExoPlayer) with background DVR.
 * **AtomicClock** — RFC 4330 SNTP clock with Open-Meteo weather and a home-screen widget.
 * **Resound** — multitrack audio editor / mixer (FFmpeg) with per-clip trim and voice recording.
