@@ -1,12 +1,12 @@
 #--------------------------------------------
 # file:     cd-tracks-flac.ps1
 # author:   Mike Redd
-# version:  1.6.1
+# version:  1.7.0
 # created:  2026-04-12
 # updated:  2026-07-04
 # desc:     Rip audio CD to one FLAC per track
 #           + MusicBrainz metadata fallback
-#           + album.json + Cover Art Archive/Discogs album art + CD NFO
+#           + album.json + Cover Art Archive/Discogs album art + per-track covers + CD NFO
 #           Uses shared core/ui helpers
 #--------------------------------------------
 
@@ -20,6 +20,7 @@ param(
     [string]$MetaFlacExe = (Join-Path $HOME "Apps\FLAC\metaflac.exe"),
     [string]$LibDiscidDll = (Join-Path $HOME "Apps\libdiscid\discid.dll"),
     [string]$CoverPath = "",
+    [string]$TrackCoverMapPath = "",
     [string]$DiscogsUrl = "",
     [string]$DiscogsToken = $env:DISCOGS_TOKEN,
     [switch]$NoAlbumArt,
@@ -57,7 +58,7 @@ if ($corePath) { . $corePath }
 if ($uiPath)   { . $uiPath }
 
 # ── Config ──────────────────────────────────
-$VER = "1.6.1"
+$VER = "1.7.0"
 
 $global:RipRoot   = $RipRoot
 $global:TempRoot  = Join-Path $global:RipRoot "temp"
@@ -73,7 +74,7 @@ $global:FLAC_EXE     = $FlacExe
 $global:METAFLAC_EXE = $MetaFlacExe
 
 $global:LIBDISCID_DLL = $LibDiscidDll
-$global:MB_USER_AGENT = "MikeRedd-CDTracksFlac/1.6.1"
+$global:MB_USER_AGENT = "MikeRedd-CDTracksFlac/1.7.0"
 $global:DISCOGS_TOKEN = $DiscogsToken
 
 # ── UI helpers ──────────────────────────────
@@ -808,17 +809,21 @@ function Save-AlbumMetadataJson {
         [Parameter(Mandatory)] [hashtable]$AlbumInfo,
         [Parameter(Mandatory)] [string[]]$TrackTitles,
         [Parameter(Mandatory)] [string[]]$FlacFiles,
-        [string]$DiscId = ""
+        [string]$DiscId = "",
+        [object[]]$TrackCoverMap = @()
     )
 
     $trackObjects = @()
     for ($i = 0; $i -lt $TrackTitles.Count; $i++) {
         $fileName = if ($i -lt $FlacFiles.Count) { $FlacFiles[$i] } else { "" }
+        $coverFile = Get-TrackCoverMapValue -TrackCoverMap $TrackCoverMap -TrackNumber ($i + 1)
+        if (-not [string]::IsNullOrWhiteSpace($coverFile)) { $coverFile = [System.IO.Path]::GetFileName($coverFile) }
 
         $trackObjects += [PSCustomObject]@{
             number   = $i + 1
             title    = $TrackTitles[$i]
             flacFile = $fileName
+            trackCoverFile = $coverFile
         }
     }
 
@@ -841,6 +846,7 @@ function Save-AlbumMetadataJson {
         discTitle            = $AlbumInfo.DiscTitle
         performer            = $AlbumInfo.Performer
         tracks               = $trackObjects
+        trackCovers          = @($TrackCoverMap | ForEach-Object { [PSCustomObject]@{ track = $_.Track; cover = ([System.IO.Path]::GetFileName([string]$_.Cover)) } })
     }
 
     $payload | ConvertTo-Json -Depth 5 | Set-Content -Path $JsonPath -Encoding UTF8
@@ -1074,6 +1080,101 @@ function Save-ManualCoverToAlbumDir {
     return ""
 }
 
+
+function Save-TrackCoverToAlbumDir {
+    param(
+        [Parameter(Mandatory)] [string]$TrackCoverPath,
+        [Parameter(Mandatory)] [string]$AlbumDir,
+        [Parameter(Mandatory)] [int]$TrackNumber,
+        [string]$TrackTitle = ""
+    )
+
+    if ([string]::IsNullOrWhiteSpace($TrackCoverPath) -or -not (Test-Path $TrackCoverPath)) { return "" }
+
+    try {
+        $sourceItem = Get-Item -LiteralPath $TrackCoverPath -ErrorAction Stop
+        $jpgDest = Join-Path $AlbumDir ("cover-track-{0:D2}.jpg" -f $TrackNumber)
+        if ($sourceItem.FullName.Equals($jpgDest, [System.StringComparison]::OrdinalIgnoreCase)) { return $sourceItem.FullName }
+
+        try {
+            Add-Type -AssemblyName System.Drawing -ErrorAction SilentlyContinue
+            $img = [System.Drawing.Image]::FromFile($sourceItem.FullName)
+            try { $img.Save($jpgDest, [System.Drawing.Imaging.ImageFormat]::Jpeg) } finally { $img.Dispose() }
+            if ((Test-Path $jpgDest) -and ((Get-Item -LiteralPath $jpgDest).Length -gt 0)) {
+                Write-Status ("Saved track {0:D2} cover as: {1}" -f $TrackNumber, $jpgDest) "Good"
+                return $jpgDest
+            }
+        } catch {
+            $ext = $sourceItem.Extension
+            if ([string]::IsNullOrWhiteSpace($ext)) { $ext = ".jpg" }
+            $dest = Join-Path $AlbumDir ("cover-track-{0:D2}{1}" -f $TrackNumber, $ext.ToLowerInvariant())
+            if (-not $sourceItem.FullName.Equals($dest, [System.StringComparison]::OrdinalIgnoreCase)) {
+                Copy-Item -LiteralPath $sourceItem.FullName -Destination $dest -Force -ErrorAction Stop
+            }
+            if ((Test-Path $dest) -and ((Get-Item -LiteralPath $dest).Length -gt 0)) {
+                Write-Status ("Saved track {0:D2} cover as: {1}" -f $TrackNumber, $dest) "Good"
+                return $dest
+            }
+        }
+    } catch {
+        Write-Status ("Track {0:D2} cover copy failed: {1}" -f $TrackNumber, $_.Exception.Message) "Warn"
+    }
+
+    return ""
+}
+
+function Get-TrackCoverMapValue {
+    param(
+        [object[]]$TrackCoverMap = @(),
+        [Parameter(Mandatory)] [int]$TrackNumber
+    )
+    foreach ($entry in @($TrackCoverMap)) {
+        if ($null -eq $entry) { continue }
+        $track = 0
+        try { $track = [int]$entry.Track } catch { }
+        if ($track -eq $TrackNumber) { return [string]$entry.Cover }
+    }
+    return ""
+}
+
+function Get-ObjectTextValue {
+    param($Object, [string[]]$Names)
+    if ($null -eq $Object) { return "" }
+    foreach ($name in $Names) {
+        $prop = $Object.PSObject.Properties[$name]
+        if ($prop -and -not [string]::IsNullOrWhiteSpace([string]$prop.Value)) { return [string]$prop.Value }
+    }
+    return ""
+}
+
+function Import-TrackCoverSourceMap {
+    param([string]$Path)
+    $map = @{}
+    if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path $Path)) { return $map }
+    try {
+        $items = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
+        foreach ($item in @($items)) {
+            $cover = Get-ObjectTextValue -Object $item -Names @('cover','path','image','file')
+            if ([string]::IsNullOrWhiteSpace($cover)) { continue }
+            $spec = Get-ObjectTextValue -Object $item -Names @('tracks','range','track')
+            if ([string]::IsNullOrWhiteSpace($spec)) { continue }
+            foreach ($part in ($spec -split ',')) {
+                $p = $part.Trim()
+                if ($p -match '^(\d+)\s*-\s*(\d+)$') {
+                    $a = [int]$Matches[1]; $b = [int]$Matches[2]
+                    if ($a -gt $b) { $t = $a; $a = $b; $b = $t }
+                    for ($n = $a; $n -le $b; $n++) { $map[$n] = $cover }
+                }
+                elseif ($p -match '^\d+$') { $map[[int]$p] = $cover }
+            }
+        }
+        if ($map.Count -gt 0) { Write-Status "Loaded $($map.Count) track cover override(s)." "Good" }
+    } catch {
+        Write-Status "Failed to read track cover map: $($_.Exception.Message)" "Warn"
+    }
+    return $map
+}
+
 function Get-CoverArtArchiveImageUrl {
     param(
         [Parameter(Mandatory)] [string]$Mbid,
@@ -1245,7 +1346,8 @@ function Write-CDNfo {
         [Parameter(Mandatory)] [string[]]$TrackTitles,
         [string[]]$Files = @(),
         [string]$DiscId = "",
-        [string]$CoverPath = ""
+        [string]$CoverPath = "",
+        [object[]]$TrackCoverMap = @()
     )
 
     try {
@@ -1280,6 +1382,20 @@ function Write-CDNfo {
         $lines.Add("RG URL   : $(Get-AlbumInfoValue -AlbumInfo $AlbumInfo -Name 'ReleaseGroupUrl')")
         $lines.Add("Discogs : $(Get-AlbumInfoValue -AlbumInfo $AlbumInfo -Name 'DiscogsUrl')")
         if ($CoverPath) { $lines.Add("Cover    : $([System.IO.Path]::GetFileName($CoverPath))") }
+        if ($TrackCoverMap -and @($TrackCoverMap).Count -gt 0) {
+            $lines.Add("")
+            $lines.Add("Track Cover Overrides")
+            $lines.Add("---------------------")
+            foreach ($tc in @($TrackCoverMap)) {
+                if ($null -eq $tc) { continue }
+                $coverName = [System.IO.Path]::GetFileName([string]$tc.Cover)
+                $trackNum = 0
+                try { $trackNum = [int]$tc.Track } catch { }
+                if ($trackNum -gt 0 -and -not [string]::IsNullOrWhiteSpace($coverName)) {
+                    $lines.Add(("{0:D2}. {1}" -f $trackNum, $coverName))
+                }
+            }
+        }
         $lines.Add("")
         $lines.Add("Tools")
         $lines.Add("-----")
@@ -1477,6 +1593,8 @@ function Start-Job {
     $json = Join-Path $albumDir "album.json"
 
     $coverPath = Resolve-AlbumCoverPath -AlbumInfo $albumInfo -AlbumDir $albumDir -ManualCoverPath $CoverPath -DiscogsUrl $DiscogsUrl -AllowDownload:(!$NoAlbumArt) -AllowPrompt:(!$NoAlbumArt)
+    $trackCoverSourceMap = Import-TrackCoverSourceMap -Path $TrackCoverMapPath
+    $trackCoverMap = New-Object System.Collections.Generic.List[object]
 
     $flacFiles = New-Object System.Collections.Generic.List[string]
     $flacPaths = New-Object System.Collections.Generic.List[string]
@@ -1524,8 +1642,16 @@ function Start-Job {
             continue
         }
 
-        if ($coverPath) {
-            Embed-Cover -FlacPath $flacPath -ImagePath $coverPath
+        $embedCoverPath = $coverPath
+        if ($trackCoverSourceMap.ContainsKey($trackNum)) {
+            $savedTrackCover = Save-TrackCoverToAlbumDir -TrackCoverPath ([string]$trackCoverSourceMap[$trackNum]) -AlbumDir $albumDir -TrackNumber $trackNum -TrackTitle $trackTitle
+            if (-not [string]::IsNullOrWhiteSpace($savedTrackCover) -and (Test-Path $savedTrackCover)) {
+                $embedCoverPath = $savedTrackCover
+                [void]$trackCoverMap.Add([PSCustomObject]@{ Track = $trackNum; Title = $trackTitle; Cover = $savedTrackCover })
+            }
+        }
+        if ($embedCoverPath) {
+            Embed-Cover -FlacPath $flacPath -ImagePath $embedCoverPath
         }
 
         Remove-Item $wavPath -Force -ErrorAction SilentlyContinue
@@ -1544,7 +1670,8 @@ function Start-Job {
                                -AlbumInfo $albumInfo `
                                -TrackTitles $tracks `
                                -FlacFiles $flacFiles.ToArray() `
-                               -DiscId $discId
+                               -DiscId $discId `
+                               -TrackCoverMap ($trackCoverMap.ToArray())
         Write-Status "Saved metadata sidecar." "Good"
     }
     catch {
@@ -1553,14 +1680,16 @@ function Start-Job {
 
     $nfo = Join-Path $albumDir ("$artistSafe - $albumSafe.nfo")
     if (-not $NoNfo) {
-        $nfoFiles = (@($flacPaths.ToArray()) + @($json, $coverPath)) | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }
+        $trackCoverFiles = @($trackCoverMap.ToArray() | ForEach-Object { $_.Cover })
+        $nfoFiles = (@($flacPaths.ToArray()) + @($json, $coverPath) + @($trackCoverFiles)) | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }
         Write-CDNfo -NfoPath $nfo `
                     -Mode "One FLAC per track" `
                     -AlbumInfo $albumInfo `
                     -TrackTitles $tracks `
                     -Files $nfoFiles `
                     -DiscId $discId `
-                    -CoverPath $coverPath
+                    -CoverPath $coverPath `
+                    -TrackCoverMap ($trackCoverMap.ToArray())
     }
 
     Write-Host ""

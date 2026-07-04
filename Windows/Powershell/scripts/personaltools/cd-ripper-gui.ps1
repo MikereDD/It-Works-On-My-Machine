@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file:     cd-ripper-gui.ps1
 # author:   Mike Redd
-# version:  1.3.1
+# version:  1.4.0
 # created:  2026-06-17
 # updated:  2026-07-04
 # desc:     WinForms GUI front-end for the CD -> FLAC
@@ -9,7 +9,7 @@
 #             * Single FLAC image + CUE (cd-image-flac.ps1)
 #             * One FLAC per track       (cd-tracks-flac.ps1)
 #           DiscID + MusicBrainz lookup, editable metadata
-#           + track grid, Cover Art Archive fetch, cover embed, JSON sidecar, CD NFO + Discogs cover fallback.
+#           + track grid, Cover Art Archive fetch, cover embed, per-track covers, JSON sidecar, CD NFO + Discogs cover fallback.
 #           Background runspaces keep the UI responsive.
 #--------------------------------------------
 
@@ -347,6 +347,65 @@ function Save-ManualCoverToAlbumDir {
     return ""
 }
 
+
+function Save-TrackCoverToAlbumDir {
+    param(
+        [Parameter(Mandatory)] [string]$TrackCoverPath,
+        [Parameter(Mandatory)] [string]$AlbumDir,
+        [Parameter(Mandatory)] [int]$TrackNumber,
+        [string]$TrackTitle = ""
+    )
+
+    if ([string]::IsNullOrWhiteSpace($TrackCoverPath) -or -not (Test-Path $TrackCoverPath)) { return "" }
+
+    try {
+        $safeTitle = Get-SafeName $TrackTitle
+        if ([string]::IsNullOrWhiteSpace($safeTitle)) { $safeTitle = ("Track {0:D2}" -f $TrackNumber) }
+        $sourceItem = Get-Item -LiteralPath $TrackCoverPath -ErrorAction Stop
+        $jpgDest = Join-Path $AlbumDir ("cover-track-{0:D2}.jpg" -f $TrackNumber)
+        if ($sourceItem.FullName.Equals($jpgDest, [System.StringComparison]::OrdinalIgnoreCase)) { return $sourceItem.FullName }
+
+        try {
+            Add-Type -AssemblyName System.Drawing -ErrorAction SilentlyContinue
+            $img = [System.Drawing.Image]::FromFile($sourceItem.FullName)
+            try { $img.Save($jpgDest, [System.Drawing.Imaging.ImageFormat]::Jpeg) } finally { $img.Dispose() }
+            if ((Test-Path $jpgDest) -and ((Get-Item -LiteralPath $jpgDest).Length -gt 0)) {
+                Send-Log ("Saved track {0:D2} cover as: {1}" -f $TrackNumber, $jpgDest) "Good"
+                return $jpgDest
+            }
+        } catch {
+            $ext = $sourceItem.Extension
+            if ([string]::IsNullOrWhiteSpace($ext)) { $ext = ".jpg" }
+            $dest = Join-Path $AlbumDir ("cover-track-{0:D2}{1}" -f $TrackNumber, $ext.ToLowerInvariant())
+            if (-not $sourceItem.FullName.Equals($dest, [System.StringComparison]::OrdinalIgnoreCase)) {
+                Copy-Item -LiteralPath $sourceItem.FullName -Destination $dest -Force -ErrorAction Stop
+            }
+            if ((Test-Path $dest) -and ((Get-Item -LiteralPath $dest).Length -gt 0)) {
+                Send-Log ("Saved track {0:D2} cover as: {1}" -f $TrackNumber, $dest) "Good"
+                return $dest
+            }
+        }
+    } catch {
+        Send-Log ("Track {0:D2} cover copy failed: {1}" -f $TrackNumber, $_.Exception.Message) "Warn"
+    }
+
+    return ""
+}
+
+function Get-TrackCoverMapValue {
+    param(
+        [object[]]$TrackCoverMap = @(),
+        [Parameter(Mandatory)] [int]$TrackNumber
+    )
+    foreach ($entry in @($TrackCoverMap)) {
+        if ($null -eq $entry) { continue }
+        $track = 0
+        try { $track = [int]$entry.Track } catch { }
+        if ($track -eq $TrackNumber) { return [string]$entry.Cover }
+    }
+    return ""
+}
+
 function Get-CoverArtArchiveImageUrl {
     param(
         [Parameter(Mandatory)] [string]$Mbid,
@@ -483,7 +542,8 @@ function Write-CDNfo {
         [Parameter(Mandatory)] [string[]]$TrackTitles,
         [string[]]$Files = @(),
         [string]$DiscId = "",
-        [string]$CoverPath = ""
+        [string]$CoverPath = "",
+        [object[]]$TrackCoverMap = @()
     )
     $cfg = $global:sync.Cfg
     try {
@@ -497,7 +557,7 @@ function Write-CDNfo {
         $lines.Add("                                                 | |   | |              ")
         $lines.Add("                                                 |_|   |_|              ")
         $lines.Add("")
-        $lines.Add("CD -> FLAC Ripper v1.3.1")
+        $lines.Add("CD -> FLAC Ripper v1.4.0")
         $lines.Add("Generated: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')")
         $lines.Add("Mode     : $Mode")
         $lines.Add("Source   : Audio CD")
@@ -518,6 +578,20 @@ function Write-CDNfo {
         $lines.Add("RG URL   : $(Get-AlbumInfoValue -AlbumInfo $AlbumInfo -Name 'ReleaseGroupUrl')")
         $lines.Add("Discogs : $(Get-AlbumInfoValue -AlbumInfo $AlbumInfo -Name 'DiscogsUrl')")
         if ($CoverPath) { $lines.Add("Cover    : $([System.IO.Path]::GetFileName($CoverPath))") }
+        if ($TrackCoverMap -and @($TrackCoverMap).Count -gt 0) {
+            $lines.Add("")
+            $lines.Add("Track Cover Overrides")
+            $lines.Add("---------------------")
+            foreach ($tc in @($TrackCoverMap)) {
+                if ($null -eq $tc) { continue }
+                $coverName = [System.IO.Path]::GetFileName([string]$tc.Cover)
+                $trackNum = 0
+                try { $trackNum = [int]$tc.Track } catch { }
+                if ($trackNum -gt 0 -and -not [string]::IsNullOrWhiteSpace($coverName)) {
+                    $lines.Add(("{0:D2}. {1}" -f $trackNum, $coverName))
+                }
+            }
+        }
         $lines.Add("")
         $lines.Add("Tools")
         $lines.Add("-----")
@@ -1150,11 +1224,13 @@ function Save-ImageJson {
 }
 
 function Save-TracksJson {
-    param($JsonPath, $AlbumInfo, [string[]]$TrackTitles, [string[]]$FlacFiles, $DiscId)
+    param($JsonPath, $AlbumInfo, [string[]]$TrackTitles, [string[]]$FlacFiles, $DiscId, [object[]]$TrackCoverMap = @())
     $trackObjects = @()
     for ($i = 0; $i -lt $TrackTitles.Count; $i++) {
         $fileName = if ($i -lt $FlacFiles.Count) { $FlacFiles[$i] } else { "" }
-        $trackObjects += [PSCustomObject]@{ number = $i + 1; title = $TrackTitles[$i]; flacFile = $fileName }
+        $coverFile = Get-TrackCoverMapValue -TrackCoverMap $TrackCoverMap -TrackNumber ($i + 1)
+        if (-not [string]::IsNullOrWhiteSpace($coverFile)) { $coverFile = [System.IO.Path]::GetFileName($coverFile) }
+        $trackObjects += [PSCustomObject]@{ number = $i + 1; title = $TrackTitles[$i]; flacFile = $fileName; trackCoverFile = $coverFile }
     }
     $payload = [PSCustomObject]@{
         discId = $DiscId; musicBrainzReleaseId = Get-AlbumInfoValue -AlbumInfo $AlbumInfo -Name "ReleaseId"
@@ -1168,6 +1244,7 @@ function Save-TracksJson {
         label = Get-AlbumInfoValue -AlbumInfo $AlbumInfo -Name "Label"; country = Get-AlbumInfoValue -AlbumInfo $AlbumInfo -Name "Country"
         status = Get-AlbumInfoValue -AlbumInfo $AlbumInfo -Name "Status"; discTitle = $AlbumInfo.DiscTitle
         performer = $AlbumInfo.Performer; tracks = $trackObjects
+        trackCovers = @($TrackCoverMap | ForEach-Object { [PSCustomObject]@{ track = $_.Track; cover = ([System.IO.Path]::GetFileName([string]$_.Cover)) } })
     }
     $payload | ConvertTo-Json -Depth 5 | Set-Content -Path $JsonPath -Encoding UTF8
 }
@@ -1380,6 +1457,9 @@ function Invoke-Rip {
         $flacFiles = New-Object System.Collections.Generic.List[string]
         $flacPaths = New-Object System.Collections.Generic.List[string]
         $failedTracks = New-Object System.Collections.Generic.List[int]
+        $trackCoverMap = New-Object System.Collections.Generic.List[object]
+        $trackCoverSources = @()
+        if ($job.TrackCovers) { $trackCoverSources = @($job.TrackCovers) }
         for ($i = 0; $i -lt $tracks.Count; $i++) {
             $trackNum = $i + 1
             $trackTitle = $tracks[$i]
@@ -1409,7 +1489,17 @@ function Invoke-Rip {
                 Send-Log ("Track {0:D2} validation/publish failed: {1}" -f $trackNum, $_.Exception.Message) "Bad"; [void]$failedTracks.Add($trackNum); continue
             }
 
-            if ($coverPath -and (Test-Path $coverPath)) { Embed-Cover $flacPath $coverPath }
+            $embedCoverPath = $coverPath
+            $trackCoverSource = ""
+            if ($trackCoverSources -and $i -lt $trackCoverSources.Count) { $trackCoverSource = [string]$trackCoverSources[$i] }
+            if (-not [string]::IsNullOrWhiteSpace($trackCoverSource) -and (Test-Path $trackCoverSource)) {
+                $savedTrackCover = Save-TrackCoverToAlbumDir -TrackCoverPath $trackCoverSource -AlbumDir $albumDir -TrackNumber $trackNum -TrackTitle $trackTitle
+                if (-not [string]::IsNullOrWhiteSpace($savedTrackCover) -and (Test-Path $savedTrackCover)) {
+                    $embedCoverPath = $savedTrackCover
+                    [void]$trackCoverMap.Add([PSCustomObject]@{ Track = $trackNum; Title = $trackTitle; Cover = $savedTrackCover })
+                }
+            }
+            if ($embedCoverPath -and (Test-Path $embedCoverPath)) { Embed-Cover $flacPath $embedCoverPath }
             Remove-Item $wavPath -Force -ErrorAction SilentlyContinue
             [void]$flacFiles.Add([System.IO.Path]::GetFileName($flacPath))
             [void]$flacPaths.Add($flacPath)
@@ -1421,7 +1511,7 @@ function Invoke-Rip {
         }
 
         try {
-            Save-TracksJson -JsonPath $json -AlbumInfo $albumInfo -TrackTitles $tracks -FlacFiles $flacFiles.ToArray() -DiscId $job.DiscId
+            Save-TracksJson -JsonPath $json -AlbumInfo $albumInfo -TrackTitles $tracks -FlacFiles $flacFiles.ToArray() -DiscId $job.DiscId -TrackCoverMap ($trackCoverMap.ToArray())
             Send-Log "Saved metadata sidecar." "Good"
         } catch {
             Send-Log "Failed to save JSON: $($_.Exception.Message)" "Warn"
@@ -1429,8 +1519,9 @@ function Invoke-Rip {
 
         $nfo = Join-Path $albumDir ("$artistSafe - $albumSafe.nfo")
         if ($cfg.CreateNfo) {
-            $nfoFiles = (@($flacPaths.ToArray()) + @($json, $coverPath)) | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }
-            Write-CDNfo -NfoPath $nfo -Mode "One FLAC per track" -AlbumInfo $albumInfo -TrackTitles $tracks -Files $nfoFiles -DiscId $job.DiscId -CoverPath $coverPath
+            $trackCoverFiles = @($trackCoverMap.ToArray() | ForEach-Object { $_.Cover })
+            $nfoFiles = (@($flacPaths.ToArray()) + @($json, $coverPath) + @($trackCoverFiles)) | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }
+            Write-CDNfo -NfoPath $nfo -Mode "One FLAC per track" -AlbumInfo $albumInfo -TrackTitles $tracks -Files $nfoFiles -DiscId $job.DiscId -CoverPath $coverPath -TrackCoverMap ($trackCoverMap.ToArray())
         }
 
         if ($failedTracks.Count -gt 0 -or $flacFiles.Count -ne $tracks.Count) {
@@ -1499,7 +1590,7 @@ function New-Group {
 
 # ── Form ────────────────────────────────────
 $form = New-Object System.Windows.Forms.Form
-$form.Text = "CD -> FLAC Ripper v1.3.1"
+$form.Text = "CD -> FLAC Ripper v1.4.0"
 $form.Size = "1000,1020"
 $form.MinimumSize = "900,840"
 $form.StartPosition = "CenterScreen"
@@ -1510,7 +1601,7 @@ $form.Font = $fontUI
 $header = New-Object System.Windows.Forms.Panel
 $header.Dock = "Top"; $header.Height = 52; $header.BackColor = $clrPanel
 $hLabel = New-Object System.Windows.Forms.Label
-$hLabel.Text = "  CD -> FLAC Ripper v1.3.1"; $hLabel.ForeColor = $clrAccent
+$hLabel.Text = "  CD -> FLAC Ripper v1.4.0"; $hLabel.ForeColor = $clrAccent
 $hLabel.Font = $fontHead; $hLabel.Dock = "Fill"; $hLabel.TextAlign = "MiddleLeft"
 $header.Controls.Add($hLabel)
 $form.Controls.Add($header)
@@ -1624,11 +1715,16 @@ $grid.Columns.Add($colNum) | Out-Null
 $colTitle = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
 $colTitle.HeaderText = "Title"; $colTitle.AutoSizeMode = "Fill"
 $grid.Columns.Add($colTitle) | Out-Null
+$colCover = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
+$colCover.HeaderText = "Track Cover"; $colCover.Width = 220
+$grid.Columns.Add($colCover) | Out-Null
 $gTracks.Controls.Add($grid)
 
 $btnAddRow = New-Button "+ Add" 852 24 90 26; $btnAddRow.Anchor = "Top,Right"; $gTracks.Controls.Add($btnAddRow)
 $btnDelRow = New-Button "- Remove" 852 56 90 26; $btnDelRow.Anchor = "Top,Right"; $gTracks.Controls.Add($btnDelRow)
 $btnClrRows = New-Button "Clear" 852 88 90 26; $btnClrRows.Anchor = "Top,Right"; $gTracks.Controls.Add($btnClrRows)
+$btnSetTrackCover = New-Button "Set Cover" 852 120 90 26; $btnSetTrackCover.Anchor = "Top,Right"; $gTracks.Controls.Add($btnSetTrackCover)
+$btnClearTrackCover = New-Button "Clear Cover" 852 152 90 26; $btnClearTrackCover.Anchor = "Top,Right"; $gTracks.Controls.Add($btnClearTrackCover)
 $form.Controls.Add($gTracks)
 
 # ── Group: Output ───────────────────────────
@@ -1710,11 +1806,11 @@ function Set-Tracks {
             $title = ""
             if ($titles -and $i -lt $titles.Count) { $title = $titles[$i] }
             if ([string]::IsNullOrWhiteSpace($title)) { $title = "Track $($i + 1)" }
-            $grid.Rows.Add(@("", $title)) | Out-Null
+            $grid.Rows.Add(@("", $title, "")) | Out-Null
         }
     }
     elseif ($titles -and $titles.Count -gt 0) {
-        foreach ($t in $titles) { $grid.Rows.Add(@("", $t)) | Out-Null }
+        foreach ($t in $titles) { $grid.Rows.Add(@("", $t, "")) | Out-Null }
     }
 
     Renumber-Grid
@@ -1732,13 +1828,13 @@ function Get-Cfg {
         FetchArt  = $chkFetchArt.Checked
         CreateNfo = $chkNfo.Checked
         DiscogsToken = [Environment]::GetEnvironmentVariable("DISCOGS_TOKEN")
-        UserAgent = "MikeRedd-CDRipperGUI/1.3.1"
+        UserAgent = "MikeRedd-CDRipperGUI/1.4.0"
     }
 }
 
 function Set-Busy {
     param([bool]$busy, [string]$msg = "")
-    $controls = @($btnDetect, $btnSearch, $btnUseResult, $btnOpenMB, $btnOpenDiscogs, $btnStart, $btnAddRow, $btnDelRow, $btnClrRows)
+    $controls = @($btnDetect, $btnSearch, $btnUseResult, $btnOpenMB, $btnOpenDiscogs, $btnStart, $btnAddRow, $btnDelRow, $btnClrRows, $btnSetTrackCover, $btnClearTrackCover)
     foreach ($c in $controls) { $c.Enabled = -not $busy }
     $lblBusy.Text = $msg
     if ($busy) { $form.Cursor = "AppStarting" } else { $form.Cursor = "Default" }
@@ -1881,6 +1977,27 @@ $btnCover.Add_Click({
     $dlg.Filter = "Images|*.jpg;*.jpeg;*.png|All files|*.*"
     if ($dlg.ShowDialog() -eq "OK") { $txtCover.Text = $dlg.FileName }
 })
+$btnSetTrackCover.Add_Click({
+    if ($grid.Rows.Count -lt 1) { Add-LogLine "Add tracks before assigning track covers." "Warn"; return }
+    $dlg = New-Object System.Windows.Forms.OpenFileDialog
+    $dlg.Filter = "Images|*.jpg;*.jpeg;*.png|All files|*.*"
+    if ($dlg.ShowDialog() -ne "OK") { return }
+    $rows = @()
+    foreach ($r in $grid.SelectedRows) { $rows += $r }
+    if ($rows.Count -lt 1 -and $grid.CurrentRow) { $rows += $grid.CurrentRow }
+    if ($rows.Count -lt 1) { $rows = @($grid.Rows) }
+    foreach ($r in $rows) { $r.Cells[2].Value = $dlg.FileName }
+    Add-LogLine ("Assigned track cover to {0} row(s)." -f $rows.Count) "Good"
+})
+$btnClearTrackCover.Add_Click({
+    if ($grid.Rows.Count -lt 1) { return }
+    $rows = @()
+    foreach ($r in $grid.SelectedRows) { $rows += $r }
+    if ($rows.Count -lt 1 -and $grid.CurrentRow) { $rows += $grid.CurrentRow }
+    if ($rows.Count -lt 1) { $rows = @($grid.Rows) }
+    foreach ($r in $rows) { $r.Cells[2].Value = "" }
+    Add-LogLine ("Cleared track cover from {0} row(s)." -f $rows.Count) "Dim"
+})
 $btnOpenDiscogs.Add_Click({
     $url = $txtDiscogs.Text.Trim()
     if ([string]::IsNullOrWhiteSpace($url)) {
@@ -1946,7 +2063,7 @@ $btnUseResult.Add_Click({
     Start-Op "release"
 })
 
-$btnAddRow.Add_Click({ $grid.Rows.Add(@("", "")) | Out-Null; Renumber-Grid })
+$btnAddRow.Add_Click({ $grid.Rows.Add(@("", "", "")) | Out-Null; Renumber-Grid })
 $btnDelRow.Add_Click({
     if ($grid.SelectedRows.Count -gt 0) {
         $grid.Rows.Remove($grid.SelectedRows[0]); Renumber-Grid
@@ -1968,12 +2085,16 @@ $btnOpen.Add_Click({
 })
 
 $btnStart.Add_Click({
-    # Gather track titles
+    # Gather track titles and optional per-track cover paths
     $titles = @()
+    $trackCovers = @()
     for ($i = 0; $i -lt $grid.Rows.Count; $i++) {
         $v = $grid.Rows[$i].Cells[1].Value
         if ($null -ne $v -and -not [string]::IsNullOrWhiteSpace([string]$v)) { $titles += [string]$v }
         else { $titles += "Track $($i+1)" }
+        $coverCell = $grid.Rows[$i].Cells[2].Value
+        if ($null -ne $coverCell -and -not [string]::IsNullOrWhiteSpace([string]$coverCell)) { $trackCovers += [string]$coverCell }
+        else { $trackCovers += "" }
     }
 
     if ([string]::IsNullOrWhiteSpace($txtArtist.Text) -or [string]::IsNullOrWhiteSpace($txtAlbum.Text)) {
@@ -1984,6 +2105,9 @@ $btnStart.Add_Click({
     }
 
     $mode = if ($rbTracks.Checked) { "tracks" } else { "image" }
+    if ($mode -eq "image" -and (@($trackCovers | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }).Count -gt 0)) {
+        Add-LogLine "Per-track covers are only used in One FLAC per track mode; image+CUE uses the main Cover only." "Warn"
+    }
     $sync.Job = @{
         Mode   = $mode
         Artist = $txtArtist.Text.Trim()
@@ -1995,6 +2119,7 @@ $btnStart.Add_Click({
         ReleaseGroupId = $script:CurrentReleaseGroupId
         Tracks = $titles
         Cover  = $txtCover.Text.Trim()
+        TrackCovers = $trackCovers
         DiscogsUrl = $txtDiscogs.Text.Trim()
     }
     if ($sync.Job.DiscId -eq "-" -or $sync.Job.DiscId -like "(not read)*") { $sync.Job.DiscId = "" }

@@ -1,7 +1,7 @@
 '--------------------------------------------
 ' file:    cd-ripper-gui.vbs
 ' author:  Mike Redd
-' version: 1.3.1
+' version: 1.4.0
 ' updated: 2026-07-04
 ' desc:    Silent launcher for cd-ripper-gui.ps1
 '          (no console window flash). The PS1
