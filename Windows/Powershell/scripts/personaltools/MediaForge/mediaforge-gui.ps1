@@ -1,7 +1,7 @@
-﻿<#
+<#
 ================================================================
   MediaForge  -  all-in-one disc -> HEVC front end
-  version:  1.8.1  (UI polish parser fix)  by Mike Redd
+  version:  1.9.1  (theme-only polish / stable layout)  by Mike Redd
 ----------------------------------------------------------------
   One window over the existing toolset. It does NOT reimplement any
   pipeline; each engine is dot-sourced inside its OWN background
@@ -57,7 +57,7 @@ if ([System.Threading.Thread]::CurrentThread.GetApartmentState() -ne [System.Thr
             }
         }
         $launchArgs += $args
-        & $hostExe @launchArgs
+        & $winPS @launchArgs
         return
     }
     Write-Host "This GUI must run in a single-threaded apartment (STA)."
@@ -255,12 +255,12 @@ function Remove-BluRayBackupRoot {
 # ════════════════════════════════════════════════════════════════
 $form = New-Object System.Windows.Forms.Form
 try { $icoPath = Get-MediaForgeIconPath; if ($icoPath) { $form.Icon = New-Object System.Drawing.Icon($icoPath) } } catch { }
-$script:GuiVersion = '1.8.1'
+$script:GuiVersion = '1.9.1'
 $form.Text = "MediaForge v$($script:GuiVersion)  (DVD / Blu-ray / File / Audio CD)"
 $form.Size = New-Object System.Drawing.Size(1448, 1086)
 $form.MinimumSize = New-Object System.Drawing.Size(1360, 1000)
 $form.StartPosition = 'CenterScreen'
-$form.BackColor = [System.Drawing.Color]::FromArgb(9, 9, 11)
+$form.BackColor = [System.Drawing.Color]::FromArgb(7, 10, 15)
 $form.ForeColor = [System.Drawing.Color]::WhiteSmoke
 $form.Font = New-Object System.Drawing.Font('Segoe UI', 9.75)   # bigger labels/buttons/checkboxes
 $mono = New-Object System.Drawing.Font('Consolas', 10.5)        # bigger log / grid / list / fields
@@ -502,15 +502,15 @@ $btnPosterGrab.Text = 'Poster'; $btnPosterGrab.Location = '428,862'; $btnPosterG
 $btnPosterGrab.BackColor = [System.Drawing.Color]::FromArgb(50, 60, 80); $form.Controls.Add($btnPosterGrab)
 
 # --- monochrome polish shell ---------------------------------
-$monoBack  = [System.Drawing.Color]::FromArgb(9, 9, 11)
-$cardBack  = [System.Drawing.Color]::FromArgb(13, 13, 16)
-$cardBack2 = [System.Drawing.Color]::FromArgb(17, 17, 21)
-$lineSoft  = [System.Drawing.Color]::FromArgb(54, 54, 60)
-$lineHard  = [System.Drawing.Color]::FromArgb(108, 108, 116)
+$monoBack  = [System.Drawing.Color]::FromArgb(7, 10, 15)
+$cardBack  = [System.Drawing.Color]::FromArgb(13, 17, 24)
+$cardBack2 = [System.Drawing.Color]::FromArgb(16, 21, 30)
+$lineSoft  = [System.Drawing.Color]::FromArgb(48, 58, 72)
+$lineHard  = [System.Drawing.Color]::FromArgb(96, 112, 132)
 $inkMain   = [System.Drawing.Color]::FromArgb(236, 236, 236)
-$inkSoft   = [System.Drawing.Color]::FromArgb(190, 190, 196)
-$inkMute   = [System.Drawing.Color]::FromArgb(132, 132, 140)
-$selBack   = [System.Drawing.Color]::FromArgb(36, 36, 44)
+$inkSoft   = [System.Drawing.Color]::FromArgb(198, 207, 218)
+$inkMute   = [System.Drawing.Color]::FromArgb(128, 140, 154)
+$selBack   = [System.Drawing.Color]::FromArgb(42, 50, 64)
 $goodInk   = [System.Drawing.Color]::FromArgb(240, 240, 240)
 $badInk    = [System.Drawing.Color]::FromArgb(168, 168, 174)
 
@@ -1243,7 +1243,7 @@ function Set-MFInput { param($Ctl)
     try{ $Ctl.BackColor=[System.Drawing.Color]::FromArgb(8,11,15); $Ctl.ForeColor=[System.Drawing.Color]::FromArgb(230,236,244); $Ctl.Font=New-Object System.Drawing.Font('Segoe UI',10); if($Ctl -is [System.Windows.Forms.ComboBox]){$Ctl.FlatStyle='Flat'} }catch{}
 }
 function Apply-MediaForgeActualCadenceUi {
-    # v1.8.1 visual polish: keep the proven WinForms controls alive and refine the shell.
+    # v1.9.1 theme-only polish: keep the proven v1.8.x layout/buttons alive and refine the shell.
     # No workflow changes. No control replacement. No disappearing buttons.
 
     try {
@@ -1292,7 +1292,7 @@ function Apply-MediaForgeActualCadenceUi {
         if ($hdrDivider) {
             $hdrDivider.Location = New-Object System.Drawing.Point(16,94)
             $hdrDivider.Size = New-Object System.Drawing.Size(1396,1)
-            $hdrDivider.BackColor = [System.Drawing.Color]::FromArgb(42,52,66)
+            $hdrDivider.BackColor = [System.Drawing.Color]::FromArgb(48,60,76)
         }
 
         # Background cards.
@@ -1312,7 +1312,7 @@ function Apply-MediaForgeActualCadenceUi {
                 if ($p) {
                     $p.Location = $cardLayout[$i].L
                     $p.Size     = $cardLayout[$i].S
-                    $p.BackColor = [System.Drawing.Color]::FromArgb(14,18,26)
+                    $p.BackColor = [System.Drawing.Color]::FromArgb(13,18,27)
                     $p.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
                     $p.SendToBack()
                 }
@@ -1344,7 +1344,7 @@ function Apply-MediaForgeActualCadenceUi {
             if ($l) {
                 $l.Font = New-Object System.Drawing.Font('Segoe UI',11.5,[System.Drawing.FontStyle]::Bold)
                 $l.ForeColor = [System.Drawing.Color]::FromArgb(236,242,248)
-                $l.BackColor = [System.Drawing.Color]::FromArgb(14,18,26)
+                $l.BackColor = [System.Drawing.Color]::FromArgb(13,18,27)
                 $l.BringToFront()
             }
         }
@@ -1353,7 +1353,7 @@ function Apply-MediaForgeActualCadenceUi {
             $logHdr.Location=New-Object System.Drawing.Point(494,628)
             $logHdr.Font=New-Object System.Drawing.Font('Segoe UI',11.5,[System.Drawing.FontStyle]::Bold)
             $logHdr.ForeColor=[System.Drawing.Color]::FromArgb(236,242,248)
-            $logHdr.BackColor=[System.Drawing.Color]::FromArgb(14,18,26)
+            $logHdr.BackColor=[System.Drawing.Color]::FromArgb(13,18,27)
             $logHdr.BringToFront()
         }
         if ($progressHdr) {
@@ -1361,7 +1361,7 @@ function Apply-MediaForgeActualCadenceUi {
             $progressHdr.Location=New-Object System.Drawing.Point(494,900)
             $progressHdr.Font=New-Object System.Drawing.Font('Segoe UI',11.5,[System.Drawing.FontStyle]::Bold)
             $progressHdr.ForeColor=[System.Drawing.Color]::FromArgb(236,242,248)
-            $progressHdr.BackColor=[System.Drawing.Color]::FromArgb(14,18,26)
+            $progressHdr.BackColor=[System.Drawing.Color]::FromArgb(13,18,27)
             $progressHdr.BringToFront()
         }
 

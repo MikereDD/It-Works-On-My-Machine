@@ -100,7 +100,7 @@ MediaForge\
 From PowerShell, after extracting the package:
 
 ```powershell
-$src = "$HOME\Downloads\MediaForge-v1.8.1-ui-polish-parser-fix\MediaForge"
+$src = "$HOME\Downloads\MediaForge-v1.9.1-theme-only-polish\MediaForge"
 $dst = "$HOME\PS\scripts\personaltools\MediaForge"
 
 New-Item -ItemType Directory -Force $dst | Out-Null
@@ -145,7 +145,7 @@ MediaForge MiNfoCreate
 
 ## GUI notes
 
-The v1.8.1 GUI polish keeps the same workflow and improves the shell around it: cleaner header, better card sizing, softer button states, clearer source tiles, and an expanded After Encode / Progress area. It also fixes the PowerShell parser edge case in launch error messages.
+The v1.9.1 GUI polish restores the proven v1.8.x layout and buttons, then limits the change to theme refinement only: darker slate panels, cleaner contrast, better input/log colors, and the same Source / Scan / Encode workflow. It also keeps the PowerShell launch parser fix and STA relaunch fix.
 
 The GUI supports:
 
