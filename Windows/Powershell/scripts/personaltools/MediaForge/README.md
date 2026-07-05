@@ -1,86 +1,214 @@
-# MediaForge
+<p align="center">
+  <img src="./mediaforge.png" alt="MediaForge icon" width="128" />
+</p>
 
-Launch the real GUI:
+<h1 align="center">MediaForge</h1>
 
-```powershell
-pwsh -NoProfile -ExecutionPolicy Bypass -STA -File "$HOME\PS\scripts\personaltools\MediaForge\mediaforge-gui.ps1"
-```
+<p align="center">
+  <strong>Blu-ray, DVD, CD, metadata, samples, posters, and NFO tools in one PowerShell project.</strong>
+</p>
 
-`media-encoder-gui.ps1` is now only a compatibility shim so old menu entries cannot launch the retired v1.4.0 GUI.
+<p align="center">
+  <img alt="PowerShell" src="https://img.shields.io/badge/PowerShell-7.6+-d9dde4?style=for-the-badge&labelColor=111318">
+  <img alt="Platform" src="https://img.shields.io/badge/Windows-Media%20Tools-d9dde4?style=for-the-badge&labelColor=111318">
+  <img alt="Project" src="https://img.shields.io/badge/It%20Works%20On%20My%20Machine-MediaForge-d9dde4?style=for-the-badge&labelColor=111318">
+</p>
 
-# MediaForge Complete Pack v1.4.0
+---
 
-This pack moves the ripping/encoding scripts into one project folder:
+## What it is
+
+**MediaForge** is the media ripping and encoding toolbox for the *It Works On My Machine* repo.
+
+It wraps the Blu-ray, DVD, CD, sample, metadata, poster, and NFO helper scripts into one project folder with a GUI front end and Tool Menu support.
 
 ```text
 $HOME\PS\scripts\personaltools\MediaForge\
 ```
 
-Included from your uploaded files:
+---
+
+## Main launcher
+
+```powershell
+pwsh -NoProfile -ExecutionPolicy Bypass -STA -File "$HOME\PS\scripts\personaltools\MediaForge\mediaforge-gui.ps1"
+```
+
+Or double-click:
 
 ```text
-bluray-backup.ps1
-bluray-trackdump.ps1
-BRencoder.ps1
-BRencoder-gui.ps1
-cd-image-flac.ps1
-cd-ripper-gui.ps1
-cd-ripper-gui.vbs
-cd-tracks-flac.ps1
-dvd-ripper-encoder.ps1
-dvd-ripper-encoder-gui.ps1
-media-encoder-gui.ps1
-media-encoder.ico
 MediaForge.vbs
 ```
 
-The patched `tool-menu.ps1` points the media tools at `personaltools\MediaForge\...` and launches GUI tools with `powershell.exe -STA`.
+`media-encoder-gui.ps1` is kept only as a compatibility shim for older menu entries. The real GUI is:
+
+```text
+mediaforge-gui.ps1
+```
+
+---
+
+## Features
+
+| Area | What MediaForge does |
+|---|---|
+| **Blu-ray** | Backup, track dump, metadata sidecars, HEVC encode, audio/subtitle language handling |
+| **DVD** | Rip and encode through the production DVD workflow |
+| **Audio CD** | FLAC ripping, MusicBrainz lookup, album art workflow, track/image modes |
+| **Samples** | Create MKV/MP4 sample clips from finished media |
+| **Metadata** | Create MiNFO / NFO style reports for finished media |
+| **IMDb / Posters** | Metadata lookup and poster grabbing through the helper tools |
+| **GUI** | One front end for DVD, Blu-ray, file tools, and Audio CD workflows |
+| **Tool Menu** | Scripts are grouped under MediaForge for clean launching |
+
+---
+
+## Included scripts
+
+```text
+MediaForge\
+  mediaforge-gui.ps1              # real GUI
+  media-encoder-gui.ps1           # compatibility shim
+  MediaForge.vbs                  # double-click launcher
+
+  bluray-backup.ps1
+  bluray-trackdump.ps1
+  BRencoder.ps1
+  BRencoder-gui.ps1
+
+  dvd-ripper-encoder.ps1
+  dvd-ripper-encoder-gui.ps1
+
+  cd-image-flac.ps1
+  cd-tracks-flac.ps1
+  cd-ripper-gui.ps1
+  cd-ripper-gui.vbs
+
+  mkv-sample.ps1
+  minfocreate.ps1
+  imdbdump.ps1
+  imdbthumbgrab.ps1
+
+  mediaforge.ico
+  mediaforge.png
+```
+
+---
 
 ## Install
 
-From PowerShell, after extracting this zip:
+From PowerShell, after extracting the package:
 
 ```powershell
-$src = "$HOME\Downloads\MediaForge-complete-v1.4.0"
-$personal = "$HOME\PS\scripts\personaltools"
-$menu = "$HOME\PS\scripts\menu"
+$src = "$HOME\Downloads\MediaForge-v1.7.1-readme-polish\MediaForge"
+$dst = "$HOME\PS\scripts\personaltools\MediaForge"
 
-New-Item -ItemType Directory -Force "$personal\MediaForge" | Out-Null
-Copy-Item "$src\MediaForge\*" "$personal\MediaForge\" -Recurse -Force
-Copy-Item "$src\tool-menu.ps1" "$menu\tool-menu.ps1" -Force
+New-Item -ItemType Directory -Force $dst | Out-Null
+Copy-Item "$src\*" "$dst\" -Recurse -Force
 
-Get-ChildItem "$personal\MediaForge" -Recurse | Unblock-File
-Unblock-File "$menu\tool-menu.ps1"
+Get-ChildItem $dst -Recurse | Unblock-File
 ```
 
-## Launch
+Launch it:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -STA -File "$HOME\PS\scripts\personaltools\MediaForge\media-encoder-gui.ps1"
+pwsh -NoProfile -ExecutionPolicy Bypass -STA -File "$HOME\PS\scripts\personaltools\MediaForge\mediaforge-gui.ps1"
 ```
 
-Or use Tool Menu and choose **MediaForge (GUI)**.
+---
 
-## Optional old-path shim
+## Tool Menu
 
-If anything still launches `personaltools\media-encoder-gui.ps1`, create this wrapper there:
+The Tool Menu should point MediaForge GUI entries at:
 
-```powershell
-$target = Join-Path $PSScriptRoot 'MediaForge\media-encoder-gui.ps1'
-& powershell.exe -NoProfile -ExecutionPolicy Bypass -STA -File $target @args
+```text
+MediaForge\mediaforge-gui.ps1
 ```
 
+Console helper scripts should run from the MediaForge folder so local files, icons, logs, sidecars, and helper paths resolve correctly.
 
-## IMDb helper tools
+Recommended Tool Menu entries include:
 
-MediaForge also includes two standalone IMDb / OMDb helper tools:
+```text
+MediaForge (GUI)
+MediaForge DVD Encoder
+MediaForge Blu-ray Backup
+MediaForge Blu-ray Track Dump
+MediaForge Blu-ray Encoder
+MediaForge MKV Sample
+MediaForge IMDb Dump
+MediaForge Poster Grab
+MediaForge MiNfoCreate
+```
 
-- `imdbdump.ps1` — interactive OMDb / IMDb metadata lookup.
-- `imdbthumbgrab.ps1` — poster/thumbnail lookup and download.
+---
 
-The GUI exposes them from the **After Encode** panel as:
+## GUI notes
 
-- `IMDb`
-- `Poster`
+The GUI supports:
 
-The Poster button passes the current IMDb ID when present, otherwise it passes the movie name and year.
+```text
+DVD       -> scan/rip/encode workflow
+Blu-ray   -> backup/trackdump/encode workflow
+File      -> sample/minfo side tools
+Audio CD  -> CD ripper GUI / FLAC workflows
+```
+
+The **After Encode** panel supports optional automatic post-steps:
+
+```text
+Sample
+Minfo / NFO
+```
+
+Manual helper buttons are also available:
+
+```text
+Create sample
+Create minfo
+Dump sidecar
+IMDb
+Poster
+```
+
+---
+
+## Requirements
+
+MediaForge expects the normal media toolchain to be installed and available through the configured paths or `%PATH%`.
+
+Common tools:
+
+```text
+PowerShell 7+
+MakeMKV
+ffmpeg / ffprobe
+mkvmerge / mkvpropedit
+MediaInfo
+cdda2wav
+flac
+metaflac
+```
+
+Some workflows can still run when optional helpers are missing, but production ripping and tagging works best when the full stack is installed.
+
+---
+
+## Project rule
+
+MediaForge uses `$HOME`-based paths and should not hard-code a specific Windows user folder.
+
+```text
+Good:  $HOME\PS\scripts\personaltools\MediaForge
+Bad:   C:\Users\Somebody\...
+```
+
+---
+
+## Philosophy
+
+MediaForge is meant to be practical, local, and repairable.
+
+It is not trying to be a streaming platform. It is a personal media workshop: rip the disc, preserve the tracks, tag the output, create the sidecars, and keep the workflow understandable.
+
+> If it works on my machine, it gets forged here.
