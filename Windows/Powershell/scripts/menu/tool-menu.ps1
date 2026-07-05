@@ -120,24 +120,21 @@ $AdminTools = @(
 $PersonalTools = @(
     [PSCustomObject]@{ Name="SpeedtestMenu";              File="speedtest-menu.ps1" }
     [PSCustomObject]@{ Name="WeatherFetch";               File="weatherfetch-menu.ps1" }
-    [PSCustomObject]@{ Name="MediaForge IMDb Dump";       File="MediaForge\imdbdump.ps1";                  AltFiles=@("imdbdump.ps1") }
-    [PSCustomObject]@{ Name="MediaForge Poster Grab";     File="MediaForge\imdbthumbgrab.ps1";             AltFiles=@("imdbthumbgrab.ps1") }
-
     [PSCustomObject]@{ Name="MediaForge (GUI)";           File="MediaForge\mediaforge-gui.ps1";            AltFiles=@("MediaForge\media-encoder-gui.ps1", "mediaforge-gui.ps1", "media-encoder-gui.ps1"); Gui=$true }
     [PSCustomObject]@{ Name="MediaForge CD Ripper (GUI)"; File="MediaForge\cd-ripper-gui.ps1";             AltFiles=@("cd-ripper-gui.ps1"); Gui=$true }
     [PSCustomObject]@{ Name="MediaForge DVD Encoder (GUI)"; File="MediaForge\dvd-ripper-encoder-gui.ps1";  AltFiles=@("dvd-ripper-encoder-gui.ps1"); Gui=$true }
     [PSCustomObject]@{ Name="MediaForge Blu-ray Encoder (GUI)"; File="MediaForge\BRencoder-gui.ps1";      AltFiles=@("BRencoder-gui.ps1"); Gui=$true }
-
-    [PSCustomObject]@{ Name="MiNfoCreate";                File="MediaForge\minfocreate.ps1";               AltFiles=@("minfocreate.ps1") }
-    [PSCustomObject]@{ Name="CD Image FLAC Ripper";       File="MediaForge\cd-image-flac.ps1";             AltFiles=@("cd-image-flac.ps1") }
-    [PSCustomObject]@{ Name="CD Track FLAC Ripper";       File="MediaForge\cd-tracks-flac.ps1";            AltFiles=@("cd-tracks-flac.ps1") }
+    [PSCustomObject]@{ Name="MediaForge CD Image FLAC Ripper";       File="MediaForge\cd-image-flac.ps1";             AltFiles=@("cd-image-flac.ps1") }
+    [PSCustomObject]@{ Name="MediaForge CD Track FLAC Ripper";       File="MediaForge\cd-tracks-flac.ps1";            AltFiles=@("cd-tracks-flac.ps1") }
+    [PSCustomObject]@{ Name="MediaForge DVD Encoder";                File="MediaForge\dvd-ripper-encoder.ps1";        AltFiles=@("dvd-ripper-encoder.ps1") }
+    [PSCustomObject]@{ Name="MediaForge Blu-ray Backup";             File="MediaForge\bluray-backup.ps1";             AltFiles=@("bluray-backup.ps1") }
+    [PSCustomObject]@{ Name="MediaForge Blu-ray Track Dump";         File="MediaForge\bluray-trackdump.ps1";          AltFiles=@("bluray-trackdump.ps1") }
+    [PSCustomObject]@{ Name="MediaForge Blu-ray Encoder";            File="MediaForge\BRencoder.ps1";                 AltFiles=@("BRencoder.ps1") }
+    [PSCustomObject]@{ Name="MediaForge MKV Sample";                 File="MediaForge\mkv-sample.ps1";                AltFiles=@("mkv-sample.ps1") }
+    [PSCustomObject]@{ Name="MediaForge IMDb Dump";       File="MediaForge\imdbdump.ps1";                  AltFiles=@("imdbdump.ps1") }
+    [PSCustomObject]@{ Name="MediaForge Poster Grab";     File="MediaForge\imdbthumbgrab.ps1";             AltFiles=@("imdbthumbgrab.ps1") }
+    [PSCustomObject]@{ Name="MediaForge MiNfoCreate";                File="MediaForge\minfocreate.ps1";               AltFiles=@("minfocreate.ps1") }
     [PSCustomObject]@{ Name="M3U Playlist Generator";     File="generate-playlists.ps1" }
-    [PSCustomObject]@{ Name="DVD Encoder";                File="MediaForge\dvd-ripper-encoder.ps1";        AltFiles=@("dvd-ripper-encoder.ps1") }
-    [PSCustomObject]@{ Name="Blu-ray Backup";             File="MediaForge\bluray-backup.ps1";             AltFiles=@("bluray-backup.ps1") }
-    [PSCustomObject]@{ Name="Blu-ray Track Dump";         File="MediaForge\bluray-trackdump.ps1";          AltFiles=@("bluray-trackdump.ps1") }
-    [PSCustomObject]@{ Name="Blu-ray Encoder";            File="MediaForge\BRencoder.ps1";                 AltFiles=@("BRencoder.ps1") }
-    [PSCustomObject]@{ Name="MKV Sample";                 File="MediaForge\mkv-sample.ps1";                AltFiles=@("mkv-sample.ps1") }
-
     [PSCustomObject]@{ Name="Clip Video";                 File="clip-video.ps1" }
     [PSCustomObject]@{ Name="WebRipper";                  File="web-ripper.ps1" }
     [PSCustomObject]@{ Name="Atomic Clock";               File="AtomicClock.ps1"; Gui=$true }
