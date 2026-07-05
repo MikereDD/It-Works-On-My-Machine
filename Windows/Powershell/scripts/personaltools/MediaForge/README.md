@@ -1,3 +1,13 @@
+# MediaForge
+
+Launch the real GUI:
+
+```powershell
+pwsh -NoProfile -ExecutionPolicy Bypass -STA -File "$HOME\PS\scripts\personaltools\MediaForge\mediaforge-gui.ps1"
+```
+
+`media-encoder-gui.ps1` is now only a compatibility shim so old menu entries cannot launch the retired v1.4.0 GUI.
+
 # MediaForge Complete Pack v1.4.0
 
 This pack moves the ripping/encoding scripts into one project folder:
