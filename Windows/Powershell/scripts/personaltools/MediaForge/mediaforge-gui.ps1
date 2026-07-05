@@ -1,7 +1,7 @@
 ﻿<#
 ================================================================
   MediaForge  -  all-in-one disc -> HEVC front end
-  version:  1.7.0  (full MediaForge bundle + launcher fix)  by Mike Redd
+  version:  1.7.0  (IMDb tools integration)  by Mike Redd
 ----------------------------------------------------------------
   One window over the existing toolset. It does NOT reimplement any
   pipeline; each engine is dot-sourced inside its OWN background
@@ -14,9 +14,9 @@
     File     -> ffprobe scan; tools run on an existing video
     Sample   -> mkv-sample.ps1          (Create-SampleFile)
     Minfo    -> minfocreate.ps1         (NFO/HTML/poster via MediaInfo + OMDb)
+    IMDb     -> imdbdump.ps1            (interactive OMDb / IMDb metadata lookup)
+    Poster   -> imdbthumbgrab.ps1       (OMDb poster grab / preview)
     Sidecar  -> bluray-trackdump.ps1    (info-only BRTrackMeta, no decrypt)
-    Audio CD -> cd-tracks-flac.ps1       (per-track FLAC)
-                cd-image-flac.ps1        (single image + CUE)
 
   Each engine carries a *_NOMENU guard so dot-sourcing never starts
   its menu. Run under Windows PowerShell, STA:
@@ -36,7 +36,9 @@ param(
     [string]$MinfoPath,
     [string]$TrackdumpPath,
     [string]$CdTracksPath,
-    [string]$CdImagePath
+    [string]$CdImagePath,
+    [string]$ImdbDumpPath,
+    [string]$ImdbThumbGrabPath
 )
 
 # ── WinForms needs a single-threaded apartment. If we're launched from a host
@@ -55,7 +57,7 @@ if ([System.Threading.Thread]::CurrentThread.GetApartmentState() -ne [System.Thr
             }
         }
         $launchArgs += $args
-        & $winPS @launchArgs
+        & $hostExe @launchArgs
         return
     }
     Write-Host "This GUI must run in a single-threaded apartment (STA)."
@@ -92,8 +94,10 @@ $BlurayBackupPath = Resolve-Engine $BlurayBackupPath 'bluray-backup.ps1'
 $MkvSamplePath    = Resolve-Engine $MkvSamplePath    'mkv-sample.ps1'
 $MinfoPath        = Resolve-Engine $MinfoPath        'minfocreate.ps1'
 $TrackdumpPath    = Resolve-Engine $TrackdumpPath    'bluray-trackdump.ps1'
-$CdTracksPath     = Resolve-Engine $CdTracksPath     'cd-tracks-flac.ps1'
-$CdImagePath      = Resolve-Engine $CdImagePath      'cd-image-flac.ps1'
+$CdTracksPath       = Resolve-Engine $CdTracksPath       'cd-tracks-flac.ps1'
+$CdImagePath        = Resolve-Engine $CdImagePath        'cd-image-flac.ps1'
+$ImdbDumpPath       = Resolve-Engine $ImdbDumpPath       'imdbdump.ps1'
+$ImdbThumbGrabPath  = Resolve-Engine $ImdbThumbGrabPath  'imdbthumbgrab.ps1'
 
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
@@ -490,6 +494,12 @@ $btnMinfo.BackColor = [System.Drawing.Color]::FromArgb(50, 60, 80); $form.Contro
 $btnDump = New-Object System.Windows.Forms.Button
 $btnDump.Text = 'Dump sidecar'; $btnDump.Location = '224,862'; $btnDump.Size = '100,26'; $btnDump.Anchor = 'Top, Left'
 $btnDump.BackColor = [System.Drawing.Color]::FromArgb(50, 60, 80); $form.Controls.Add($btnDump)
+$btnImdbDump = New-Object System.Windows.Forms.Button
+$btnImdbDump.Text = 'IMDb dump'; $btnImdbDump.Location = '330,862'; $btnImdbDump.Size = '92,26'; $btnImdbDump.Anchor = 'Top, Left'
+$btnImdbDump.BackColor = [System.Drawing.Color]::FromArgb(50, 60, 80); $form.Controls.Add($btnImdbDump)
+$btnPosterGrab = New-Object System.Windows.Forms.Button
+$btnPosterGrab.Text = 'Poster'; $btnPosterGrab.Location = '428,862'; $btnPosterGrab.Size = '92,26'; $btnPosterGrab.Anchor = 'Top, Left'
+$btnPosterGrab.BackColor = [System.Drawing.Color]::FromArgb(50, 60, 80); $form.Controls.Add($btnPosterGrab)
 
 # --- monochrome polish shell ---------------------------------
 $monoBack  = [System.Drawing.Color]::FromArgb(9, 9, 11)
@@ -1476,12 +1486,16 @@ function Apply-MediaForgeActualCadenceUi {
             $chkPostMinfo.BringToFront()
         }
 
-        $btnSample.Location='34,1010'; $btnSample.Size='128,34'
-        $btnMinfo.Location='176,1010'; $btnMinfo.Size='128,34'
-        $btnDump.Location='318,1010'; $btnDump.Size='128,34'
-        Set-MFStableButton $btnSample 'Create sample' 'soft' 9
-        Set-MFStableButton $btnMinfo 'Create minfo' 'soft' 9
-        Set-MFStableButton $btnDump 'Dump sidecar' 'soft' 9
+        $btnSample.Location='34,1010'; $btnSample.Size='78,34'
+        $btnMinfo.Location='118,1010'; $btnMinfo.Size='78,34'
+        $btnDump.Location='202,1010'; $btnDump.Size='78,34'
+        if ($btnImdbDump)   { $btnImdbDump.Location='286,1010';   $btnImdbDump.Size='78,34' }
+        if ($btnPosterGrab) { $btnPosterGrab.Location='370,1010'; $btnPosterGrab.Size='78,34' }
+        Set-MFStableButton $btnSample 'Sample' 'soft' 9
+        Set-MFStableButton $btnMinfo 'Minfo' 'soft' 9
+        Set-MFStableButton $btnDump 'Sidecar' 'soft' 9
+        if ($btnImdbDump)   { Set-MFStableButton $btnImdbDump 'IMDb' 'soft' 9 }
+        if ($btnPosterGrab) { Set-MFStableButton $btnPosterGrab 'Poster' 'soft' 9 }
 
         $btnEncode.Location='1080,946'; $btnEncode.Size='156,68'
         $btnCancel.Location='1248,946'; $btnCancel.Size='142,68'
@@ -1489,7 +1503,7 @@ function Apply-MediaForgeActualCadenceUi {
         Set-MFStableButton $btnEncode $encodeText 'primary' 15
         Set-MFStableButton $btnCancel "⊗`r`nCancel" 'danger' 14
 
-        foreach($ctl in @($hdrGlyph,$hdrTitle,$hdrVer,$hdrDivider,$lblSource,$rbDvd,$rbBd,$rbFile,$rbCd,$driveHdr,$cmbDrive,$txtFile,$btnScan,$btnBrowse,$lblTitles,$lstTitles,$grpSet,$lblName,$txtName,$lblImdb,$txtImdb,$lblYear,$txtYear,$lblGrid,$grid,$logHdr,$log,$progressHdr,$progress,$lblStat,$lblPlan,$lblTools,$lblPost,$chkPostSample,$chkPostMinfo,$script:AfterEncodeHint,$btnSample,$btnMinfo,$btnDump,$btnEncode,$btnCancel,$btnClearLog,$btnSaveLog)) {
+        foreach($ctl in @($hdrGlyph,$hdrTitle,$hdrVer,$hdrDivider,$lblSource,$rbDvd,$rbBd,$rbFile,$rbCd,$driveHdr,$cmbDrive,$txtFile,$btnScan,$btnBrowse,$lblTitles,$lstTitles,$grpSet,$lblName,$txtName,$lblImdb,$txtImdb,$lblYear,$txtYear,$lblGrid,$grid,$logHdr,$log,$progressHdr,$progress,$lblStat,$lblPlan,$lblTools,$lblPost,$chkPostSample,$chkPostMinfo,$script:AfterEncodeHint,$btnSample,$btnMinfo,$btnDump,$btnImdbDump,$btnPosterGrab,$btnEncode,$btnCancel,$btnClearLog,$btnSaveLog)) {
             try { if($ctl){ $ctl.BringToFront() } } catch { }
         }
     } catch {
@@ -1550,6 +1564,8 @@ function Set-Busy {
     $btnSample.Enabled = -not $On
     $btnMinfo.Enabled  = -not $On
     $btnDump.Enabled   = -not $On
+    if ($btnImdbDump)   { $btnImdbDump.Enabled   = -not $On }
+    if ($btnPosterGrab) { $btnPosterGrab.Enabled = -not $On }
     $btnEncode.Enabled = (-not $On -and -not $rbFile.Checked)
     $btnCancel.Enabled = $On
     if (-not $On) { Update-SourceUi }
@@ -2165,6 +2181,66 @@ function Run-NextPost {
     }
 }
 
+
+function Start-MediaForgeConsoleTool {
+    param(
+        [Parameter(Mandatory)][string]$ScriptPath,
+        [string[]]$ToolArgs = @(),
+        [string]$Name = 'tool'
+    )
+    if (-not (Test-Path -LiteralPath $ScriptPath -PathType Leaf)) {
+        [System.Windows.Forms.MessageBox]::Show("$Name is missing:`n$ScriptPath", 'MediaForge') | Out-Null
+        return
+    }
+
+    try {
+        $pwsh  = (Get-Command pwsh.exe -ErrorAction SilentlyContinue).Source
+        $winps = (Get-Command powershell.exe -ErrorAction SilentlyContinue).Source
+        $hostExe = if ($pwsh) { $pwsh } else { $winps }
+        if (-not $hostExe) { throw 'No pwsh.exe or powershell.exe found.' }
+
+        $argList = @('-NoProfile','-ExecutionPolicy','Bypass','-NoExit','-File', $ScriptPath)
+        if ($ToolArgs) { $argList += $ToolArgs }
+
+        Add-Log ("Launching {0}: {1}" -f $Name, (Split-Path $ScriptPath -Leaf))
+        Start-Process -FilePath $hostExe -ArgumentList $argList -WorkingDirectory (Split-Path -Parent $ScriptPath) | Out-Null
+    }
+    catch {
+        [System.Windows.Forms.MessageBox]::Show("Failed to launch $Name:`n$($_.Exception.Message)", 'MediaForge') | Out-Null
+    }
+}
+
+function Start-ImdbDumpTool {
+    if ($script:Encoding -or $script:Stage -ne 'idle') { return }
+    if (-not (Test-EngineAvailable -Path $ImdbDumpPath -Name 'imdbdump.ps1')) { return }
+
+    # imdbdump.ps1 is an interactive console tool, so launch it detached.
+    Start-MediaForgeConsoleTool -ScriptPath $ImdbDumpPath -Name 'IMDb dump'
+}
+
+function Start-PosterGrabTool {
+    if ($script:Encoding -or $script:Stage -ne 'idle') { return }
+    if (-not (Test-EngineAvailable -Path $ImdbThumbGrabPath -Name 'imdbthumbgrab.ps1')) { return }
+
+    $toolArgs = @()
+    $id = $txtImdb.Text.Trim()
+    $title = $txtName.Text.Trim()
+    $year = $txtYear.Text.Trim()
+
+    if ($id -match '^tt\d{6,10}$') {
+        $toolArgs += @('-ImdbId', $id)
+    }
+    elseif ($title) {
+        $toolArgs += @('-Title', $title)
+        if ($year -match '^\d{4}$') { $toolArgs += @('-Year', $year) }
+    }
+
+    # Show a preview if a result is found. If title/id is blank, the tool opens in
+    # its own interactive mode.
+    $toolArgs += '-Show'
+    Start-MediaForgeConsoleTool -ScriptPath $ImdbThumbGrabPath -ToolArgs $toolArgs -Name 'poster grab'
+}
+
 function Start-Tool {
     # Standalone Tools-row run on the File source or the last encode output.
     param([string]$Kind)
@@ -2574,6 +2650,8 @@ $btnBrowse.Add_Click({
 $btnSample.Add_Click({ Start-Tool 'sample' })
 $btnMinfo.Add_Click({ Start-Tool 'minfo' })
 $btnDump.Add_Click({ Start-Dump })
+if ($btnImdbDump)   { $btnImdbDump.Add_Click({ Start-ImdbDumpTool }) }
+if ($btnPosterGrab) { $btnPosterGrab.Add_Click({ Start-PosterGrabTool }) }
 Write-DebugLog 'construction: events wired'
 
 try {
@@ -2602,6 +2680,8 @@ $form.Add_Shown({
             'bluray-trackdump.ps1'   = $TrackdumpPath
             'cd-tracks-flac.ps1'     = $CdTracksPath
             'cd-image-flac.ps1'      = $CdImagePath
+            'imdbdump.ps1'           = $ImdbDumpPath
+            'imdbthumbgrab.ps1'      = $ImdbThumbGrabPath
         }
         $okColor   = [System.Drawing.Color]::FromArgb(120, 220, 120)
         $badColor  = [System.Drawing.Color]::FromArgb(240, 120, 120)
