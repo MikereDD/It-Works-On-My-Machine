@@ -878,7 +878,7 @@ function Test-EncodedMkvTracks {
 
     try {
         $json = & $Script:MkvMerge -J $MkvPath 2>&1 | Out-String
-        if ($LASTEXITCODE -ne 0) { throw "mkvmerge exited with code $LASTEXITCODE: $json" }
+        if ($LASTEXITCODE -ne 0) { throw "mkvmerge exited with code ${LASTEXITCODE}: $json" }
         $info = $json | ConvertFrom-Json
         $tracks = @($info.tracks)
         $audioCount = @($tracks | Where-Object { $_.type -eq 'audio' }).Count

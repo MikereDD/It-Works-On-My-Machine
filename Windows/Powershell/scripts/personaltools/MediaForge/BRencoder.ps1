@@ -1,4 +1,4 @@
-#--------------------------------------------
+﻿#--------------------------------------------
 # file:     brEncoder.ps1
 # author:   Mike Redd
 # version:  3.2.3
@@ -2261,13 +2261,13 @@ function Apply-TrackMetadata {
     # which property names your sidecar JSON uses. Enable via $Script:DebugMeta = $true.
     if ($Script:DebugMeta) {
         Write-UiBlankLine
-        Write-Host "  $($global:UI_YLW)[DEBUG] Sidecar JSON track shapes:$($global:UI_R)"
+        Write-Host ("  {0}[DEBUG] Sidecar JSON track shapes:{1}" -f $global:UI_YLW, $global:UI_R)
         if ($audioMeta.Count -gt 0) {
-            Write-Host "  $($global:UI_DIM)Audio[0]:$($global:UI_R)"
+            Write-Host ("  {0}Audio[0]:{1}" -f $global:UI_DIM, $global:UI_R)
             $audioMeta[0] | ConvertTo-Json -Depth 2 | ForEach-Object { Write-Host "    $_" }
         }
         if ($subMeta.Count -gt 0) {
-            Write-Host "  $($global:UI_DIM)Sub[0]:$($global:UI_R)"
+            Write-Host ("  {0}Sub[0]:{1}" -f $global:UI_DIM, $global:UI_R)
             $subMeta[0] | ConvertTo-Json -Depth 2 | ForEach-Object { Write-Host "    $_" }
         }
         Write-UiBlankLine
