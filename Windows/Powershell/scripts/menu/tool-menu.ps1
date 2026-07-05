@@ -1,33 +1,67 @@
 ﻿#--------------------------------------------
 # file:     tool-menu.ps1
 # author:   Mike Redd
-# version:  4.1
+# version:  4.2
 # created:  2026-03-30
 # updated:  2026-07-05
 # desc:     Unified script launcher (Admin + Personal + Games)
 #--------------------------------------------
 
 # ── Resolve base directories ──────────────────────────────────
-# This file lives in <scripts>\menu\, so the scripts root is ALWAYS the
-# parent of our own folder. Derive it from $PSScriptRoot so tool discovery
-# never depends on a profile-provided / forwarded $PSScriptsDir being right.
-# (A wrong-but-set $PSScriptsDir was making every tool resolve to a missing
-# path, so picking one returned "Invalid option".)
-if ($PSScriptRoot) {
-    $ScriptsRoot = Split-Path $PSScriptRoot -Parent                # ...\scripts
-} elseif ($PSScriptsDir) {
-    $ScriptsRoot = $PSScriptsDir
-} else {
-    $ScriptsRoot = 'C:\Users\miker\PS\scripts'                     # last-resort fallback
+function Get-OptionalGlobalValue {
+    param([Parameter(Mandatory)][string]$Name)
+    $v = Get-Variable -Name $Name -Scope Global -ErrorAction SilentlyContinue
+    if ($v) { return $v.Value }
+    return $null
 }
 
-# ui.ps1 / core.ps1 come from the profile dir. Keep the profile value if set,
-# otherwise fall back to the PS root (the parent of scripts).
-if (-not $PSProfileDir) { $PSProfileDir = Split-Path $ScriptsRoot -Parent }   # ...\PS
+$ExistingScriptsDir = Get-OptionalGlobalValue -Name 'PSScriptsDir'
+$ExistingProfileDir = Get-OptionalGlobalValue -Name 'PSProfileDir'
+
+if ($PSScriptRoot) {
+    $rootLeaf = Split-Path $PSScriptRoot -Leaf
+    if ($rootLeaf -ieq 'menu') {
+        $ScriptsRoot = Split-Path $PSScriptRoot -Parent                # ...\scripts
+    }
+    elseif (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'personaltools')) {
+        $ScriptsRoot = $PSScriptRoot                                  # launched from ...\scripts
+    }
+    else {
+        $ScriptsRoot = Split-Path $PSScriptRoot -Parent
+    }
+}
+elseif ($ExistingScriptsDir) {
+    $ScriptsRoot = $ExistingScriptsDir
+}
+else {
+    $ScriptsRoot = Join-Path $HOME 'PS\scripts'
+}
+
+$PSRoot = Split-Path $ScriptsRoot -Parent
+$ProfileCandidates = @(
+    $ExistingProfileDir,
+    (Join-Path $PSRoot 'profile.d'),
+    $PSRoot
+) | Where-Object { $_ } | Select-Object -Unique
+
+function Resolve-SupportScript {
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        [string]$PreferredDir
+    )
+
+    $dirs = @($PreferredDir) + $ProfileCandidates
+    foreach ($dir in ($dirs | Where-Object { $_ } | Select-Object -Unique)) {
+        $candidate = Join-Path $dir $Name
+        if (Test-Path -LiteralPath $candidate) { return $candidate }
+    }
+    return $null
+}
 
 # ── Load custom UI ────────────────────────────────────────────
-$uiPath = Join-Path $PSProfileDir "ui.ps1"
-if (Test-Path $uiPath) {
+$uiPath = Resolve-SupportScript -Name 'ui.ps1' -PreferredDir $ExistingProfileDir
+if ($uiPath) {
+    $PSProfileDir = Split-Path $uiPath -Parent
     try {
         . $uiPath
     } catch {
@@ -35,29 +69,33 @@ if (Test-Path $uiPath) {
         return
     }
 } else {
-    Write-Host "Missing ui.ps1: $uiPath"
+    Write-Host "Missing ui.ps1. Checked: $($ProfileCandidates -join ', ')"
     return
 }
 
 # ── Load core helper ──────────────────────────────────────────
-$corePath = Join-Path $PSProfileDir "core.ps1"
-if (Test-Path $corePath) {
+$corePath = Resolve-SupportScript -Name 'core.ps1' -PreferredDir $PSProfileDir
+if ($corePath) {
     try {
         . $corePath
     } catch {
         Write-Host "Failed to load core.ps1: $($_.Exception.Message)"
-        Pause-UiReturn "Press Enter to return..."
+        if (Get-Command Pause-UiReturn -ErrorAction SilentlyContinue) { Pause-UiReturn "Press Enter to return..." }
         return
     }
 } else {
-    Write-Host "Missing core.ps1: $corePath"
-    Pause-UiReturn "Press Enter to return..."
+    Write-Host "Missing core.ps1. Checked: $($ProfileCandidates -join ', ')"
+    if (Get-Command Pause-UiReturn -ErrorAction SilentlyContinue) { Pause-UiReturn "Press Enter to return..." }
     return
 }
 
 $ScriptName    = "Tool Menu"
-$ScriptVersion = "4.1"
+$ScriptVersion = "4.2"
 $ScriptAuthor  = "Mike Redd"
+
+# Keep child tools grounded even when the parent profile was not loaded.
+$PSScriptsDir = $ScriptsRoot
+$PSProfileDir = Split-Path $corePath -Parent
 
 # ── Base script paths ─────────────────────────────────────────
 $AdminPath    = Join-Path $ScriptsRoot "admintools"
@@ -66,7 +104,7 @@ $GamesPath    = Join-Path $ScriptsRoot "games"
 
 # ── Tool Definitions ──────────────────────────────────────────
 $AdminTools = @(
-    [PSCustomObject]@{ Name="Admin Dashboard (GUI)"; File="admin-menu-gui.ps1" }
+    [PSCustomObject]@{ Name="Admin Dashboard (GUI)"; File="admin-menu-gui.ps1"; Gui=$true }
     [PSCustomObject]@{ Name="SystemInfo";    File="systeminfo-menu.ps1" }
     [PSCustomObject]@{ Name="PowerMenu";     File="power-menu.ps1" }
     [PSCustomObject]@{ Name="UpdatesMenu";   File="updates-menu.ps1" }
@@ -80,28 +118,31 @@ $AdminTools = @(
 )
 
 $PersonalTools = @(
-    [PSCustomObject]@{ Name="SpeedtestMenu";         File="speedtest-menu.ps1" }
-    [PSCustomObject]@{ Name="WeatherFetch";          File="weatherfetch-menu.ps1" }
-    [PSCustomObject]@{ Name="ImdbDump";              File="imdbdump.ps1" }
-    [PSCustomObject]@{ Name="ImdbThumbGrab";         File="imdbthumbgrab.ps1" }
-    [PSCustomObject]@{ Name="MediaForge (GUI)";       File="MediaForge\media-encoder-gui.ps1"; Gui=$true }
-    [PSCustomObject]@{ Name="MediaForge CD Ripper (GUI)"; File="MediaForge\cd-ripper-gui.ps1"; Gui=$true }
-    [PSCustomObject]@{ Name="MediaForge DVD Encoder (GUI)"; File="MediaForge\dvd-ripper-encoder-gui.ps1"; Gui=$true }
-    [PSCustomObject]@{ Name="MediaForge Blu-ray Encoder (GUI)"; File="MediaForge\BRencoder-gui.ps1"; Gui=$true }
-    [PSCustomObject]@{ Name="MiNfoCreate";           File="MediaForge\minfocreate.ps1" }
-    [PSCustomObject]@{ Name="CD Image FLAC Ripper";  File="MediaForge\cd-image-flac.ps1" }
-    [PSCustomObject]@{ Name="CD Track FLAC Ripper";  File="MediaForge\cd-tracks-flac.ps1" }
-    [PSCustomObject]@{ Name="M3U Playlist Generator";File="generate-playlists.ps1" }
-    [PSCustomObject]@{ Name="DVD Encoder";           File="MediaForge\dvd-ripper-encoder.ps1" }
-    [PSCustomObject]@{ Name="Blu-ray Backup";        File="MediaForge\bluray-backup.ps1" }
-    [PSCustomObject]@{ Name="Blu-ray Track Dump";    File="MediaForge\bluray-trackdump.ps1" }
-    [PSCustomObject]@{ Name="Blu-ray Encoder";       File="MediaForge\BRencoder.ps1" }
-    [PSCustomObject]@{ Name="MKV Sample";            File="MediaForge\mkv-sample.ps1" }
-    [PSCustomObject]@{ Name="Clip Video";            File="clip-video.ps1" }
-    [PSCustomObject]@{ Name="WebRipper";             File="web-ripper.ps1" }
-	[PSCustomObject]@{ Name="Atomic Clock";     File="AtomicClock.ps1"; Gui=$true }
-	[PSCustomObject]@{ Name="Cadence (Audio Player)"; File="Cadence\cadence.ps1"; Gui=$true }
-	[PSCustomObject]@{ Name="Parallax (Video Player)"; File="Parallax\parallax.ps1"; Gui=$true }
+    [PSCustomObject]@{ Name="SpeedtestMenu";              File="speedtest-menu.ps1" }
+    [PSCustomObject]@{ Name="WeatherFetch";               File="weatherfetch-menu.ps1" }
+    [PSCustomObject]@{ Name="ImdbDump";                   File="imdbdump.ps1" }
+    [PSCustomObject]@{ Name="ImdbThumbGrab";              File="imdbthumbgrab.ps1" }
+
+    [PSCustomObject]@{ Name="MediaForge (GUI)";           File="MediaForge\mediaforge-gui.ps1";            AltFiles=@("MediaForge\media-encoder-gui.ps1", "mediaforge-gui.ps1", "media-encoder-gui.ps1"); Gui=$true }
+    [PSCustomObject]@{ Name="MediaForge CD Ripper (GUI)"; File="MediaForge\cd-ripper-gui.ps1";             AltFiles=@("cd-ripper-gui.ps1"); Gui=$true }
+    [PSCustomObject]@{ Name="MediaForge DVD Encoder (GUI)"; File="MediaForge\dvd-ripper-encoder-gui.ps1";  AltFiles=@("dvd-ripper-encoder-gui.ps1"); Gui=$true }
+    [PSCustomObject]@{ Name="MediaForge Blu-ray Encoder (GUI)"; File="MediaForge\BRencoder-gui.ps1";      AltFiles=@("BRencoder-gui.ps1"); Gui=$true }
+
+    [PSCustomObject]@{ Name="MiNfoCreate";                File="MediaForge\minfocreate.ps1";               AltFiles=@("minfocreate.ps1") }
+    [PSCustomObject]@{ Name="CD Image FLAC Ripper";       File="MediaForge\cd-image-flac.ps1";             AltFiles=@("cd-image-flac.ps1") }
+    [PSCustomObject]@{ Name="CD Track FLAC Ripper";       File="MediaForge\cd-tracks-flac.ps1";            AltFiles=@("cd-tracks-flac.ps1") }
+    [PSCustomObject]@{ Name="M3U Playlist Generator";     File="generate-playlists.ps1" }
+    [PSCustomObject]@{ Name="DVD Encoder";                File="MediaForge\dvd-ripper-encoder.ps1";        AltFiles=@("dvd-ripper-encoder.ps1") }
+    [PSCustomObject]@{ Name="Blu-ray Backup";             File="MediaForge\bluray-backup.ps1";             AltFiles=@("bluray-backup.ps1") }
+    [PSCustomObject]@{ Name="Blu-ray Track Dump";         File="MediaForge\bluray-trackdump.ps1";          AltFiles=@("bluray-trackdump.ps1") }
+    [PSCustomObject]@{ Name="Blu-ray Encoder";            File="MediaForge\BRencoder.ps1";                 AltFiles=@("BRencoder.ps1") }
+    [PSCustomObject]@{ Name="MKV Sample";                 File="MediaForge\mkv-sample.ps1";                AltFiles=@("mkv-sample.ps1") }
+
+    [PSCustomObject]@{ Name="Clip Video";                 File="clip-video.ps1" }
+    [PSCustomObject]@{ Name="WebRipper";                  File="web-ripper.ps1" }
+    [PSCustomObject]@{ Name="Atomic Clock";               File="AtomicClock.ps1"; Gui=$true }
+    [PSCustomObject]@{ Name="Cadence (Audio Player)";     File="Cadence\cadence.ps1"; Gui=$true }
+    [PSCustomObject]@{ Name="Parallax (Video Player)";    File="Parallax\parallax.ps1"; Gui=$true }
 )
 
 $GameTools = @(
@@ -113,6 +154,43 @@ $GameTools = @(
     [PSCustomObject]@{ Name="Tetris";      File="tetris.ps1" }
 )
 
+function Get-ToolCandidateFiles {
+    param([Parameter(Mandatory)]$Tool)
+
+    $files = @()
+    if ($Tool.PSObject.Properties['File'] -and $Tool.File) { $files += [string]$Tool.File }
+    if ($Tool.PSObject.Properties['AltFiles'] -and $Tool.AltFiles) { $files += @($Tool.AltFiles) }
+    return ($files | Where-Object { $_ } | Select-Object -Unique)
+}
+
+function Resolve-ToolPath {
+    param(
+        [Parameter(Mandatory)][string]$BasePath,
+        [Parameter(Mandatory)]$Tool
+    )
+
+    $first = $null
+    foreach ($file in (Get-ToolCandidateFiles -Tool $Tool)) {
+        $candidate = if ([System.IO.Path]::IsPathRooted($file)) { $file } else { Join-Path $BasePath $file }
+        if (-not $first) { $first = $candidate }
+        if (Test-Path -LiteralPath $candidate) {
+            return [PSCustomObject]@{ Exists=$true; Path=$candidate }
+        }
+    }
+
+    return [PSCustomObject]@{ Exists=$false; Path=$first }
+}
+
+function Test-ToolIsGui {
+    param(
+        [Parameter(Mandatory)]$Tool,
+        [Parameter(Mandatory)][string]$Path
+    )
+
+    if ($Tool.PSObject.Properties['Gui'] -and $Tool.Gui -eq $true) { return $true }
+    return ($Path -like '*-gui.ps1')
+}
+
 # ── Header ────────────────────────────────────────────────────
 function Show-Header {
     Clear-UiScreen
@@ -120,6 +198,7 @@ function Show-Header {
 
     Write-UiHeader -Title $ScriptName -Subtitle "v$ScriptVersion  by $ScriptAuthor" -Width $BoxWidth
     Write-UiRow "User" "$env:USERNAME@$env:COMPUTERNAME"
+    Write-UiRow "Scripts" $ScriptsRoot -ValueColor $global:UI_GRY
     Write-UiRow "Admin Path" $AdminPath -ValueColor $global:UI_GRY
     Write-UiRow "Personal Path" $PersonalPath -ValueColor $global:UI_GRY
     Write-UiRow "Games Path" $GamesPath -ValueColor $global:UI_GRY
@@ -127,45 +206,39 @@ function Show-Header {
 }
 
 # ── Menu ──────────────────────────────────────────────────────
+function Write-ToolGroup {
+    param(
+        [Parameter(Mandatory)][string]$Title,
+        [Parameter(Mandatory)]$Tools,
+        [Parameter(Mandatory)][string]$BasePath,
+        [Parameter(Mandatory)][ref]$Index
+    )
+
+    Write-UiDivider
+    Write-Host "  $($global:UI_CYN)$($global:UI_B)$Title$($global:UI_R)"
+    foreach ($tool in $Tools) {
+        $info   = Resolve-ToolPath -BasePath $BasePath -Tool $tool
+        $exists = [bool]$info.Exists
+        $color  = if ($exists) { $global:UI_GRN } else { $global:UI_RED }
+        $suffix = if ($exists) { "" } else { " (missing)" }
+        Write-Host ("  {0}{1,2}){2}  {3}{4}{5}" -f $color, $Index.Value, $global:UI_R, $global:UI_WHT, $tool.Name, "$suffix$($global:UI_R)")
+        if ($exists) {
+            $script:ToolMap["$($Index.Value)"] = [PSCustomObject]@{
+                Path = $info.Path
+                Gui  = (Test-ToolIsGui -Tool $tool -Path $info.Path)
+            }
+        }
+        $Index.Value++
+    }
+}
+
 function Show-Menu {
     $index = 1
     $script:ToolMap = @{}
 
-    Write-UiDivider
-    Write-Host "  $($global:UI_CYN)$($global:UI_B)Admin Tools$($global:UI_R)"
-    foreach ($tool in $AdminTools) {
-        $path = Join-Path $AdminPath $tool.File
-        $exists = Test-Path $path
-        $color = if ($exists) { $global:UI_GRN } else { $global:UI_RED }
-        $suffix = if ($exists) { "" } else { " (missing)" }
-        Write-Host ("  {0}{1,2}){2}  {3}{4}{5}" -f $color, $index, $global:UI_R, $global:UI_WHT, $tool.Name, "$suffix$($global:UI_R)")
-        if ($exists) { $script:ToolMap["$index"] = [PSCustomObject]@{ Path = $path; Gui = (($tool.Gui -eq $true) -or ($path -like '*-gui.ps1')) } }
-        $index++
-    }
-
-    Write-UiDivider
-    Write-Host "  $($global:UI_CYN)$($global:UI_B)Personal Tools$($global:UI_R)"
-    foreach ($tool in $PersonalTools) {
-        $path = Join-Path $PersonalPath $tool.File
-        $exists = Test-Path $path
-        $color = if ($exists) { $global:UI_GRN } else { $global:UI_RED }
-        $suffix = if ($exists) { "" } else { " (missing)" }
-        Write-Host ("  {0}{1,2}){2}  {3}{4}{5}" -f $color, $index, $global:UI_R, $global:UI_WHT, $tool.Name, "$suffix$($global:UI_R)")
-        if ($exists) { $script:ToolMap["$index"] = [PSCustomObject]@{ Path = $path; Gui = (($tool.Gui -eq $true) -or ($path -like '*-gui.ps1')) } }
-        $index++
-    }
-
-    Write-UiDivider
-    Write-Host "  $($global:UI_CYN)$($global:UI_B)Games$($global:UI_R)"
-    foreach ($tool in $GameTools) {
-        $path = Join-Path $GamesPath $tool.File
-        $exists = Test-Path $path
-        $color = if ($exists) { $global:UI_GRN } else { $global:UI_RED }
-        $suffix = if ($exists) { "" } else { " (missing)" }
-        Write-Host ("  {0}{1,2}){2}  {3}{4}{5}" -f $color, $index, $global:UI_R, $global:UI_WHT, $tool.Name, "$suffix$($global:UI_R)")
-        if ($exists) { $script:ToolMap["$index"] = [PSCustomObject]@{ Path = $path; Gui = (($tool.Gui -eq $true) -or ($path -like '*-gui.ps1')) } }
-        $index++
-    }
+    Write-ToolGroup -Title 'Admin Tools'    -Tools $AdminTools    -BasePath $AdminPath    -Index ([ref]$index)
+    Write-ToolGroup -Title 'Personal Tools' -Tools $PersonalTools -BasePath $PersonalPath -Index ([ref]$index)
+    Write-ToolGroup -Title 'Games'          -Tools $GameTools     -BasePath $GamesPath    -Index ([ref]$index)
 
     Write-UiDivider
     Write-Host "  $($global:UI_GRY) Q)$($global:UI_R)  Quit"
@@ -180,7 +253,7 @@ function Start-ToolScript {
         [switch]$IsGui
     )
 
-    if (-not (Test-Path $ScriptPath)) {
+    if (-not (Test-Path -LiteralPath $ScriptPath)) {
         Write-CoreError "Script not found: $ScriptPath"
         Pause-Core "Press Enter to return..."
         return
@@ -188,17 +261,10 @@ function Start-ToolScript {
 
     try {
         if ($IsGui) {
-            # GUI tools are WinForms/WPF and need a single-threaded apartment (STA).
-            # Prefer Windows PowerShell because it supports -STA explicitly. Fall
-            # back to pwsh only when powershell.exe is unavailable.
-            # Launched DETACHED via Start-Process so THIS menu stays usable and
-            # several GUIs can run at once; -File gives the GUI a correct
-            # $PSScriptRoot, and the working directory is the script's own folder
-            # so relative paths (.\lib, config, logs) resolve.
+            # GUI tools are WinForms/WPF and need STA. Prefer Windows PowerShell
+            # because it supports -STA explicitly. Launch detached so this menu
+            # remains usable while the GUI is open.
             $work = Split-Path $ScriptPath -Parent
-            # WinForms/WPF GUI tools need STA. Prefer Windows PowerShell here
-            # because it supports -STA explicitly. Fall back to pwsh only when
-            # powershell.exe is unavailable; individual GUIs may self-relaunch.
             $winPS = Get-Command powershell.exe -ErrorAction SilentlyContinue
             if ($winPS) {
                 $argLine = "-NoProfile -ExecutionPolicy Bypass -STA -File `"$ScriptPath`""
@@ -217,26 +283,12 @@ function Start-ToolScript {
             return
         }
 
-        # Console tools run INLINE (blocking) so you interact with them and
-        # return to this menu when they exit. Launch through pwsh with
-        # ExecutionPolicy Bypass so downloaded/generated scripts do not fail
-        # under RemoteSigned.
+        # Console tools run INLINE so you interact with them and return here.
         $pwshCmd = Get-Command pwsh -ErrorAction SilentlyContinue
+        if (-not $pwshCmd) { $pwshCmd = Get-Command powershell.exe -ErrorAction SilentlyContinue }
+        if (-not $pwshCmd) { throw "Could not find pwsh or powershell.exe to launch: $ScriptPath" }
 
-        if (-not $pwshCmd) {
-            $pwshCmd = Get-Command powershell.exe -ErrorAction SilentlyContinue
-        }
-
-        if (-not $pwshCmd) {
-            throw "Could not find pwsh or powershell.exe to launch: $ScriptPath"
-        }
-
-        # -NoProfile keeps the child session clean/fast, but it also means the
-        # child never runs $PROFILE -- so it would have no $PSProfileDir /
-        # $PSScriptsDir and would fail to load ui.ps1 / core.ps1. Forward those
-        # paths into the child session explicitly so it can bootstrap itself.
-        # Using -Command with `& '<path>'` still gives the child a correct
-        # $PSScriptRoot, same as -File would.
+        # -NoProfile keeps the child clean, so pass the known roots explicitly.
         $pp = "$PSProfileDir" -replace "'", "''"
         $ps = "$ScriptsRoot"  -replace "'", "''"
         $sp = "$ScriptPath"   -replace "'", "''"

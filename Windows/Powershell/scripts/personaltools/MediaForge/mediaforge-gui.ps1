@@ -1,7 +1,7 @@
 ﻿<#
 ================================================================
   MediaForge  -  all-in-one disc -> HEVC front end
-  version:  1.6.9  (layout and polish pass)  by Mike Redd
+  version:  1.7.0  (full MediaForge bundle + launcher fix)  by Mike Redd
 ----------------------------------------------------------------
   One window over the existing toolset. It does NOT reimplement any
   pipeline; each engine is dot-sourced inside its OWN background
@@ -15,6 +15,8 @@
     Sample   -> mkv-sample.ps1          (Create-SampleFile)
     Minfo    -> minfocreate.ps1         (NFO/HTML/poster via MediaInfo + OMDb)
     Sidecar  -> bluray-trackdump.ps1    (info-only BRTrackMeta, no decrypt)
+    Audio CD -> cd-tracks-flac.ps1       (per-track FLAC)
+                cd-image-flac.ps1        (single image + CUE)
 
   Each engine carries a *_NOMENU guard so dot-sourcing never starts
   its menu. Run under Windows PowerShell, STA:
@@ -53,7 +55,7 @@ if ([System.Threading.Thread]::CurrentThread.GetApartmentState() -ne [System.Thr
             }
         }
         $launchArgs += $args
-        & $hostExe @launchArgs
+        & $winPS @launchArgs
         return
     }
     Write-Host "This GUI must run in a single-threaded apartment (STA)."
@@ -249,7 +251,7 @@ function Remove-BluRayBackupRoot {
 # ════════════════════════════════════════════════════════════════
 $form = New-Object System.Windows.Forms.Form
 try { $icoPath = Get-MediaForgeIconPath; if ($icoPath) { $form.Icon = New-Object System.Drawing.Icon($icoPath) } } catch { }
-$script:GuiVersion = '1.6.9'
+$script:GuiVersion = '1.7.0'
 $form.Text = "MediaForge v$($script:GuiVersion)  (DVD / Blu-ray / File / Audio CD)"
 $form.Size = New-Object System.Drawing.Size(1448, 1086)
 $form.MinimumSize = New-Object System.Drawing.Size(1360, 1000)
