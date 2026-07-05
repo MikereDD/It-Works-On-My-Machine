@@ -2206,7 +2206,7 @@ function Start-MediaForgeConsoleTool {
         Start-Process -FilePath $hostExe -ArgumentList $argList -WorkingDirectory (Split-Path -Parent $ScriptPath) | Out-Null
     }
     catch {
-        [System.Windows.Forms.MessageBox]::Show("Failed to launch $Name:`n$($_.Exception.Message)", 'MediaForge') | Out-Null
+        [System.Windows.Forms.MessageBox]::Show("Failed to launch ${Name}:`n$($_.Exception.Message)", 'MediaForge') | Out-Null
     }
 }
 
