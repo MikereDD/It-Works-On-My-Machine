@@ -1,7 +1,7 @@
 <#
 ================================================================
   MediaForge  -  all-in-one disc -> HEVC front end
-  version:  1.9.1  (theme-only polish / stable layout)  by Mike Redd
+  version:  1.9.7  (progress action layout fix)  by Mike Redd
 ----------------------------------------------------------------
   One window over the existing toolset. It does NOT reimplement any
   pipeline; each engine is dot-sourced inside its OWN background
@@ -255,16 +255,16 @@ function Remove-BluRayBackupRoot {
 # ════════════════════════════════════════════════════════════════
 $form = New-Object System.Windows.Forms.Form
 try { $icoPath = Get-MediaForgeIconPath; if ($icoPath) { $form.Icon = New-Object System.Drawing.Icon($icoPath) } } catch { }
-$script:GuiVersion = '1.9.1'
+$script:GuiVersion = '1.9.7'
 $form.Text = "MediaForge v$($script:GuiVersion)  (DVD / Blu-ray / File / Audio CD)"
 $form.Size = New-Object System.Drawing.Size(1448, 1086)
 $form.MinimumSize = New-Object System.Drawing.Size(1360, 1000)
 $form.StartPosition = 'CenterScreen'
-$form.BackColor = [System.Drawing.Color]::FromArgb(7, 10, 15)
-$form.ForeColor = [System.Drawing.Color]::WhiteSmoke
+$form.BackColor = [System.Drawing.Color]::FromArgb(8, 12, 18)
+$form.ForeColor = [System.Drawing.Color]::FromArgb(232, 238, 246)
 $form.Font = New-Object System.Drawing.Font('Segoe UI', 9.75)   # bigger labels/buttons/checkboxes
 $mono = New-Object System.Drawing.Font('Consolas', 10.5)        # bigger log / grid / list / fields
-$dark = [System.Drawing.Color]::FromArgb(22, 22, 26)
+$dark = [System.Drawing.Color]::FromArgb(9, 13, 20)
 Write-DebugLog 'construction: form + base styling'
 
 # --- source ---
@@ -502,17 +502,17 @@ $btnPosterGrab.Text = 'Poster'; $btnPosterGrab.Location = '428,862'; $btnPosterG
 $btnPosterGrab.BackColor = [System.Drawing.Color]::FromArgb(50, 60, 80); $form.Controls.Add($btnPosterGrab)
 
 # --- monochrome polish shell ---------------------------------
-$monoBack  = [System.Drawing.Color]::FromArgb(7, 10, 15)
-$cardBack  = [System.Drawing.Color]::FromArgb(13, 17, 24)
-$cardBack2 = [System.Drawing.Color]::FromArgb(16, 21, 30)
-$lineSoft  = [System.Drawing.Color]::FromArgb(48, 58, 72)
-$lineHard  = [System.Drawing.Color]::FromArgb(96, 112, 132)
-$inkMain   = [System.Drawing.Color]::FromArgb(236, 236, 236)
-$inkSoft   = [System.Drawing.Color]::FromArgb(198, 207, 218)
-$inkMute   = [System.Drawing.Color]::FromArgb(128, 140, 154)
-$selBack   = [System.Drawing.Color]::FromArgb(42, 50, 64)
-$goodInk   = [System.Drawing.Color]::FromArgb(240, 240, 240)
-$badInk    = [System.Drawing.Color]::FromArgb(168, 168, 174)
+$monoBack  = [System.Drawing.Color]::FromArgb(8, 12, 18)
+$cardBack  = [System.Drawing.Color]::FromArgb(14, 20, 30)
+$cardBack2 = [System.Drawing.Color]::FromArgb(10, 15, 23)
+$lineSoft  = [System.Drawing.Color]::FromArgb(58, 70, 88)
+$lineHard  = [System.Drawing.Color]::FromArgb(112, 130, 154)
+$inkMain   = [System.Drawing.Color]::FromArgb(238, 243, 248)
+$inkSoft   = [System.Drawing.Color]::FromArgb(204, 214, 226)
+$inkMute   = [System.Drawing.Color]::FromArgb(142, 154, 170)
+$selBack   = [System.Drawing.Color]::FromArgb(34, 50, 72)
+$goodInk   = [System.Drawing.Color]::FromArgb(230, 242, 255)
+$badInk    = [System.Drawing.Color]::FromArgb(150, 158, 170)
 
 function New-MonoPanel {
     param([int]$X,[int]$Y,[int]$W,[int]$H)
@@ -550,24 +550,24 @@ function Style-MonoButton {
     $btn.Font = New-Object System.Drawing.Font('Segoe UI', 10, [System.Drawing.FontStyle]::Regular); try { $btn.TextAlign = 'MiddleCenter' } catch { }
     switch ($Variant) {
         'primary' {
-            $btn.BackColor = [System.Drawing.Color]::FromArgb(20,20,24)
+            $btn.BackColor = [System.Drawing.Color]::FromArgb(42,52,68)
             $btn.ForeColor = [System.Drawing.Color]::White
-            $btn.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(236,236,240)
+            $btn.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(208,226,246)
         }
         'danger' {
-            $btn.BackColor = [System.Drawing.Color]::FromArgb(18,18,22)
-            $btn.ForeColor = [System.Drawing.Color]::FromArgb(210,210,214)
-            $btn.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(124,124,132)
+            $btn.BackColor = [System.Drawing.Color]::FromArgb(18,24,34)
+            $btn.ForeColor = [System.Drawing.Color]::FromArgb(190,200,212)
+            $btn.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(92,106,126)
         }
         'soft' {
-            $btn.BackColor = [System.Drawing.Color]::FromArgb(18,18,22)
+            $btn.BackColor = [System.Drawing.Color]::FromArgb(18,24,34)
             $btn.ForeColor = $inkMain
-            $btn.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(96,96,104)
+            $btn.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(82,98,120)
         }
         default {
-            $btn.BackColor = [System.Drawing.Color]::FromArgb(18,18,22)
+            $btn.BackColor = [System.Drawing.Color]::FromArgb(18,24,34)
             $btn.ForeColor = $inkMain
-            $btn.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(76,76,84)
+            $btn.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(66,78,96)
         }
     }
 }
@@ -579,13 +579,13 @@ function Style-SourceCard {
     $rb.FlatAppearance.BorderSize = 1
     $rb.Font = New-Object System.Drawing.Font('Segoe UI', 11.5, [System.Drawing.FontStyle]::Regular)
     if ($Selected) {
-        $rb.BackColor = [System.Drawing.Color]::FromArgb(42,42,48)
+        $rb.BackColor = [System.Drawing.Color]::FromArgb(34, 52, 78)
         $rb.ForeColor = [System.Drawing.Color]::White
-        $rb.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(250,250,250)
+        $rb.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(118, 162, 212)
     } else {
-        $rb.BackColor = [System.Drawing.Color]::FromArgb(14,14,18)
+        $rb.BackColor = [System.Drawing.Color]::FromArgb(15, 21, 31)
         $rb.ForeColor = $inkSoft
-        $rb.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(64,64,72)
+        $rb.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(64, 78, 98)
     }
 }
 function Set-MFStableButton {
@@ -605,70 +605,115 @@ function Set-MFStableButton {
 
         switch ($Kind) {
             'primary' {
-                $Button.BackColor = [System.Drawing.Color]::FromArgb(58,68,88)
+                $Button.BackColor = [System.Drawing.Color]::FromArgb(50,62,82)
                 $Button.ForeColor = [System.Drawing.Color]::White
-                $Button.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(232,242,252)
+                $Button.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(118,162,212)
                 $Button.FlatAppearance.BorderSize = 1
-                $Button.FlatAppearance.MouseOverBackColor = [System.Drawing.Color]::FromArgb(74,86,108)
-                $Button.FlatAppearance.MouseDownBackColor = [System.Drawing.Color]::FromArgb(26,30,38)
+                $Button.FlatAppearance.MouseOverBackColor = [System.Drawing.Color]::FromArgb(78,90,110)
+                $Button.FlatAppearance.MouseDownBackColor = [System.Drawing.Color]::FromArgb(22,28,38)
             }
             'danger' {
-                $Button.BackColor = [System.Drawing.Color]::FromArgb(24,28,36)
-                $Button.ForeColor = [System.Drawing.Color]::FromArgb(172,176,184)
-                $Button.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(82,94,112)
+                $Button.BackColor = [System.Drawing.Color]::FromArgb(20,25,34)
+                $Button.ForeColor = [System.Drawing.Color]::FromArgb(166,176,190)
+                $Button.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(76,90,110)
                 $Button.FlatAppearance.BorderSize = 1
-                $Button.FlatAppearance.MouseOverBackColor = [System.Drawing.Color]::FromArgb(42,34,38)
+                $Button.FlatAppearance.MouseOverBackColor = [System.Drawing.Color]::FromArgb(34,28,32)
                 $Button.FlatAppearance.MouseDownBackColor = [System.Drawing.Color]::FromArgb(18,20,24)
             }
             'selected' {
-                $Button.BackColor = [System.Drawing.Color]::FromArgb(74,86,108)
+                $Button.BackColor = [System.Drawing.Color]::FromArgb(34,52,78)
                 $Button.ForeColor = [System.Drawing.Color]::White
-                $Button.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(232,242,252)
+                $Button.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(118,162,212)
                 $Button.FlatAppearance.BorderSize = 2
-                $Button.FlatAppearance.MouseOverBackColor = [System.Drawing.Color]::FromArgb(86,100,124)
-                $Button.FlatAppearance.MouseDownBackColor = [System.Drawing.Color]::FromArgb(48,54,66)
+                $Button.FlatAppearance.MouseOverBackColor = [System.Drawing.Color]::FromArgb(44,66,96)
+                $Button.FlatAppearance.MouseDownBackColor = [System.Drawing.Color]::FromArgb(20,32,48)
             }
             'badge' {
-                $Button.BackColor = [System.Drawing.Color]::FromArgb(22,27,36)
-                $Button.ForeColor = [System.Drawing.Color]::FromArgb(238,242,246)
-                $Button.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(72,88,110)
+                $Button.BackColor = [System.Drawing.Color]::FromArgb(18,24,34)
+                $Button.ForeColor = [System.Drawing.Color]::FromArgb(238,243,248)
+                $Button.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(70,86,108)
                 $Button.FlatAppearance.BorderSize = 1
-                $Button.FlatAppearance.MouseOverBackColor = [System.Drawing.Color]::FromArgb(34,42,56)
+                $Button.FlatAppearance.MouseOverBackColor = [System.Drawing.Color]::FromArgb(32,42,58)
                 $Button.FlatAppearance.MouseDownBackColor = [System.Drawing.Color]::FromArgb(14,16,20)
             }
             default {
-                $Button.BackColor = [System.Drawing.Color]::FromArgb(26,32,42)
-                $Button.ForeColor = [System.Drawing.Color]::FromArgb(236,240,246)
-                $Button.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(80,98,122)
+                $Button.BackColor = [System.Drawing.Color]::FromArgb(20,27,38)
+                $Button.ForeColor = [System.Drawing.Color]::FromArgb(232,238,246)
+                $Button.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(76,92,116)
                 $Button.FlatAppearance.BorderSize = 1
-                $Button.FlatAppearance.MouseOverBackColor = [System.Drawing.Color]::FromArgb(38,46,60)
+                $Button.FlatAppearance.MouseOverBackColor = [System.Drawing.Color]::FromArgb(34,44,60)
                 $Button.FlatAppearance.MouseDownBackColor = [System.Drawing.Color]::FromArgb(14,16,20)
             }
         }
         try {
             if (-not $Button.Enabled) {
-                $Button.BackColor = [System.Drawing.Color]::FromArgb(22,27,36)
-                $Button.ForeColor = [System.Drawing.Color]::FromArgb(112,118,128)
-                $Button.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(54,62,74)
+                $Button.BackColor = [System.Drawing.Color]::FromArgb(18,24,34)
+                $Button.ForeColor = [System.Drawing.Color]::FromArgb(116,126,140)
+                $Button.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(58,68,84)
             }
         } catch { }
     } catch { }
 }
 
+
+function Load-MFImageUnlocked {
+    param([string]$Path)
+    if (-not $Path -or -not (Test-Path -LiteralPath $Path)) { return $null }
+    $fs = $null
+    try {
+        $fs = [System.IO.File]::OpenRead($Path)
+        $img = [System.Drawing.Image]::FromStream($fs)
+        return [System.Drawing.Bitmap]::new($img)
+    } catch {
+        return $null
+    } finally {
+        try { if ($fs) { $fs.Close(); $fs.Dispose() } } catch { }
+    }
+}
+
+$script:SourceIconImages = @{}
+try {
+    $script:SourceIconDir = Join-Path $PSScriptRoot 'assets\icons'
+    $script:SourceIconImages['dvd']     = Load-MFImageUnlocked (Join-Path $script:SourceIconDir 'dvd.png')
+    $script:SourceIconImages['bluray']  = Load-MFImageUnlocked (Join-Path $script:SourceIconDir 'bluray.png')
+    $script:SourceIconImages['file']    = Load-MFImageUnlocked (Join-Path $script:SourceIconDir 'file.png')
+    $script:SourceIconImages['audiocd'] = Load-MFImageUnlocked (Join-Path $script:SourceIconDir 'audiocd.png')
+} catch { }
+
 function Set-MFStableSourceButton {
-    param($Button, [string]$Text, [bool]$Selected)
+    param(
+        $Button,
+        [string]$Text,
+        [bool]$Selected,
+        [string]$IconKey = $null
+    )
     if (-not $Button) { return }
     try {
         $Button.Appearance = [System.Windows.Forms.Appearance]::Button
-        Set-MFStableButton $Button $Text $(if ($Selected) { 'selected' } else { 'soft' }) 11
+        Set-MFStableButton $Button $Text $(if ($Selected) { 'selected' } else { 'soft' }) 10
+
+        # Source tiles use real transparent PNG icons when available. The control
+        # remains a RadioButton so the existing checked-state workflow is unchanged.
+        if ($IconKey -and $script:SourceIconImages -and $script:SourceIconImages.ContainsKey($IconKey) -and $script:SourceIconImages[$IconKey]) {
+            $Button.Image = $script:SourceIconImages[$IconKey]
+            $Button.TextImageRelation = [System.Windows.Forms.TextImageRelation]::ImageAboveText
+            $Button.ImageAlign = [System.Drawing.ContentAlignment]::TopCenter
+            $Button.TextAlign = [System.Drawing.ContentAlignment]::BottomCenter
+            $Button.Padding = New-Object System.Windows.Forms.Padding(0,8,0,8)
+        } else {
+            $Button.Image = $null
+            $Button.TextImageRelation = [System.Windows.Forms.TextImageRelation]::Overlay
+            $Button.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
+            $Button.Padding = New-Object System.Windows.Forms.Padding(0)
+        }
     } catch { }
 }
 
 function Update-SourceCardVisuals {
-    Set-MFStableSourceButton $rbDvd  "●`r`nDVD"      ([bool]$rbDvd.Checked)
-    Set-MFStableSourceButton $rbBd   "◐`r`nBlu-ray"  ([bool]$rbBd.Checked)
-    Set-MFStableSourceButton $rbFile "▦`r`nFile"     ([bool]$rbFile.Checked)
-    Set-MFStableSourceButton $rbCd   "♫`r`nAudio CD" ([bool]$rbCd.Checked)
+    Set-MFStableSourceButton $rbDvd  'DVD'      ([bool]$rbDvd.Checked)  'dvd'
+    Set-MFStableSourceButton $rbBd   'Blu-ray'  ([bool]$rbBd.Checked)   'bluray'
+    Set-MFStableSourceButton $rbFile 'File'     ([bool]$rbFile.Checked) 'file'
+    Set-MFStableSourceButton $rbCd   'Audio CD' ([bool]$rbCd.Checked)   'audiocd'
 }
 
 function Update-EngineBadges {
@@ -687,7 +732,7 @@ function Update-EngineBadges {
         $b = $script:EngineBadges[$name]
         $b.Text = ('  {0}  {1}   {2}' -f $(if ($ok) { '◉' } else { '○' }), $name, $(if ($ok) { 'OK' } else { 'MISS' }))
         $b.ForeColor = $(if ($ok) { $goodInk } else { $badInk })
-        $b.BackColor = $(if ($ok) { [System.Drawing.Color]::FromArgb(12,12,16) } else { [System.Drawing.Color]::FromArgb(18,18,22) })
+        $b.BackColor = $(if ($ok) { [System.Drawing.Color]::FromArgb(15,21,31) } else { [System.Drawing.Color]::FromArgb(20,24,32) })
         $b.BorderStyle = 'FixedSingle'
     }
 }
@@ -798,7 +843,7 @@ $form.Font = New-Object System.Drawing.Font('Segoe UI', 10)
 $hdrGlyph = New-Object System.Windows.Forms.PictureBox
 $hdrGlyph.Location = New-Object System.Drawing.Point(26,22)
 $hdrGlyph.Size = New-Object System.Drawing.Size(58,58)
-$hdrGlyph.BackColor = [System.Drawing.Color]::FromArgb(8,11,16)
+$hdrGlyph.BackColor = [System.Drawing.Color]::FromArgb(10,15,23)
 $hdrGlyph.BorderStyle = 'FixedSingle'
 $hdrGlyph.SizeMode = [System.Windows.Forms.PictureBoxSizeMode]::Zoom
 try {
@@ -824,7 +869,7 @@ try { Set-AppIcon } catch { }
 $hdrDivider = New-Object System.Windows.Forms.Label
 $hdrDivider.Location = New-Object System.Drawing.Point(16,86)
 $hdrDivider.Size = New-Object System.Drawing.Size(1390,1)
-$hdrDivider.BackColor = [System.Drawing.Color]::FromArgb(72,72,78)
+$hdrDivider.BackColor = [System.Drawing.Color]::FromArgb(48,60,78)
 $form.Controls.Add($hdrDivider)
 $script:EngineBadges = @{}
 $badgeNames = @('DVD','Blu-ray','BRencoder','Sample','Minfo')
@@ -856,11 +901,11 @@ $script:cards = $cards
 foreach ($p in $script:cards) { $form.Controls.Add($p); $p.SendToBack() }
 
 # Source section
-$lblSource.Text = '◉  SOURCE'; $lblSource.Location = '32,116'; $lblSource.Font = New-Object System.Drawing.Font('Segoe UI', 12, [System.Drawing.FontStyle]::Bold); $lblSource.ForeColor = [System.Drawing.Color]::White; $lblSource.BackColor = [System.Drawing.Color]::FromArgb(8,8,10)
-$rbDvd.Location = '36,154'; $rbDvd.Size = '94,96'; $rbDvd.Text = "●`r`nDVD"
-$rbBd.Location  = '142,154'; $rbBd.Size = '96,96'; $rbBd.Text = "◐`r`nBlu-ray"
-$rbFile.Location= '250,154'; $rbFile.Size= '94,96'; $rbFile.Text = "▦`r`nFile"
-$rbCd.Location  = '356,154'; $rbCd.Size = '86,96'; $rbCd.Text = "♫`r`nAudio CD"
+$lblSource.Text = '◉  SOURCE'; $lblSource.Location = '32,116'; $lblSource.Font = New-Object System.Drawing.Font('Segoe UI', 12, [System.Drawing.FontStyle]::Bold); $lblSource.ForeColor = [System.Drawing.Color]::White; $lblSource.BackColor = [System.Drawing.Color]::FromArgb(14,20,30)
+$rbDvd.Location = '36,154'; $rbDvd.Size = '94,96'; $rbDvd.Text = 'DVD'
+$rbBd.Location  = '142,154'; $rbBd.Size = '96,96'; $rbBd.Text = 'Blu-ray'
+$rbFile.Location= '250,154'; $rbFile.Size= '94,96'; $rbFile.Text = 'File'
+$rbCd.Location  = '356,154'; $rbCd.Size = '86,96'; $rbCd.Text = 'Audio CD'
 $driveHdr = New-Object System.Windows.Forms.Label
 $driveHdr.Location = New-Object System.Drawing.Point(36,270)
 $driveHdr.Size = New-Object System.Drawing.Size(46,22)
@@ -873,7 +918,7 @@ $btnScan.Location = '346,265'; $btnScan.Size = '96,34'; Style-MonoButton $btnSca
 $btnBrowse.Location = '346,265'; $btnBrowse.Size = '96,34'; Style-MonoButton $btnBrowse 'soft'
 
 # Titles
-$lblTitles.Text = '◌  TITLES'; $lblTitles.Location = '32,356'; $lblTitles.Font = New-Object System.Drawing.Font('Segoe UI', 12, [System.Drawing.FontStyle]::Bold); $lblTitles.ForeColor = [System.Drawing.Color]::White; $lblTitles.BackColor = [System.Drawing.Color]::FromArgb(8,8,10)
+$lblTitles.Text = '◌  TITLES'; $lblTitles.Location = '32,356'; $lblTitles.Font = New-Object System.Drawing.Font('Segoe UI', 12, [System.Drawing.FontStyle]::Bold); $lblTitles.ForeColor = [System.Drawing.Color]::White; $lblTitles.BackColor = [System.Drawing.Color]::FromArgb(14,20,30)
 $lstTitles.Location = '32,392'; $lstTitles.Size = '410,136'; $lstTitles.BackColor = [System.Drawing.Color]::FromArgb(12,12,16); $lstTitles.BorderStyle = 'FixedSingle'; $lstTitles.ForeColor = $inkMain
 $ph = New-Object System.Windows.Forms.Label
 $ph.Location = New-Object System.Drawing.Point(72,416)
@@ -895,13 +940,13 @@ foreach ($ctl in @($lblRF,$lblRFnote,$lblPreset,$lblCont,$lblTune,$chkArchive,$c
 $lblPost.Location = '14,224'; $chkPostSample.Location = '14,248'; $chkPostMinfo.Location = '14,272'
 $lblBdNote.Location = '14,224'; $lblBdNote.Size = '372,44'
 $lblCdMode.Location = '14,156'; $rbCdTracks.Location = '14,180'; $rbCdImage.Location = '14,204'; $lblCdNote.Location = '14,228'; $lblCdNote.Size = '372,40'
-$lblTools.Text = '◇  AFTER ENCODE'; $lblTools.Location = '32,940'; $lblTools.Font = New-Object System.Drawing.Font('Segoe UI', 12, [System.Drawing.FontStyle]::Bold); $lblTools.ForeColor = [System.Drawing.Color]::White; $lblTools.BackColor = [System.Drawing.Color]::FromArgb(8,8,10)
+$lblTools.Text = '◇  AFTER ENCODE'; $lblTools.Location = '32,940'; $lblTools.Font = New-Object System.Drawing.Font('Segoe UI', 12, [System.Drawing.FontStyle]::Bold); $lblTools.ForeColor = [System.Drawing.Color]::White; $lblTools.BackColor = [System.Drawing.Color]::FromArgb(14,20,30)
 $btnSample.Location = '32,974'; $btnSample.Size = '124,34'; Style-MonoButton $btnSample 'soft'
 $btnMinfo.Location = '172,974'; $btnMinfo.Size = '124,34'; Style-MonoButton $btnMinfo 'soft'
 $btnDump.Location = '312,974'; $btnDump.Size = '130,34'; Style-MonoButton $btnDump 'soft'
 
 # Movie info
-$lblName.Text = 'ⓘ  MOVIE INFO'; $lblName.Location = '494,116'; $lblName.Font = New-Object System.Drawing.Font('Segoe UI', 12, [System.Drawing.FontStyle]::Bold); $lblName.ForeColor = [System.Drawing.Color]::White; $lblName.BackColor = [System.Drawing.Color]::FromArgb(8,8,10)
+$lblName.Text = 'ⓘ  MOVIE INFO'; $lblName.Location = '494,116'; $lblName.Font = New-Object System.Drawing.Font('Segoe UI', 12, [System.Drawing.FontStyle]::Bold); $lblName.ForeColor = [System.Drawing.Color]::White; $lblName.BackColor = [System.Drawing.Color]::FromArgb(14,20,30)
 $txtName.Location = '494,160'; $txtName.Size = '560,34'; $txtName.Font = New-Object System.Drawing.Font('Segoe UI', 12); Style-MonoInput $txtName
 $lblImdb.Location = '1076,128'; $lblImdb.Font = New-Object System.Drawing.Font('Segoe UI', 11, [System.Drawing.FontStyle]::Bold); $lblImdb.ForeColor = $inkSoft
 $txtImdb.Location = '1076,160'; $txtImdb.Size = '150,34'; $txtImdb.Font = New-Object System.Drawing.Font('Segoe UI', 12); Style-MonoInput $txtImdb
@@ -909,10 +954,10 @@ $lblYear.Location = '1244,128'; $lblYear.Font = New-Object System.Drawing.Font('
 $txtYear.Location = '1244,160'; $txtYear.Size = '96,34'; $txtYear.Font = New-Object System.Drawing.Font('Segoe UI', 12); Style-MonoInput $txtYear
 
 # Tracks
-$lblGrid.Text = '▧  TRACKS   (edit Lang to fix undefined codes; Incl applies to DVD)'; $lblGrid.Location = '494,260'; $lblGrid.Font = New-Object System.Drawing.Font('Segoe UI', 12, [System.Drawing.FontStyle]::Bold); $lblGrid.ForeColor = [System.Drawing.Color]::White; $lblGrid.BackColor = [System.Drawing.Color]::FromArgb(8,8,10)
+$lblGrid.Text = '▧  TRACKS   (edit Lang to fix undefined codes; Incl applies to DVD)'; $lblGrid.Location = '494,260'; $lblGrid.Font = New-Object System.Drawing.Font('Segoe UI', 12, [System.Drawing.FontStyle]::Bold); $lblGrid.ForeColor = [System.Drawing.Color]::White; $lblGrid.BackColor = [System.Drawing.Color]::FromArgb(14,20,30)
 $grid.Location = '494,304'; $grid.Size = '896,262'; $grid.BackgroundColor = [System.Drawing.Color]::FromArgb(12,12,16); $grid.BorderStyle = 'FixedSingle'; $grid.RowHeadersBorderStyle='None'
 $grid.GridColor = [System.Drawing.Color]::FromArgb(46,46,52)
-$grid.ColumnHeadersDefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(18,18,22)
+$grid.ColumnHeadersDefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(18,24,34)
 $grid.ColumnHeadersDefaultCellStyle.ForeColor = [System.Drawing.Color]::White
 $grid.DefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(12,12,16)
 $grid.DefaultCellStyle.ForeColor = [System.Drawing.Color]::WhiteSmoke
@@ -924,10 +969,10 @@ $logHdr = New-Object System.Windows.Forms.Label
 $logHdr.Location = New-Object System.Drawing.Point(494,620)
 $logHdr.Size = New-Object System.Drawing.Size(180,22)
 $logHdr.Text = '>_  LOG CONSOLE'
-$logHdr.ForeColor = [System.Drawing.Color]::White; $logHdr.BackColor = [System.Drawing.Color]::FromArgb(8,8,10)
+$logHdr.ForeColor = [System.Drawing.Color]::White; $logHdr.BackColor = [System.Drawing.Color]::FromArgb(14,20,30)
 $logHdr.Font = New-Object System.Drawing.Font('Segoe UI', 12, [System.Drawing.FontStyle]::Bold)
 $form.Controls.Add($logHdr)
-$log.Location = '494,654'; $log.Size = '896,190'; $log.BackColor = [System.Drawing.Color]::FromArgb(8,8,10); $log.ForeColor = [System.Drawing.Color]::FromArgb(222,222,222); $log.BorderStyle='FixedSingle'
+$log.Location = '494,654'; $log.Size = '896,190'; $log.BackColor = [System.Drawing.Color]::FromArgb(14,20,30); $log.ForeColor = [System.Drawing.Color]::FromArgb(222,222,222); $log.BorderStyle='FixedSingle'
 $btnClearLog = New-Object System.Windows.Forms.Button
 $btnClearLog.Text = 'Clear'; $btnClearLog.Location = '1196,620'; $btnClearLog.Size = '88,30'; Style-MonoButton $btnClearLog 'soft'; $form.Controls.Add($btnClearLog)
 $btnSaveLog = New-Object System.Windows.Forms.Button
@@ -945,18 +990,20 @@ $btnSaveLog.Add_Click({
 })
 
 # Progress / actions
+# v1.9.7: keep action buttons below the progress bar lane and compress
+# the stage strip so it does not run underneath Encode/Cancel.
 $progressHdr = New-Object System.Windows.Forms.Label
 $progressHdr.Location = New-Object System.Drawing.Point(494,898)
 $progressHdr.Size = New-Object System.Drawing.Size(120,22)
 $progressHdr.Text = '⌁  PROGRESS'
-$progressHdr.ForeColor = [System.Drawing.Color]::White; $progressHdr.BackColor = [System.Drawing.Color]::FromArgb(8,8,10)
+$progressHdr.ForeColor = [System.Drawing.Color]::White; $progressHdr.BackColor = [System.Drawing.Color]::FromArgb(14,20,30)
 $progressHdr.Font = New-Object System.Drawing.Font('Segoe UI', 12, [System.Drawing.FontStyle]::Bold)
 $form.Controls.Add($progressHdr)
 $progress.Location = '494,930'; $progress.Size = '520,14'; $progress.Style = 'Continuous'; $progress.ForeColor = [System.Drawing.Color]::White
 $lblStat.Location = '1030,924'; $lblStat.Size = '72,24'; $lblStat.Text = '0%'; $lblStat.Font = New-Object System.Drawing.Font('Segoe UI', 12, [System.Drawing.FontStyle]::Bold); $lblStat.ForeColor = [System.Drawing.Color]::White
 $lblPlan.Location = '494,956'; $lblPlan.Size = '520,22'; $lblPlan.Font = New-Object System.Drawing.Font('Segoe UI', 10.5, [System.Drawing.FontStyle]::Bold); $lblPlan.ForeColor = $inkSoft
-$btnEncode.Location = '1080,934'; $btnEncode.Size = '152,64'; Style-MonoButton $btnEncode 'primary'; $btnEncode.Font = New-Object System.Drawing.Font('Segoe UI', 16, [System.Drawing.FontStyle]::Bold)
-$btnCancel.Location = '1244,934'; $btnCancel.Size = '146,64'; Style-MonoButton $btnCancel 'danger'; $btnCancel.Font = New-Object System.Drawing.Font('Segoe UI', 16, [System.Drawing.FontStyle]::Bold)
+$btnEncode.Location = '1080,970'; $btnEncode.Size = '152,64'; Style-MonoButton $btnEncode 'primary'; $btnEncode.Font = New-Object System.Drawing.Font('Segoe UI', 16, [System.Drawing.FontStyle]::Bold)
+$btnCancel.Location = '1244,970'; $btnCancel.Size = '146,64'; Style-MonoButton $btnCancel 'danger'; $btnCancel.Font = New-Object System.Drawing.Font('Segoe UI', 16, [System.Drawing.FontStyle]::Bold)
 $script:StageDots = @{}
 $script:StageCaptions = @{}
 $stageNames = @('Scan','Decrypt','Encode','Sample','Minfo')
@@ -991,11 +1038,11 @@ foreach ($name in $stageNames) {
         $line.ForeColor = $inkMute
         $form.Controls.Add($line)
     }
-    $stageX = [int]$stageX + 126
+    $stageX = [int]$stageX + 104
 }
 $footer = New-Object System.Windows.Forms.Label
 $footer.Location = New-Object System.Drawing.Point(494,1004)
-$footer.Size = New-Object System.Drawing.Size(912,18)
+$footer.Size = New-Object System.Drawing.Size(560,18)
 $footer.ForeColor = $inkMute; $footer.BackColor = [System.Drawing.Color]::Transparent
 $footer.Font = New-Object System.Drawing.Font('Segoe UI', 9)
 $form.Controls.Add($footer)
@@ -1008,18 +1055,20 @@ $log.Anchor = 'Bottom, Left, Right'
 $grid.Anchor = 'Top, Left, Right'
 $btnEncode.Anchor = 'Bottom, Right'
 $btnCancel.Anchor = 'Bottom, Right'
-$progress.Anchor = 'Bottom, Left, Right'
+$progress.Anchor = 'Bottom, Left'
 $lblStat.Anchor = 'Bottom, Right'
 $lblPlan.Anchor = 'Bottom, Left'
 $btnClearLog.Anchor = 'Bottom, Right'
 $btnSaveLog.Anchor = 'Bottom, Right'
 
-# UI refresh timer for shell visuals
+# UI refresh timer for lightweight dynamic text only.
+# v1.9.4: do NOT repaint the premium theme on every tick. That caused visible
+# pulsing/flicker on some Windows systems because every gradient card was
+# invalidated repeatedly. Source tiles and badges update on startup/source
+# changes; the timer now only refreshes status text/stage details.
 $script:UiChromeTimer = New-Object System.Windows.Forms.Timer
-$script:UiChromeTimer.Interval = 300
+$script:UiChromeTimer.Interval = 1000
 $script:UiChromeTimer.Add_Tick({
-    try { Update-SourceCardVisuals } catch { }
-    try { Update-EngineBadges } catch { }
     try { Update-StageStrip } catch { }
     try { Update-FooterStatus } catch { }
     try { Update-TitlesPlaceholder } catch { }
@@ -1193,12 +1242,12 @@ namespace MediaForgeTheme161 {
       Rectangle r=new Rectangle(1,1,Width-3,Height-3);
       bool over=ClientRectangle.Contains(PointToClient(Cursor.Position)); bool sel=this.Checked || SelectedVisual;
       Color top=Color.FromArgb(over?45:31, over?52:36, over?64:45); Color bot=Color.FromArgb(10,12,16); Color border=Color.FromArgb(over?120:68, over?136:80, over?158:96);
-      if(sel){ top=Color.FromArgb(90,96,114); bot=Color.FromArgb(32,38,50); border=Color.FromArgb(226,240,255); }
+      if(sel){ top=Color.FromArgb(50,70,98); bot=Color.FromArgb(18,29,45); border=Color.FromArgb(122,166,220); }
       using(GraphicsPath p=Round(r,Radius)){
         using(LinearGradientBrush b=new LinearGradientBrush(r,top,bot,90f)) g.FillPath(b,p);
         Rectangle hiRect=new Rectangle(r.X+3,r.Y+3,r.Width-6,Math.Max(10,r.Height/2));
-        using(LinearGradientBrush hb=new LinearGradientBrush(hiRect,Color.FromArgb(sel?95:55,255,255,255),Color.FromArgb(0,255,255,255),90f)) g.FillPath(hb,p);
-        if(sel){ using(Pen gp=new Pen(Color.FromArgb(92,190,225,255),3f)) g.DrawPath(gp,p); }
+        using(LinearGradientBrush hb=new LinearGradientBrush(hiRect,Color.FromArgb(sel?42:55,255,255,255),Color.FromArgb(0,255,255,255),90f)) g.FillPath(hb,p);
+        if(sel){ using(Pen gp=new Pen(Color.FromArgb(48,118,170,230),2f)) g.DrawPath(gp,p); }
         using(Pen pen=new Pen(border,1.2f)) g.DrawPath(pen,p);
       }
       using(StringFormat sf=new StringFormat()){ sf.Alignment=StringAlignment.Center; sf.LineAlignment=StringAlignment.Center;
@@ -1242,13 +1291,39 @@ function Set-MFInput { param($Ctl)
     if(-not $Ctl){ return }
     try{ $Ctl.BackColor=[System.Drawing.Color]::FromArgb(8,11,15); $Ctl.ForeColor=[System.Drawing.Color]::FromArgb(230,236,244); $Ctl.Font=New-Object System.Drawing.Font('Segoe UI',10); if($Ctl -is [System.Windows.Forms.ComboBox]){$Ctl.FlatStyle='Flat'} }catch{}
 }
+function Enable-MFDoubleBuffer {
+    param($Control)
+    if (-not $Control) { return }
+    try {
+        $prop = [System.Windows.Forms.Control].GetProperty('DoubleBuffered', [System.Reflection.BindingFlags]'NonPublic,Instance')
+        if ($prop) { $prop.SetValue($Control, $true, $null) }
+    } catch { }
+}
+
+function Enable-MFFlickerSafePainting {
+    param($Root)
+    try {
+        Enable-MFDoubleBuffer $Root
+        if ($Root -and $Root.Controls) {
+            foreach ($ctl in $Root.Controls) {
+                Enable-MFDoubleBuffer $ctl
+                try {
+                    if ($ctl.Controls -and $ctl.Controls.Count -gt 0) {
+                        foreach ($child in $ctl.Controls) { Enable-MFDoubleBuffer $child }
+                    }
+                } catch { }
+            }
+        }
+    } catch { }
+}
+
 function Apply-MediaForgeActualCadenceUi {
-    # v1.9.1 theme-only polish: keep the proven v1.8.x layout/buttons alive and refine the shell.
-    # No workflow changes. No control replacement. No disappearing buttons.
+    # v1.9.4 stable layout/theme baseline. No workflow changes. No disappearing buttons.
 
     try {
+        Enable-MFFlickerSafePainting $form
         $form.Text = "MediaForge v$($script:GuiVersion)  (DVD / Blu-ray / File / Audio CD)"
-        $form.BackColor = [System.Drawing.Color]::FromArgb(7,10,15)
+        $form.BackColor = [System.Drawing.Color]::FromArgb(8,12,18)
         $form.ForeColor = [System.Drawing.Color]::FromArgb(232,238,246)
         $form.Size = New-Object System.Drawing.Size(1448,1086)
         $form.MinimumSize = New-Object System.Drawing.Size(1360,1000)
@@ -1513,8 +1588,8 @@ function Apply-MediaForgeActualCadenceUi {
         if ($btnImdbDump)   { Set-MFStableButton $btnImdbDump 'IMDb' 'soft' 9 }
         if ($btnPosterGrab) { Set-MFStableButton $btnPosterGrab 'Poster' 'soft' 9 }
 
-        $btnEncode.Location='1080,946'; $btnEncode.Size='156,68'
-        $btnCancel.Location='1248,946'; $btnCancel.Size='142,68'
+        $btnEncode.Location='1080,970'; $btnEncode.Size='156,64'
+        $btnCancel.Location='1248,970'; $btnCancel.Size='142,64'
         $encodeText = if ((Get-SourceKind) -eq 'cd') { "▶`r`nRip CD" } else { "▶`r`nEncode" }
         Set-MFStableButton $btnEncode $encodeText 'primary' 15
         Set-MFStableButton $btnCancel "⊗`r`nCancel" 'danger' 14
@@ -1529,7 +1604,318 @@ function Apply-MediaForgeActualCadenceUi {
 
 Apply-MediaForgeActualCadenceUi
 
-Write-DebugLog 'construction: all controls built'
+
+function New-MFRoundPath {
+    param(
+        [System.Drawing.Rectangle]$Rect,
+        [int]$Radius = 10
+    )
+    $d = [Math]::Max(2, $Radius * 2)
+    $p = New-Object System.Drawing.Drawing2D.GraphicsPath
+    $p.AddArc($Rect.X, $Rect.Y, $d, $d, 180, 90)
+    $p.AddArc(($Rect.Right - $d), $Rect.Y, $d, $d, 270, 90)
+    $p.AddArc(($Rect.Right - $d), ($Rect.Bottom - $d), $d, $d, 0, 90)
+    $p.AddArc($Rect.X, ($Rect.Bottom - $d), $d, $d, 90, 90)
+    $p.CloseFigure()
+    return $p
+}
+
+function Set-MFRoundedRegion {
+    param(
+        $Control,
+        [int]$Radius = 10
+    )
+    if (-not $Control) { return }
+    try {
+        if ($Control.Width -lt 6 -or $Control.Height -lt 6) { return }
+        $rect = New-Object System.Drawing.Rectangle(0, 0, $Control.Width, $Control.Height)
+        $path = New-MFRoundPath $rect $Radius
+        $Control.Region = New-Object System.Drawing.Region($path)
+        $path.Dispose()
+    } catch { }
+}
+
+function Enable-MFCardPaint {
+    param(
+        $Panel,
+        [int]$Radius = 10,
+        [System.Drawing.Color]$TopColor = ([System.Drawing.Color]::FromArgb(18,25,36)),
+        [System.Drawing.Color]$BottomColor = ([System.Drawing.Color]::FromArgb(9,13,20)),
+        [System.Drawing.Color]$BorderColor = ([System.Drawing.Color]::FromArgb(48,78,106))
+    )
+    if (-not $Panel) { return }
+    try {
+        $Panel.BorderStyle = [System.Windows.Forms.BorderStyle]::None
+        $Panel.BackColor = $BottomColor
+        Set-MFRoundedRegion $Panel $Radius
+
+        if ([string]$Panel.Tag -notlike 'MFv193:card*') {
+            $Panel.Tag = 'MFv193:card'
+            $Panel.Add_SizeChanged({
+                param($sender,$eventArgs)
+                try {
+                    Set-MFRoundedRegion $sender 10
+                    $sender.Invalidate()
+                } catch { }
+            }.GetNewClosure())
+            $Panel.Add_Paint({
+                param($sender,$eventArgs)
+                try {
+                    $g = $eventArgs.Graphics
+                    $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+                    $rect = New-Object System.Drawing.Rectangle(0, 0, ($sender.Width - 1), ($sender.Height - 1))
+                    if ($rect.Width -le 0 -or $rect.Height -le 0) { return }
+                    $path = New-MFRoundPath $rect 10
+                    $brush = New-Object System.Drawing.Drawing2D.LinearGradientBrush($rect, [System.Drawing.Color]::FromArgb(18,25,36), [System.Drawing.Color]::FromArgb(8,12,18), 90.0)
+                    $g.FillPath($brush, $path)
+                    $brush.Dispose()
+                    $inner = New-Object System.Drawing.Rectangle(1, 1, ($sender.Width - 3), [Math]::Max(18, [int]($sender.Height * 0.45)))
+                    $hiPath = New-MFRoundPath $inner 9
+                    $hiBrush = New-Object System.Drawing.Drawing2D.LinearGradientBrush($inner, [System.Drawing.Color]::FromArgb(22,255,255,255), [System.Drawing.Color]::FromArgb(0,255,255,255), 90.0)
+                    $g.FillPath($hiBrush, $hiPath)
+                    $hiBrush.Dispose(); $hiPath.Dispose()
+                    $pen = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(52,78,104), 1.0)
+                    $g.DrawPath($pen, $path)
+                    $pen.Dispose()
+                    $glowPen = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(24,104,168,220), 1.0)
+                    $g.DrawLine($glowPen, 12, 1, [Math]::Max(12, $sender.Width - 14), 1)
+                    $glowPen.Dispose()
+                    $path.Dispose()
+                } catch { }
+            }.GetNewClosure())
+        }
+        $Panel.Invalidate()
+    } catch { }
+}
+
+function Set-MFThemeButtonChrome {
+    param(
+        $Button,
+        [string]$Kind = 'soft',
+        [int]$Radius = 10
+    )
+    if (-not $Button) { return }
+    try {
+        $Button.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+        $Button.UseVisualStyleBackColor = $false
+        $Button.FlatAppearance.BorderSize = 1
+        Set-MFRoundedRegion $Button $Radius
+        if ([string]$Button.Tag -notlike '*MFv193:button*') {
+            $Button.Tag = (([string]$Button.Tag) + ';MFv193:button')
+            $Button.Add_SizeChanged({
+                param($sender,$eventArgs)
+                try { Set-MFRoundedRegion $sender 10 } catch { }
+            }.GetNewClosure())
+        }
+        switch ($Kind) {
+            'primary' {
+                $Button.BackColor = [System.Drawing.Color]::FromArgb(48,78,116)
+                $Button.ForeColor = [System.Drawing.Color]::FromArgb(248,252,255)
+                $Button.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(132,178,230)
+                $Button.FlatAppearance.MouseOverBackColor = [System.Drawing.Color]::FromArgb(60,96,140)
+                $Button.FlatAppearance.MouseDownBackColor = [System.Drawing.Color]::FromArgb(22,38,58)
+            }
+            'danger' {
+                $Button.BackColor = [System.Drawing.Color]::FromArgb(18,24,34)
+                $Button.ForeColor = [System.Drawing.Color]::FromArgb(174,184,198)
+                $Button.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(70,84,104)
+                $Button.FlatAppearance.MouseOverBackColor = [System.Drawing.Color]::FromArgb(36,32,40)
+                $Button.FlatAppearance.MouseDownBackColor = [System.Drawing.Color]::FromArgb(14,18,26)
+            }
+            'selected' {
+                $Button.BackColor = [System.Drawing.Color]::FromArgb(34,54,82)
+                $Button.ForeColor = [System.Drawing.Color]::White
+                $Button.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(112,158,210)
+                $Button.FlatAppearance.BorderSize = 2
+                $Button.FlatAppearance.MouseOverBackColor = [System.Drawing.Color]::FromArgb(44,70,104)
+                $Button.FlatAppearance.MouseDownBackColor = [System.Drawing.Color]::FromArgb(22,38,58)
+            }
+            'badge' {
+                $Button.BackColor = [System.Drawing.Color]::FromArgb(14,22,34)
+                $Button.ForeColor = [System.Drawing.Color]::FromArgb(238,244,250)
+                $Button.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(54,88,120)
+                $Button.FlatAppearance.MouseOverBackColor = [System.Drawing.Color]::FromArgb(22,34,50)
+                $Button.FlatAppearance.MouseDownBackColor = [System.Drawing.Color]::FromArgb(9,14,22)
+            }
+            default {
+                $Button.BackColor = [System.Drawing.Color]::FromArgb(18,27,40)
+                $Button.ForeColor = [System.Drawing.Color]::FromArgb(234,240,248)
+                $Button.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(58,82,108)
+                $Button.FlatAppearance.MouseOverBackColor = [System.Drawing.Color]::FromArgb(28,42,60)
+                $Button.FlatAppearance.MouseDownBackColor = [System.Drawing.Color]::FromArgb(10,15,23)
+            }
+        }
+    } catch { }
+}
+
+function Set-MFThemeInputChrome {
+    param($Control)
+    if (-not $Control) { return }
+    try {
+        $Control.BackColor = [System.Drawing.Color]::FromArgb(7,11,17)
+        $Control.ForeColor = [System.Drawing.Color]::FromArgb(232,239,248)
+        if ($Control -is [System.Windows.Forms.TextBox]) { $Control.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle }
+        if ($Control -is [System.Windows.Forms.ComboBox]) { $Control.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat }
+        if ($Control -is [System.Windows.Forms.NumericUpDown]) { $Control.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle }
+    } catch { }
+}
+
+function Apply-MediaForgeThemeOnly {
+    # v1.9.7: premium theme pass with flicker-safe repaint behavior. Keep the
+    # proven layout and workflow in place; polish the shell, card surfaces,
+    # borders, inputs, tables, and button chrome.
+    try {
+        Enable-MFFlickerSafePainting $form
+        $bg       = [System.Drawing.Color]::FromArgb(6,10,16)
+        $panel    = [System.Drawing.Color]::FromArgb(13,19,29)
+        $panel2   = [System.Drawing.Color]::FromArgb(8,13,21)
+        $panel3   = [System.Drawing.Color]::FromArgb(20,29,42)
+        $inputBg  = [System.Drawing.Color]::FromArgb(6,10,16)
+        $border   = [System.Drawing.Color]::FromArgb(52,78,104)
+        $borderHi = [System.Drawing.Color]::FromArgb(126,166,212)
+        $accent   = [System.Drawing.Color]::FromArgb(132,188,238)
+        $accent2  = [System.Drawing.Color]::FromArgb(74,120,168)
+        $text     = [System.Drawing.Color]::FromArgb(238,244,250)
+        $soft     = [System.Drawing.Color]::FromArgb(204,216,230)
+        $muted    = [System.Drawing.Color]::FromArgb(136,152,170)
+        $green    = [System.Drawing.Color]::FromArgb(137,236,162)
+
+        $form.BackColor = $bg
+        $form.ForeColor = $text
+        if ($hdrTitle) { $hdrTitle.ForeColor = [System.Drawing.Color]::White }
+        if ($hdrVer)   { $hdrVer.ForeColor = $accent }
+        if ($script:HeaderSub) { $script:HeaderSub.ForeColor = [System.Drawing.Color]::FromArgb(154,174,198) }
+        if ($hdrGlyph) { $hdrGlyph.BackColor = $panel2; Set-MFRoundedRegion $hdrGlyph 8 }
+        if ($hdrDivider) { $hdrDivider.BackColor = [System.Drawing.Color]::FromArgb(38,58,78) }
+
+        foreach ($p in @($script:cards)) {
+            if ($p) { Enable-MFCardPaint $p 10 }
+        }
+
+        foreach ($label in @($lblSource,$lblTitles,$lblName,$lblGrid,$logHdr,$progressHdr,$lblTools)) {
+            if ($label) {
+                $label.ForeColor = $text
+                $label.BackColor = $panel
+            }
+        }
+
+        foreach ($label in @($driveHdr,$lblImdb,$lblYear,$lblRF,$lblRFnote,$lblPreset,$lblCont,$lblTune,$lblBdNote,$lblCdMode,$lblCdNote,$lblPost,$script:AfterEncodeHint,$footer)) {
+            if ($label) { $label.ForeColor = $soft }
+        }
+        if ($script:AfterEncodeHint) { $script:AfterEncodeHint.ForeColor = $muted; $script:AfterEncodeHint.BackColor = $panel }
+
+        foreach ($ctl in @($cmbDrive,$txtFile,$txtName,$txtImdb,$txtYear,$cmbPreset,$cmbCont,$cmbTune,$numRF)) {
+            Set-MFThemeInputChrome $ctl
+        }
+
+        foreach ($chk in @($chkArchive,$chkRemux,$chkKeepBackup,$chkDry,$chkBackupOnly,$rbCdTracks,$rbCdImage,$chkPostSample,$chkPostMinfo)) {
+            if ($chk) { $chk.BackColor = $panel; $chk.ForeColor = $soft }
+        }
+
+        if ($grpSet) {
+            $grpSet.BackColor = $panel
+            $grpSet.ForeColor = $accent
+        }
+        if ($lstTitles) {
+            $lstTitles.BackColor = $inputBg
+            $lstTitles.ForeColor = $text
+            $lstTitles.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+        }
+        if ($log) {
+            $log.BackColor = [System.Drawing.Color]::FromArgb(5,9,14)
+            $log.ForeColor = $green
+            $log.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+        }
+        if ($grid) {
+            $grid.BackgroundColor = $inputBg
+            $grid.GridColor = [System.Drawing.Color]::FromArgb(36,54,72)
+            $grid.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+            $grid.EnableHeadersVisualStyles = $false
+            $grid.ColumnHeadersDefaultCellStyle.BackColor = $panel3
+            $grid.ColumnHeadersDefaultCellStyle.ForeColor = $text
+            $grid.DefaultCellStyle.BackColor = $inputBg
+            $grid.DefaultCellStyle.ForeColor = $text
+            $grid.DefaultCellStyle.SelectionBackColor = [System.Drawing.Color]::FromArgb(50,82,118)
+            $grid.DefaultCellStyle.SelectionForeColor = [System.Drawing.Color]::White
+        }
+
+        # Re-style existing buttons only. No replacement, no movement, no workflow changes.
+        Set-MFStableButton $btnScan      $btnScan.Text      'soft' 10
+        Set-MFStableButton $btnBrowse    $btnBrowse.Text    'soft' 10
+        Set-MFStableButton $btnClearLog  'Clear'            'soft' 9
+        Set-MFStableButton $btnSaveLog   'Save log'         'soft' 9
+        Set-MFStableButton $btnSample    'Sample'           'soft' 9
+        Set-MFStableButton $btnMinfo     'Minfo'            'soft' 9
+        Set-MFStableButton $btnDump      'Sidecar'          'soft' 9
+        if ($btnImdbDump)   { Set-MFStableButton $btnImdbDump   'IMDb'   'soft' 9 }
+        if ($btnPosterGrab) { Set-MFStableButton $btnPosterGrab 'Poster' 'soft' 9 }
+        $encodeText = if ((Get-SourceKind) -eq 'cd') { "▶`r`nRip CD" } else { "▶`r`nEncode" }
+        Set-MFStableButton $btnEncode $encodeText 'primary' 15
+        Set-MFStableButton $btnCancel "⊗`r`nCancel" 'danger' 14
+
+        foreach ($b in @($btnScan,$btnBrowse,$btnClearLog,$btnSaveLog,$btnSample,$btnMinfo,$btnDump,$btnImdbDump,$btnPosterGrab)) {
+            if ($b) { Set-MFThemeButtonChrome $b 'soft' 8 }
+        }
+        if ($btnEncode) { Set-MFThemeButtonChrome $btnEncode 'primary' 8 }
+        if ($btnCancel) { Set-MFThemeButtonChrome $btnCancel 'danger' 8 }
+
+        # Keep selected source readable and closer to the mockup: muted steel-blue, not bright gray.
+        foreach ($src in @($rbDvd,$rbBd,$rbFile,$rbCd)) {
+            if ($src) {
+                $src.Appearance = [System.Windows.Forms.Appearance]::Button
+                $src.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+                $src.UseVisualStyleBackColor = $false
+                $src.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
+                Set-MFRoundedRegion $src 6
+                if ($src.Checked) {
+                    $src.BackColor = [System.Drawing.Color]::FromArgb(46,76,112)
+                    $src.ForeColor = [System.Drawing.Color]::White
+                    $src.FlatAppearance.BorderColor = $borderHi
+                    $src.FlatAppearance.BorderSize = 2
+                    $src.FlatAppearance.MouseOverBackColor = [System.Drawing.Color]::FromArgb(58,92,132)
+                    $src.FlatAppearance.MouseDownBackColor = [System.Drawing.Color]::FromArgb(32,54,82)
+                } else {
+                    $src.BackColor = [System.Drawing.Color]::FromArgb(14,22,34)
+                    $src.ForeColor = $soft
+                    $src.FlatAppearance.BorderColor = $border
+                    $src.FlatAppearance.BorderSize = 1
+                    $src.FlatAppearance.MouseOverBackColor = [System.Drawing.Color]::FromArgb(24,36,52)
+                    $src.FlatAppearance.MouseDownBackColor = [System.Drawing.Color]::FromArgb(8,12,18)
+                }
+            }
+        }
+
+        if ($script:EngineBadges) {
+            foreach ($key in $script:EngineBadges.Keys) {
+                $b = $script:EngineBadges[$key]
+                if ($b) {
+                    $b.BackColor = $panel2
+                    $b.ForeColor = $text
+                    try {
+                        $b.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+                        $b.UseVisualStyleBackColor = $false
+                        $b.FlatAppearance.BorderColor = $border
+                        $b.FlatAppearance.BorderSize = 1
+                    } catch { }
+                    Set-MFThemeButtonChrome $b 'badge' 8
+                }
+            }
+        }
+
+        if ($lblPlan) { $lblPlan.ForeColor = $accent }
+        if ($lblStat) { $lblStat.ForeColor = [System.Drawing.Color]::White }
+        foreach ($name in @('Scan','Decrypt','Encode','Sample','Minfo')) {
+            if ($script:StageDots -and $script:StageDots.ContainsKey($name)) { $script:StageDots[$name].ForeColor = $muted }
+            if ($script:StageCaptions -and $script:StageCaptions.ContainsKey($name)) { $script:StageCaptions[$name].ForeColor = $muted }
+        }
+        Update-StageStrip
+    } catch {
+        Write-DebugLog ("MediaForge v1.9.4 theme pass failed: " + $_.Exception.Message)
+    }
+}
+Apply-MediaForgeThemeOnly
+
+Write-DebugLog 'construction: all controls built' 
 
 # ── thread-safe UI helpers ───────────────────────────────────
 function Add-Log {

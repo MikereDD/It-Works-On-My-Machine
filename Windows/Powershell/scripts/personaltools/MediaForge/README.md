@@ -9,9 +9,14 @@
 </p>
 
 <p align="center">
+  <img alt="Version" src="https://img.shields.io/badge/version-v1.9.7-d9dde4?style=for-the-badge&labelColor=111318">
   <img alt="PowerShell" src="https://img.shields.io/badge/PowerShell-7.6+-d9dde4?style=for-the-badge&labelColor=111318">
   <img alt="Platform" src="https://img.shields.io/badge/Windows-Media%20Tools-d9dde4?style=for-the-badge&labelColor=111318">
   <img alt="Project" src="https://img.shields.io/badge/It%20Works%20On%20My%20Machine-MediaForge-d9dde4?style=for-the-badge&labelColor=111318">
+</p>
+
+<p align="center">
+  <img src="./assets/screenshots/mediaforge-v1.9.7.png" alt="MediaForge v1.9.7 GUI screenshot" width="950" />
 </p>
 
 ---
@@ -91,6 +96,15 @@ MediaForge\
 
   mediaforge.ico
   mediaforge.png
+
+  assets\
+    icons\
+      dvd.png
+      bluray.png
+      file.png
+      audiocd.png
+    screenshots\
+      mediaforge-v1.9.7.png
 ```
 
 ---
@@ -100,7 +114,7 @@ MediaForge\
 From PowerShell, after extracting the package:
 
 ```powershell
-$src = "$HOME\Downloads\MediaForge-v1.9.1-theme-only-polish\MediaForge"
+$src = "$HOME\Downloads\MediaForge-v1.9.7-readme-screenshot\MediaForge"
 $dst = "$HOME\PS\scripts\personaltools\MediaForge"
 
 New-Item -ItemType Directory -Force $dst | Out-Null
@@ -145,7 +159,17 @@ MediaForge MiNfoCreate
 
 ## GUI notes
 
-The v1.9.1 GUI polish restores the proven v1.8.x layout and buttons, then limits the change to theme refinement only: darker slate panels, cleaner contrast, better input/log colors, and the same Source / Scan / Encode workflow. It also keeps the PowerShell launch parser fix and STA relaunch fix.
+The v1.9.7 GUI keeps the proven v1.8/v1.9.1 layout and workflow intact while continuing the premium dark MediaForge theme direction.
+
+This pass keeps:
+
+```text
+current workflow
+current script wiring
+source tile icons
+flicker-safe timer behavior
+progress card layout fix
+```
 
 The GUI supports:
 
@@ -204,6 +228,32 @@ MediaForge uses `$HOME`-based paths and should not hard-code a specific Windows 
 Good:  $HOME\PS\scripts\personaltools\MediaForge
 Bad:   C:\Users\Somebody\...
 ```
+
+---
+
+## Release notes
+
+### v1.9.7 Progress Layout Fix
+
+- Keeps the premium MediaForge theme direction.
+- Moves Encode and Cancel lower inside the Progress card so they do not crowd the progress bar.
+- Compresses the stage strip so Scan / Decrypt / Encode / Sample / Minfo stay left of the action buttons.
+- Prevents the progress bar from stretching under the action buttons on resize.
+- Keeps layout, workflow, buttons, source icons, and script wiring unchanged.
+- Adds the current GUI screenshot to the README.
+
+### v1.9.6 Source Icon / Selection Tuning
+
+- Source tile icons live in `assets/icons/`.
+- Cleaner transparent Blu-ray source icon.
+- Darker selected source tile.
+- Keeps the v1.9.4 flicker fix and v1.9.5 icon workflow.
+
+### v1.9.4 Premium Theme Flicker Fix
+
+- Removes repeated full-theme repainting from the UI timer to prevent visual flashing/flicker.
+- Enables flicker-safe double buffering where supported.
+- Keeps layout, workflow, buttons, and script wiring unchanged.
 
 ---
 
