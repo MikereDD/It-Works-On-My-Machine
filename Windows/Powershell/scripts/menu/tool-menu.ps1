@@ -1,10 +1,10 @@
 ﻿#--------------------------------------------
 # file:     tool-menu.ps1
 # author:   Mike Redd
-# version:  4.2
+# version:  4.3
 # created:  2026-03-30
 # updated:  2026-07-05
-# desc:     Unified script launcher (Admin + Personal + Games)
+# desc:     Unified script launcher (Admin + Personal + Games + MediaForge)
 #--------------------------------------------
 
 # ── Resolve base directories ──────────────────────────────────
@@ -90,7 +90,7 @@ if ($corePath) {
 }
 
 $ScriptName    = "Tool Menu"
-$ScriptVersion = "4.2"
+$ScriptVersion = "4.3"
 $ScriptAuthor  = "Mike Redd"
 
 # Keep child tools grounded even when the parent profile was not loaded.
@@ -120,8 +120,8 @@ $AdminTools = @(
 $PersonalTools = @(
     [PSCustomObject]@{ Name="SpeedtestMenu";              File="speedtest-menu.ps1" }
     [PSCustomObject]@{ Name="WeatherFetch";               File="weatherfetch-menu.ps1" }
-    [PSCustomObject]@{ Name="ImdbDump";                   File="imdbdump.ps1" }
-    [PSCustomObject]@{ Name="ImdbThumbGrab";              File="imdbthumbgrab.ps1" }
+    [PSCustomObject]@{ Name="MediaForge IMDb Dump";       File="MediaForge\imdbdump.ps1";                  AltFiles=@("imdbdump.ps1") }
+    [PSCustomObject]@{ Name="MediaForge Poster Grab";     File="MediaForge\imdbthumbgrab.ps1";             AltFiles=@("imdbthumbgrab.ps1") }
 
     [PSCustomObject]@{ Name="MediaForge (GUI)";           File="MediaForge\mediaforge-gui.ps1";            AltFiles=@("MediaForge\media-encoder-gui.ps1", "mediaforge-gui.ps1", "media-encoder-gui.ps1"); Gui=$true }
     [PSCustomObject]@{ Name="MediaForge CD Ripper (GUI)"; File="MediaForge\cd-ripper-gui.ps1";             AltFiles=@("cd-ripper-gui.ps1"); Gui=$true }
@@ -261,30 +261,37 @@ function Start-ToolScript {
 
     try {
         if ($IsGui) {
-            # GUI tools are WinForms/WPF and need STA. Prefer Windows PowerShell
-            # because it supports -STA explicitly. Launch detached so this menu
-            # remains usable while the GUI is open.
+            # GUI tools are WinForms/WPF and need STA.
+            # Prefer PowerShell 7+ for MediaForge/Cadence-era GUIs, then fall
+            # back to Windows PowerShell. Launch detached so this menu remains usable.
             $work = Split-Path $ScriptPath -Parent
+
+            $pwshCmd = Get-Command pwsh.exe -ErrorAction SilentlyContinue
+            if (-not $pwshCmd) { $pwshCmd = Get-Command pwsh -ErrorAction SilentlyContinue }
             $winPS = Get-Command powershell.exe -ErrorAction SilentlyContinue
-            if ($winPS) {
-                $argLine = "-NoProfile -ExecutionPolicy Bypass -STA -File `"$ScriptPath`""
-                Start-Process -FilePath $winPS.Source -ArgumentList $argLine -WorkingDirectory $work
+
+            if ($pwshCmd) {
+                $hostExe = $pwshCmd.Source
+            } elseif ($winPS) {
+                $hostExe = $winPS.Source
             } else {
-                $pwshCmd = Get-Command pwsh -ErrorAction SilentlyContinue
-                if (-not $pwshCmd) {
-                    throw "Neither powershell.exe nor pwsh found to launch the GUI: $ScriptPath"
-                }
-                $argLine = "-NoProfile -ExecutionPolicy Bypass -File `"$ScriptPath`""
-                Start-Process -FilePath $pwshCmd.Source -ArgumentList $argLine -WorkingDirectory $work
+                throw "Neither pwsh.exe nor powershell.exe found to launch the GUI: $ScriptPath"
             }
-            Write-Host ("  {0}Launched:{1} {2}  {3}(menu stays open){4}" -f `
-                $global:UI_GRN, $global:UI_R, (Split-Path $ScriptPath -Leaf), $global:UI_GRY, $global:UI_R)
+
+            $argLine = "-NoProfile -ExecutionPolicy Bypass -STA -File `"$ScriptPath`""
+            Start-Process -FilePath $hostExe -ArgumentList $argLine -WorkingDirectory $work
+
+            Write-Host ("  {0}Launched:{1} {2}  {3}via {4} -STA; menu stays open{5}" -f `
+                $global:UI_GRN, $global:UI_R, (Split-Path $ScriptPath -Leaf), $global:UI_GRY, (Split-Path $hostExe -Leaf), $global:UI_R)
             Start-Sleep -Milliseconds 700
             return
         }
 
         # Console tools run INLINE so you interact with them and return here.
-        $pwshCmd = Get-Command pwsh -ErrorAction SilentlyContinue
+        # Run from the script's own folder so MediaForge helper tools resolve
+        # local sidecars/assets exactly like direct launches.
+        $pwshCmd = Get-Command pwsh.exe -ErrorAction SilentlyContinue
+        if (-not $pwshCmd) { $pwshCmd = Get-Command pwsh -ErrorAction SilentlyContinue }
         if (-not $pwshCmd) { $pwshCmd = Get-Command powershell.exe -ErrorAction SilentlyContinue }
         if (-not $pwshCmd) { throw "Could not find pwsh or powershell.exe to launch: $ScriptPath" }
 
@@ -292,7 +299,8 @@ function Start-ToolScript {
         $pp = "$PSProfileDir" -replace "'", "''"
         $ps = "$ScriptsRoot"  -replace "'", "''"
         $sp = "$ScriptPath"   -replace "'", "''"
-        $bootstrap = "`$PSProfileDir = '$pp'; `$PSScriptsDir = '$ps'; & '$sp'"
+        $wd = "$(Split-Path $ScriptPath -Parent)" -replace "'", "''"
+        $bootstrap = "`$PSProfileDir = '$pp'; `$PSScriptsDir = '$ps'; Push-Location '$wd'; try { & '$sp' } finally { Pop-Location }"
 
         & $pwshCmd.Source -NoProfile -ExecutionPolicy Bypass -Command $bootstrap
     } catch {
