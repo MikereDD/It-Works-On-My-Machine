@@ -58,7 +58,7 @@ mediaforge-gui.ps1
 | **Samples** | Create MKV/MP4 sample clips from finished media |
 | **Metadata** | Create MiNFO / NFO style reports for finished media |
 | **IMDb / Posters** | Metadata lookup and poster grabbing through the helper tools |
-| **GUI** | One front end for DVD, Blu-ray, file tools, and Audio CD workflows |
+| **GUI** | One polished front end for DVD, Blu-ray, file tools, and Audio CD workflows |
 | **Tool Menu** | Scripts are grouped under MediaForge for clean launching |
 
 ---
@@ -100,7 +100,7 @@ MediaForge\
 From PowerShell, after extracting the package:
 
 ```powershell
-$src = "$HOME\Downloads\MediaForge-v1.7.1-readme-polish\MediaForge"
+$src = "$HOME\Downloads\MediaForge-v1.8.1-ui-polish-parser-fix\MediaForge"
 $dst = "$HOME\PS\scripts\personaltools\MediaForge"
 
 New-Item -ItemType Directory -Force $dst | Out-Null
@@ -144,6 +144,8 @@ MediaForge MiNfoCreate
 ---
 
 ## GUI notes
+
+The v1.8.1 GUI polish keeps the same workflow and improves the shell around it: cleaner header, better card sizing, softer button states, clearer source tiles, and an expanded After Encode / Progress area. It also fixes the PowerShell parser edge case in launch error messages.
 
 The GUI supports:
 

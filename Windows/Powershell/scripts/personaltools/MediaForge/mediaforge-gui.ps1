@@ -1,7 +1,7 @@
 ﻿<#
 ================================================================
   MediaForge  -  all-in-one disc -> HEVC front end
-  version:  1.7.0  (IMDb tools integration)  by Mike Redd
+  version:  1.8.1  (UI polish parser fix)  by Mike Redd
 ----------------------------------------------------------------
   One window over the existing toolset. It does NOT reimplement any
   pipeline; each engine is dot-sourced inside its OWN background
@@ -255,7 +255,7 @@ function Remove-BluRayBackupRoot {
 # ════════════════════════════════════════════════════════════════
 $form = New-Object System.Windows.Forms.Form
 try { $icoPath = Get-MediaForgeIconPath; if ($icoPath) { $form.Icon = New-Object System.Drawing.Icon($icoPath) } } catch { }
-$script:GuiVersion = '1.7.0'
+$script:GuiVersion = '1.8.1'
 $form.Text = "MediaForge v$($script:GuiVersion)  (DVD / Blu-ray / File / Audio CD)"
 $form.Size = New-Object System.Drawing.Size(1448, 1086)
 $form.MinimumSize = New-Object System.Drawing.Size(1360, 1000)
@@ -361,10 +361,10 @@ $chkDry = New-Object System.Windows.Forms.CheckBox
 $chkDry.Text = 'Dry run (DVD)'; $chkDry.Location = '14,230'; $chkDry.Size = '160,22'
 $grpSet.Controls.Add($chkDry)
 $chkBackupOnly = New-Object System.Windows.Forms.CheckBox
-$chkBackupOnly.Text = 'Backup only (decrypt full disc, no encode)'; $chkBackupOnly.Location = '14,230'; $chkBackupOnly.Size = '300,22'; $chkBackupOnly.Visible = $false
+$chkBackupOnly.Text = 'Backup only (no encode)'; $chkBackupOnly.Location = '14,230'; $chkBackupOnly.Size = '300,22'; $chkBackupOnly.Visible = $false
 $grpSet.Controls.Add($chkBackupOnly)
 $lblBdNote = New-Object System.Windows.Forms.Label
-$lblBdNote.Text = 'Blu-ray mode: BRencoder controls quality / preset / HDR. Only "Keep backup" applies here.'
+$lblBdNote.Text = 'Blu-ray mode: BRencoder controls quality, preset, HDR, tracks, and final encode.'
 $lblBdNote.ForeColor = [System.Drawing.Color]::FromArgb(150, 180, 210)
 $lblBdNote.Location = '14,258'; $lblBdNote.Size = '296,48'; $lblBdNote.Visible = $false
 $grpSet.Controls.Add($lblBdNote)
@@ -380,7 +380,7 @@ $rbCdImage = New-Object System.Windows.Forms.RadioButton
 $rbCdImage.Text = 'Single image + CUE'; $rbCdImage.Location = '14,206'; $rbCdImage.Size = '290,22'; $rbCdImage.Visible = $false
 $grpSet.Controls.Add($rbCdImage)
 $lblCdNote = New-Object System.Windows.Forms.Label
-$lblCdNote.Text = 'Rips in its own elevated window (UAC) — reads the disc and resolves MusicBrainz there. Uses the ripper''s configured CD drive.'
+$lblCdNote.Text = 'Rips in its own elevated window. Uses the ripper CD drive and MusicBrainz metadata.'
 $lblCdNote.ForeColor = [System.Drawing.Color]::FromArgb(150, 180, 210)
 $lblCdNote.Location = '14,234'; $lblCdNote.Size = '296,60'; $lblCdNote.Visible = $false
 $grpSet.Controls.Add($lblCdNote)
@@ -605,49 +605,49 @@ function Set-MFStableButton {
 
         switch ($Kind) {
             'primary' {
-                $Button.BackColor = [System.Drawing.Color]::FromArgb(50,55,68)
+                $Button.BackColor = [System.Drawing.Color]::FromArgb(58,68,88)
                 $Button.ForeColor = [System.Drawing.Color]::White
-                $Button.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(226,234,244)
+                $Button.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(232,242,252)
                 $Button.FlatAppearance.BorderSize = 1
-                $Button.FlatAppearance.MouseOverBackColor = [System.Drawing.Color]::FromArgb(62,68,82)
+                $Button.FlatAppearance.MouseOverBackColor = [System.Drawing.Color]::FromArgb(74,86,108)
                 $Button.FlatAppearance.MouseDownBackColor = [System.Drawing.Color]::FromArgb(26,30,38)
             }
             'danger' {
-                $Button.BackColor = [System.Drawing.Color]::FromArgb(22,24,30)
+                $Button.BackColor = [System.Drawing.Color]::FromArgb(24,28,36)
                 $Button.ForeColor = [System.Drawing.Color]::FromArgb(172,176,184)
-                $Button.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(82,88,98)
+                $Button.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(82,94,112)
                 $Button.FlatAppearance.BorderSize = 1
                 $Button.FlatAppearance.MouseOverBackColor = [System.Drawing.Color]::FromArgb(42,34,38)
                 $Button.FlatAppearance.MouseDownBackColor = [System.Drawing.Color]::FromArgb(18,20,24)
             }
             'selected' {
-                $Button.BackColor = [System.Drawing.Color]::FromArgb(96,101,118)
+                $Button.BackColor = [System.Drawing.Color]::FromArgb(74,86,108)
                 $Button.ForeColor = [System.Drawing.Color]::White
-                $Button.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(244,248,252)
+                $Button.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(232,242,252)
                 $Button.FlatAppearance.BorderSize = 2
-                $Button.FlatAppearance.MouseOverBackColor = [System.Drawing.Color]::FromArgb(96,102,120)
+                $Button.FlatAppearance.MouseOverBackColor = [System.Drawing.Color]::FromArgb(86,100,124)
                 $Button.FlatAppearance.MouseDownBackColor = [System.Drawing.Color]::FromArgb(48,54,66)
             }
             'badge' {
-                $Button.BackColor = [System.Drawing.Color]::FromArgb(24,27,34)
+                $Button.BackColor = [System.Drawing.Color]::FromArgb(22,27,36)
                 $Button.ForeColor = [System.Drawing.Color]::FromArgb(238,242,246)
-                $Button.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(74,84,98)
+                $Button.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(72,88,110)
                 $Button.FlatAppearance.BorderSize = 1
-                $Button.FlatAppearance.MouseOverBackColor = [System.Drawing.Color]::FromArgb(34,38,46)
+                $Button.FlatAppearance.MouseOverBackColor = [System.Drawing.Color]::FromArgb(34,42,56)
                 $Button.FlatAppearance.MouseDownBackColor = [System.Drawing.Color]::FromArgb(14,16,20)
             }
             default {
-                $Button.BackColor = [System.Drawing.Color]::FromArgb(30,35,44)
+                $Button.BackColor = [System.Drawing.Color]::FromArgb(26,32,42)
                 $Button.ForeColor = [System.Drawing.Color]::FromArgb(236,240,246)
-                $Button.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(96,108,124)
+                $Button.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(80,98,122)
                 $Button.FlatAppearance.BorderSize = 1
-                $Button.FlatAppearance.MouseOverBackColor = [System.Drawing.Color]::FromArgb(42,48,58)
+                $Button.FlatAppearance.MouseOverBackColor = [System.Drawing.Color]::FromArgb(38,46,60)
                 $Button.FlatAppearance.MouseDownBackColor = [System.Drawing.Color]::FromArgb(14,16,20)
             }
         }
         try {
             if (-not $Button.Enabled) {
-                $Button.BackColor = [System.Drawing.Color]::FromArgb(24,27,34)
+                $Button.BackColor = [System.Drawing.Color]::FromArgb(22,27,36)
                 $Button.ForeColor = [System.Drawing.Color]::FromArgb(112,118,128)
                 $Button.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(54,62,74)
             }
@@ -665,10 +665,10 @@ function Set-MFStableSourceButton {
 }
 
 function Update-SourceCardVisuals {
-    Set-MFStableSourceButton $rbDvd  "◉`r`nDVD"      ([bool]$rbDvd.Checked)
-    Set-MFStableSourceButton $rbBd   "◒`r`nBlu-ray"  ([bool]$rbBd.Checked)
-    Set-MFStableSourceButton $rbFile "▤`r`nFile"     ([bool]$rbFile.Checked)
-    Set-MFStableSourceButton $rbCd   "♪`r`nAudio CD" ([bool]$rbCd.Checked)
+    Set-MFStableSourceButton $rbDvd  "●`r`nDVD"      ([bool]$rbDvd.Checked)
+    Set-MFStableSourceButton $rbBd   "◐`r`nBlu-ray"  ([bool]$rbBd.Checked)
+    Set-MFStableSourceButton $rbFile "▦`r`nFile"     ([bool]$rbFile.Checked)
+    Set-MFStableSourceButton $rbCd   "♫`r`nAudio CD" ([bool]$rbCd.Checked)
 }
 
 function Update-EngineBadges {
@@ -852,14 +852,15 @@ $cards = @(
     (New-MonoPanel 472 604 936 264),
     (New-MonoPanel 472 882 936 144)
 )
-foreach ($p in $cards) { $form.Controls.Add($p); $p.SendToBack() }
+$script:cards = $cards
+foreach ($p in $script:cards) { $form.Controls.Add($p); $p.SendToBack() }
 
 # Source section
 $lblSource.Text = '◉  SOURCE'; $lblSource.Location = '32,116'; $lblSource.Font = New-Object System.Drawing.Font('Segoe UI', 12, [System.Drawing.FontStyle]::Bold); $lblSource.ForeColor = [System.Drawing.Color]::White; $lblSource.BackColor = [System.Drawing.Color]::FromArgb(8,8,10)
-$rbDvd.Location = '36,154'; $rbDvd.Size = '94,96'; $rbDvd.Text = "◉`r`nDVD"
-$rbBd.Location  = '142,154'; $rbBd.Size = '96,96'; $rbBd.Text = "◒`r`nBlu-ray"
-$rbFile.Location= '250,154'; $rbFile.Size= '94,96'; $rbFile.Text = "▤`r`nFile"
-$rbCd.Location  = '356,154'; $rbCd.Size = '86,96'; $rbCd.Text = "♪`r`nAudio CD"
+$rbDvd.Location = '36,154'; $rbDvd.Size = '94,96'; $rbDvd.Text = "●`r`nDVD"
+$rbBd.Location  = '142,154'; $rbBd.Size = '96,96'; $rbBd.Text = "◐`r`nBlu-ray"
+$rbFile.Location= '250,154'; $rbFile.Size= '94,96'; $rbFile.Text = "▦`r`nFile"
+$rbCd.Location  = '356,154'; $rbCd.Size = '86,96'; $rbCd.Text = "♫`r`nAudio CD"
 $driveHdr = New-Object System.Windows.Forms.Label
 $driveHdr.Location = New-Object System.Drawing.Point(36,270)
 $driveHdr.Size = New-Object System.Drawing.Size(46,22)
@@ -1242,12 +1243,12 @@ function Set-MFInput { param($Ctl)
     try{ $Ctl.BackColor=[System.Drawing.Color]::FromArgb(8,11,15); $Ctl.ForeColor=[System.Drawing.Color]::FromArgb(230,236,244); $Ctl.Font=New-Object System.Drawing.Font('Segoe UI',10); if($Ctl -is [System.Windows.Forms.ComboBox]){$Ctl.FlatStyle='Flat'} }catch{}
 }
 function Apply-MediaForgeActualCadenceUi {
-    # v1.6.7 stable polish: keep the proven WinForms controls alive and style them.
-    # No control replacement. No disappearing buttons.
+    # v1.8.1 visual polish: keep the proven WinForms controls alive and refine the shell.
+    # No workflow changes. No control replacement. No disappearing buttons.
 
     try {
         $form.Text = "MediaForge v$($script:GuiVersion)  (DVD / Blu-ray / File / Audio CD)"
-        $form.BackColor = [System.Drawing.Color]::FromArgb(6,8,12)
+        $form.BackColor = [System.Drawing.Color]::FromArgb(7,10,15)
         $form.ForeColor = [System.Drawing.Color]::FromArgb(232,238,246)
         $form.Size = New-Object System.Drawing.Size(1448,1086)
         $form.MinimumSize = New-Object System.Drawing.Size(1360,1000)
@@ -1255,21 +1256,21 @@ function Apply-MediaForgeActualCadenceUi {
         if ($hdrGlyph) {
             $hdrGlyph.Location = New-Object System.Drawing.Point(28,22)
             $hdrGlyph.Size = New-Object System.Drawing.Size(62,62)
-            $hdrGlyph.BackColor = [System.Drawing.Color]::FromArgb(8,11,15)
+            $hdrGlyph.BackColor = [System.Drawing.Color]::FromArgb(10,14,20)
             try { $hdrGlyph.Image = Get-MediaForgeHeaderImage } catch { }
             $hdrGlyph.BringToFront()
         }
         if ($hdrTitle) {
             $hdrTitle.Text = 'MediaForge'
-            $hdrTitle.Location = New-Object System.Drawing.Point(108,30)
-            $hdrTitle.Size = New-Object System.Drawing.Size(270,44)
+            $hdrTitle.Location = New-Object System.Drawing.Point(108,24)
+            $hdrTitle.Size = New-Object System.Drawing.Size(270,40)
             $hdrTitle.Font = New-Object System.Drawing.Font('Segoe UI',23,[System.Drawing.FontStyle]::Bold)
             $hdrTitle.ForeColor = [System.Drawing.Color]::White
             $hdrTitle.BackColor = [System.Drawing.Color]::Transparent
             $hdrTitle.BringToFront()
         }
         if ($hdrVer) {
-            $hdrVer.Location = New-Object System.Drawing.Point(372,45)
+            $hdrVer.Location = New-Object System.Drawing.Point(372,38)
             $hdrVer.Size = New-Object System.Drawing.Size(120,24)
             $hdrVer.Text = "v$($script:GuiVersion)"
             $hdrVer.Font = New-Object System.Drawing.Font('Segoe UI',9,[System.Drawing.FontStyle]::Regular)
@@ -1277,10 +1278,21 @@ function Apply-MediaForgeActualCadenceUi {
             $hdrVer.BackColor = [System.Drawing.Color]::Transparent
             $hdrVer.BringToFront()
         }
+        if (-not $script:HeaderSub) {
+            $script:HeaderSub = New-Object System.Windows.Forms.Label
+            $script:HeaderSub.Text = 'Local ripping  •  encoding  •  metadata forge'
+            $script:HeaderSub.Location = New-Object System.Drawing.Point(110,62)
+            $script:HeaderSub.Size = New-Object System.Drawing.Size(340,22)
+            $script:HeaderSub.Font = New-Object System.Drawing.Font('Segoe UI',9.25,[System.Drawing.FontStyle]::Regular)
+            $script:HeaderSub.ForeColor = [System.Drawing.Color]::FromArgb(142,154,170)
+            $script:HeaderSub.BackColor = [System.Drawing.Color]::Transparent
+            $form.Controls.Add($script:HeaderSub)
+        }
+        $script:HeaderSub.BringToFront()
         if ($hdrDivider) {
             $hdrDivider.Location = New-Object System.Drawing.Point(16,94)
             $hdrDivider.Size = New-Object System.Drawing.Size(1396,1)
-            $hdrDivider.BackColor = [System.Drawing.Color]::FromArgb(50,62,78)
+            $hdrDivider.BackColor = [System.Drawing.Color]::FromArgb(42,52,66)
         }
 
         # Background cards.
@@ -1300,7 +1312,7 @@ function Apply-MediaForgeActualCadenceUi {
                 if ($p) {
                     $p.Location = $cardLayout[$i].L
                     $p.Size     = $cardLayout[$i].S
-                    $p.BackColor = [System.Drawing.Color]::FromArgb(12,16,22)
+                    $p.BackColor = [System.Drawing.Color]::FromArgb(14,18,26)
                     $p.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
                     $p.SendToBack()
                 }
@@ -1309,15 +1321,15 @@ function Apply-MediaForgeActualCadenceUi {
 
         # Engine badges.
         if ($script:EngineBadges) {
-            $x = 470
+            $x = 500
             foreach ($k in @('DVD','Blu-ray','BRencoder','Sample','Minfo')) {
                 if ($script:EngineBadges.ContainsKey($k)) {
                     $b = $script:EngineBadges[$k]
-                    $b.Location = New-Object System.Drawing.Point($x,34)
-                    $b.Size = New-Object System.Drawing.Size(130,38)
+                    $b.Location = New-Object System.Drawing.Point($x,30)
+                    $b.Size = New-Object System.Drawing.Size(134,40)
                     Set-MFStableButton $b ("●  {0}    OK" -f $k) 'badge' 9
                     $b.BringToFront()
-                    $x += 136
+                    $x += 140
                 }
             }
         }
@@ -1332,7 +1344,7 @@ function Apply-MediaForgeActualCadenceUi {
             if ($l) {
                 $l.Font = New-Object System.Drawing.Font('Segoe UI',11.5,[System.Drawing.FontStyle]::Bold)
                 $l.ForeColor = [System.Drawing.Color]::FromArgb(236,242,248)
-                $l.BackColor = [System.Drawing.Color]::FromArgb(6,8,12)
+                $l.BackColor = [System.Drawing.Color]::FromArgb(14,18,26)
                 $l.BringToFront()
             }
         }
@@ -1341,7 +1353,7 @@ function Apply-MediaForgeActualCadenceUi {
             $logHdr.Location=New-Object System.Drawing.Point(494,628)
             $logHdr.Font=New-Object System.Drawing.Font('Segoe UI',11.5,[System.Drawing.FontStyle]::Bold)
             $logHdr.ForeColor=[System.Drawing.Color]::FromArgb(236,242,248)
-            $logHdr.BackColor=[System.Drawing.Color]::FromArgb(6,8,12)
+            $logHdr.BackColor=[System.Drawing.Color]::FromArgb(14,18,26)
             $logHdr.BringToFront()
         }
         if ($progressHdr) {
@@ -1349,7 +1361,7 @@ function Apply-MediaForgeActualCadenceUi {
             $progressHdr.Location=New-Object System.Drawing.Point(494,900)
             $progressHdr.Font=New-Object System.Drawing.Font('Segoe UI',11.5,[System.Drawing.FontStyle]::Bold)
             $progressHdr.ForeColor=[System.Drawing.Color]::FromArgb(236,242,248)
-            $progressHdr.BackColor=[System.Drawing.Color]::FromArgb(6,8,12)
+            $progressHdr.BackColor=[System.Drawing.Color]::FromArgb(14,18,26)
             $progressHdr.BringToFront()
         }
 
@@ -1376,19 +1388,23 @@ function Apply-MediaForgeActualCadenceUi {
 
         # Left column.
         $lstTitles.Location='34,404'; $lstTitles.Size='408,140'
-        $lstTitles.BackColor=[System.Drawing.Color]::FromArgb(7,10,14)
+        $lstTitles.BackColor=[System.Drawing.Color]::FromArgb(8,12,18)
         $lstTitles.ForeColor=[System.Drawing.Color]::FromArgb(230,236,244)
 
         $grpSet.Location='28,586'; $grpSet.Size='416,318'
-        $grpSet.BackColor=[System.Drawing.Color]::FromArgb(8,11,15)
+        $grpSet.BackColor=[System.Drawing.Color]::FromArgb(10,14,20)
         $grpSet.ForeColor=[System.Drawing.Color]::FromArgb(236,242,248)
         $grpSet.Font=New-Object System.Drawing.Font('Segoe UI',10.5,[System.Drawing.FontStyle]::Bold)
         foreach($ctl in @($lblRF,$lblRFnote,$lblPreset,$lblCont,$lblTune,$chkArchive,$chkRemux,$chkKeepBackup,$chkDry,$chkBackupOnly,$lblBdNote,$lblCdMode,$rbCdTracks,$rbCdImage,$lblCdNote,$lblPost,$chkPostSample,$chkPostMinfo)){
             try{
-                $ctl.BackColor=[System.Drawing.Color]::FromArgb(8,11,15)
+                $ctl.BackColor=[System.Drawing.Color]::FromArgb(10,14,20)
                 $ctl.ForeColor=[System.Drawing.Color]::FromArgb(226,232,240)
             }catch{}
         }
+        # Cleaner settings text: keep long Blu-ray labels from clipping.
+        if ($chkBackupOnly) { $chkBackupOnly.Text = 'Backup only (no encode)'; $chkBackupOnly.Size = New-Object System.Drawing.Size(376,24) }
+        if ($chkKeepBackup) { $chkKeepBackup.Size = New-Object System.Drawing.Size(376,24) }
+        if ($lblBdNote) { $lblBdNote.Text = 'BRencoder controls quality, HDR, tracks, and final encode.'; $lblBdNote.Size = New-Object System.Drawing.Size(376,42) }
 
         # Movie / tracks.
         $txtName.Location='494,166'; $txtName.Size='560,36'
@@ -1396,7 +1412,7 @@ function Apply-MediaForgeActualCadenceUi {
         $lblYear.Location='1248,132'; $txtYear.Location='1248,166'; $txtYear.Size='96,36'
         foreach($ctl in @($cmbDrive,$txtFile,$txtName,$txtImdb,$txtYear,$cmbPreset,$cmbCont,$cmbTune,$numRF)){
             try{
-                $ctl.BackColor=[System.Drawing.Color]::FromArgb(8,11,15)
+                $ctl.BackColor=[System.Drawing.Color]::FromArgb(10,14,20)
                 $ctl.ForeColor=[System.Drawing.Color]::FromArgb(230,236,244)
                 $ctl.Font=New-Object System.Drawing.Font('Segoe UI',10)
                 if($ctl -is [System.Windows.Forms.ComboBox]){ $ctl.FlatStyle='Flat' }
@@ -1404,19 +1420,19 @@ function Apply-MediaForgeActualCadenceUi {
         }
 
         $grid.Location='494,314'; $grid.Size='896,264'
-        $grid.BackgroundColor=[System.Drawing.Color]::FromArgb(5,8,11)
+        $grid.BackgroundColor=[System.Drawing.Color]::FromArgb(8,12,18)
         $grid.GridColor=[System.Drawing.Color]::FromArgb(36,46,58)
-        $grid.ColumnHeadersDefaultCellStyle.BackColor=[System.Drawing.Color]::FromArgb(22,28,36)
+        $grid.ColumnHeadersDefaultCellStyle.BackColor=[System.Drawing.Color]::FromArgb(22,28,38)
         $grid.ColumnHeadersDefaultCellStyle.ForeColor=[System.Drawing.Color]::White
-        $grid.DefaultCellStyle.BackColor=[System.Drawing.Color]::FromArgb(7,10,14)
+        $grid.DefaultCellStyle.BackColor=[System.Drawing.Color]::FromArgb(8,12,18)
         $grid.DefaultCellStyle.ForeColor=[System.Drawing.Color]::FromArgb(226,234,242)
         $grid.DefaultCellStyle.SelectionBackColor=[System.Drawing.Color]::FromArgb(64,70,86)
         $grid.EnableHeadersVisualStyles = $false
 
         # Log / progress.
         $log.Location='494,664'; $log.Size='896,190'
-        $log.BackColor=[System.Drawing.Color]::FromArgb(4,8,11)
-        $log.ForeColor=[System.Drawing.Color]::FromArgb(112,230,112)
+        $log.BackColor=[System.Drawing.Color]::FromArgb(6,10,14)
+        $log.ForeColor=[System.Drawing.Color]::FromArgb(150,236,170)
         $log.Font=New-Object System.Drawing.Font('Consolas',10)
 
         if($btnClearLog){ $btnClearLog.Location='1198,626'; $btnClearLog.Size='86,30'; Set-MFStableButton $btnClearLog 'Clear' 'soft' 9; $btnClearLog.BringToFront() }
@@ -1435,8 +1451,8 @@ function Apply-MediaForgeActualCadenceUi {
             $script:AfterEncodeHint.Location = New-Object System.Drawing.Point(238,946)
             $script:AfterEncodeHint.Size = New-Object System.Drawing.Size(200,20)
             $script:AfterEncodeHint.Font = New-Object System.Drawing.Font('Segoe UI',8.5,[System.Drawing.FontStyle]::Regular)
-            $script:AfterEncodeHint.ForeColor = [System.Drawing.Color]::FromArgb(132,142,154)
-            $script:AfterEncodeHint.BackColor = [System.Drawing.Color]::FromArgb(12,16,22)
+            $script:AfterEncodeHint.ForeColor = [System.Drawing.Color]::FromArgb(142,154,170)
+            $script:AfterEncodeHint.BackColor = [System.Drawing.Color]::FromArgb(14,18,26)
             $form.Controls.Add($script:AfterEncodeHint)
         }
         $script:AfterEncodeHint.Visible = ((Get-SourceKind) -ne 'cd')
@@ -1461,7 +1477,7 @@ function Apply-MediaForgeActualCadenceUi {
             $lblPost.Size = New-Object System.Drawing.Size(150,22)
             $lblPost.Font = New-Object System.Drawing.Font('Segoe UI',9.5,[System.Drawing.FontStyle]::Bold)
             $lblPost.ForeColor = [System.Drawing.Color]::FromArgb(218,226,236)
-            $lblPost.BackColor = [System.Drawing.Color]::FromArgb(12,16,22)
+            $lblPost.BackColor = [System.Drawing.Color]::FromArgb(14,18,26)
             $lblPost.Visible = $postVisible
             $lblPost.BringToFront()
         }
@@ -1470,7 +1486,7 @@ function Apply-MediaForgeActualCadenceUi {
             $chkPostSample.Location = New-Object System.Drawing.Point(42,970)
             $chkPostSample.Size = New-Object System.Drawing.Size(118,22)
             $chkPostSample.Font = New-Object System.Drawing.Font('Segoe UI',9.5,[System.Drawing.FontStyle]::Regular)
-            $chkPostSample.BackColor = [System.Drawing.Color]::FromArgb(12,16,22)
+            $chkPostSample.BackColor = [System.Drawing.Color]::FromArgb(14,18,26)
             $chkPostSample.ForeColor = [System.Drawing.Color]::FromArgb(230,236,244)
             $chkPostSample.Visible = $postVisible
             $chkPostSample.BringToFront()
@@ -1480,7 +1496,7 @@ function Apply-MediaForgeActualCadenceUi {
             $chkPostMinfo.Location = New-Object System.Drawing.Point(174,970)
             $chkPostMinfo.Size = New-Object System.Drawing.Size(140,22)
             $chkPostMinfo.Font = New-Object System.Drawing.Font('Segoe UI',9.5,[System.Drawing.FontStyle]::Regular)
-            $chkPostMinfo.BackColor = [System.Drawing.Color]::FromArgb(12,16,22)
+            $chkPostMinfo.BackColor = [System.Drawing.Color]::FromArgb(14,18,26)
             $chkPostMinfo.ForeColor = [System.Drawing.Color]::FromArgb(230,236,244)
             $chkPostMinfo.Visible = $postVisible
             $chkPostMinfo.BringToFront()
@@ -1503,7 +1519,7 @@ function Apply-MediaForgeActualCadenceUi {
         Set-MFStableButton $btnEncode $encodeText 'primary' 15
         Set-MFStableButton $btnCancel "⊗`r`nCancel" 'danger' 14
 
-        foreach($ctl in @($hdrGlyph,$hdrTitle,$hdrVer,$hdrDivider,$lblSource,$rbDvd,$rbBd,$rbFile,$rbCd,$driveHdr,$cmbDrive,$txtFile,$btnScan,$btnBrowse,$lblTitles,$lstTitles,$grpSet,$lblName,$txtName,$lblImdb,$txtImdb,$lblYear,$txtYear,$lblGrid,$grid,$logHdr,$log,$progressHdr,$progress,$lblStat,$lblPlan,$lblTools,$lblPost,$chkPostSample,$chkPostMinfo,$script:AfterEncodeHint,$btnSample,$btnMinfo,$btnDump,$btnImdbDump,$btnPosterGrab,$btnEncode,$btnCancel,$btnClearLog,$btnSaveLog)) {
+        foreach($ctl in @($hdrGlyph,$hdrTitle,$hdrVer,$script:HeaderSub,$hdrDivider,$lblSource,$rbDvd,$rbBd,$rbFile,$rbCd,$driveHdr,$cmbDrive,$txtFile,$btnScan,$btnBrowse,$lblTitles,$lstTitles,$grpSet,$lblName,$txtName,$lblImdb,$txtImdb,$lblYear,$txtYear,$lblGrid,$grid,$logHdr,$log,$progressHdr,$progress,$lblStat,$lblPlan,$lblTools,$lblPost,$chkPostSample,$chkPostMinfo,$script:AfterEncodeHint,$btnSample,$btnMinfo,$btnDump,$btnImdbDump,$btnPosterGrab,$btnEncode,$btnCancel,$btnClearLog,$btnSaveLog)) {
             try { if($ctl){ $ctl.BringToFront() } } catch { }
         }
     } catch {
