@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file:     imdbthumbgrab.ps1
 # author:   Mike Redd
-# version:  1.2
+# version:  1.3
 # created:  2026-04-11
 # updated:  2026-04-11
 # desc:     Search OMDb by title/year or IMDb ID,
@@ -15,41 +15,47 @@ param(
     [string]$ImdbId  = "",
     [string]$ApiKey  = "",
     [switch]$Show,
-    [switch]$Help
+    [switch]$NonInteractive,
+    [switch]$Help,
+    [string]$PosterDir = ""
 )
 
-# ── Load custom UI ────────────────────────────────────────────
-$uiPath = "$env:USERPROFILE\PS\profile.d\ui.ps1"
-if (Test-Path -LiteralPath $uiPath) {
-    try {
-        . $uiPath
-    } catch {
-        Write-Host "Failed to load ui.ps1: $($_.Exception.Message)"
-        return
-    }
-} else {
-    Write-Host "Missing ui.ps1: $uiPath"
-    return
-}
+$script:NonInteractive = [bool]$NonInteractive -or ($env:MEDIAFORGE_GUI -eq '1') -or ($env:MEDIAFORGE_NONINTERACTIVE -eq '1')
 
-# ── Load core helper ──────────────────────────────────────────
-$corePath = "$env:USERPROFILE\PS\profile.d\core.ps1"
-if (Test-Path -LiteralPath $corePath) {
-    try {
-        . $corePath
-    } catch {
-        Write-Host "Failed to load core.ps1: $($_.Exception.Message)"
+# ── Load custom UI ────────────────────────────────────────────
+if (-not $script:NonInteractive) {
+    $uiPath = "$env:USERPROFILE\PS\profile.d\ui.ps1"
+    if (Test-Path -LiteralPath $uiPath) {
+        try {
+            . $uiPath
+        } catch {
+            Write-Host "Failed to load ui.ps1: $($_.Exception.Message)"
+            return
+        }
+    } else {
+        Write-Host "Missing ui.ps1: $uiPath"
         return
     }
-} else {
-    Write-Host "Missing core.ps1: $corePath"
-    return
+
+    # ── Load core helper ──────────────────────────────────────────
+    $corePath = "$env:USERPROFILE\PS\profile.d\core.ps1"
+    if (Test-Path -LiteralPath $corePath) {
+        try {
+            . $corePath
+        } catch {
+            Write-Host "Failed to load core.ps1: $($_.Exception.Message)"
+            return
+        }
+    } else {
+        Write-Host "Missing core.ps1: $corePath"
+        return
+    }
 }
 
 $ErrorActionPreference = 'Stop'
 
 $ScriptName    = "ImdbThumbGrab"
-$ScriptVersion = "1.2"
+$ScriptVersion = "1.3"
 $ScriptAuthor  = "Mike Redd"
 
 # ── Load config ───────────────────────────────────────────────
@@ -73,7 +79,9 @@ if (-not $ApiKey) {
     $ApiKey = $global:OMDB_API_KEY
 }
 
-$Script:PosterDir = if ($global:MINFO_POSTERDIR) {
+$Script:PosterDir = if ($PosterDir) {
+    $PosterDir
+} elseif ($global:MINFO_POSTERDIR) {
     $global:MINFO_POSTERDIR
 } else {
     "G:\Rip\meta\posters"
@@ -360,6 +368,44 @@ function Invoke-ThumbLookup {
     Pause-Script
 }
 
+function Invoke-ThumbLookupPlain {
+    param(
+        [string]$Title,
+        [string]$Year,
+        [string]$ImdbId
+    )
+
+    Write-Host "Mode: $(if ($ImdbId) { 'IMDb ID lookup' } else { 'Title lookup' })"
+    if ($Title)  { Write-Host "Title: $Title" }
+    if ($Year)   { Write-Host "Year: $Year" }
+    if ($ImdbId) { Write-Host "IMDb ID: $ImdbId" }
+
+    $response = Get-ImdbThumbData -Title $Title -Year $Year -ImdbId $ImdbId -ApiKey $ApiKey -CurlExe $script:curlExe
+
+    $mTitle  = if ($response.Title)      { $response.Title }      else { "N/A" }
+    $mYear   = if ($response.Year)       { $response.Year }       else { "N/A" }
+    $mImdbId = if ($response.imdbID)     { $response.imdbID }     else { "N/A" }
+    $mPoster = if ($response.Poster)     { $response.Poster }     else { "N/A" }
+    $mRated  = if ($response.imdbRating) { $response.imdbRating } else { "N/A" }
+
+    Write-Host "Result: $mTitle ($mYear)"
+    Write-Host "IMDb ID: $mImdbId"
+    Write-Host "IMDb Rating: $mRated"
+
+    if (-not $mPoster -or $mPoster -eq "N/A") {
+        throw 'No poster was returned by OMDb.'
+    }
+
+    $baseName = Get-SafePosterName -Title $mTitle -Year $mYear -ImdbId $mImdbId
+    $outFile  = Join-Path $Script:PosterDir "$baseName.jpg"
+
+    Write-Host 'Downloading poster...'
+    $savedFile = Save-PosterFile -PosterUrl $mPoster -OutFile $outFile -CurlExe $script:curlExe
+    $size = [Math]::Round($savedFile.Length / 1KB, 1)
+    Write-Host "Poster saved: $outFile  (${size} KB)"
+    return $outFile
+}
+
 function Start-InteractiveMode {
     while ($true) {
         Show-Header
@@ -418,6 +464,7 @@ foreach ($c in @(
 }
 
 if (-not $script:curlExe) {
+    if ($script:NonInteractive) { throw 'curl.exe not found.' }
     Show-Header
     Write-UiRow "curl.exe" "not found" $global:UI_RED
     Write-UiBlankLine
@@ -432,6 +479,7 @@ if ($Help) {
 }
 
 if (-not $ApiKey -or $ApiKey -eq "your_api_key_here") {
+    if ($script:NonInteractive) { throw 'OMDB_API_KEY not set. Set it in minforc.ps1 or pass -ApiKey.' }
     Show-Header
     Write-UiRow "Status" "OMDB_API_KEY not set" $global:UI_RED
     Write-UiBlankLine
@@ -443,6 +491,12 @@ if (-not $ApiKey -or $ApiKey -eq "your_api_key_here") {
 }
 
 # ── Main ──────────────────────────────────────────────────────
+if ($script:NonInteractive) {
+    if (-not $Title -and -not $ImdbId) { throw 'A title or IMDb ID is required in noninteractive mode.' }
+    Invoke-ThumbLookupPlain -Title $Title -Year $Year -ImdbId $ImdbId
+    return
+}
+
 if (-not $Title -and -not $ImdbId) {
     Start-InteractiveMode
     return

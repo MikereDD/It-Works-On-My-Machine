@@ -1,15 +1,20 @@
-﻿#--------------------------------------------
+#--------------------------------------------
 # file:     mkv-sample.ps1
 # author:   Mike Redd / ChatGPT
-# version:  1.1
+# version:  1.2
 # created:  2026-04-16
-# updated:  2026-06-17
+# updated:  2026-07-09
 # desc:     Create a short sample clip
 #           from a finished MKV file
 #           in G:\Rip\raw265 using ffmpeg
+#           v1.2: GUI/non-interactive safe helpers
+#                 and output path return
 #--------------------------------------------
 
-param()
+param(
+    [string]$SourceFile = "",
+    [switch]$NonInteractive
+)
 
 # ── Load custom UI ────────────────────────────────────────────
 $uiPath = "$env:USERPROFILE\PS\profile.d\ui.ps1"
@@ -45,8 +50,35 @@ else {
 
 $ErrorActionPreference = 'Stop'
 
+# ── Console-less safety (GUI runspace) ────────────────────────
+# MediaForge runs this engine in a background runspace with no real console.
+# The shared UI helpers can try to move the cursor, which can throw in that
+# host. In non-interactive mode, override just the output helpers with plain
+# Write-Host versions so sample generation can run after an encode.
+if ($NonInteractive -or $env:MKVSAMPLE_NOMENU) {
+    function Write-UiBlankLine { Write-Host '' }
+    function Write-UiDivider   { Write-Host ('-' * 60) }
+    function Write-UiHeader {
+        param([string]$Title, [string]$Subtitle, [int]$Width)
+        Write-Host ''
+        Write-Host ("=== {0} ===" -f $Title)
+        if ($Subtitle) { Write-Host ("    {0}" -f $Subtitle) }
+    }
+    function Write-UiRow {
+        param([string]$Label, [string]$Value, [string]$Color)
+        Write-Host ("  {0,-12} {1}" -f $Label, $Value)
+    }
+    function Get-UiBoxWidth {
+        param([int]$MaxWidth = 64, [int]$MinWidth = 46)
+        return $MinWidth
+    }
+    function Write-CoreError { param([string]$Message) Write-Host "ERROR: $Message" }
+    function Pause-Core { param([string]$Message) }
+    function Clear-UiScreen { }
+}
+
 $ScriptName    = "MKV Sample"
-$ScriptVersion = "1.1"
+$ScriptVersion = "1.2"
 $ScriptAuthor  = "Mike Redd"
 
 # ── Config ────────────────────────────────────────────────────
@@ -260,6 +292,9 @@ function Create-SampleFile {
 
     $args = @(
         '-hide_banner',
+        '-loglevel', 'warning',
+        '-probesize', '100M',
+        '-analyzeduration', '300M',
         '-y',
         '-ss', $sampleStart,
         '-i', $SourceFile.FullName,
@@ -271,10 +306,17 @@ function Create-SampleFile {
         $outputFile
     )
 
-    & $Script:FFmpegPath @args
+    # ffmpeg writes normal progress and stream information to stderr. Capture it
+    # so the GUI does not present successful sample creation as scary ERR lines.
+    $ffmpegOutput = @(& $Script:FFmpegPath @args 2>&1)
+    $ffmpegExit = $LASTEXITCODE
 
-    if ($LASTEXITCODE -ne 0) {
-        throw "ffmpeg failed with exit code $LASTEXITCODE"
+    if ($ffmpegExit -ne 0) {
+        foreach ($line in $ffmpegOutput) {
+            $text = [string]$line
+            if ($text.Trim()) { Write-Host "  ffmpeg  $text" }
+        }
+        throw "ffmpeg failed with exit code $ffmpegExit"
     }
 
     Start-Sleep -Milliseconds 300
@@ -292,6 +334,8 @@ function Create-SampleFile {
     Write-Host "  $($global:UI_GRN)Sample complete.$($global:UI_R)"
     Write-Host "  $($global:UI_DIM)Saved $($global:UI_R)  $($outputInfo.FullName)"
     Write-Host "  $($global:UI_DIM)Size  $($global:UI_R)  $([math]::Round(($outputInfo.Length / 1MB), 2)) MB"
+
+    return [string]$outputInfo.FullName
 }
 
 function Create-SampleFromSelectedFile {
@@ -350,6 +394,20 @@ function Show-Config {
     Write-UiRow "FFmpeg"      $Script:FFmpegPath $global:UI_GRY
     Write-UiRow "FFprobe"     $Script:FFprobePath $global:UI_GRY
     Pause-Script
+}
+
+if (($NonInteractive -or $env:MKVSAMPLE_NOMENU) -and $SourceFile) {
+    try {
+        Ensure-Dependencies
+        Ensure-Directories
+        $fi = Get-Item -LiteralPath $SourceFile
+        Create-SampleFile -SourceFile $fi
+    }
+    catch {
+        Write-Host "ERROR: $($_.Exception.Message)"
+        throw
+    }
+    return
 }
 
 if (-not $env:MKVSAMPLE_NOMENU) {

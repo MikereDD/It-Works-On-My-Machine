@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/version-v1.9.7-d9dde4?style=for-the-badge&labelColor=111318">
+  <img alt="Version" src="https://img.shields.io/badge/version-v1.10.6-d9dde4?style=for-the-badge&labelColor=111318">
   <img alt="PowerShell" src="https://img.shields.io/badge/PowerShell-7.6+-d9dde4?style=for-the-badge&labelColor=111318">
   <img alt="Platform" src="https://img.shields.io/badge/Windows-Media%20Tools-d9dde4?style=for-the-badge&labelColor=111318">
   <img alt="Project" src="https://img.shields.io/badge/It%20Works%20On%20My%20Machine-MediaForge-d9dde4?style=for-the-badge&labelColor=111318">
@@ -45,11 +45,13 @@ Or double-click:
 MediaForge.vbs
 ```
 
-`media-encoder-gui.ps1` is kept only as a compatibility shim for older menu entries. The real GUI is:
+The MediaForge GUI now uses the MediaForge name only:
 
 ```text
 mediaforge-gui.ps1
 ```
+
+Legacy `media-encoder*` launcher and icon files were removed after the project rename. Update any old shortcut or Tool Menu entry to point at `mediaforge-gui.ps1`.
 
 ---
 
@@ -60,8 +62,8 @@ mediaforge-gui.ps1
 | **Blu-ray** | Backup, track dump, metadata sidecars, HEVC encode, audio/subtitle language handling |
 | **DVD** | Rip and encode through the production DVD workflow |
 | **Audio CD** | FLAC ripping, MusicBrainz lookup, album art workflow, track/image modes |
-| **Samples** | Create MKV/MP4 sample clips from finished media |
-| **Metadata** | Create MiNFO / NFO style reports for finished media |
+| **Samples** | Create MKV/MP4 sample clips from finished media, including post-encode GUI automation |
+| **Metadata** | Create MiNFO / NFO/HTML reports for finished media, with IMDb ID or GUI title/year fallback |
 | **IMDb / Posters** | Metadata lookup and poster grabbing through the helper tools |
 | **GUI** | One polished front end for DVD, Blu-ray, file tools, and Audio CD workflows |
 | **Tool Menu** | Scripts are grouped under MediaForge for clean launching |
@@ -72,8 +74,7 @@ mediaforge-gui.ps1
 
 ```text
 MediaForge\
-  mediaforge-gui.ps1              # real GUI
-  media-encoder-gui.ps1           # compatibility shim
+  mediaforge-gui.ps1              # main GUI
   MediaForge.vbs                  # double-click launcher
 
   bluray-backup.ps1
@@ -114,7 +115,7 @@ MediaForge\
 From PowerShell, after extracting the package:
 
 ```powershell
-$src = "$HOME\Downloads\MediaForge-v1.9.7-readme-screenshot\MediaForge"
+$src = "$HOME\Downloads\MediaForge-v1.10.6-gui-poster-download\MediaForge"
 $dst = "$HOME\PS\scripts\personaltools\MediaForge"
 
 New-Item -ItemType Directory -Force $dst | Out-Null
@@ -233,6 +234,59 @@ Bad:   C:\Users\Somebody\...
 
 ## Release notes
 
+
+### v1.10.6 GUI Poster Download
+
+- Runs `imdbthumbgrab.ps1` directly from the MediaForge GUI in non-interactive mode.
+- Downloads the poster from the GUI without launching a separate console window.
+- Uses the IMDb ID field when available, otherwise falls back to title/year.
+- Logs the saved poster path in the MediaForge log console.
+- Keeps the locked theme, layout, source icons, and workflow unchanged.
+
+### v1.10.5 Minfo GUI Runspace Fix
+
+- Fixes Minfo / NFO creation from the MediaForge GUI background runspace.
+- Hardens `minfocreate.ps1 -NonInteractive` so it never calls console cursor / RawUI helpers.
+- Keeps interactive console MiNfoCreate behavior unchanged.
+- Keeps the locked MediaForge theme, layout, source icons, and workflow unchanged.
+
+### v1.10.2 Minfo Argument Fix
+
+- Fixed GUI Minfo/NFO creation passing IMDb arguments into `minfocreate.ps1`.
+- Uses an explicit `-Mode single` call for file-mode NFO/HTML creation.
+- Avoids the PowerShell automatic `$args` variable during runspace tool calls.
+- Keeps the locked MediaForge theme/layout unchanged.
+
+### v1.10.1 MediaForge Naming Cleanup
+
+- Remove legacy `media-encoder*` wrapper and icon files after the project rename.
+- Keep `mediaforge-gui.ps1`, `MediaForge.vbs`, `mediaforge.ico`, and `mediaforge.png` as the canonical launch/icon files.
+- Rename Media Encoder leftovers in logs, comments, save-log filename, and dialog titles to MediaForge.
+- Keep production theme, layout, workflow, and post-tool behavior unchanged.
+
+### v1.10.0 Sample Log Cleanup
+
+- Keep the MediaForge production theme and layout unchanged.
+- Clean up successful sample generation so normal ffmpeg stderr output is not shown as scary `ERR` lines.
+- Add stronger ffmpeg probe settings for sample creation to reduce subtitle stream warnings.
+- Print ffmpeg output only when sample creation actually fails.
+
+### v1.9.9 Post-Encode Tools Automation
+
+- Makes the post-encode Sample and Minfo / NFO steps production-safe from the GUI.
+- Adds GUI-safe non-interactive sample generation so the background runspace does not trip on console cursor helpers.
+- Allows Minfo/NFO/HTML generation to use the GUI title/year when an IMDb ID is not entered.
+- Logs created sample, NFO, HTML, and poster paths when helper tools return them.
+- Leaves the locked MediaForge theme, layout, buttons, source icons, and workflow unchanged.
+
+### v1.9.8 Metadata Language Safety Fix
+
+- Hardens BRencoder metadata tagging against invalid one-letter language tags from CLPI / ffprobe edge cases.
+- Prevents `mkvpropedit` from failing after a completed long encode because of tags like `language=e`.
+- Falls back to matching sidecar metadata language when a physical stream language is partial or invalid.
+- Uses `und` as the final safe fallback instead of writing an invalid language tag.
+- Bumps BRencoder to v3.2.1.
+
 ### v1.9.7 Progress Layout Fix
 
 - Keeps the premium MediaForge theme direction.
@@ -264,3 +318,4 @@ MediaForge is meant to be practical, local, and repairable.
 It is not trying to be a streaming platform. It is a personal media workshop: rip the disc, preserve the tracks, tag the output, create the sidecars, and keep the workflow understandable.
 
 > If it works on my machine, it gets forged here.
+

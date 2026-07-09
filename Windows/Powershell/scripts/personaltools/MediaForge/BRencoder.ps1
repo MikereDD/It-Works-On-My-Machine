@@ -70,7 +70,7 @@ else {
 $ErrorActionPreference = 'Stop'
 
 $ScriptName    = "Blu-ray Encoder"
-$ScriptVersion = "3.2.0"
+$ScriptVersion = "3.2.1"
 $ScriptAuthor  = "Mike Redd"
 
 # ── Config ────────────────────────────────────────────────────
@@ -976,6 +976,48 @@ function Resolve-LanguageCode {
 }
 
 
+function Resolve-MKVToolLanguage {
+    <#
+    .SYNOPSIS
+        Returns a safe 3-letter language tag for ffmpeg / mkvpropedit.
+    .DESCRIPTION
+        Some Blu-ray CLPI subtitle entries can parse as partial junk such as
+        "e". mkvpropedit rejects that as an invalid BCP-47/RFC-5646 tag after
+        the long encode has already completed. This helper rejects partial tags,
+        tries deterministic fallbacks, and finally uses und instead of failing.
+    #>
+    param(
+        [string]$Code,
+        [string[]]$Fallbacks = @()
+    )
+
+    $candidates = @()
+    if (-not [string]::IsNullOrWhiteSpace($Code)) { $candidates += [string]$Code }
+    foreach ($fb in @($Fallbacks)) {
+        if (-not [string]::IsNullOrWhiteSpace($fb)) { $candidates += [string]$fb }
+    }
+
+    foreach ($candidate in $candidates) {
+        $lang = Resolve-LanguageCode -Code $candidate
+        if ($lang -match '^[a-z]{3}$' -and $lang -ne 'und') { return $lang }
+    }
+
+    return 'und'
+}
+
+function Get-FallbackMetaLanguage {
+    param(
+        [object[]]$Tracks,
+        [int]$Index
+    )
+
+    if ($Tracks -and $Index -ge 0 -and $Index -lt $Tracks.Count) {
+        return (Get-MetaLanguage -Track $Tracks[$Index])
+    }
+
+    return 'und'
+}
+
 function Get-TrackMetaTitle {
     param([Parameter(Mandatory)][object]$Meta)
 
@@ -1585,21 +1627,22 @@ function Invoke-MKVLanguageRemux {
         $metaTrack = if ($i -lt $AudioMeta.Count) { $AudioMeta[$i] } else { $null }
         $o = $ovrAudio[$i + 1]
         if ($o) {
-            $lang      = Resolve-LanguageCode -Code ([string]$o.lang)
+            $lang      = Resolve-MKVToolLanguage -Code ([string]$o.lang) -Fallbacks @((Get-FallbackMetaLanguage -Tracks $AudioMeta -Index $i))
             $name      = if ($o.PSObject.Properties['name'] -and $o.name) { [string]$o.name } else { $null }
             $isDefault = [bool]$o.default
             $isComm    = [bool]$o.commentary
             $src       = 'override'
         }
         elseif ($useClpiAudio -or $useMetaAudio) {
-            $lang      = if ($useClpiAudio) { [string]$clpiAudLangs[$i] } else { [string]$metaAudLangs[$i] }
+            $rawLang   = if ($useClpiAudio) { [string]$clpiAudLangs[$i] } else { [string]$metaAudLangs[$i] }
+            $lang      = Resolve-MKVToolLanguage -Code $rawLang -Fallbacks @((Get-FallbackMetaLanguage -Tracks $AudioMeta -Index $i))
             $name      = New-AudioTrackName -Codec ([string]$TrackLayout.AudioTracks[$i].codec) -Channels ([int]$TrackLayout.AudioTracks[$i].properties.audio_channels) -Lang $lang
             $isDefault = (($i + 1) -eq $audDefaultIndex)
             $isComm    = $false
             $src       = if ($useClpiAudio) { 'clpi' } else { 'sidecar-physical' }
         }
         elseif ($metaTrack) {
-            $lang      = Get-MetaLanguage -Track $metaTrack
+            $lang      = Resolve-MKVToolLanguage -Code (Get-MetaLanguage -Track $metaTrack)
             $name      = Get-MetaTrackName -Track $metaTrack
             $isDefault = (($i + 1) -eq $audDefaultIndex)
             $isComm    = $false
@@ -1613,6 +1656,7 @@ function Invoke-MKVLanguageRemux {
             $name = if ($ln) { "$ln Commentary" } else { 'Commentary' }
         }
 
+        $lang = Resolve-MKVToolLanguage -Code $lang -Fallbacks @((Get-FallbackMetaLanguage -Tracks $AudioMeta -Index $i))
         $propArgs += '--edit'
         $propArgs += "track:a$($i + 1)"
         $propArgs += '--set'
@@ -1650,7 +1694,8 @@ function Invoke-MKVLanguageRemux {
         # track); English is forced default below.
         $o = $ovrSub[$i + 1]
         if ($useClpiSubs -or $useMetaSubs) {
-            $lang   = if ($useClpiSubs) { [string]$clpiSubLangs[$i] } else { [string]$metaSubLangs[$i] }
+            $rawLang = if ($useClpiSubs) { [string]$clpiSubLangs[$i] } else { [string]$metaSubLangs[$i] }
+            $lang   = Resolve-MKVToolLanguage -Code $rawLang -Fallbacks @((Get-FallbackMetaLanguage -Tracks $SubMeta -Index $i))
             $forced = [bool]$seenSubLang[$lang]
             $seenSubLang[$lang] = $true
             $isComm = $false
@@ -1661,21 +1706,21 @@ function Invoke-MKVLanguageRemux {
             # Authoritative per-stream tags from the source .mkv, in physical
             # 0:s order. forced comes from the source forced_track flag so the
             # encode map and this remux name forced subs identically.
-            $lang   = [string]$srcSubLangs[$i]
+            $lang   = Resolve-MKVToolLanguage -Code ([string]$srcSubLangs[$i]) -Fallbacks @((Get-FallbackMetaLanguage -Tracks $SubMeta -Index $i))
             $forced = [bool]$srcSubForced[$i]
             $isComm = $false
             $isDef  = $false
             $name   = $null
         }
         elseif ($o) {
-            $lang   = Resolve-LanguageCode -Code ([string]$o.lang)
+            $lang   = Resolve-MKVToolLanguage -Code ([string]$o.lang) -Fallbacks @((Get-FallbackMetaLanguage -Tracks $SubMeta -Index $i))
             $forced = [bool]$o.forced
             $isComm = [bool]$o.commentary
             $isDef  = [bool]$o.default
             $name   = if ($o.PSObject.Properties['name'] -and $o.name) { [string]$o.name } else { $null }
         }
         else {
-            if     ($i -lt $SubMeta.Count) { $lang = Get-MetaLanguage -Track $SubMeta[$i] }
+            if     ($i -lt $SubMeta.Count) { $lang = Resolve-MKVToolLanguage -Code (Get-MetaLanguage -Track $SubMeta[$i]) }
             else                           { $lang = 'und' }
             $forced = [bool]($sidecarSubMatches -and $SubMeta[$i].Forced)
             $isComm = $false
@@ -1693,6 +1738,7 @@ function Invoke-MKVLanguageRemux {
             }
         }
 
+        $lang = Resolve-MKVToolLanguage -Code $lang -Fallbacks @((Get-FallbackMetaLanguage -Tracks $SubMeta -Index $i))
         $effSub.Add([pscustomobject]@{ Lang = $lang; Name = $name; Forced = $forced; Commentary = $isComm; Default = $isDef })
     }
 
@@ -1718,10 +1764,12 @@ function Invoke-MKVLanguageRemux {
     $langSrc = if ($useClpiSubs) { 'clpi' } elseif ($useMetaSubs) { 'sidecar-physical' } elseif ($useSrcSubs) { 'source-mkv' } elseif ($ovrSub.Count -gt 0) { 'override' } else { 'sidecar' }
     for ($i = 0; $i -lt $effSub.Count; $i++) {
         $t = $effSub[$i]
+        $safeSubLang = Resolve-MKVToolLanguage -Code ([string]$t.Lang) -Fallbacks @((Get-FallbackMetaLanguage -Tracks $SubMeta -Index $i))
+        $t.Lang = $safeSubLang
         $propArgs += '--edit'
         $propArgs += "track:s$($i + 1)"
         $propArgs += '--set'
-        $propArgs += "language=$($t.Lang)"
+        $propArgs += "language=$safeSubLang"
 
         if (-not [string]::IsNullOrWhiteSpace($t.Name)) {
             $propArgs += '--set'
@@ -1824,7 +1872,7 @@ function Get-StreamLanguagesFromSource {
         $rawLang = if ($audioStreams[$i].tags -and $audioStreams[$i].tags.language) {
             [string]$audioStreams[$i].tags.language
         } else { 'und' }
-        $lang = Resolve-LanguageCode -Code $rawLang
+        $lang = Resolve-MKVToolLanguage -Code $rawLang
         $trackRef = "track:a$($i + 1)"
         $propArgs += '--edit'
         $propArgs += $trackRef
@@ -1838,7 +1886,7 @@ function Get-StreamLanguagesFromSource {
         $rawLang = if ($subStreams[$i].tags -and $subStreams[$i].tags.language) {
             [string]$subStreams[$i].tags.language
         } else { 'und' }
-        $lang = Resolve-LanguageCode -Code $rawLang
+        $lang = Resolve-MKVToolLanguage -Code $rawLang
         $trackRef = "track:s$($i + 1)"
         $propArgs += '--edit'
         $propArgs += $trackRef
@@ -2148,13 +2196,14 @@ function New-FFmpegMapArgsFromTrackMetadata {
 
     for ($i = 0; $i -lt $audCount; $i++) {
         if ($useSrcTags) {
-            $lang = $srcAudLangs[$i]
+            $lang = Resolve-MKVToolLanguage -Code ([string]$srcAudLangs[$i]) -Fallbacks @((Get-FallbackMetaLanguage -Tracks $audioMeta -Index $i))
             $name = $srcAudNames[$i]
         } else {
             $lang = & $physAudioAt $i
             $name = if ($i -lt $audioMeta.Count) { Get-MetaTrackName -Track $audioMeta[$i] } else { $null }
         }
 
+        $lang = Resolve-MKVToolLanguage -Code $lang -Fallbacks @((Get-FallbackMetaLanguage -Tracks $audioMeta -Index $i))
         $ffMapArgs += ("-metadata:s:a:{0}" -f $i)
         $ffMapArgs += "language=$lang"
 
@@ -2166,7 +2215,7 @@ function New-FFmpegMapArgsFromTrackMetadata {
 
     for ($i = 0; $i -lt $subCount; $i++) {
         if ($useSrcTags) {
-            $lang     = $srcSubLangs[$i]
+            $lang     = Resolve-MKVToolLanguage -Code ([string]$srcSubLangs[$i]) -Fallbacks @((Get-FallbackMetaLanguage -Tracks $subMeta -Index $i))
             $name     = $srcSubNames[$i]
             $isForced = $srcSubForced[$i]
             $isDef    = $false
@@ -2176,6 +2225,7 @@ function New-FFmpegMapArgsFromTrackMetadata {
             }
         } else {
             $lang = & $physSubAt $i
+            $lang = Resolve-MKVToolLanguage -Code $lang -Fallbacks @((Get-FallbackMetaLanguage -Tracks $subMeta -Index $i))
             $sidecarPositionSafe = ($subMeta.Count -eq $subCount -and -not ($sourceLabel -in @('source-clpi','sidecar-physical','source-probe')))
             if ($sidecarPositionSafe -and $i -lt $subMeta.Count) {
                 $name     = Get-MetaTrackName -Track $subMeta[$i]

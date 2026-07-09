@@ -1,7 +1,7 @@
-﻿#--------------------------------------------
+#--------------------------------------------
 # file:     minfocreate.ps1
 # author:   Mike Redd
-# version:  2.10
+# version:  2.15
 # created:  2026-04-11
 # updated:  2026-06-21
 # desc:     Create NFO, HTML, and poster data
@@ -22,6 +22,14 @@
 #           v2.10: -VideoFile accepts a full path (split to dir+name)
 #                  for GUI/scripted callers; auto-mode resolves to
 #                  single under -NonInteractive (no console prompt).
+#           v2.11: -SearchTitle/-SearchYear for GUI non-interactive
+#                  NFO/HTML generation when IMDb ID is blank.
+#           v2.12: packaged with GUI v1.10.2 Minfo argument-binding fix.
+#           v2.13: GUI runspace hardening for cursor-free NonInteractive mode.
+#           v2.14: skip shared UI/core loading under -NonInteractive and route
+#                  Write-Host through output stream for GUI capture.
+#           v2.15: honor MEDIAFORGE_GUI/MEDIAFORGE_NONINTERACTIVE env flags
+#                  so GUI runspaces cannot accidentally load cursor UI helpers.
 #--------------------------------------------
 
 param(
@@ -29,68 +37,67 @@ param(
     [string]$VideoFile = "",
     [string]$ApiKey    = "",
     [ValidateSet('auto','single','series','docu')]
-    [string]$Mode      = 'auto',
+    [string]$Mode       = 'auto',
     [string]$SeriesName = "",
     [string]$ImdbId     = "",
+    [string]$SearchTitle = "",
+    [string]$SearchYear  = "",
     [switch]$NonInteractive,
     [switch]$Preview
 )
 
-# ── Load custom UI ────────────────────────────────────────────
-$uiPath = "$env:USERPROFILE\PS\profile.d\ui.ps1"
-if (Test-Path -LiteralPath $uiPath) {
-    try {
-        . $uiPath
-    } catch {
-        Write-Host "Failed to load ui.ps1: $($_.Exception.Message)"
-        return
+# ── Host/UI bootstrap ──────────────────────────────────────────
+# Interactive console runs use the shared UI/core helpers. GUI/scripted
+# runs (-NonInteractive or MEDIAFORGE_GUI=1) must not dot-source those
+# helpers because some of them draw by setting RawUI.CursorPosition, which
+# fails in a background runspace or redirected host.
+$Script:MinfoNonInteractive = [bool](
+    $NonInteractive -or
+    ($env:MEDIAFORGE_GUI -eq '1') -or
+    ($env:MEDIAFORGE_NONINTERACTIVE -eq '1')
+)
+
+if ($Script:MinfoNonInteractive) {
+    $global:UI_R   = ''
+    $global:UI_RED = ''
+    $global:UI_GRN = ''
+    $global:UI_YLW = ''
+    $global:UI_CYN = ''
+    $global:UI_GRY = ''
+
+    function Write-Host {
+        param(
+            [Parameter(Position = 0, ValueFromRemainingArguments = $true)]
+            [object[]]$Object,
+            [switch]$NoNewline,
+            [object]$ForegroundColor,
+            [object]$BackgroundColor,
+            [string]$Separator = ' '
+        )
+        if ($null -eq $Object -or $Object.Count -eq 0) {
+            if (-not $NoNewline) { Write-Output '' }
+            return
+        }
+        $line = ($Object | ForEach-Object { [string]$_ }) -join $Separator
+        Write-Output $line
     }
-} else {
-    Write-Host "Missing ui.ps1: $uiPath"
-    return
-}
 
-# ── Load core helper ──────────────────────────────────────────
-$corePath = "$env:USERPROFILE\PS\profile.d\core.ps1"
-if (Test-Path -LiteralPath $corePath) {
-    try {
-        . $corePath
-    } catch {
-        Write-Host "Failed to load core.ps1: $($_.Exception.Message)"
-        Pause-UiReturn "Press Enter to return..."
-        return
-    }
-} else {
-    Write-Host "Missing core.ps1: $corePath"
-    Pause-UiReturn "Press Enter to return..."
-    return
-}
-
-$ErrorActionPreference = 'Stop'
-
-# ── Console-less safety (GUI runspace) ────────────────────────
-# The shared UI helpers in ui.ps1 position the console cursor to draw boxes,
-# which throws ("setting CursorPosition") in a host with no real console such
-# as the GUI's background runspace. For non-interactive runs, override just
-# those helpers with plain, cursor-free equivalents. Interactive console runs
-# keep the full boxed UI untouched.
-if ($NonInteractive) {
-    function Write-UiBlankLine { Write-Host '' }
-    function Write-UiDivider   { Write-Host ('-' * 60) }
+    function Write-UiBlankLine { Write-Output '' }
+    function Write-UiDivider   { Write-Output ('-' * 60) }
     function Write-UiHeader {
         param([string]$Title, [string]$Subtitle, [int]$Width)
-        Write-Host ''
-        Write-Host ("=== {0} ===" -f $Title)
-        if ($Subtitle) { Write-Host ("    {0}" -f $Subtitle) }
+        Write-Output ''
+        Write-Output ("=== {0} ===" -f $Title)
+        if ($Subtitle) { Write-Output ("    {0}" -f $Subtitle) }
     }
     function Write-UiSection {
         param([string]$Text)
-        Write-Host ''
-        Write-Host ("-- {0} --" -f $Text)
+        Write-Output ''
+        Write-Output ("-- {0} --" -f $Text)
     }
     function Write-UiRow {
         param([string]$Label, [string]$Value, [string]$Color)
-        Write-Host ("  {0,-12} {1}" -f $Label, $Value)
+        Write-Output ("  {0,-12} {1}" -f $Label, $Value)
     }
     function Get-UiBoxWidth {
         param([int]$MaxWidth = 60, [int]$MinWidth = 44)
@@ -99,10 +106,46 @@ if ($NonInteractive) {
     function Pause-Core { param([string]$Message) }
     function Pause-UiReturn { param([string]$Message) }
     function Clear-UiScreen { }
+    function Read-Host {
+        param([string]$Prompt)
+        return ''
+    }
+} else {
+    # ── Load custom UI ────────────────────────────────────────────
+    $uiPath = "$env:USERPROFILE\PS\profile.d\ui.ps1"
+    if (Test-Path -LiteralPath $uiPath) {
+        try {
+            . $uiPath
+        } catch {
+            Write-Host "Failed to load ui.ps1: $($_.Exception.Message)"
+            return
+        }
+    } else {
+        Write-Host "Missing ui.ps1: $uiPath"
+        return
+    }
+
+    # ── Load core helper ──────────────────────────────────────────
+    $corePath = "$env:USERPROFILE\PS\profile.d\core.ps1"
+    if (Test-Path -LiteralPath $corePath) {
+        try {
+            . $corePath
+        } catch {
+            Write-Host "Failed to load core.ps1: $($_.Exception.Message)"
+            Pause-UiReturn "Press Enter to return..."
+            return
+        }
+    } else {
+        Write-Host "Missing core.ps1: $corePath"
+        Pause-UiReturn "Press Enter to return..."
+        return
+    }
 }
 
+$ErrorActionPreference = 'Stop'
+
 $ScriptName    = "MiNfoCreate"
-$ScriptVersion = "2.10"
+$ScriptVersion = "2.15"
 $ScriptAuthor  = "Mike Redd"
 
 # Shared NFO banner (figlet) reused by single-file and multi-file output.
@@ -139,14 +182,18 @@ if (-not $ApiKey) {
 }
 
 if (-not $ApiKey -or $ApiKey -eq "your_api_key_here") {
-    Clear-UiScreen
-    Write-UiHeader -Title $ScriptName -Subtitle "v$ScriptVersion  by $ScriptAuthor" -Width (Get-UiBoxWidth -MaxWidth 60 -MinWidth 44)
-    Write-UiRow "Status" "OMDB_API_KEY not set" $global:UI_RED
-    Write-UiBlankLine
-    Write-Host "  $($global:UI_CYN)Get a free key at: https://www.omdbapi.com/apikey.aspx$($global:UI_R)"
-    Write-Host "  $($global:UI_YLW)Then set it in minforc.ps1$($global:UI_R)"
-    Write-UiBlankLine
-    Pause-UiReturn "Press Enter to return..."
+    if ($Script:MinfoNonInteractive) {
+        Write-Host "OMDB_API_KEY not set. Set it in minforc.ps1 or pass -ApiKey."
+    } else {
+        Clear-UiScreen
+        Write-UiHeader -Title $ScriptName -Subtitle "v$ScriptVersion  by $ScriptAuthor" -Width (Get-UiBoxWidth -MaxWidth 60 -MinWidth 44)
+        Write-UiRow "Status" "OMDB_API_KEY not set" $global:UI_RED
+        Write-UiBlankLine
+        Write-Host "  $($global:UI_CYN)Get a free key at: https://www.omdbapi.com/apikey.aspx$($global:UI_R)"
+        Write-Host "  $($global:UI_YLW)Then set it in minforc.ps1$($global:UI_R)"
+        Write-UiBlankLine
+        Pause-UiReturn "Press Enter to return..."
+    }
     return
 }
 
@@ -242,6 +289,16 @@ function Show-PosterWindow {
 }
 
 function Show-Header {
+    if ($Script:MinfoNonInteractive) {
+        Write-Host ''
+        Write-Host ("=== {0} v{1} ===" -f $ScriptName, $ScriptVersion)
+        Write-Host ("  VideoDir   {0}" -f $VideoDir)
+        Write-Host ("  NfoDir     {0}" -f $Script:NfoDir)
+        Write-Host ("  PosterDir  {0}" -f $Script:PosterDir)
+        Write-Host ''
+        return
+    }
+
     Clear-UiScreen
     $w = Get-UiBoxWidth -MaxWidth 64 -MinWidth 46
 
@@ -254,7 +311,7 @@ function Show-Header {
 }
 
 function Pause-Script {
-    if ($NonInteractive) { return }
+    if ($Script:MinfoNonInteractive) { return }
     Pause-Core "Press Enter to return..."
 }
 
@@ -267,12 +324,23 @@ function Show-ResultTable {
 
     Write-UiBlankLine
     Write-UiDivider
-    Get-ChildItem -LiteralPath $Path | Format-Table Name, @{N="Size";E={
-        if ($_.PSIsContainer) { "<DIR>" }
-        elseif ($_.Length -ge 1MB) { "{0:N1} MB" -f ($_.Length / 1MB) }
-        elseif ($_.Length -ge 1KB) { "{0:N1} KB" -f ($_.Length / 1KB) }
-        else { "$($_.Length) B" }
-    }}, LastWriteTime -AutoSize
+
+    if ($Script:MinfoNonInteractive) {
+        Get-ChildItem -LiteralPath $Path -File | Sort-Object LastWriteTime -Descending | Select-Object -First 12 | ForEach-Object {
+            $size = if ($_.Length -ge 1MB) { "{0:N1} MB" -f ($_.Length / 1MB) }
+                    elseif ($_.Length -ge 1KB) { "{0:N1} KB" -f ($_.Length / 1KB) }
+                    else { "$($_.Length) B" }
+            Write-Host ("  output  {0}  ({1})" -f $_.FullName, $size)
+        }
+    } else {
+        Get-ChildItem -LiteralPath $Path | Format-Table Name, @{N="Size";E={
+            if ($_.PSIsContainer) { "<DIR>" }
+            elseif ($_.Length -ge 1MB) { "{0:N1} MB" -f ($_.Length / 1MB) }
+            elseif ($_.Length -ge 1KB) { "{0:N1} KB" -f ($_.Length / 1KB) }
+            else { "$($_.Length) B" }
+        }}, LastWriteTime -AutoSize
+    }
+
     Write-UiBlankLine
 }
 
@@ -606,7 +674,7 @@ function Invoke-MinfoSeries {
         Write-UiBlankLine
         Write-Host "  $($global:UI_YLW)$kindWord name:$($global:UI_R)"
         Write-Host "  $($global:UI_GRN)Default: $defaultName$($global:UI_R)"
-        if ($NonInteractive) {
+        if ($Script:MinfoNonInteractive) {
             $SeriesName = $defaultName
         } else {
             $inp = Read-Host "  Name (blank = default)"
@@ -620,7 +688,7 @@ function Invoke-MinfoSeries {
     if ($ImdbId -and $ImdbId -match '^tt\d+') {
         $search = $ImdbId; $year = ""
         Write-Host "  $($global:UI_GRN)Using IMDb ID: $ImdbId$($global:UI_R)"
-    } elseif ($NonInteractive) {
+    } elseif ($Script:MinfoNonInteractive) {
         $search = $SeriesName; $year = ""
     } else {
         Write-Host "  $($global:UI_CYN)Enter search title or IMDb ID (blank = '$SeriesName')$($global:UI_R)"
@@ -923,7 +991,7 @@ $useMode = $Mode
 if ($useMode -eq 'auto') {
     if ($VideoFile -or $allVids.Count -le 1) {
         $useMode = 'single'
-    } elseif ($NonInteractive) {
+    } elseif ($Script:MinfoNonInteractive) {
         # No console to prompt on (GUI runspace); default to single.
         # Pass -Mode series/docu explicitly for multi-file folders.
         $useMode = 'single'
@@ -992,7 +1060,7 @@ $defaultTitle = [System.IO.Path]::GetFileNameWithoutExtension($VideoFile) -repla
 Write-Host "  $($global:UI_YLW)Name your NFO/HTML files:$($global:UI_R)"
 Write-Host "  $($global:UI_GRN)Default: $defaultTitle$($global:UI_R)"
 Write-UiBlankLine
-if ($NonInteractive -or $ImdbId) {
+if ($Script:MinfoNonInteractive -or $ImdbId) {
     $title = $defaultTitle
 } else {
     Write-Host -NoNewline "  $($global:UI_YLW)Keep default? (y/n): $($global:UI_R)"
@@ -1021,9 +1089,17 @@ Write-UiSection "OMDb Lookup"
 if ($ImdbId -and $ImdbId -match '^tt\d+') {
     $searchInput = $ImdbId; $searchYear = ""
     Write-Host "  $($global:UI_GRN)Using IMDb ID: $ImdbId$($global:UI_R)"
-} elseif ($NonInteractive) {
+} elseif ($Script:MinfoNonInteractive -and -not [string]::IsNullOrWhiteSpace($SearchTitle)) {
+    $searchInput = $SearchTitle.Trim()
+    $searchYear  = if ($SearchYear -match '^\d{4}$') { $SearchYear } else { "" }
+    if ($searchYear) {
+        Write-Host "  $($global:UI_GRN)Using GUI title/year: $searchInput ($searchYear)$($global:UI_R)"
+    } else {
+        Write-Host "  $($global:UI_GRN)Using GUI title: $searchInput$($global:UI_R)"
+    }
+} elseif ($Script:MinfoNonInteractive) {
     $searchInput = ""; $searchYear = ""
-    Write-Host "  $($global:UI_GRY)No IMDb ID supplied; MediaInfo only.$($global:UI_R)"
+    Write-Host "  $($global:UI_GRY)No IMDb ID/title supplied; MediaInfo only.$($global:UI_R)"
 } else {
     Write-Host "  $($global:UI_CYN)Enter search title or IMDb ID (example: tt0083907)$($global:UI_R)"
     $searchInput = Read-Host "  Search"
@@ -1170,6 +1246,7 @@ $mediaInfoText
 $nfoContent | Out-File -LiteralPath $nfoFile -Encoding UTF8
 Write-UiBlankLine
 Write-Host "  $($global:UI_GRN)NFO saved: $nfoFile$($global:UI_R)"
+Write-Output $nfoFile
 
 # HTML-escape text fields
 # The NFO above is plain text and keeps raw values; the HTML below
@@ -1334,6 +1411,7 @@ $(if ($omdbOK) { "<div class=`"plot`">$mPlot</div>" })
 
 $htmContent | Out-File -LiteralPath $htmFile -Encoding UTF8
 Write-Host "  $($global:UI_GRN)HTML saved: $htmFile$($global:UI_R)"
+Write-Output $htmFile
 
 # ── Download poster ───────────────────────────────────────────
 if ($omdbOK -and $mPoster -ne "N/A") {
@@ -1345,6 +1423,7 @@ if ($omdbOK -and $mPoster -ne "N/A") {
 
     if ($LASTEXITCODE -eq 0 -and (Test-Path -LiteralPath $posterOut) -and (Get-Item -LiteralPath $posterOut).Length -gt 0) {
         Write-Host "  $($global:UI_GRN)Poster saved: $posterOut$($global:UI_R)"
+        Write-Output $posterOut
 
         if ($Preview) {
             if ([System.Threading.Thread]::CurrentThread.GetApartmentState() -ne 'STA') {

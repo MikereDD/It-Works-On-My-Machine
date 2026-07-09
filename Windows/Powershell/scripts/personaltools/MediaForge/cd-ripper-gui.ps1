@@ -30,7 +30,7 @@ $isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIde
 if (-not $isAdmin) {
     # Match the tool-menu convention: WinForms GUIs run under Windows PowerShell
     # in STA (pwsh is MTA and unreliable for WinForms). Preserve caller args
-    # from media-encoder-gui, including drive/mode/autodetect.
+    # from mediaforge-gui, including drive/mode/autodetect.
     $psExe = (Get-Command powershell.exe -ErrorAction SilentlyContinue).Source
     if (-not $psExe) { $psExe = "powershell.exe" }
 
@@ -2330,7 +2330,7 @@ $form.Add_FormClosing({
 
 $form.Add_Shown({
     if ($AutoDetect) {
-        Add-LogLine "Auto-detect requested from Media Encoder GUI." "Info"
+        Add-LogLine "Auto-detect requested from MediaForge." "Info"
         $btnDetect.PerformClick()
     }
 })
