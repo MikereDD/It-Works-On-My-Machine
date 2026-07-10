@@ -1,7 +1,7 @@
 <#
 ================================================================
   MediaForge  -  all-in-one disc -> HEVC front end
-  version:  1.10.6  (GUI poster download integration)  by Mike Redd
+  version:  1.10.23 (Minfo IMDbDump JSON handoff fix)  by Mike Redd
 ----------------------------------------------------------------
   One window over the existing toolset. It does NOT reimplement any
   pipeline; each engine is dot-sourced inside its OWN background
@@ -255,7 +255,7 @@ function Remove-BluRayBackupRoot {
 # ════════════════════════════════════════════════════════════════
 $form = New-Object System.Windows.Forms.Form
 try { $icoPath = Get-MediaForgeIconPath; if ($icoPath) { $form.Icon = New-Object System.Drawing.Icon($icoPath) } } catch { }
-$script:GuiVersion = '1.10.6'
+$script:GuiVersion = '1.10.23'
 $form.Text = "MediaForge v$($script:GuiVersion)  (DVD / Blu-ray / File / Audio CD)"
 $form.Size = New-Object System.Drawing.Size(1448, 1086)
 $form.MinimumSize = New-Object System.Drawing.Size(1360, 1000)
@@ -2574,13 +2574,41 @@ function Start-Minfo {
                 '-NonInteractive'
             )
 
-            if ($ImdbId) {
-                $minfoArgs += @('-ImdbId', $ImdbId)
-            } elseif ($MovieTitle) {
-                $minfoArgs += @('-SearchTitle', $MovieTitle)
-                if ($MovieYear -match '^\d{4}$') { $minfoArgs += @('-SearchYear', $MovieYear) }
+            # Do not pass the OMDb key as a command-line argument from the GUI.
+            # minfocreate.ps1 owns minforc.ps1 loading and uses the same config
+            # path as imdbthumbgrab.ps1. Keeping the key inside minfocreate
+            # avoids argument-shift/binding bugs and keeps the GUI log cleaner.
+
+            # MediaForge is an explicit metadata caller: when the user enters an
+            # IMDb ID or title/year, Minfo must fetch OMDb data or fail loudly.
+            # Do not silently create a "No OMDb data" HTML page from the GUI.
+            $hasExplicitMovieMetadata = $false
+            if ($ImdbId -and $ImdbId.Trim() -match 'tt\d{6,10}') {
+                $cleanImdb = ([regex]::Match($ImdbId.Trim(), 'tt\d{6,10}', 'IgnoreCase')).Value.ToLowerInvariant()
+                $minfoArgs += @('-ImdbId', $cleanImdb)
+                $hasExplicitMovieMetadata = $true
+            }
+            if ($MovieTitle -and $MovieTitle.Trim()) {
+                $minfoArgs += @('-SearchTitle', $MovieTitle.Trim())
+                $hasExplicitMovieMetadata = $true
+                if ($MovieYear -match '^\d{4}$') { $minfoArgs += @('-SearchYear', $MovieYear.Trim()) }
+            }
+            if ($hasExplicitMovieMetadata) {
+                $minfoArgs += '-RequireOmdb'
             }
 
+            $displayArgs = New-Object System.Collections.Generic.List[string]
+            $hideNext = $false
+            foreach ($arg in $minfoArgs) {
+                if ($hideNext) {
+                    $displayArgs.Add('<hidden>') | Out-Null
+                    $hideNext = $false
+                    continue
+                }
+                $displayArgs.Add([string]$arg) | Out-Null
+                if ($arg -eq '-ApiKey') { $hideNext = $true }
+            }
+            Write-Host ("minfocreate args: {0}" -f ($displayArgs -join ' '))
             & $MinfoPath @minfoArgs
         } catch { Write-Host "minfo error: $($_.Exception.Message)"; throw }
     })

@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file:     minfocreate.ps1
 # author:   Mike Redd
-# version:  2.15
+# version:  2.32
 # created:  2026-04-11
 # updated:  2026-06-21
 # desc:     Create NFO, HTML, and poster data
@@ -30,6 +30,32 @@
 #                  Write-Host through output stream for GUI capture.
 #           v2.15: honor MEDIAFORGE_GUI/MEDIAFORGE_NONINTERACTIVE env flags
 #                  so GUI runspaces cannot accidentally load cursor UI helpers.
+#           v2.16: restore GUI OMDb lookup using IMDb ID/title-year with
+#                  explicit curl argument binding and better errors.
+#           v2.17: restore old known-good OMDb URL request path for GUI mode
+#                  and add stronger API-key fallback handling.
+#           v2.18: restore reliable OMDb lookup in GUI mode using PowerShell/.NET
+#                  first, curl fallback second, and fail loudly when explicit
+#                  IMDb IDs cannot be resolved.
+#           v2.19: restore the old known-good curl OMDb movie lookup path,
+#                  remove type=movie from IMDb-ID queries, add RequireOmdb,
+#                  and fail instead of writing No OMDb data when GUI metadata
+#                  was supplied.
+#           v2.21: restore single-file OMDb lookup to the known-good curl path,
+#                  sanitize IMDb IDs, log real OMDb errors, and support
+#                  explicit API keys from MediaForge GUI.
+#           v2.22: let MediaForge GUI use minforc.ps1 directly again instead
+#                  of passing the OMDb key through the runspace argument list.
+#           v2.23: prefer the same OMDb key source used by imdbthumbgrab
+#                  (global OMDB_API_KEY) and only use a local ApiKey value
+#                  when it was explicitly supplied or no global key exists.
+#           v2.24: restore the three-tool metadata flow: IMDbDump owns OMDb
+#                  lookup, IMDbThumbGrab owns poster downloads, MiNfoCreate
+#                  owns NFO/HTML output.
+#           v2.29: call IMDbDump through a clean child PowerShell process.
+#           v2.30: use a temp wrapper for the IMDbDump backend call.
+#           v2.31: pass IMDbDump lookup values via IMDBDUMP_* env vars only.
+#           v2.32: accept successful IMDbDump JSON even when wrapper returns a stale nonzero exit code.
 #--------------------------------------------
 
 param(
@@ -43,6 +69,7 @@ param(
     [string]$SearchTitle = "",
     [string]$SearchYear  = "",
     [switch]$NonInteractive,
+    [switch]$RequireOmdb,
     [switch]$Preview
 )
 
@@ -145,7 +172,7 @@ if ($Script:MinfoNonInteractive) {
 $ErrorActionPreference = 'Stop'
 
 $ScriptName    = "MiNfoCreate"
-$ScriptVersion = "2.15"
+$ScriptVersion = "2.32"
 $ScriptAuthor  = "Mike Redd"
 
 # Shared NFO banner (figlet) reused by single-file and multi-file output.
@@ -170,15 +197,60 @@ $Script:ConfigPaths = @(
     "$HOME\.config\minforc.ps1"
 )
 
+# Track whether -ApiKey was explicitly supplied. MediaForge GUI does not pass
+# -ApiKey anymore; in that case we should behave like imdbthumbgrab.ps1 and
+# prefer $global:OMDB_API_KEY from minforc.ps1. A config file may also define
+# a local $ApiKey variable, but that should not override the global OMDb key
+# unless the user explicitly passed -ApiKey.
+$Script:ExplicitApiKey = $PSBoundParameters.ContainsKey('ApiKey') -and -not [string]::IsNullOrWhiteSpace($ApiKey)
+$Script:ConfigLoadedFrom = ''
+
 foreach ($cp in $Script:ConfigPaths) {
     if (Test-Path -LiteralPath $cp) {
-        . $cp
-        break
+        try {
+            . $cp
+            $Script:ConfigLoadedFrom = $cp
+            break
+        } catch {
+            if ($Script:MinfoNonInteractive) { Write-Host "OMDb config load warning: $($_.Exception.Message)" }
+        }
     }
 }
 
-if (-not $ApiKey) {
+# Keep a possible local/config $ApiKey as a last-resort candidate. Prefer the
+# same source imdbthumbgrab.ps1 uses: $global:OMDB_API_KEY. This prevents an
+# old local $ApiKey value in minforc.ps1 from shadowing the real configured key.
+$localOrParamApiKey = $ApiKey
+$Script:OmdbKeySource = 'missing'
+if ($Script:ExplicitApiKey) {
+    $Script:OmdbKeySource = 'argument'
+} elseif ($global:OMDB_API_KEY) {
     $ApiKey = $global:OMDB_API_KEY
+    $Script:OmdbKeySource = 'global:OMDB_API_KEY'
+} elseif ($OMDB_API_KEY) {
+    $ApiKey = $OMDB_API_KEY
+    $Script:OmdbKeySource = 'OMDB_API_KEY'
+} elseif ($script:OMDB_API_KEY) {
+    $ApiKey = $script:OMDB_API_KEY
+    $Script:OmdbKeySource = 'script:OMDB_API_KEY'
+} elseif ($env:OMDB_API_KEY) {
+    $ApiKey = $env:OMDB_API_KEY
+    $Script:OmdbKeySource = 'env:OMDB_API_KEY'
+} elseif ($env:OMDBAPI_KEY) {
+    $ApiKey = $env:OMDBAPI_KEY
+    $Script:OmdbKeySource = 'env:OMDBAPI_KEY'
+} elseif ($global:OMDBAPI_KEY) {
+    $ApiKey = $global:OMDBAPI_KEY
+    $Script:OmdbKeySource = 'global:OMDBAPI_KEY'
+} elseif (-not [string]::IsNullOrWhiteSpace($localOrParamApiKey)) {
+    $ApiKey = $localOrParamApiKey
+    $Script:OmdbKeySource = 'local:ApiKey'
+}
+
+if ($Script:MinfoNonInteractive) {
+    $keyState = if ($ApiKey) { "configured ($Script:OmdbKeySource)" } else { 'missing' }
+    Write-Host "OMDb key: $keyState"
+    if ($Script:ConfigLoadedFrom) { Write-Host "OMDb config: $Script:ConfigLoadedFrom" }
 }
 
 if (-not $ApiKey -or $ApiKey -eq "your_api_key_here") {
@@ -211,6 +283,7 @@ if (-not $VideoDir) {
 
 $Script:NfoDir    = if ($global:MINFO_NFODIR)    { $global:MINFO_NFODIR }    else { "G:\Rip\nfo" }
 $Script:PosterDir = if ($global:MINFO_POSTERDIR) { $global:MINFO_POSTERDIR } else { "G:\Rip\meta\posters" }
+$Script:ImdbDumpPath = Join-Path $PSScriptRoot 'imdbdump.ps1'
 
 if (-not $Preview -and $global:MINFO_PREVIEW) {
     $Preview = [bool]$global:MINFO_PREVIEW
@@ -1086,76 +1159,352 @@ Write-UiBlankLine
 
 # ── OMDb lookup ───────────────────────────────────────────────
 Write-UiSection "OMDb Lookup"
-if ($ImdbId -and $ImdbId -match '^tt\d+') {
-    $searchInput = $ImdbId; $searchYear = ""
-    Write-Host "  $($global:UI_GRN)Using IMDb ID: $ImdbId$($global:UI_R)"
-} elseif ($Script:MinfoNonInteractive -and -not [string]::IsNullOrWhiteSpace($SearchTitle)) {
-    $searchInput = $SearchTitle.Trim()
-    $searchYear  = if ($SearchYear -match '^\d{4}$') { $SearchYear } else { "" }
-    if ($searchYear) {
-        Write-Host "  $($global:UI_GRN)Using GUI title/year: $searchInput ($searchYear)$($global:UI_R)"
-    } else {
-        Write-Host "  $($global:UI_GRN)Using GUI title: $searchInput$($global:UI_R)"
-    }
-} elseif ($Script:MinfoNonInteractive) {
-    $searchInput = ""; $searchYear = ""
-    Write-Host "  $($global:UI_GRY)No IMDb ID/title supplied; MediaInfo only.$($global:UI_R)"
-} else {
-    Write-Host "  $($global:UI_CYN)Enter search title or IMDb ID (example: tt0083907)$($global:UI_R)"
-    $searchInput = Read-Host "  Search"
-    $searchYear  = Read-Host "  Year (optional)"
-}
-
 $baseUrl = "http://www.omdbapi.com/"
 $omdbOK  = $false
+$omdbErrors = New-Object System.Collections.Generic.List[string]
 
-if ($searchInput -match '^tt\d+') {
-    $apiUrl = "${baseUrl}?apikey=${ApiKey}&i=${searchInput}&plot=full"
-} else {
-    $enc = [System.Uri]::EscapeDataString($searchInput)
-    $apiUrl = "${baseUrl}?apikey=${ApiKey}&t=${enc}&plot=full"
-    if ($searchYear) { $apiUrl += "&y=$searchYear" }
+function Get-MinfoCleanImdbId {
+    param([string]$Value)
+    if ([string]::IsNullOrWhiteSpace($Value)) { return '' }
+    $m = [regex]::Match($Value, 'tt\d{6,10}', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+    if ($m.Success) { return $m.Value.ToLowerInvariant() }
+    return ''
 }
 
-Write-UiBlankLine
-Write-Host "  $($global:UI_CYN)Fetching movie data...$($global:UI_R)"
+function Get-MinfoDerivedTitleYear {
+    param(
+        [string]$Name,
+        [string]$FallbackTitle,
+        [string]$FallbackYear
+    )
 
-try {
-    $raw      = & $curlExe --silent --max-time 15 $apiUrl
-    $response = $raw | ConvertFrom-Json
+    $t = if (-not [string]::IsNullOrWhiteSpace($FallbackTitle)) { $FallbackTitle.Trim() } else { $Name }
+    $y = if ($FallbackYear -match '^\d{4}$') { $FallbackYear } else { '' }
 
-    if ($response.Response -eq "True") {
-        $omdbOK   = $true
-        $mTitle   = if ($response.Title)      { $response.Title }      else { "N/A" }
-        $mYear    = if ($response.Year)       { $response.Year }       else { "N/A" }
-        $mRated   = if ($response.Rated)      { $response.Rated }      else { "N/A" }
-        $mRel     = if ($response.Released)   { $response.Released }   else { "N/A" }
-        $mRuntime = if ($response.Runtime)    { $response.Runtime }    else { "N/A" }
-        $mGenre   = if ($response.Genre)      { $response.Genre }      else { "N/A" }
-        $mDir     = if ($response.Director)   { $response.Director }   else { "N/A" }
-        $mWriter  = if ($response.Writer)     { $response.Writer }     else { "N/A" }
-        $mCast    = if ($response.Actors)     { $response.Actors }     else { "N/A" }
-        $mPlot    = if ($response.Plot)       { $response.Plot }       else { "N/A" }
-        $mLang    = if ($response.Language)   { $response.Language }   else { "N/A" }
-        $mCountry = if ($response.Country)    { $response.Country }    else { "N/A" }
-        $mAwards  = if ($response.Awards)     { $response.Awards }     else { "N/A" }
-        $mImdbId  = if ($response.imdbID)     { $response.imdbID }     else { "N/A" }
-        $mRating  = if ($response.imdbRating) { $response.imdbRating } else { "N/A" }
-        $mVotes   = if ($response.imdbVotes)  { $response.imdbVotes }  else { "N/A" }
-        $mMeta    = if ($response.Metascore)  { $response.Metascore }  else { "N/A" }
-        $mPoster  = if ($response.Poster)     { $response.Poster }     else { "N/A" }
-        $mRT      = ($response.Ratings | Where-Object { $_.Source -eq "Rotten Tomatoes" } | Select-Object -First 1).Value
-        if (-not $mRT) { $mRT = "N/A" }
+    if ([string]::IsNullOrWhiteSpace($t)) { $t = '' }
 
-        Write-Host "  $($global:UI_GRN)Found: $mTitle ($mYear)$($global:UI_R)"
+    # Prefer "Movie [1999]" / "Movie (1999)" from the file or base name.
+    if (-not $y -and $t -match '^(?<title>.+?)\s*[\[\(](?<year>\d{4})[\]\)]') {
+        $y = $Matches.year
+        $t = $Matches.title.Trim()
+    }
+
+    # Strip common release markers from the lookup title while keeping the
+    # output baseName unchanged.
+    $t = $t -replace '\s*[\[\(]\d{4}[\]\)]\s*$', ''
+    $t = $t -replace '[._]+', ' '
+    $t = $t.Trim()
+
+    return [pscustomobject]@{ Title = $t; Year = $y }
+}
+
+function Invoke-MinfoOmdbMovieQuery {
+    param(
+        [string]$ApiKey,
+        [string]$CurlExe,
+        [string]$ImdbId,
+        [string]$Title,
+        [string]$Year
+    )
+
+    if (-not $ApiKey -or $ApiKey -eq 'your_api_key_here') {
+        throw 'OMDB_API_KEY is not set.'
+    }
+    if (-not $CurlExe -or -not (Test-Path -LiteralPath $CurlExe)) {
+        throw 'curl.exe not found; cannot query OMDb.'
+    }
+
+    $lookupLabel = ''
+    if (-not [string]::IsNullOrWhiteSpace($ImdbId)) {
+        $cleanId = Get-MinfoCleanImdbId $ImdbId
+        if (-not $cleanId) { throw "Invalid IMDb ID supplied: $ImdbId" }
+        $apiUrl = "${baseUrl}?apikey=${ApiKey}&i=${cleanId}&plot=full"
+        $lookupLabel = "IMDb ID $cleanId"
     } else {
-        Write-Host "  $($global:UI_RED)OMDb Error: $($response.Error)$($global:UI_R)"
-        Write-Host "  $($global:UI_YLW)Continuing with MediaInfo only...$($global:UI_R)"
+        if ([string]::IsNullOrWhiteSpace($Title)) { throw 'No title or IMDb ID supplied for OMDb lookup.' }
+        $cleanTitle = $Title.Trim()
+        $enc = [System.Uri]::EscapeDataString($cleanTitle)
+        $apiUrl = "${baseUrl}?apikey=${ApiKey}&t=${enc}&plot=full"
+        if ($Year -match '^\d{4}$') { $apiUrl += "&y=$Year" }
+        $lookupLabel = if ($Year -match '^\d{4}$') { "title '$cleanTitle' ($Year)" } else { "title '$cleanTitle'" }
+    }
+
+    # Keep this request path deliberately close to the old known-good
+    # single-file Minfo flow and imdbthumbgrab.ps1. Do not use Invoke-WebRequest
+    # or Invoke-RestMethod in the GUI runspace; curl.exe has been the reliable
+    # path for OMDb in this toolchain.
+    $raw = & $CurlExe --silent --location --max-time 15 $apiUrl
+    $curlExit = $LASTEXITCODE
+
+    if ($curlExit -ne 0) {
+        throw "OMDb curl request failed for ${lookupLabel} with exit code $curlExit."
+    }
+    if ([string]::IsNullOrWhiteSpace($raw)) {
+        throw "OMDb returned an empty response for ${lookupLabel}."
+    }
+
+    try {
+        $obj = $raw | ConvertFrom-Json -ErrorAction Stop
+    } catch {
+        $snippet = if ($raw.Length -gt 220) { $raw.Substring(0,220) + '...' } else { $raw }
+        throw "OMDb returned invalid JSON for ${lookupLabel}: $($_.Exception.Message) :: $snippet"
+    }
+
+    if ($obj.Response -ne 'True') {
+        $err = if ($obj.Error) { $obj.Error } else { 'unknown OMDb error' }
+        throw "OMDb Error for ${lookupLabel}: $err"
+    }
+
+    return $obj
+}
+
+function ConvertTo-MinfoSingleQuotedPsString {
+    param([AllowNull()][string]$Value)
+
+    if ($null -eq $Value) { $Value = '' }
+    return "'" + ([string]$Value).Replace("'", "''") + "'"
+}
+
+function Invoke-MinfoImdbDumpMovieQuery {
+    param(
+        [string]$ImdbDumpPath,
+        [string]$ImdbId,
+        [string]$Title,
+        [string]$Year
+    )
+
+    if (-not $ImdbDumpPath -or -not (Test-Path -LiteralPath $ImdbDumpPath)) {
+        throw "imdbdump.ps1 not found: $ImdbDumpPath"
+    }
+
+    $lookupLabel = ''
+    $wrapperLines = New-Object System.Collections.Generic.List[string]
+    [void]$wrapperLines.Add('$ErrorActionPreference = ''Stop''')
+    [void]$wrapperLines.Add('Remove-Item Env:\IMDBDUMP_TITLE,Env:\IMDBDUMP_YEAR,Env:\IMDBDUMP_IMDBID,Env:\IMDBDUMP_JSON -ErrorAction SilentlyContinue')
+    [void]$wrapperLines.Add('$dump = ' + (ConvertTo-MinfoSingleQuotedPsString $ImdbDumpPath))
+
+    [void]$wrapperLines.Add('$env:MEDIAFORGE_GUI = ''1''')
+    [void]$wrapperLines.Add('$env:MEDIAFORGE_NONINTERACTIVE = ''1''')
+    [void]$wrapperLines.Add('$env:IMDBDUMP_JSON = ''1''')
+
+    if (-not [string]::IsNullOrWhiteSpace($ImdbId)) {
+        $cleanId = Get-MinfoCleanImdbId $ImdbId
+        if (-not $cleanId) { throw "Invalid IMDb ID supplied: $ImdbId" }
+        $lookupLabel = "IMDb ID $cleanId"
+        [void]$wrapperLines.Add('$env:IMDBDUMP_IMDBID = ' + (ConvertTo-MinfoSingleQuotedPsString $cleanId))
+    } else {
+        if ([string]::IsNullOrWhiteSpace($Title)) { throw 'No title or IMDb ID supplied for OMDb lookup.' }
+        $lookupTitle = $Title.Trim()
+        $lookupYear  = if ($Year -match '^\d{4}$') { $Year } else { '' }
+        $lookupLabel = if ($lookupYear) { "title '$lookupTitle' ($lookupYear)" } else { "title '$lookupTitle'" }
+        [void]$wrapperLines.Add('$env:IMDBDUMP_TITLE = ' + (ConvertTo-MinfoSingleQuotedPsString $lookupTitle))
+        if ($lookupYear) {
+            [void]$wrapperLines.Add('$env:IMDBDUMP_YEAR = ' + (ConvertTo-MinfoSingleQuotedPsString $lookupYear))
+        }
+    }
+
+    # Call IMDbDump with no lookup switches. All lookup values are passed through
+    # IMDBDUMP_* environment variables, which avoids every GUI/runspace switch
+    # binding edge case while keeping IMDbDump as the metadata backend.
+    [void]$wrapperLines.Add('& $dump')
+    [void]$wrapperLines.Add('exit 0')
+
+    # Run a tiny wrapper script in a clean PowerShell child process. This avoids
+    # the MediaForge GUI runspace / StartInfo.ArgumentList edge case where nested
+    # switch tokens leaked into IMDbDump and made an IMDb ID look like a title.
+    # The wrapper executes the same command shape that works from your terminal:
+    #   .\imdbdump.ps1 -ImdbId tt0129332 -Json -NonInteractive
+    $tmpWrapper = Join-Path ([System.IO.Path]::GetTempPath()) ("mediaforge-imdbdump-{0}.ps1" -f ([guid]::NewGuid().ToString('N')))
+    try {
+        Set-Content -LiteralPath $tmpWrapper -Value ($wrapperLines -join "`r`n") -Encoding UTF8
+    } catch {
+        throw "Could not write IMDbDump wrapper for ${lookupLabel}: $($_.Exception.Message)"
+    }
+
+    $hostCandidates = New-Object System.Collections.Generic.List[string]
+    foreach ($c in @(
+        (Get-Command 'pwsh.exe' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -First 1),
+        (Join-Path $PSHOME 'pwsh.exe'),
+        (Get-Command 'powershell.exe' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -First 1),
+        (Join-Path $PSHOME 'powershell.exe')
+    )) {
+        if ($c) { [void]$hostCandidates.Add([string]$c) }
+    }
+
+    $psHost = $hostCandidates |
+        Where-Object { $_ -and (Test-Path -LiteralPath $_) } |
+        Select-Object -First 1
+
+    if (-not $psHost) {
+        Remove-Item -LiteralPath $tmpWrapper -Force -ErrorAction SilentlyContinue
+        throw 'Could not find a PowerShell host to run imdbdump.ps1.'
+    }
+
+    $psi = [System.Diagnostics.ProcessStartInfo]::new()
+    $psi.FileName = $psHost
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $psi.CreateNoWindow = $true
+    $psi.WorkingDirectory = Split-Path -Parent $ImdbDumpPath
+
+    foreach ($a in @('-NoLogo', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $tmpWrapper)) {
+        [void]$psi.ArgumentList.Add([string]$a)
+    }
+
+    $psi.Environment['MEDIAFORGE_GUI'] = '1'
+    $psi.Environment['MEDIAFORGE_NONINTERACTIVE'] = '1'
+    foreach ($name in @('IMDBDUMP_TITLE','IMDBDUMP_YEAR','IMDBDUMP_IMDBID','IMDBDUMP_JSON')) {
+        if ($psi.Environment.ContainsKey($name)) { [void]$psi.Environment.Remove($name) }
+    }
+
+    $proc = [System.Diagnostics.Process]::new()
+    $proc.StartInfo = $psi
+
+    try {
+        [void]$proc.Start()
+        $stdout = $proc.StandardOutput.ReadToEnd()
+        $stderr = $proc.StandardError.ReadToEnd()
+        $proc.WaitForExit()
+    } catch {
+        throw "IMDbDump wrapper launch failed for ${lookupLabel}: $($_.Exception.Message)"
+    } finally {
+        try { $proc.Dispose() } catch {}
+        Remove-Item -LiteralPath $tmpWrapper -Force -ErrorAction SilentlyContinue
+    }
+
+    $raw = ([string]$stdout).Trim()
+    $errText = ([string]$stderr).Trim()
+
+    # IMDbDump backend success is defined by usable JSON, not by the wrapper
+    # process exit code. PowerShell can preserve a stale/native $LASTEXITCODE from
+    # curl even when IMDbDump wrote valid JSON. Parse stdout first and accept
+    # Response=True before treating a nonzero wrapper exit as failure.
+    if (-not [string]::IsNullOrWhiteSpace($raw)) {
+        $first = $raw.IndexOf('{')
+        $last  = $raw.LastIndexOf('}')
+        if ($first -ge 0 -and $last -ge $first) {
+            $json = $raw.Substring($first, ($last - $first + 1))
+            try {
+                $obj = $json | ConvertFrom-Json -ErrorAction Stop
+                if ($obj.Response -eq 'True') {
+                    return $obj
+                }
+
+                if ($obj.Response -eq 'False') {
+                    $err = if ($obj.Error) { $obj.Error } else { 'unknown OMDb error' }
+                    throw "IMDbDump OMDb Error for ${lookupLabel}: $err"
+                }
+            } catch {
+                if ($proc.ExitCode -eq 0) {
+                    throw "IMDbDump returned invalid JSON for ${lookupLabel}: $($_.Exception.Message)"
+                }
+                # Keep the original nonzero-exit details below if parsing failed.
+            }
+        }
+    }
+
+    if ($proc.ExitCode -ne 0) {
+        $detail = if ($errText) { $errText } elseif ($raw) { $raw } else { "exit code $($proc.ExitCode)" }
+        throw "IMDbDump wrapper failed for ${lookupLabel}: $detail"
+    }
+
+    if ([string]::IsNullOrWhiteSpace($raw)) {
+        $detail = if ($errText) { $errText } else { 'empty stdout' }
+        throw "IMDbDump returned no JSON for ${lookupLabel}: $detail"
+    }
+
+    $detail = if ($errText) { "$raw`n$errText" } else { $raw }
+    throw "IMDbDump returned non-success JSON for ${lookupLabel}: $detail"
+}
+
+$cleanImdbId = Get-MinfoCleanImdbId $ImdbId
+# Defensive guard: MediaForge passes title/year explicitly, but older broken
+# builds briefly routed the OMDb key through the argument list. If a value that
+# looks like an 8-char OMDb key lands in SearchTitle while the real file name
+# carries a movie title/year, ignore that bogus title rather than querying OMDb
+# for the key text.
+if ($SearchTitle -match '^[a-fA-F0-9]{8}$' -and $baseName -and $baseName -notmatch '^[a-fA-F0-9]{8}$') {
+    Write-Host "  Ignoring suspicious SearchTitle value that looks like an API key."
+    $SearchTitle = ''
+}
+$derivedLookup = Get-MinfoDerivedTitleYear -Name $baseName -FallbackTitle $SearchTitle -FallbackYear $SearchYear
+$lookupAttempts = @()
+
+if ($cleanImdbId) {
+    $lookupAttempts += [pscustomobject]@{ Kind='IMDb ID'; ImdbId=$cleanImdbId; Title=''; Year='' }
+    Write-Host "  $($global:UI_GRN)Using IMDb ID: $cleanImdbId$($global:UI_R)"
+} elseif ($ImdbId) {
+    Write-Host "  $($global:UI_YLW)Ignoring invalid IMDb ID value: $ImdbId$($global:UI_R)"
+}
+
+if (-not [string]::IsNullOrWhiteSpace($derivedLookup.Title)) {
+    # Add title/year fallback even when IMDb ID is provided. The IMDb ID is
+    # still tried first, but the title fallback keeps GUI metadata useful if an
+    # ID typo or OMDb edge case happens.
+    $lookupAttempts += [pscustomobject]@{ Kind='Title'; ImdbId=''; Title=$derivedLookup.Title; Year=$derivedLookup.Year }
+    if ($derivedLookup.Year) {
+        Write-Host "  $($global:UI_GRN)Title fallback: $($derivedLookup.Title) ($($derivedLookup.Year))$($global:UI_R)"
+    } else {
+        Write-Host "  $($global:UI_GRN)Title fallback: $($derivedLookup.Title)$($global:UI_R)"
     }
 }
-catch {
-    Write-Host "  $($global:UI_RED)API call failed: $($_.Exception.Message)$($global:UI_R)"
-    Write-Host "  $($global:UI_YLW)Continuing with MediaInfo only...$($global:UI_R)"
+
+if (-not $lookupAttempts -or $lookupAttempts.Count -eq 0) {
+    Write-Host "  $($global:UI_GRY)No IMDb ID/title supplied; MediaInfo only.$($global:UI_R)"
+} else {
+    foreach ($attempt in $lookupAttempts) {
+        try {
+            Write-UiBlankLine
+            if ($attempt.Kind -eq 'IMDb ID') {
+                Write-Host "  $($global:UI_CYN)Fetching OMDb movie data by IMDb ID...$($global:UI_R)"
+                $response = Invoke-MinfoImdbDumpMovieQuery -ImdbDumpPath $Script:ImdbDumpPath -ImdbId $attempt.ImdbId
+            } else {
+                Write-Host "  $($global:UI_CYN)Fetching OMDb movie data by title/year...$($global:UI_R)"
+                $response = Invoke-MinfoImdbDumpMovieQuery -ImdbDumpPath $Script:ImdbDumpPath -Title $attempt.Title -Year $attempt.Year
+            }
+
+            $omdbOK   = $true
+            $mTitle   = if ($response.Title)      { $response.Title }      else { "N/A" }
+            $mYear    = if ($response.Year)       { $response.Year }       else { "N/A" }
+            $mRated   = if ($response.Rated)      { $response.Rated }      else { "N/A" }
+            $mRel     = if ($response.Released)   { $response.Released }   else { "N/A" }
+            $mRuntime = if ($response.Runtime)    { $response.Runtime }    else { "N/A" }
+            $mGenre   = if ($response.Genre)      { $response.Genre }      else { "N/A" }
+            $mDir     = if ($response.Director)   { $response.Director }   else { "N/A" }
+            $mWriter  = if ($response.Writer)     { $response.Writer }     else { "N/A" }
+            $mCast    = if ($response.Actors)     { $response.Actors }     else { "N/A" }
+            $mPlot    = if ($response.Plot)       { $response.Plot }       else { "N/A" }
+            $mLang    = if ($response.Language)   { $response.Language }   else { "N/A" }
+            $mCountry = if ($response.Country)    { $response.Country }    else { "N/A" }
+            $mAwards  = if ($response.Awards)     { $response.Awards }     else { "N/A" }
+            $mImdbId  = if ($response.imdbID)     { $response.imdbID }     else { "N/A" }
+            $mRating  = if ($response.imdbRating) { $response.imdbRating } else { "N/A" }
+            $mVotes   = if ($response.imdbVotes)  { $response.imdbVotes }  else { "N/A" }
+            $mMeta    = if ($response.Metascore)  { $response.Metascore }  else { "N/A" }
+            $mPoster  = if ($response.Poster)     { $response.Poster }     else { "N/A" }
+            $mRT      = ($response.Ratings | Where-Object { $_.Source -eq "Rotten Tomatoes" } | Select-Object -First 1).Value
+            if (-not $mRT) { $mRT = "N/A" }
+
+            Write-Host "  $($global:UI_GRN)Found: $mTitle ($mYear)$($global:UI_R)"
+            break
+        } catch {
+            $msg = $_.Exception.Message
+            $omdbErrors.Add($msg) | Out-Null
+            Write-Host "  $($global:UI_YLW)$msg$($global:UI_R)"
+            $omdbOK = $false
+        }
+    }
+
+    if (-not $omdbOK) {
+        $explicitMovieMetadata = $RequireOmdb -or $cleanImdbId -or (-not [string]::IsNullOrWhiteSpace($SearchTitle))
+        if ($explicitMovieMetadata) {
+            $detail = if ($omdbErrors.Count -gt 0) { ($omdbErrors -join ' | ') } else { 'no OMDb attempts were made' }
+            $what = if ($cleanImdbId) { "IMDb ID $cleanImdbId" } elseif ($SearchTitle) { "title '$SearchTitle'" } else { 'the supplied movie metadata' }
+            throw "OMDb lookup failed for $what. Details: $detail"
+        }
+        Write-Host "  $($global:UI_YLW)Continuing with MediaInfo only...$($global:UI_R)"
+    }
 }
 
 # ── MediaInfo ─────────────────────────────────────────────────

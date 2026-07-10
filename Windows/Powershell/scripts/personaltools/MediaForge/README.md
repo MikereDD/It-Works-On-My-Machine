@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/version-v1.10.6-d9dde4?style=for-the-badge&labelColor=111318">
+  <img alt="Version" src="https://img.shields.io/badge/version-v1.10.23-d9dde4?style=for-the-badge&labelColor=111318">
   <img alt="PowerShell" src="https://img.shields.io/badge/PowerShell-7.6+-d9dde4?style=for-the-badge&labelColor=111318">
   <img alt="Platform" src="https://img.shields.io/badge/Windows-Media%20Tools-d9dde4?style=for-the-badge&labelColor=111318">
   <img alt="Project" src="https://img.shields.io/badge/It%20Works%20On%20My%20Machine-MediaForge-d9dde4?style=for-the-badge&labelColor=111318">
@@ -115,7 +115,7 @@ MediaForge\
 From PowerShell, after extracting the package:
 
 ```powershell
-$src = "$HOME\Downloads\MediaForge-v1.10.6-gui-poster-download\MediaForge"
+$src = "$HOME\Downloads\MediaForge-v1.10.23-minfo-imdbdump-json-handoff-fix\MediaForge"
 $dst = "$HOME\PS\scripts\personaltools\MediaForge"
 
 New-Item -ItemType Directory -Force $dst | Out-Null
@@ -235,6 +235,102 @@ Bad:   C:\Users\Somebody\...
 ## Release notes
 
 
+
+### v1.10.23 Minfo IMDbDump JSON Handoff Fix
+
+- Keeps the three-tool metadata flow intact: `imdbdump.ps1` does OMDb lookup, `imdbthumbgrab.ps1` handles posters, and `minfocreate.ps1` builds NFO/HTML.
+- Fixes MiNfoCreate treating valid IMDbDump JSON as a wrapper failure.
+- Accepts OMDb `Response=True` JSON from IMDbDump even if the wrapper process returns a stale nonzero exit code.
+- Keeps the locked MediaForge theme, layout, source icons, and workflow unchanged.
+
+### v1.10.22 Minfo IMDbDump Child-Process Backend Fix
+
+- Keeps the three-tool metadata design intact.
+- Runs `imdbdump.ps1 -Json -NonInteractive` through a clean child PowerShell process from `minfocreate.ps1`.
+- Prevents MediaForge GUI runspace argument/environment bleed from turning IMDb IDs or switches into title lookups.
+- Uses the same known-good backend command that works standalone.
+
+### v1.10.19 Minfo IMDbDump Env Backend Fix
+
+- Fixed MiNfoCreate -> IMDbDump nested backend calls from MediaForge GUI.
+- Uses IMDbDump environment backend mode instead of passing switch tokens that could be mis-bound in GUI runspaces.
+- Keeps IMDb ID lookups as `i=tt...` through IMDbDump and title/year as fallback only.
+- Keeps theme, layout, buttons, and icons unchanged.
+
+### v1.10.18 Minfo IMDb ID Backend Fix
+
+- Fixed the MediaForge → MiNfoCreate → IMDbDump backend call so IMDb IDs are passed as `-ImdbId` instead of being treated like a title.
+- Cleared stale `IMDBDUMP_*` environment values before backend lookups.
+- Kept the three-tool metadata flow: IMDbDump for movie data, IMDbThumbGrab for posters, MiNfoCreate for NFO/HTML.
+- Kept theme, layout, icons, and workflow unchanged.
+
+### v1.10.16 IMDbDump Backend Fix
+
+- Keeps the three-tool metadata split intact.
+- Fixes Minfo/MediaForge lookup calls by passing IMDbDump backend values through safe environment variables instead of nested switch arguments.
+- Prevents `-Title`/`-ImdbId` switch tokens from being misread as movie IDs in GUI/non-interactive runs.
+- Leaves the locked MediaForge theme/layout/buttons/icons unchanged.
+
+### v1.10.15 Three-Tool Metadata Fix
+
+- Restores the original helper split: `imdbdump.ps1` owns OMDb lookup, `imdbthumbgrab.ps1` remains the poster download/preview tool, and `minfocreate.ps1` owns NFO/HTML generation.
+- Adds `-Json` / `-NonInteractive` backend mode to `imdbdump.ps1` so MediaForge can fetch movie metadata without opening the old console menu.
+- Updates `minfocreate.ps1` to call `imdbdump.ps1` for OMDb data instead of maintaining a separate lookup path.
+- Keeps the locked MediaForge theme, layout, source icons, and button workflow unchanged.
+
+
+
+### v1.10.13 Minfo OMDb Config Passthrough Fix
+
+- Stops MediaForge GUI from passing the OMDb API key through the runspace argument list.
+- Lets minfocreate.ps1 load minforc.ps1 directly again, matching imdbthumbgrab behavior.
+- Adds safer GUI logging for whether an OMDb key was configured without exposing the key.
+- Guards against bad argument-shift cases that make the API key look like a movie title.
+
+### v1.10.12 Minfo OMDb API Key Restore
+
+- Passes the OMDb API key explicitly from `mediaforge-gui.ps1` into `minfocreate.ps1` during GUI Minfo runs.
+- Restores the old known-good curl-based OMDb movie lookup path for single-file HTML/NFO generation.
+- Sanitizes IMDb IDs before lookup and uses title/year fallback when available.
+- Fails with real OMDb/curl details instead of writing another `No OMDb data` HTML page when metadata was supplied.
+
+### v1.10.11 Minfo OMDb Parser Fix
+
+- Fixes a PowerShell parser error in MiNfoCreate OMDb failure messages.
+- Wraps `lookupLabel` before colons in thrown OMDb errors.
+- Keeps the v1.10.10 curl-based OMDb restore path intact.
+
+### v1.10.10 Minfo OMDb Curl Restore
+
+- Restores the older known-good curl-based OMDb movie lookup path used by the original Minfo HTML generator.
+- Removes the newer web-stack lookup path that could still produce MediaInfo-only HTML from the GUI.
+- Passes IMDb ID and title/year together from MediaForge and requires OMDb success when GUI metadata is supplied.
+- Fails loudly instead of writing a broken `No OMDb data` HTML page from MediaForge.
+- Keeps the locked theme, layout, buttons, and source icons unchanged.
+
+### v1.10.9 Minfo OMDb Hard Fix
+
+- Restores reliable OMDb metadata lookup for GUI-created NFO/HTML files.
+- Uses PowerShell/.NET web lookup first, then curl.exe as a fallback.
+- If an explicit IMDb ID is supplied and OMDb cannot be resolved, MediaForge now fails loudly instead of silently generating a MediaInfo-only HTML page.
+- Keeps the locked MediaForge theme, layout, source icons, and workflow unchanged.
+
+### v1.10.8 Minfo OMDb URL Fix
+
+- Restores the older known-good OMDb URL request path used by MiNfoCreate/ImdbThumbGrab.
+- Fixes GUI-created HTML falling back to MediaInfo-only even when an IMDb ID is present.
+- Adds stronger OMDb API key fallback handling for GUI/non-interactive runs.
+- Keeps theme/layout/buttons/icons/workflow unchanged.
+
+### v1.10.7 Minfo OMDb Restore
+
+- Restores full OMDb movie metadata lookup for GUI-created Minfo/NFO/HTML files.
+- Uses the IMDb ID field first, then falls back to GUI title/year or parsed file name.
+- Switches Minfo OMDb calls to explicit curl argument binding for GUI runspaces.
+- Logs OMDb lookup failures clearly instead of silently producing MediaInfo-only HTML.
+- Keeps the locked MediaForge theme, layout, source icons, poster download, and workflow unchanged.
+
+
 ### v1.10.6 GUI Poster Download
 
 - Runs `imdbthumbgrab.ps1` directly from the MediaForge GUI in non-interactive mode.
@@ -319,3 +415,15 @@ It is not trying to be a streaming platform. It is a personal media workshop: ri
 
 > If it works on my machine, it gets forged here.
 
+### v1.10.23 — Minfo IMDbDump JSON handoff fix
+
+- Fixes the final handoff where valid IMDbDump OMDb JSON was being treated as an error.
+- If IMDbDump returns `Response=True`, MiNfoCreate now uses that movie metadata to build the full NFO/HTML.
+- Does not change the GUI theme or workflow.
+
+### v1.10.22 — Minfo IMDbDump backend last-mile fix
+
+- Keeps the three-tool metadata flow intact: `imdbdump.ps1`, `imdbthumbgrab.ps1`, and `minfocreate.ps1`.
+- Changes the MiNfoCreate → IMDbDump wrapper to pass lookup data through `IMDBDUMP_*` environment variables only.
+- Hardens IMDbDump so a value like `tt0129332` is always treated as an IMDb ID even if it arrives through a title fallback.
+- Keeps the locked MediaForge theme/layout/buttons/icons unchanged.
