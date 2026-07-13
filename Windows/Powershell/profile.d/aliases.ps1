@@ -24,6 +24,10 @@ function Invoke-ToolMenu {
     pwsh -ExecutionPolicy Bypass -File (Join-Path $PSMenuRoot_Custom "tool-menu.ps1") @args
 }
 
+function Invoke-InfoCat {
+    & (Join-Path $PSScriptRoot_Custom "personaltools\infocat.ps1") @args
+}
+
 # function Invoke-SysInfo {
 #     pwsh -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot_Custom "systeminfo.ps1") @args
 # }
@@ -50,6 +54,7 @@ function Invoke-ToolMenu {
 
 # ── Aliases — your scripts ────────────────────────────────────
 Set-Alias -Name toolmenu -Value Invoke-ToolMenu -Description "Tool Menu"
+Set-Alias -Name infocat -Value Invoke-InfoCat -Description "Windows system information cat"
 
 # Set-Alias -Name sysinfo   -Value Invoke-SysInfo     -Description "System info dump menu"
 # Set-Alias -Name power     -Value Invoke-PowerMenu   -Description "Power menu (sleep/shutdown/restart)"
