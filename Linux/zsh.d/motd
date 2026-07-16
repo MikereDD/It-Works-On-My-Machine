@@ -1,0 +1,130 @@
+#!/usr/bin/env zsh
+
+#--------------------------------------------
+# file: ~/.zsh.d/motd
+# author: Mike Redd
+# version: 1.0
+# desc: Custom login message for SSH sessions
+#--------------------------------------------
+
+# Show only for SSH logins and only once per login session,
+# not in every new interactive shell or tmux pane.
+if [[ -n "$SSH_CONNECTION" && -z "$ARAKIEL_MOTD_SHOWN" ]]; then
+    export ARAKIEL_MOTD_SHOWN=1
+
+    # Colors
+    RED=$'\033[0;31m'
+    GREEN=$'\033[0;32m'
+    YELLOW=$'\033[1;33m'
+    BLUE=$'\033[0;34m'
+    MAGENTA=$'\033[0;35m'
+    CYAN=$'\033[0;36m'
+    WHITE=$'\033[1;37m'
+    BOLD=$'\033[1m'
+    NC=$'\033[0m'
+
+    # System stats
+    LOAD=$(awk '{print $1", "$2", "$3}' /proc/loadavg)
+    MEM=$(free -h | awk '/^Mem:/ {print $3"/"$2}')
+    DISK=$(df -h / | awk 'NR==2 {print $3"/"$2 " ("$5")"}')
+    TEMP=$(awk '{printf "%.1f°C", $1/1000}' \
+        /sys/class/thermal/thermal_zone0/temp 2>/dev/null)
+    [[ -n "$TEMP" ]] || TEMP="Unavailable"
+
+    UPTIME=$(uptime -p | sed 's/^up //')
+    SESSIONS=$(who | wc -l)
+    PACKAGES=$(pacman -Q 2>/dev/null | wc -l)
+
+    # UFW status. sudo -n fails silently instead of blocking for a password.
+    if sudo -n iptables -L INPUT 2>/dev/null |
+        grep -q "ufw-before-input"; then
+        UFW_STATUS="Active"
+        UFW_ICON="${GREEN}[+]${NC}"
+        UFW_COLOR=$GREEN
+    else
+        UFW_STATUS="Inactive"
+        UFW_ICON="${RED}[!]${NC}"
+        UFW_COLOR=$RED
+    fi
+
+    # SSHGuard status
+    if systemctl is-active --quiet sshguard 2>/dev/null; then
+        SG_STATUS="Active"
+        SG_ICON="${GREEN}[+]${NC}"
+        SG_COLOR=$GREEN
+    else
+        SG_STATUS="Inactive"
+        SG_ICON="${RED}[!]${NC}"
+        SG_COLOR=$RED
+    fi
+
+    # Center text inside a 66-character box.
+    motd_center() {
+        local border_color=$1
+        local text_color=$2
+        local text=$3
+        local width=66
+        local left=$(( (width - ${#text}) / 2 ))
+        local right=$(( width - ${#text} - left ))
+
+        printf "%b│%*s%b%s%b%*s│%b\n" \
+            "$border_color" "$left" "" \
+            "$text_color" "$text" \
+            "$border_color" "$right" "" "$NC"
+    }
+
+    printf '\n'
+
+    # Header
+    printf '%b\n' "${BOLD}${MAGENTA}┌──────────────────────────────────────────────────────────────────┐${NC}"
+    printf "%b│%66s│%b\n" "${BOLD}${MAGENTA}" "" "$NC"
+    motd_center "${BOLD}${MAGENTA}" "${BOLD}${WHITE}" "WELCOME TO ARAKIEL"
+    motd_center "${BOLD}${MAGENTA}" "${CYAN}" "Raspberry Pi 5 |  Arch Linux"
+    printf "%b│%66s│%b\n" "${BOLD}${MAGENTA}" "" "$NC"
+    printf '%b\n\n' "${BOLD}${MAGENTA}└──────────────────────────────────────────────────────────────────┘${NC}"
+
+    # System information
+    printf '%b\n' "${BOLD}${CYAN}┌──────────────────────────────────────────────────────────────────┐${NC}"
+    motd_center "${BOLD}${CYAN}" "${BOLD}${WHITE}" "SYSTEM INFORMATION"
+    printf '%b\n' "${BOLD}${CYAN}├──────────────────────────────────────────────────────────────────┤${NC}"
+    printf "${CYAN}│${NC}  ${GREEN}%-12s${NC} ${WHITE}%-50s${NC} ${CYAN}│${NC}\n" "Hostname" "$HOST"
+    printf "${CYAN}│${NC}  ${GREEN}%-12s${NC} ${WHITE}%-50s${NC} ${CYAN}│${NC}\n" "Kernel" "$(uname -r)"
+    printf "${CYAN}│${NC}  ${GREEN}%-12s${NC} ${WHITE}%-50s${NC} ${CYAN}│${NC}\n" "Uptime" "$UPTIME"
+    printf "${CYAN}│${NC}  ${GREEN}%-12s${NC} ${WHITE}%-50s${NC} ${CYAN}│${NC}\n" "Load Avg" "$LOAD"
+    printf "${CYAN}│${NC}  ${GREEN}%-12s${NC} ${WHITE}%-50s${NC} ${CYAN}│${NC}\n" "Memory" "$MEM"
+    printf "${CYAN}│${NC}  ${GREEN}%-12s${NC} ${WHITE}%-50s${NC} ${CYAN}│${NC}\n" "Disk (root)" "$DISK"
+    printf "${CYAN}│${NC}  ${GREEN}%-12s${NC} ${WHITE}%-50s${NC} ${CYAN}│${NC}\n" "CPU Temp" "$TEMP"
+    printf "${CYAN}│${NC}  ${GREEN}%-12s${NC} ${WHITE}%-50s${NC} ${CYAN}│${NC}\n" "Packages" "$PACKAGES"
+    printf "${CYAN}│${NC}  ${GREEN}%-12s${NC} ${WHITE}%-50s${NC} ${CYAN}│${NC}\n" "Sessions" "$SESSIONS"
+    printf '%b\n\n' "${BOLD}${CYAN}└──────────────────────────────────────────────────────────────────┘${NC}"
+
+    # Security status
+    printf '%b\n' "${BOLD}${YELLOW}┌──────────────────────────────────────────────────────────────────┐${NC}"
+    motd_center "${BOLD}${YELLOW}" "${BOLD}${WHITE}" "SECURITY STATUS"
+    printf '%b\n' "${BOLD}${YELLOW}├──────────────────────────────────────────────────────────────────┤${NC}"
+    printf "${YELLOW}│${NC}  %b %-10s ${UFW_COLOR}%-48s${NC} ${YELLOW}│${NC}\n" \
+        "$UFW_ICON" "UFW" "UFW: $UFW_STATUS"
+    printf "${YELLOW}│${NC}  %b %-10s ${SG_COLOR}%-48s${NC} ${YELLOW}│${NC}\n" \
+        "$SG_ICON" "SSHGuard" "SSHGuard: $SG_STATUS"
+    printf "${YELLOW}│${NC}  ${GREEN}[+]${NC} %-10s ${GREEN}%-48s${NC} ${YELLOW}│${NC}\n" \
+        "SSH Keys" "Password auth: disabled"
+    printf '%b\n\n' "${BOLD}${YELLOW}└──────────────────────────────────────────────────────────────────┘${NC}"
+
+    # Quick commands
+    printf '%b\n' "${BOLD}${GREEN}┌──────────────────────────────────────────────────────────────────┐${NC}"
+    motd_center "${BOLD}${GREEN}" "${BOLD}${WHITE}" "QUICK COMMANDS"
+    printf '%b\n' "${BOLD}${GREEN}├──────────────────────────────────────────────────────────────────┤${NC}"
+    printf "${GREEN}│${NC}  ${WHITE}%-10s${NC} → %-50s ${GREEN}│${NC}\n" "tools" "Tool menu"
+    printf "${GREEN}│${NC}  ${WHITE}%-10s${NC} → %-50s ${GREEN}│${NC}\n" "rp5si" "Full system info"
+    printf "${GREEN}│${NC}  ${WHITE}%-10s${NC} → %-50s ${GREEN}│${NC}\n" "pifw" "Firewall manager"
+    printf "${GREEN}│${NC}  ${WHITE}%-10s${NC} → %-50s ${GREEN}│${NC}\n" "ff" "Fast system info (fastfetch)"
+    printf "${GREEN}│${NC}  ${WHITE}%-10s${NC} → %-50s ${GREEN}│${NC}\n" "update" "System update (pacman -Syu)"
+    printf "${GREEN}│${NC}  ${WHITE}%-10s${NC} → %-50s ${GREEN}│${NC}\n" "tmuxaa" "Attach to arakiel tmux session"
+    printf '%b\n\n' "${BOLD}${GREEN}└──────────────────────────────────────────────────────────────────┘${NC}"
+
+    unfunction motd_center
+
+    unset RED GREEN YELLOW BLUE MAGENTA CYAN WHITE BOLD NC
+    unset LOAD MEM DISK TEMP UPTIME SESSIONS PACKAGES
+    unset UFW_STATUS UFW_ICON UFW_COLOR SG_STATUS SG_ICON SG_COLOR
+fi

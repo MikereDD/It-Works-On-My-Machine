@@ -1,0 +1,29 @@
+#!/usr/bin/env zsh
+
+#--------------------------------------------
+# file: ~/.zsh.d/prompt
+# author: Mike Redd
+# version: 1.0
+# desc: Clean prompt (Arakiel) with SSH + Git
+#--------------------------------------------
+
+setopt PROMPT_SUBST
+
+# ── Git branch helper ───────────────────────
+git_branch() {
+    local branch
+    branch=$(git branch --show-current 2>/dev/null)
+
+    [[ -n "$branch" ]] && print -r -- " ($branch)"
+}
+
+# ── Prompt ──────────────────────────────────
+if [[ -n "$SSH_CLIENT" || -n "$SSH_TTY" ]]; then
+    # SSH session
+    PROMPT='%F{14}┌─[%F{9}SSH%F{14}]-[%F{10}%n@%m %F{7}%1~%F{14}$(git_branch)%F{14}]
+%F{14}└─╼%f '
+else
+    # Local session
+    PROMPT='%F{14}┌─[%F{10}%n@%m %F{7}%1~%F{14}$(git_branch)%F{14}]
+%F{14}└─╼%f '
+fi

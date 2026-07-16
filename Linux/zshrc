@@ -1,0 +1,24 @@
+#!/usr/bin/env zsh
+
+#--------------------------------------------
+# file: ~/.zshrc
+# author: Mike Redd
+# version: 1.0
+# desc: Zsh loader (Arakiel / Arch)
+#--------------------------------------------
+
+[[ -o interactive ]] || return
+
+# Native Zsh completion
+autoload -Uz compinit
+mkdir -p "$HOME/.cache/zsh"
+compinit -d "$HOME/.cache/zsh/zcompdump"
+
+# Arch pkgfile command-not-found handler
+[[ -f /usr/share/doc/pkgfile/command-not-found.zsh ]] &&
+    source /usr/share/doc/pkgfile/command-not-found.zsh
+
+# Load modular Zsh configuration
+for f in "$HOME"/.zsh.d/*(.N); do
+    source "$f"
+done
