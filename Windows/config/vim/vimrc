@@ -1,7 +1,7 @@
 " ~/config/vim/vimrc   (Windows)
 " Mike Redd / typezero
 " Windows Vim / gVim port of the Pi 5 Arch config
-" Version: 3.3-win - loader layout, Windows paths, PowerShell support
+" Version: 3.4-win - reliable Windows clipboard paste and safer indentation
 "
 " Loaded by ~/_vimrc (the loader stub). Because a loader is used, $MYVIMRC
 " points at the loader, NOT this file - so self-edit/reload maps and the
@@ -432,7 +432,9 @@ set softtabstop=4
 set expandtab
 set smarttab
 set autoindent
-set smartindent
+" Filetype indent scripts already handle C#, PowerShell, Kotlin, etc.
+" Global smartindent can re-indent multi-line terminal pastes incorrectly.
+set nosmartindent
 set shiftround
 set copyindent
 
@@ -600,12 +602,39 @@ nnoremap Q @q
 vnoremap Q :norm @q<CR>
 
 " -------------------------
-" System clipboard integration
+" System clipboard integration / reliable paste
 " -------------------------
-" [win] On Windows + and * are the same clipboard; 'unnamed' is idiomatic.
+" [win] On Windows + and * refer to the same system clipboard.
 if has('clipboard')
   set clipboard=unnamed
+
+  " Exact clipboard paste in Normal mode. These bypass Insert-mode
+  " autoindent, mappings, and abbreviations, so large code blocks retain
+  " their original whitespace.
+  nnoremap <silent> <leader>p "+p
+  nnoremap <silent> <leader>P "+P
+
+  " Replace a visual selection without overwriting the clipboard.
+  xnoremap <silent> <leader>p "_d"+P
+  xnoremap <silent> <leader>P "_d"+P
+
+  " Insert the clipboard literally at the cursor while already in Insert
+  " mode. <C-r><C-o> prevents indentation and mapping side effects.
+  inoremap <silent> <C-S-v> <C-r><C-o>+
+  cnoremap <silent> <C-S-v> <C-r>+
 endif
+
+" Manual paste-mode fallback for terminals that do not report bracketed
+" paste correctly. F2 toggles it; leaving Insert mode always turns it off.
+set pastetoggle=<F2>
+set nopaste
+augroup safe_paste_mode
+  autocmd!
+  autocmd InsertLeave * if &paste | set nopaste | echo "paste mode: off" | endif
+augroup END
+
+" Show the current paste-mode state without changing it.
+nnoremap <silent> <leader>ps :set paste?<CR>
 
 " -------------------------
 " Quick save/quit (buffer-aware)
@@ -615,7 +644,6 @@ nnoremap <leader>q :quit<CR>
 nnoremap <leader>Q :bdelete<CR>
 nnoremap <leader>bq :bprevious <bar> bdelete #<CR>
 nnoremap <leader>z <C-w>o
-nnoremap <leader>p :set paste!<CR>:set paste?<CR>
 nnoremap <leader>= mzgg=G`z
 vnoremap = =gv
 nnoremap g. `.
