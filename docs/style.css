@@ -1,1 +1,271 @@
-:root{color-scheme:dark;--bg:#05090b;--panel:#091116;--line:#18303a;--text:#d8e5e8;--muted:#83969c;--cyan:#22d8ff;--green:#72ff38;--white:#f4fbfc}*{box-sizing:border-box}html{background:var(--bg)}body{margin:0;background:radial-gradient(circle at 20% 0,#09202a 0,transparent 32%),radial-gradient(circle at 80% 0,#10250d 0,transparent 32%),var(--bg);color:var(--text);font-family:"Cascadia Mono","JetBrains Mono",Consolas,monospace;line-height:1.55}.shell{width:min(1120px,calc(100% - 32px));margin:auto;padding:38px 0}.hero{text-align:center;padding-bottom:30px}.avatar{display:block;width:min(720px,100%);margin:0 auto 24px;border:1px solid #18353d;box-shadow:0 0 40px #00c8ff18,0 0 60px #6cff2810}.prompt{font-size:.82rem;color:var(--muted);text-align:left}.prompt span:first-child{color:var(--cyan)}.prompt span:nth-child(2){color:var(--green)}h1{margin:18px 0 6px;color:var(--white);font-size:clamp(2rem,6vw,4.2rem);line-height:1;letter-spacing:-.055em;text-shadow:0 0 22px #22d8ff30}.lede{font-size:1.1rem}.lede strong:first-child{color:var(--cyan)}.lede strong:last-child{color:var(--green)}.rule{max-width:850px;margin:18px auto 0;color:#b7c7cb}.machines,.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin:20px 0}.machine,.grid article,.tree{position:relative;background:linear-gradient(180deg,#0b151aee,#071014ee);border:1px solid var(--line);padding:24px;overflow:hidden}.machine:before{content:"";position:absolute;inset:0 0 auto;height:2px}.netzach:before{background:var(--cyan);box-shadow:0 0 14px var(--cyan)}.arakiel:before{background:var(--green);box-shadow:0 0 14px var(--green)}.machine-head{display:flex;align-items:center;gap:12px}.machine h2,.grid h3{margin:0;letter-spacing:.15em}.netzach h2{color:var(--cyan)}.arakiel h2{color:var(--green)}.node{color:#60747a}.role{margin-top:2px;color:var(--muted);letter-spacing:.12em;font-size:.8rem}.machine ul{padding-left:20px;margin-bottom:0}.grid article:nth-child(odd) h3{color:var(--cyan)}.grid article:nth-child(even) h3{color:var(--green)}.grid p{margin-bottom:0}.tree{margin-top:18px}.tree pre{margin:18px 0 0;color:#bcd0d4;overflow:auto;font:inherit;line-height:1.45}footer{display:flex;justify-content:space-between;gap:18px;margin-top:22px;padding:18px 4px;border-top:1px solid var(--line);color:var(--muted);font-size:.75rem;letter-spacing:.08em}@media(max-width:760px){.shell{width:min(100% - 20px,1120px);padding-top:18px}.machines,.grid{grid-template-columns:1fr}.machine,.grid article,.tree{padding:18px}footer{flex-direction:column}h1{letter-spacing:-.035em}}
+:root {
+    color-scheme: dark;
+
+    --bg: #05090b;
+    --panel: #091116;
+    --line: #18303a;
+
+    --text: #d8e5e8;
+    --muted: #83969c;
+    --white: #f4fbfc;
+
+    --cyan: #22d8ff;
+    --green: #72ff38;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+html {
+    background: var(--bg);
+}
+
+body {
+    margin: 0;
+
+    background:
+        radial-gradient(circle at 20% 0, #09202a 0, transparent 32%),
+        radial-gradient(circle at 80% 0, #10250d 0, transparent 32%),
+        var(--bg);
+
+    color: var(--text);
+
+    font-family:
+        "Cascadia Mono",
+        "JetBrains Mono",
+        Consolas,
+        monospace;
+
+    line-height: 1.55;
+}
+
+.shell {
+    width: min(1120px, calc(100% - 32px));
+    margin: auto;
+    padding: 38px 0;
+}
+
+
+/* Hero */
+
+.hero {
+    text-align: center;
+    padding-bottom: 30px;
+}
+
+.avatar {
+    display: block;
+    width: min(720px, 100%);
+    margin: 0 auto 24px;
+
+    border: 1px solid #18353d;
+
+    box-shadow:
+        0 0 40px #00c8ff18,
+        0 0 60px #6cff2810;
+}
+
+.prompt {
+    font-size: 0.82rem;
+    color: var(--muted);
+    text-align: left;
+}
+
+.prompt span:first-child {
+    color: var(--cyan);
+}
+
+.prompt span:nth-child(2) {
+    color: var(--green);
+}
+
+h1 {
+    margin: 18px 0 6px;
+
+    color: var(--white);
+
+    font-size: clamp(2rem, 6vw, 4.2rem);
+    line-height: 1;
+    letter-spacing: -0.055em;
+
+    text-shadow: 0 0 22px #22d8ff30;
+}
+
+.lede {
+    font-size: 1.1rem;
+}
+
+.lede strong:first-child {
+    color: var(--cyan);
+}
+
+.lede strong:last-child {
+    color: var(--green);
+}
+
+.rule {
+    max-width: 850px;
+    margin: 18px auto 0;
+
+    color: #b7c7cb;
+}
+
+
+/* Systems + repository areas */
+
+.machines,
+.grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px;
+
+    margin: 20px 0;
+}
+
+.machine,
+.grid article,
+.tree {
+    position: relative;
+
+    background: linear-gradient(180deg, #0b151aee, #071014ee);
+    border: 1px solid var(--line);
+
+    padding: 24px;
+    overflow: hidden;
+}
+
+.machine::before {
+    content: "";
+
+    position: absolute;
+    inset: 0 0 auto;
+
+    height: 2px;
+}
+
+.netzach::before {
+    background: var(--cyan);
+    box-shadow: 0 0 14px var(--cyan);
+}
+
+.arakiel::before {
+    background: var(--green);
+    box-shadow: 0 0 14px var(--green);
+}
+
+.machine-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.machine h2,
+.grid h3 {
+    margin: 0;
+    letter-spacing: 0.15em;
+}
+
+.netzach h2 {
+    color: var(--cyan);
+}
+
+.arakiel h2 {
+    color: var(--green);
+}
+
+.node {
+    color: #60747a;
+}
+
+.role {
+    margin-top: 2px;
+
+    color: var(--muted);
+
+    letter-spacing: 0.12em;
+    font-size: 0.8rem;
+}
+
+.machine ul {
+    padding-left: 20px;
+    margin-bottom: 0;
+}
+
+.grid article:nth-child(odd) h3 {
+    color: var(--cyan);
+}
+
+.grid article:nth-child(even) h3 {
+    color: var(--green);
+}
+
+.grid p {
+    margin-bottom: 0;
+}
+
+
+/* Repository tree */
+
+.tree {
+    margin-top: 18px;
+}
+
+.tree pre {
+    margin: 18px 0 0;
+
+    color: #bcd0d4;
+
+    overflow: auto;
+
+    font: inherit;
+    line-height: 1.45;
+}
+
+
+/* Footer */
+
+footer {
+    display: flex;
+    justify-content: space-between;
+    gap: 18px;
+
+    margin-top: 22px;
+    padding: 18px 4px;
+
+    border-top: 1px solid var(--line);
+
+    color: var(--muted);
+
+    font-size: 0.75rem;
+    letter-spacing: 0.08em;
+}
+
+
+/* Responsive */
+
+@media (max-width: 760px) {
+    .shell {
+        width: min(100% - 20px, 1120px);
+        padding-top: 18px;
+    }
+
+    .machines,
+    .grid {
+        grid-template-columns: 1fr;
+    }
+
+    .machine,
+    .grid article,
+    .tree {
+        padding: 18px;
+    }
+
+    footer {
+        flex-direction: column;
+    }
+
+    h1 {
+        letter-spacing: -0.035em;
+    }
+}
