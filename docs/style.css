@@ -56,7 +56,7 @@ body {
 
 .avatar {
     display: block;
-    width: min(720px, 100%);
+    width: min(620px, 100%);
     margin: 0 auto 24px;
 
     border: 1px solid #18353d;
