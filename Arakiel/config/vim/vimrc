@@ -1,7 +1,30 @@
-" ~/.config/vim/vimrc
-" Mike Redd / typezero
-" Pi 5 Arch Vim (XDG layout)
-" Version: 3.3 - Editing intelligence, project context, and mark navigation
+" =============================================================================
+" Typezero Vim Configuration - Arakiel
+" =============================================================================
+" Main config: ~/.config/vim/vimrc
+" Author:      Mike Redd / typezero
+" Platform:    Arch Linux aarch64 / Raspberry Pi 5
+" Version:     3.4 - expanded navigation, alignment, project, and focus tooling
+"
+" Design goals:
+"   - Stay fast and predictable on the Pi while still feeling like a complete
+"     development environment.
+"   - Keep Netzach and Arakiel conceptually aligned without erasing Linux-only
+"     behavior such as tmux integration and sudo-save support.
+"   - Favor discoverable leader mappings and lightweight tools over a heavy IDE.
+"   - Keep backups, swap, undo history, sessions, and viminfo under XDG-style
+"     config storage rather than scattering editor state through repositories.
+"
+" Navigation philosophy:
+"   NERDTree  -> persistent project tree
+"   Vinegar   -> quick parent-directory browsing with -
+"   FZF       -> fast fuzzy files/buffers/search
+"   Tagbar    -> symbol outline
+"   Tmux Nav  -> seamless movement between Vim splits and tmux panes
+"
+" Convention:
+"   <leader> is comma (,) and <localleader> is backslash (\).
+" =============================================================================
 
 scriptencoding utf-8
 set nocompatible
@@ -82,75 +105,126 @@ set formatoptions+=q         " Allow formatting of comments with gq
 " -------------------------
 " Vim-Plug
 " -------------------------
+" Plugins are grouped by purpose rather than install date. Keep future additions
+" in the narrowest useful category so this block remains easy to audit.
 call plug#begin('~/.vim/plugged')
 
-" --- Core Essentials ---
+" --- Core Essentials ---------------------------------------------------------
+" Git command integration and repository-aware editing.
 Plug 'tpope/vim-fugitive'
+" Comment/uncomment motions and selections with gc.
 Plug 'tpope/vim-commentary'
+" Add/change/delete surrounding quotes, brackets, tags, and similar pairs.
 Plug 'tpope/vim-surround'
+" Lets supported plugin actions cooperate with Vim's repeat command (.).
 Plug 'tpope/vim-repeat'
-Plug 'tpope/vim-unimpaired'        " ESSENTIAL: [q ]q [l ]l [e ]e etc.
-Plug 'tpope/vim-vinegar'           " Enhance netrw (- to open parent dir)
-Plug 'tpope/vim-endwise'           " Auto-close Ruby/Sh/Bash if/fi
-Plug 'tpope/vim-rhubarb'           " GitHub integration for :GBrowse
+" Useful paired mappings such as [q/]q, [l/]l, [e/]e, and more.
+Plug 'tpope/vim-unimpaired'
+" Improves netrw; '-' opens the parent directory quickly.
+Plug 'tpope/vim-vinegar'
+" Auto-closes language constructs such as if/fi where supported.
+Plug 'tpope/vim-endwise'
+" GitHub integration used by Fugitive's :GBrowse.
+Plug 'tpope/vim-rhubarb'
+" Fuzzy-search engine.
 Plug 'junegunn/fzf', { 'do': { -> fzf#install() } }
+" Vim commands (:Files, :Rg, :Buffers, etc.) layered on top of fzf.
 Plug 'junegunn/fzf.vim'
-Plug 'junegunn/vim-peekaboo'       " Preview registers with \" and @
+" Shows register contents while choosing registers for paste/macros.
+Plug 'junegunn/vim-peekaboo'
+" Labeled jump targets for fast movement around visible text.
 Plug 'easymotion/vim-easymotion'
+" Smarter word boundaries around punctuation and mixed text.
 Plug 'chaoren/vim-wordmotion'
+" Extends %, matching, and highlighting across brackets, tags, and language pairs.
+Plug 'andymass/vim-matchup'
+" Interactive alignment for assignments, delimiters, tables, and similar text.
+Plug 'junegunn/vim-easy-align'
 
-" --- Navigation & Text Objects ---
-Plug 'wellle/targets.vim'          " Better text objects: cin) da, etc.
-Plug 'michaeljsmith/vim-indent-object' " vii - select indent block
+" --- Navigation & Text Objects ----------------------------------------------
+" Richer text objects for arguments, quotes, separators, and nested structures.
+Plug 'wellle/targets.vim'
+" Indentation-based text objects; vii selects the current indent block.
+Plug 'michaeljsmith/vim-indent-object'
+" Symbol outline/sidebar backed by ctags.
 Plug 'preservim/tagbar'
+" Persistent marks/signs with convenient mark navigation.
+Plug 'kshenoy/vim-signature'
 
-" --- Search ---
+" --- Search -----------------------------------------------------------------
+" Project-wide search UI with editable results and preview support.
 Plug 'dyng/ctrlsf.vim'
 
-" --- Visual & UI ---
+" --- Visual & UI -------------------------------------------------------------
+" Lightweight statusline framework.
 Plug 'itchyny/lightline.vim'
-Plug 'maximbaz/lightline-ale'      " ALE indicators in the lightline statusline
+" ALE diagnostic indicators inside Lightline.
+Plug 'maximbaz/lightline-ale'
+" Primary colorscheme.
 Plug 'morhetz/gruvbox'
+" Visual indentation guides.
 Plug 'Yggdroot/indentLine'
+" Filetype/devicons for supported UI components.
 Plug 'ryanoasis/vim-devicons'
+" Start screen with recent files, sessions, bookmarks, and commands.
 Plug 'mhinz/vim-startify'
+" Leader-key discovery popup as the mapping set grows.
+Plug 'liuchengxu/vim-which-key'
+" Distraction-free centered editing layout.
+Plug 'junegunn/goyo.vim'
+" Dims surrounding text; paired with Goyo below for focus mode.
+Plug 'junegunn/limelight.vim'
 
-" --- File Explorer ---
+" --- File Explorer -----------------------------------------------------------
+" Persistent project tree/sidebar.
 Plug 'preservim/nerdtree'
+" Syntax/devicon-aware highlighting for NERDTree entries.
 Plug 'tiagofumo/vim-nerdtree-syntax-highlight'
 
-" --- Git ---
+" --- Git --------------------------------------------------------------------
+" Added/changed/removed hunks in the sign column.
 Plug 'airblade/vim-gitgutter'
+" Magit-inspired Git interface retained from the older configuration.
+Plug 'jreybert/vimagit'
 
-" --- Language Support ---
+" --- Language Support --------------------------------------------------------
+" Asynchronous linting, fixing, diagnostics, and completion.
 Plug 'dense-analysis/ale'
+" Markdown syntax and editing improvements.
 Plug 'plasticboy/vim-markdown'
+" Expanded Python syntax highlighting.
 Plug 'vim-python/python-syntax'
+" YAML syntax support.
 Plug 'stephpy/vim-yaml'
+" JSON syntax support.
 Plug 'elzr/vim-json'
 
-" --- Sessions & Tmux ---
+" --- Sessions & Tmux ---------------------------------------------------------
+" Continuously maintains session files while an Obsession session is active.
 Plug 'tpope/vim-obsession'
+" Seamless Ctrl-h/j/k/l movement between Vim splits and tmux panes.
 Plug 'christoomey/vim-tmux-navigator'
 
-" --- Editing Intelligence ---
-Plug 'mbbill/undotree'             " Visual undo tree (gundo replacement)
-Plug 'tpope/vim-sleuth'            " Auto-detect tab/space width from file content
-Plug 'tpope/vim-abolish'           " crs/crm/crc coercion + :Subvert search/replace
+" --- Editing Intelligence ----------------------------------------------------
+" Visualizes persistent undo history as a navigable tree.
+Plug 'mbbill/undotree'
+" Detects tab/space width from existing file content.
+Plug 'tpope/vim-sleuth'
+" Smart substitutions, coercions, and :Subvert search/replace.
+Plug 'tpope/vim-abolish'
 
-" --- Project Context ---
-Plug 'airblade/vim-rooter'         " Auto-cd to project root (.git)
-Plug 'tpope/vim-dispatch'          " Async :Make / :Dispatch via tmux
-
-" --- Navigation ---
-Plug 'kshenoy/vim-signature'       " Marks in sign column, toggle/list keymaps
-
-" --- You already had ---
-Plug 'jreybert/vimagit'
+" --- Project Context ---------------------------------------------------------
+" Automatically changes Vim's working directory to the detected project root.
+Plug 'airblade/vim-rooter'
+" Async :Make / :Dispatch through tmux on Arakiel.
+Plug 'tpope/vim-dispatch'
+" Project-aware alternate/related-file navigation driven by projection rules.
+Plug 'tpope/vim-projectionist'
 
 call plug#end()
 
-" Enable built-in matchit (ships with Vim, just needs activation)
+" Built-in matchit complements vim-matchup by extending % to language-aware
+" matching pairs. It ships with Vim; packadd! simply activates it.
 packadd! matchit
 
 " -------------------------
@@ -203,9 +277,10 @@ let g:vim_markdown_new_list_item_indent = 2
 let g:vim_markdown_auto_insert_bullets = 1
 
 " -------------------------
-" ALE (Improved for Pi 5 - use fast tools)
+" ALE (Pi 5 tuned)
 " -------------------------
-" ruff is much faster than pylint on ARM
+" Asynchronous lint/fix/completion layer. Prefer fast tools on ARM; ruff is much
+" lighter than pylint. Missing external tools are simply skipped by ALE.
 let g:ale_linters = {
     \ 'python': ['ruff', 'flake8'],
     \ 'bash': ['shellcheck'],
@@ -274,6 +349,9 @@ let g:tagbar_sort = 0
 " -------------------------
 " FZF (Enhanced)
 " -------------------------
+" Leader-f is the fuzzy-navigation namespace:
+"   ff files   fg ripgrep   fb buffers   fh history   fl lines
+"   fc commits f/ buffer lines fm maps   fH help tags
 nnoremap <leader>ff :Files<CR>
 nnoremap <leader>fg :Rg<CR>
 nnoremap <leader>fb :Buffers<CR>
@@ -300,6 +378,8 @@ let g:fzf_preview_window = ['right:50%', 'ctrl-/']
 " -------------------------
 " Git (Fugitive)
 " -------------------------
+" Leader-g is the Git namespace. Uppercase variants are used where lowercase
+" mnemonics are already occupied (gP pull, gB browse).
 nnoremap <leader>gs :Git<CR>
 nnoremap <leader>gd :Gdiffsplit<CR>
 nnoremap <leader>gb :Git blame<CR>
@@ -348,8 +428,30 @@ map <leader>k <Plug>(easymotion-k)
 let g:wordmotion_prefix = '<Leader><Leader>'
 
 " -------------------------
+" EasyAlign
+" -------------------------
+" <leader>ea starts interactive alignment in Visual or Normal mode.
+" Examples after selecting text: ,ea= aligns on '=', ,ea: aligns on ':'.
+xmap <leader>ea <Plug>(EasyAlign)
+nmap <leader>ea <Plug>(EasyAlign)
+
+" -------------------------
+" Focus Mode (Goyo + Limelight)
+" -------------------------
+" <leader>go toggles Goyo. Limelight follows automatically so focus mode both
+" centers the editing area and de-emphasizes surrounding text.
+augroup focus_mode
+    autocmd!
+    autocmd User GoyoEnter Limelight
+    autocmd User GoyoLeave Limelight!
+augroup END
+nnoremap <leader>go :Goyo<CR>
+
+" -------------------------
 " NERDTree
 " -------------------------
+" ,n toggles the persistent tree; ,nf reveals the current file inside it.
+" It intentionally coexists with Vinegar (-) and FZF (,ff).
 nnoremap <leader>n :NERDTreeToggle<CR>
 nnoremap <leader>nf :NERDTreeFind<CR>
 let NERDTreeShowHidden = 1
@@ -367,6 +469,8 @@ augroup END
 " -------------------------
 " Tmux Navigator
 " -------------------------
+" Keep default Ctrl-h/j/k/l mappings so movement stays continuous across Vim
+" splits and neighboring tmux panes. Save before switching panes.
 let g:tmux_navigator_no_mappings = 0
 let g:tmux_navigator_save_on_switch = 1
 let g:tmux_navigator_disable_when_zoomed = 1
@@ -385,10 +489,12 @@ let g:tmux_navigator_disable_when_zoomed = 1
 " -------------------------
 " Line Numbers
 " -------------------------
+" Arakiel starts with absolute + relative numbers for keyboard-driven movement.
+" ,nu cycles relative -> absolute -> off -> relative.
 set number
 set relativenumber
 
-" FIXED: Single mapping to toggle both
+" A single mapping owns the complete line-number state transition.
 function! ToggleNumbers()
     if &relativenumber
         setlocal norelativenumber
@@ -476,6 +582,8 @@ nnoremap <leader>i :set list!<CR>
 " -------------------------
 " XDG Paths
 " -------------------------
+" Centralize Vim state under ~/.config/vim instead of leaving editor artifacts
+" throughout source trees.
 let g:vim_config_dir = expand('~/.config/vim')
 let g:vim_backup_dir = g:vim_config_dir . '/backup'
 let g:vim_swap_dir   = g:vim_config_dir . '/swap'
@@ -504,6 +612,9 @@ set viminfo='100,<50,s10,h,rA:,rB:
 " -------------------------
 " Sessions (Obsession)
 " -------------------------
+" Leader-o is the session namespace:
+"   ,os starts/saves under ~/.config/vim/session/
+"   ,oo opens :source prefilled with the same directory for restore.
 nnoremap <leader>os :Obsession ~/.config/vim/session/
 nnoremap <leader>oo :source ~/.config/vim/session/
 
@@ -522,18 +633,23 @@ let g:undotree_SetFocusWhenToggle = 1
 " -------------------------
 " Rooter
 " -------------------------
+" Keep automatic root changes quiet and resolve links first. FZF, Dispatch, and
+" Projectionist then operate from predictable project context.
 let g:rooter_silent_chdir = 1
 let g:rooter_resolve_links = 1
 
 " -------------------------
 " Dispatch
 " -------------------------
+" On Arakiel, vim-dispatch can use tmux for asynchronous command/build execution.
+" ,m runs :Make; ,d opens :Dispatch ready for a command.
 nnoremap <leader>m :Make<CR>
 nnoremap <leader>d :Dispatch<Space>
 
 " -------------------------
 " Signature
 " -------------------------
+" Keep marks visible in the sign column and mark-management keys mnemonic.
 let g:SignatureMap = {
     \ 'Leader': 'm',
     \ 'PlaceNextMark': 'm,',
@@ -609,6 +725,8 @@ vnoremap Q :norm @q<CR>
 " -------------------------
 " System clipboard integration
 " -------------------------
+" unnamedplus targets the Linux system clipboard when this Vim build has
+" +clipboard support. Headless/SSH Vim simply skips the setting.
 if has('clipboard')
     " Use system clipboard by default
     set clipboard=unnamedplus
@@ -617,6 +735,10 @@ endif
 " -------------------------
 " Quick save/quit (buffer-aware)
 " -------------------------
+" ,w writes only when changed; ,q closes the window; ,Q deletes the buffer.
+" ,bq closes the current buffer while returning to the previous one.
+" ,z keeps only the current split; ,= reindents the whole file and restores the
+" cursor afterward. ,p intentionally retains Arakiel's paste-mode toggle.
 " Only write if changed
 nnoremap <leader>w :update<CR>
 nnoremap <leader>q :quit<CR>
@@ -655,6 +777,8 @@ command! -bang QA qa<bang>
 " -------------------------
 " Large File Handling
 " -------------------------
+" Files over 1 MiB trade persistence and expensive FileType processing for
+" responsiveness; bufhidden=unload releases the buffer when abandoned.
 augroup large_file
     autocmd!
     autocmd BufReadPre * if getfsize(expand("%")) > 1024*1024 |

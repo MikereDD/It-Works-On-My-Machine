@@ -1,18 +1,32 @@
-" ~/config/vim/vimrc   (Windows)
-" Mike Redd / typezero
-" Windows Vim / gVim port of the Pi 5 Arch config
-" Version: 3.4-win - reliable Windows clipboard paste and safer indentation
+" =============================================================================
+" Typezero Vim Configuration - Windows
+" =============================================================================
+" Main config: ~/config/vim/vimrc
+" Author:      Mike Redd / typezero
+" Platform:    Windows Vim / gVim port of the Pi 5 Arch configuration
+" Version:     3.5-win - expanded navigation, alignment, project, and focus tooling
 "
-" Loaded by ~/_vimrc (the loader stub). Because a loader is used, $MYVIMRC
-" points at the loader, NOT this file - so self-edit/reload maps and the
-" auto-source autocmd hardcode this file's path (see g:vim_main below),
-" exactly like the original Linux config did.
+" Design goals:
+"   - Keep the Windows and Arch configurations conceptually aligned.
+"   - Preserve native Vim behavior unless a mapping/plugin adds clear value.
+"   - Favor discoverable leader mappings over hard-to-remember command names.
+"   - Keep persistent state, sessions, backups, swap, and undo data out of the
+"     working tree.
+"   - Make terminal paste behavior predictable and safe for large code blocks.
 "
-" Layout (mirrors Linux ~/.config/vim + ~/.vim split):
-"   this config + runtime data  ->  ~/config/vim/
-"   plugins + plug.vim autoload ->  ~/vimfiles/   (Windows default runtimepath)
+" Loader note:
+"   ~/_vimrc is only a loader stub. Because of that, $MYVIMRC points to the
+"   loader rather than this file. Self-edit, reload, and auto-source logic must
+"   therefore use g:vim_main explicitly.
 "
-" Changes from the Linux version are tagged  " [win].
+" Windows layout (mirrors the Linux ~/.config/vim + ~/.vim split):
+"   config + runtime data       -> ~/config/vim/
+"   plugins + plug.vim autoload -> ~/vimfiles/   (Windows default runtimepath)
+"
+" Convention:
+"   [win] comments mark intentional differences from the Linux configuration.
+"   <leader> is comma (,) and <localleader> is backslash (\).
+" =============================================================================
 
 scriptencoding utf-8
 set encoding=utf-8              " [win] force UTF-8 so glyphs/listchars render
@@ -132,75 +146,127 @@ set formatoptions+=q
 " -------------------------
 " Vim-Plug
 " -------------------------
+" Plugins are grouped by what they contribute rather than by install date.
+" Keep a plugin in the narrowest useful category so this block stays readable.
 call plug#begin(g:vim_plug_dir)
 
-" --- Core Essentials ---
+" --- Core Essentials ---------------------------------------------------------
+" Git command integration and repository-aware editing.
 Plug 'tpope/vim-fugitive'
+" Comment/uncomment motions and selections with gc.
 Plug 'tpope/vim-commentary'
+" Add/change/delete surrounding quotes, brackets, tags, and similar pairs.
 Plug 'tpope/vim-surround'
+" Makes supported plugin actions cooperate with Vim's repeat command (.).
 Plug 'tpope/vim-repeat'
+" Adds useful paired mappings such as [q/]q and other bracket commands.
 Plug 'tpope/vim-unimpaired'
+" Turns netrw into a fast parent-directory browser; '-' moves upward.
 Plug 'tpope/vim-vinegar'
+" Auto-inserts matching language endings where filetype support permits.
 Plug 'tpope/vim-endwise'
+" GitHub helper used by Fugitive's :GBrowse integration.
 Plug 'tpope/vim-rhubarb'
+" Fuzzy-search engine; post-install hook builds/updates the bundled binary.
 Plug 'junegunn/fzf', { 'do': { -> fzf#install() } }
+" Vim commands (:Files, :Rg, :Buffers, etc.) layered on top of fzf.
 Plug 'junegunn/fzf.vim'
+" Shows register contents while selecting registers for paste/macro operations.
 Plug 'junegunn/vim-peekaboo'
+" Fast labeled motions for jumping directly to visible targets.
 Plug 'easymotion/vim-easymotion'
+" Smarter word-boundary motions, especially around punctuation and mixed text.
 Plug 'chaoren/vim-wordmotion'
+" Extends %, matching, and highlighting across brackets, tags, and language pairs.
+Plug 'andymass/vim-matchup'
+" Interactive alignment for assignments, delimiters, tables, and similar text.
+Plug 'junegunn/vim-easy-align'
 
-" --- Navigation & Text Objects ---
+" --- Navigation & Text Objects ----------------------------------------------
+" Richer text objects for arguments, quotes, separators, and nested structures.
 Plug 'wellle/targets.vim'
+" Adds an indentation-based text object for selecting logical blocks.
 Plug 'michaeljsmith/vim-indent-object'
+" Symbol outline/sidebar backed by ctags.
 Plug 'preservim/tagbar'
-
-" --- Search ---
-Plug 'dyng/ctrlsf.vim'
-
-" --- Visual & UI ---
-Plug 'itchyny/lightline.vim'
-Plug 'maximbaz/lightline-ale'
-Plug 'morhetz/gruvbox'
-Plug 'Yggdroot/indentLine'
-Plug 'ryanoasis/vim-devicons'
-Plug 'mhinz/vim-startify'
-
-" --- File Explorer ---
-Plug 'preservim/nerdtree'
-Plug 'tiagofumo/vim-nerdtree-syntax-highlight'
-
-" --- Git ---
-Plug 'airblade/vim-gitgutter'
-
-" --- Language Support ---
-Plug 'dense-analysis/ale'
-Plug 'plasticboy/vim-markdown'
-Plug 'vim-python/python-syntax'
-Plug 'stephpy/vim-yaml'
-Plug 'elzr/vim-json'
-Plug 'PProvost/vim-ps1'                 " [win] PowerShell syntax/indent
-
-" --- Sessions ---
-Plug 'tpope/vim-obsession'
-" [win] DROPPED christoomey/vim-tmux-navigator - no tmux on Windows
-
-" --- Editing Intelligence ---
-Plug 'mbbill/undotree'
-Plug 'tpope/vim-sleuth'
-Plug 'tpope/vim-abolish'
-
-" --- Project Context ---
-Plug 'airblade/vim-rooter'
-Plug 'tpope/vim-dispatch'               " [win] async :Make via cmd `start`
-
-" --- Navigation ---
+" Persistent marks/signs with convenient mark navigation and visualization.
 Plug 'kshenoy/vim-signature'
 
-" --- You already had ---
+" --- Search -----------------------------------------------------------------
+" Project-wide search UI with editable results and preview support.
+Plug 'dyng/ctrlsf.vim'
+
+" --- Visual & UI -------------------------------------------------------------
+" Lightweight statusline framework.
+Plug 'itchyny/lightline.vim'
+" Exposes ALE lint state inside Lightline.
+Plug 'maximbaz/lightline-ale'
+" Primary colorscheme.
+Plug 'morhetz/gruvbox'
+" Visual indentation guides.
+Plug 'Yggdroot/indentLine'
+" Filetype/devicons for supported UI plugins and status components.
+Plug 'ryanoasis/vim-devicons'
+" Start screen with recent files, sessions, bookmarks, and commands.
+Plug 'mhinz/vim-startify'
+" Leader-key discovery popup; useful as the mapping set continues to grow.
+Plug 'liuchengxu/vim-which-key'
+" Distraction-free centered editing layout.
+Plug 'junegunn/goyo.vim'
+" Dims surrounding text; paired with Goyo below for focus mode.
+Plug 'junegunn/limelight.vim'
+
+" --- File Explorer -----------------------------------------------------------
+" Persistent project tree/sidebar.
+Plug 'preservim/nerdtree'
+" Adds syntax/devicon-aware highlighting to NERDTree entries.
+Plug 'tiagofumo/vim-nerdtree-syntax-highlight'
+
+" --- Git --------------------------------------------------------------------
+" Shows added/changed/removed hunks in the sign column.
+Plug 'airblade/vim-gitgutter'
+" Full-screen Magit-inspired Git interface retained from the older config.
 Plug 'jreybert/vimagit'
+
+" --- Language Support --------------------------------------------------------
+" Asynchronous linting, fixing, diagnostics, and completion.
+Plug 'dense-analysis/ale'
+" Markdown syntax and editing improvements.
+Plug 'plasticboy/vim-markdown'
+" Expanded Python syntax highlighting.
+Plug 'vim-python/python-syntax'
+" YAML syntax support.
+Plug 'stephpy/vim-yaml'
+" JSON syntax support.
+Plug 'elzr/vim-json'
+" [win] PowerShell syntax and indentation.
+Plug 'PProvost/vim-ps1'                 " [win] PowerShell syntax/indent
+
+" --- Sessions ---------------------------------------------------------------
+" Continuously maintains session files while an Obsession session is active.
+Plug 'tpope/vim-obsession'
+" [win] christoomey/vim-tmux-navigator intentionally omitted: no tmux on Windows.
+
+" --- Editing Intelligence ----------------------------------------------------
+" Visualizes Vim's persistent undo history as a navigable tree.
+Plug 'mbbill/undotree'
+" Detects existing indentation style and adjusts local settings accordingly.
+Plug 'tpope/vim-sleuth'
+" Smart substitutions, coercions, and abbreviation helpers.
+Plug 'tpope/vim-abolish'
+
+" --- Project Context ---------------------------------------------------------
+" Automatically changes Vim's working directory to the detected project root.
+Plug 'airblade/vim-rooter'
+" [win] Asynchronous :Make / :Dispatch integration via cmd `start`.
+Plug 'tpope/vim-dispatch'               " [win] async :Make via cmd `start`
+" Project-aware alternate/related-file navigation driven by projection rules.
+Plug 'tpope/vim-projectionist'
 
 call plug#end()
 
+" Built-in matchit complements vim-matchup by extending % to language-aware
+" matching pairs. packadd! is harmless if matchit is already available.
 packadd! matchit
 
 " -------------------------
@@ -255,8 +321,9 @@ let g:vim_markdown_auto_insert_bullets = 1
 " -------------------------
 " ALE
 " -------------------------
-" [win] Added powershell (PSScriptAnalyzer). ALE silently skips linters whose
-" binaries aren't on PATH, so absent tools don't error.
+" Asynchronous lint/fix/completion layer. Tools are used only when present on
+" PATH, so this config can stay shared even when a language tool is not installed.
+" [win] PowerShell diagnostics use PSScriptAnalyzer.
 let g:ale_linters = {
 \ 'python':     ['ruff', 'flake8'],
 \ 'powershell': ['psscriptanalyzer'],
@@ -316,7 +383,8 @@ vnoremap <leader>s <Plug>CtrlSFVwordExec
 " -------------------------
 " Tagbar
 " -------------------------
-" [win] Requires ctags on PATH (winget install UniversalCtags.Ctags)
+" Symbol outline for the current buffer.
+" [win] Requires ctags on PATH (winget install UniversalCtags.Ctags).
 nnoremap <leader>t :TagbarToggle<CR>
 let g:tagbar_width = 30
 let g:tagbar_autofocus = 1
@@ -325,6 +393,9 @@ let g:tagbar_sort = 0
 " -------------------------
 " FZF
 " -------------------------
+" Leader-f is the fuzzy-navigation namespace:
+"   ff files   fg ripgrep   fb buffers   fh history   fl lines
+"   fc commits f/ buffer lines fm maps   fH help tags
 nnoremap <leader>ff :Files<CR>
 nnoremap <leader>fg :Rg<CR>
 nnoremap <leader>fb :Buffers<CR>
@@ -348,6 +419,8 @@ let g:fzf_preview_window = ['right:50%', 'ctrl-/']
 " -------------------------
 " Git (Fugitive)
 " -------------------------
+" Leader-g is the Git namespace. Uppercase variants are intentionally used
+" where the lowercase mnemonic is already occupied (gP pull, gB browse).
 nnoremap <leader>gs :Git<CR>
 nnoremap <leader>gd :Gdiffsplit<CR>
 nnoremap <leader>gb :Git blame<CR>
@@ -390,8 +463,33 @@ map <leader>k <Plug>(easymotion-k)
 let g:wordmotion_prefix = '<Leader><Leader>'
 
 " -------------------------
+" EasyAlign
+" -------------------------
+" <leader>ea starts interactive alignment in either Visual or Normal mode.
+" Examples after selecting text: ,ea= aligns on '=', ,ea: aligns on ':'.
+xmap <leader>ea <Plug>(EasyAlign)
+nmap <leader>ea <Plug>(EasyAlign)
+
+" -------------------------
+" Focus Mode (Goyo + Limelight)
+" -------------------------
+" <leader>go toggles Goyo. Limelight follows Goyo automatically so entering
+" focus mode both centers the editing area and de-emphasizes surrounding text.
+" The autocmds are grouped so re-sourcing this vimrc never duplicates them.
+nnoremap <leader>go :Goyo<CR>
+
+augroup focus_mode
+  autocmd!
+  autocmd User GoyoEnter Limelight
+  autocmd User GoyoLeave Limelight!
+augroup END
+
+" -------------------------
 " NERDTree
 " -------------------------
+" ,n toggles the persistent tree; ,nf reveals the current file inside it.
+" This intentionally coexists with Vinegar (-) and FZF (,ff): tree, lightweight
+" directory browsing, and fuzzy navigation serve different workflows.
 nnoremap <leader>n :NERDTreeToggle<CR>
 nnoremap <leader>nf :NERDTreeFind<CR>
 let NERDTreeShowHidden = 1
@@ -410,6 +508,8 @@ augroup END
 " -------------------------
 " Line Numbers
 " -------------------------
+" Start with absolute numbers. ,nu cycles:
+"   absolute -> off -> absolute + relative -> absolute ...
 set number
 set norelativenumber
 function! ToggleNumbers()
@@ -492,6 +592,8 @@ nnoremap <leader>i :set list!<CR>
 " -------------------------
 " Persistence
 " -------------------------
+" Keep undo, backup, swap, and viminfo state under ~/config/vim rather than
+" scattering editor artifacts through source trees.
 " [win] // suffix (full path, % separators) is valid on Windows; fnameescape
 " guards against spaces in the profile path.
 set undofile
@@ -506,6 +608,9 @@ set viminfo='100,<50,s10,h,rA:,rB:
 " -------------------------
 " Sessions (Obsession)
 " -------------------------
+" Leader-o is the session namespace:
+"   ,os starts/saves an Obsession session under the dedicated session directory.
+"   ,oo opens :source prefilled with that directory for quick session restore.
 execute 'nnoremap <leader>os :Obsession ' . g:vim_session_dir . '/'
 execute 'nnoremap <leader>oo :source ' . g:vim_session_dir . '/'
 
@@ -519,6 +624,8 @@ let g:undotree_SetFocusWhenToggle = 1
 " -------------------------
 " Rooter
 " -------------------------
+" Keep project-root changes quiet and resolve symlinks before root detection.
+" Projectionist and FZF then operate from a predictable project context.
 let g:rooter_silent_chdir = 1
 let g:rooter_resolve_links = 1
 
@@ -526,12 +633,14 @@ let g:rooter_resolve_links = 1
 " Dispatch
 " -------------------------
 " [win] vim-dispatch uses cmd `start` for async builds (no tmux).
+" ,m runs the current :Make target; ,d opens :Dispatch ready for a command.
 nnoremap <leader>m :Make<CR>
 nnoremap <leader>d :Dispatch<Space>
 
 " -------------------------
 " Signature
 " -------------------------
+" Keep marks visible in the sign column and make mark management mnemonic.
 let g:SignatureMap = {
 \ 'Leader':            'm',
 \ 'PlaceNextMark':     'm,',
@@ -639,6 +748,10 @@ nnoremap <silent> <leader>ps :set paste?<CR>
 " -------------------------
 " Quick save/quit (buffer-aware)
 " -------------------------
+" ,w writes only when changed; ,q closes the window; ,Q deletes the buffer.
+" ,bq closes the current buffer while returning to the previous one.
+" ,z keeps only the current split; ,= reindents the entire file and restores
+" the cursor position afterward.
 nnoremap <leader>w :update<CR>
 nnoremap <leader>q :quit<CR>
 nnoremap <leader>Q :bdelete<CR>
@@ -662,6 +775,8 @@ command! -bang QA qa<bang>
 " -------------------------
 " Large File Handling
 " -------------------------
+" Files over 1 MiB trade persistence and expensive FileType processing for
+" responsiveness. bufhidden=unload also releases the buffer when abandoned.
 augroup large_file
   autocmd!
   autocmd BufReadPre * if getfsize(expand("%")) > 1024*1024 |
