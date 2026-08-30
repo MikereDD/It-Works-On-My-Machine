@@ -1,175 +1,68 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>It-Works-On-My-Machine</title>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="It-Works-On-My-Machine — the TypezerØ systems repository for Netzach and Arakiel.">
+  <title>It-Works-On-My-Machine // TypezerØ</title>
   <link rel="stylesheet" href="style.css?v=12">
 </head>
 <body>
-  <main class="page">
+  <main class="shell">
+    <header class="hero">
+      <img class="avatar" src="../assets/it-works-on-my-machine-avatar.png" alt="TypezerØ — Netzach and Arakiel">
+      <div class="prompt"><span>typezero@system</span>:<span>~/It-Works-On-My-Machine</span>$ ./status</div>
+      <h1>It-Works-On-My-Machine</h1>
+      <p class="lede">The working systems repository for <strong>Netzach</strong> and <strong>Arakiel</strong>.</p>
+      <p class="rule">If it defines or helps operate Netzach or Arakiel, it belongs here. If it grows into a standalone project, it graduates out.</p>
+    </header>
 
-    <section class="hero terminal-box">
-      <div class="hero-text">
-        <div class="prompt">
-          <div>┌─[SSH]─[<span class="green">typezero</span>@<span class="yellow">arakiel</span>]─[~]</div>
-          <div>└─╼ <span class="cursor-target">It-Works-On-My-Machine</span></div>
-        </div>
+    <section class="machines" aria-label="Systems">
+      <article class="machine netzach">
+        <div class="machine-head"><span class="node">01</span><h2>NETZACH</h2></div>
+        <p class="role">DEVELOPMENT WORKSTATION</p>
+        <p>Windows development, builds, testing, media tooling, dotfiles, PowerShell automation, and the prototypes that start larger ideas.</p>
+        <ul><li>PowerShell + profile.d</li><li>Vim configuration</li><li>Admin + personal tools</li><li>Build / test / create</li></ul>
+      </article>
 
-        <h1>It-Works-On-My-Machine</h1>
-        <h2>Scripts. Bots. Projects.</h2>
-
-        <p>A collection of PowerShell, Bash, Python, Android, and 3D printing projects.</p>
-        <p class="cyan">Built for real-world use, not perfection.</p>
-      </div>
-
-      <pre class="ascii" aria-hidden="true">
-┌──────────────────┐   ┌────────┐
-│  &gt;_              │   │  ▬▬    │
-│                  │   │  ▬▬    │
-└──────┬─────┬─────┘   │  ..    │
-       └─────┘         │  []    │
-  ══════════════════   └────────┘
-
-  It works on my machine.
-      </pre>
+      <article class="machine arakiel">
+        <div class="machine-head"><span class="node">02</span><h2>ARAKIEL</h2></div>
+        <p class="role">SERVER / AUTOMATION NODE</p>
+        <p>Arch Linux on Raspberry Pi 5: always-on services, shell environments, tmux, system administration, networking, and automation.</p>
+        <ul><li>Bash + Zsh</li><li>tmux + Vim + i3</li><li>Pi / network administration</li><li>Services + automation</li></ul>
+      </article>
     </section>
 
-    <section class="project-row row-top" aria-label="Primary project sections">
-      <a class="card windows" href="https://github.com/MikereDD/It-Works-On-My-Machine/tree/main/Windows" target="_blank" rel="noopener noreferrer">
-        <div class="icon">▦</div>
-        <h3>Windows</h3>
-        <p>PowerShell Scripts</p>
-        <ul>
-          <li>Admin Tools</li>
-          <li>Media Utilities</li>
-          <li>Automation Scripts</li>
-        </ul>
-        <span class="button">Browse windows/</span>
-      </a>
-
-      <a class="card linux" href="https://github.com/MikereDD/It-Works-On-My-Machine/tree/main/Linux" target="_blank" rel="noopener noreferrer">
-        <div class="icon">♟</div>
-        <h3>Linux</h3>
-        <p>Bash Scripts</p>
-        <ul>
-          <li>System Setup</li>
-          <li>Maintenance</li>
-          <li>Server Tools</li>
-        </ul>
-        <span class="button">Browse linux/</span>
-      </a>
-
-      <a class="card bots" href="https://github.com/MikereDD/It-Works-On-My-Machine/tree/main/Bots" target="_blank" rel="noopener noreferrer">
-        <div class="icon">☻</div>
-        <h3>Bots</h3>
-        <p>Telegram &amp; More</p>
-        <ul>
-          <li>Raziel VideoBot</li>
-          <li>Zaphkiel AIBot</li>
-          <li>Sandalphon MusicBot</li>
-          <li>Gabriel NewsBot</li>
-          <li>Selaphiel Bot</li>
-        </ul>
-        <span class="button">Browse bots/</span>
-      </a>
+    <section class="grid" aria-label="Repository areas">
+      <article><h3>SHARED</h3><p>Portable scripts, tools, dotfiles, and templates that genuinely belong to both systems.</p></article>
+      <article><h3>EXPERIMENTS</h3><p>3D printing, Android, games, prototypes, and whatever strange idea becomes useful next.</p></article>
+      <article><h3>LINEAGE</h3><p>Useful ancestors stay. PowerShell prototypes can remain even after their descendants graduate into standalone repositories.</p></article>
+      <article><h3>WORKFLOW</h3><p>Discover → Build → Use → Refine → Graduate.</p></article>
     </section>
 
-    <section class="project-row row-middle" aria-label="Secondary project sections">
-      <a class="card printing" href="https://github.com/MikereDD/It-Works-On-My-Machine/tree/main/3D-Printing" target="_blank" rel="noopener noreferrer">
-        <div class="icon">⌬</div>
-        <h3>3D Printing</h3>
-        <p>Bambu X2D</p>
-        <ul>
-          <li>STL Projects</li>
-          <li>OpenSCAD Files</li>
-          <li>Useful Parts</li>
-        </ul>
-        <span class="button">Browse 3d-printing/</span>
-      </a>
-
-      <a class="card games" href="https://github.com/MikereDD/It-Works-On-My-Machine/tree/main/Games" target="_blank" rel="noopener noreferrer">
-        <div class="icon">⌁</div>
-        <h3>Games</h3>
-        <p>Terminal Games</p>
-        <ul>
-          <li>Tetris</li>
-          <li>Snake</li>
-          <li>Pong</li>
-        </ul>
-        <span class="button">Browse games/</span>
-      </a>
-
-      <a class="card android" href="https://github.com/MikereDD/It-Works-On-My-Machine/tree/main/Android" target="_blank" rel="noopener noreferrer">
-        <div class="icon">▤</div>
-        <h3>Android</h3>
-        <p>Kotlin Apps</p>
-        <ul>
-          <li>pCloud TV</li>
-          <li>Media Apps</li>
-          <li>Jetpack Compose</li>
-        </ul>
-        <span class="button">Browse android/</span>
-      </a>
-    </section>
-
-    <section class="systems" aria-label="Development systems">
-      <section class="system-panel arakiel">
-        <div class="prompt mini">
-          <div>┌─[SSH]─[<span class="green">typezero</span>@<span class="yellow">arakiel</span>]─[~]</div>
-          <div>└─╼ system-info</div>
-        </div>
-
-        <div class="system-content">
-          <pre class="pi-art" aria-hidden="true">
-   .~~.
-  (    )
-   '--'
-  /====\
- /  ()  \
- \  ()  /
-  \____/
-          </pre>
-          <div class="info-lines">
-            <p><span>OS:</span> Arch Linux (aarch64)</p>
-            <p><span>Host:</span> Raspberry Pi 5</p>
-            <p><span>Shell:</span> bash</p>
-            <p><span>Purpose:</span> bots / automation / services</p>
-          </div>
-        </div>
-      </section>
-
-      <section class="system-panel netzach">
-        <div class="prompt mini">
-          <div>┌─[<span class="green">miker</span>@<span class="yellow">netzach</span>]─[~/GitHub/It-Works-On-My-Machine]<span class="git">(main)</span></div>
-          <div>└─╼ system-info</div>
-        </div>
-
-        <div class="system-content">
-          <pre class="laptop-art" aria-hidden="true">
-   ┌──────────┐
-   │   👽     │
-   └────┬─────┘
-  ════════════
-          </pre>
-          <div class="info-lines">
-            <p><span>OS:</span> Windows 11 Pro</p>
-            <p><span>Host:</span> Alienware m16 R2</p>
-            <p><span>Shell:</span> PowerShell 7.6</p>
-            <p><span>Purpose:</span> development / encoding / scripts</p>
-          </div>
-        </div>
-      </section>
+    <section class="tree">
+      <div class="prompt"><span>miker@netzach</span>:<span>~/It-Works-On-My-Machine</span>$ tree -L 2</div>
+      <pre>.
+├── Netzach/
+│   ├── PowerShell/
+│   ├── config/
+│   ├── setup/
+│   └── experiments/
+├── Arakiel/
+│   ├── bash.d/  zsh.d/  bin/
+│   ├── scripts/  lib/  config/
+│   ├── services/
+│   └── setup/
+├── Shared/
+├── Experiments/
+├── assets/
+└── docs/</pre>
     </section>
 
     <footer>
-      <span>&gt; Last updated: <strong id="last-updated">loading...</strong></span>
-      <span><a href="https://github.com/MikereDD/It-Works-On-My-Machine" target="_blank" rel="noopener noreferrer">GitHub</a></span>
-      <span><a href="https://github.com/MikereDD/It-Works-On-My-Machine/issues" target="_blank" rel="noopener noreferrer">Issues</a></span>
-      <span><a href="https://github.com/MikereDD/It-Works-On-My-Machine/stargazers" target="_blank" rel="noopener noreferrer">Star ★</a></span>
-      <span><a href="https://github.com/MikereDD/It-Works-On-My-Machine/blob/main/LICENSE" target="_blank" rel="noopener noreferrer"><strong>WTFPL</strong></a></span>
+      <span>TYPEZERØ // DOTFILES // SCRIPTS // TOOLS // EXPERIMENTS</span>
+      <span>last update: <time id="last-updated">--</time></span>
     </footer>
-
   </main>
   <script src="script.js?v=12"></script>
 </body>

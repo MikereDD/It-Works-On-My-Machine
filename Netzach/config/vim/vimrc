@@ -1,0 +1,673 @@
+" ~/config/vim/vimrc   (Windows)
+" Mike Redd / typezero
+" Windows Vim / gVim port of the Pi 5 Arch config
+" Version: 3.4-win - reliable Windows clipboard paste and safer indentation
+"
+" Loaded by ~/_vimrc (the loader stub). Because a loader is used, $MYVIMRC
+" points at the loader, NOT this file - so self-edit/reload maps and the
+" auto-source autocmd hardcode this file's path (see g:vim_main below),
+" exactly like the original Linux config did.
+"
+" Layout (mirrors Linux ~/.config/vim + ~/.vim split):
+"   this config + runtime data  ->  ~/config/vim/
+"   plugins + plug.vim autoload ->  ~/vimfiles/   (Windows default runtimepath)
+"
+" Changes from the Linux version are tagged  " [win].
+
+scriptencoding utf-8
+set encoding=utf-8              " [win] force UTF-8 so glyphs/listchars render
+set nocompatible
+filetype plugin indent on
+syntax on
+
+let mapleader = ","
+let maplocalleader = "\\"
+
+" -------------------------
+" Paths (Windows)
+" -------------------------
+" [win] Normalize backslashes to forward slashes so paths are safe in
+" option values and patterns even if the profile path has odd characters.
+function! s:Slash(p) abort
+  return substitute(a:p, '\\', '/', 'g')
+endfunction
+
+let g:vim_config_dir  = s:Slash(expand('~/config/vim'))   " this file + data
+let g:vim_rt_dir      = s:Slash(expand('~/vimfiles'))     " plugins (in rtp)
+let g:vim_main        = g:vim_config_dir . '/vimrc'        " THIS file
+let g:vim_backup_dir  = g:vim_config_dir . '/backup'
+let g:vim_swap_dir    = g:vim_config_dir . '/swap'
+let g:vim_undo_dir    = g:vim_config_dir . '/undo'
+let g:vim_info_file   = g:vim_config_dir . '/viminfo'
+let g:vim_session_dir = g:vim_config_dir . '/session'
+let g:vim_plug_dir    = g:vim_rt_dir . '/plugged'
+
+for s:dir in [g:vim_config_dir, g:vim_rt_dir, g:vim_backup_dir,
+            \ g:vim_swap_dir, g:vim_undo_dir, g:vim_session_dir]
+  if !isdirectory(s:dir)
+    call mkdir(s:dir, 'p', 0700)
+  endif
+endfor
+
+" -------------------------
+" vim-plug auto-bootstrap
+" -------------------------
+" [win] plug.vim must live in an autoload dir on the runtimepath; ~/vimfiles
+" is on Windows Vim's default rtp, so the plugin tree goes there. curl ships
+" with Win10 1803+. If curl is absent, drop plug.vim in ~/vimfiles/autoload/.
+let s:plug_path = g:vim_rt_dir . '/autoload/plug.vim'
+if empty(glob(s:plug_path))
+  silent execute '!curl -fLo ' . shellescape(s:plug_path) . ' --create-dirs '
+        \ . 'https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim'
+  autocmd VimEnter * PlugInstall --sync | source g:vim_main
+endif
+
+" -------------------------
+" Performance
+" -------------------------
+set lazyredraw
+set ttyfast
+set redrawtime=1500
+set synmaxcol=800
+set maxmempattern=5000
+set eventignore-=all
+
+" -------------------------
+" Essential UI baseline
+" -------------------------
+set hidden
+set showcmd
+set showmode
+set ruler
+set laststatus=2
+set title
+set visualbell t_vb=
+set autoread
+set autowrite
+set backspace=indent,eol,start
+set history=1000
+set report=0
+set nostartofline
+set signcolumn=yes
+
+" True colors (Windows Terminal / modern conhost; harmless in gVim)
+if exists('+termguicolors')
+  let &t_8f = "\<Esc>[38;2;%lu;%lu;%lum"
+  let &t_8b = "\<Esc>[48;2;%lu;%lu;%lum"
+  set termguicolors
+endif
+
+" -------------------------
+" Security
+" -------------------------
+set nomodeline
+
+" -------------------------
+" Short messages
+" -------------------------
+set shortmess+=I
+set shortmess+=c
+set shortmess+=F
+
+" -------------------------
+" Completion behavior
+" -------------------------
+set completeopt=menuone,longest,preview,noselect,noinsert
+set pumheight=15
+set wildmenu
+set wildmode=longest:full,full
+set wildignorecase
+set wildignore+=.git,.svn,.hg,*.o,*.obj,*.exe,*.dll
+set wildignore+=*.pyc,*.swp,*~,*.bak,*.jpg,*.png,*.gif
+set wildignore+=node_modules,__pycache__,venv,.venv,.eggs,*.egg-info
+
+" -------------------------
+" Formatting
+" -------------------------
+set formatoptions+=j
+set formatoptions-=t
+set formatoptions+=r
+set formatoptions+=q
+
+" -------------------------
+" Vim-Plug
+" -------------------------
+call plug#begin(g:vim_plug_dir)
+
+" --- Core Essentials ---
+Plug 'tpope/vim-fugitive'
+Plug 'tpope/vim-commentary'
+Plug 'tpope/vim-surround'
+Plug 'tpope/vim-repeat'
+Plug 'tpope/vim-unimpaired'
+Plug 'tpope/vim-vinegar'
+Plug 'tpope/vim-endwise'
+Plug 'tpope/vim-rhubarb'
+Plug 'junegunn/fzf', { 'do': { -> fzf#install() } }
+Plug 'junegunn/fzf.vim'
+Plug 'junegunn/vim-peekaboo'
+Plug 'easymotion/vim-easymotion'
+Plug 'chaoren/vim-wordmotion'
+
+" --- Navigation & Text Objects ---
+Plug 'wellle/targets.vim'
+Plug 'michaeljsmith/vim-indent-object'
+Plug 'preservim/tagbar'
+
+" --- Search ---
+Plug 'dyng/ctrlsf.vim'
+
+" --- Visual & UI ---
+Plug 'itchyny/lightline.vim'
+Plug 'maximbaz/lightline-ale'
+Plug 'morhetz/gruvbox'
+Plug 'Yggdroot/indentLine'
+Plug 'ryanoasis/vim-devicons'
+Plug 'mhinz/vim-startify'
+
+" --- File Explorer ---
+Plug 'preservim/nerdtree'
+Plug 'tiagofumo/vim-nerdtree-syntax-highlight'
+
+" --- Git ---
+Plug 'airblade/vim-gitgutter'
+
+" --- Language Support ---
+Plug 'dense-analysis/ale'
+Plug 'plasticboy/vim-markdown'
+Plug 'vim-python/python-syntax'
+Plug 'stephpy/vim-yaml'
+Plug 'elzr/vim-json'
+Plug 'PProvost/vim-ps1'                 " [win] PowerShell syntax/indent
+
+" --- Sessions ---
+Plug 'tpope/vim-obsession'
+" [win] DROPPED christoomey/vim-tmux-navigator - no tmux on Windows
+
+" --- Editing Intelligence ---
+Plug 'mbbill/undotree'
+Plug 'tpope/vim-sleuth'
+Plug 'tpope/vim-abolish'
+
+" --- Project Context ---
+Plug 'airblade/vim-rooter'
+Plug 'tpope/vim-dispatch'               " [win] async :Make via cmd `start`
+
+" --- Navigation ---
+Plug 'kshenoy/vim-signature'
+
+" --- You already had ---
+Plug 'jreybert/vimagit'
+
+call plug#end()
+
+packadd! matchit
+
+" -------------------------
+" Gruvbox
+" -------------------------
+set background=dark
+let g:gruvbox_contrast_dark = 'hard'
+let g:gruvbox_italic = 1
+let g:gruvbox_bold = 1
+silent! colorscheme gruvbox            " [win] guard for first (pre-install) run
+
+" -------------------------
+" Lightline (with ALE integration)
+" -------------------------
+let g:lightline = {
+\ 'colorscheme': 'gruvbox',
+\ 'active': {
+\   'left': [['mode', 'paste'], ['gitbranch', 'readonly', 'filename', 'modified']],
+\   'right': [['lineinfo'], ['percent'], ['linter_checking', 'linter_errors', 'linter_warnings', 'linter_ok'], ['fileformat', 'fileencoding', 'filetype']]
+\ },
+\ 'component_expand': {
+\   'linter_checking': 'lightline#ale#checking',
+\   'linter_warnings': 'lightline#ale#warnings',
+\   'linter_errors': 'lightline#ale#errors',
+\   'linter_ok': 'lightline#ale#ok'
+\ },
+\ 'component_type': {
+\   'linter_checking': 'left',
+\   'linter_warnings': 'warning',
+\   'linter_errors': 'error',
+\   'linter_ok': 'left'
+\ },
+\ 'component_function': {
+\   'gitbranch': 'FugitiveHead'
+\ }
+\ }
+
+" -------------------------
+" Python Syntax
+" -------------------------
+let g:python_highlight_all = 1
+
+" -------------------------
+" Markdown
+" -------------------------
+let g:vim_markdown_folding_disabled = 1
+let g:vim_markdown_frontmatter = 1
+let g:vim_markdown_conceal = 0
+let g:vim_markdown_new_list_item_indent = 2
+let g:vim_markdown_auto_insert_bullets = 1
+
+" -------------------------
+" ALE
+" -------------------------
+" [win] Added powershell (PSScriptAnalyzer). ALE silently skips linters whose
+" binaries aren't on PATH, so absent tools don't error.
+let g:ale_linters = {
+\ 'python':     ['ruff', 'flake8'],
+\ 'powershell': ['psscriptanalyzer'],
+\ 'ps1':        ['psscriptanalyzer'],
+\ 'bash':       ['shellcheck'],
+\ 'sh':         ['shellcheck'],
+\ 'markdown':   ['markdownlint'],
+\ 'yaml':       ['yamllint'],
+\ 'json':       ['jsonlint', 'jq'],
+\ 'vim':        ['vint'],
+\}
+
+let g:ale_fixers = {
+\ '*':        ['remove_trailing_lines', 'trim_whitespace'],
+\ 'python':   ['ruff', 'black', 'isort'],
+\ 'bash':     ['shfmt'],
+\ 'sh':       ['shfmt'],
+\ 'json':     ['jq'],
+\ 'markdown': ['prettier'],
+\}
+
+let g:ale_fix_on_save = 1
+let g:ale_lint_on_save = 1
+let g:ale_lint_on_text_changed = 'normal'
+let g:ale_lint_on_insert_leave = 1
+let g:ale_sign_column_always = 1
+let g:ale_set_highlights = 1
+let g:ale_set_loclist = 0
+let g:ale_set_quickfix = 1
+
+let g:ale_completion_enabled = 1
+let g:ale_completion_autoimport = 1
+
+let g:ale_sign_error = 'E'
+let g:ale_sign_warning = 'W'
+let g:ale_sign_info = 'I'
+
+nmap <silent> [a <Plug>(ale_previous_wrap)
+nmap <silent> ]a <Plug>(ale_next_wrap)
+nmap <silent> [e <Plug>(ale_previous_error)
+nmap <silent> ]e <Plug>(ale_next_error)
+nnoremap <leader>af :ALEFix<CR>
+nnoremap <leader>at :ALEToggle<CR>
+nnoremap <leader>ad :ALEDetail<CR>
+
+" -------------------------
+" CtrlSF
+" -------------------------
+let g:ctrlsf_auto_focus = 1
+let g:ctrlsf_auto_close = 0
+let g:ctrlsf_search_mode = 'async'
+let g:ctrlsf_auto_preview = 1
+let g:ctrlsf_case_sensitive = 'smart'
+nnoremap <leader>s :CtrlSF<Space>
+vnoremap <leader>s <Plug>CtrlSFVwordExec
+
+" -------------------------
+" Tagbar
+" -------------------------
+" [win] Requires ctags on PATH (winget install UniversalCtags.Ctags)
+nnoremap <leader>t :TagbarToggle<CR>
+let g:tagbar_width = 30
+let g:tagbar_autofocus = 1
+let g:tagbar_sort = 0
+
+" -------------------------
+" FZF
+" -------------------------
+nnoremap <leader>ff :Files<CR>
+nnoremap <leader>fg :Rg<CR>
+nnoremap <leader>fb :Buffers<CR>
+nnoremap <leader>fh :History<CR>
+nnoremap <leader>fl :Lines<CR>
+nnoremap <leader>fc :Commits<CR>
+nnoremap <leader>f/ :BLines<CR>
+nnoremap <leader>fm :Maps<CR>
+nnoremap <leader>fH :Helptags<CR>
+
+if executable('rg')
+  let $FZF_DEFAULT_COMMAND = 'rg --files --hidden --follow --glob "!.git/*" --glob "!node_modules/*" --glob "!__pycache__/*"'
+  let $FZF_DEFAULT_OPTS = '--layout=reverse --info=inline --bind ctrl-a:select-all'
+  set grepprg=rg\ --vimgrep\ --smart-case
+  set grepformat=%f:%l:%c:%m
+endif
+
+let g:fzf_layout = { 'window': { 'width': 0.9, 'height': 0.8 } }
+let g:fzf_preview_window = ['right:50%', 'ctrl-/']
+
+" -------------------------
+" Git (Fugitive)
+" -------------------------
+nnoremap <leader>gs :Git<CR>
+nnoremap <leader>gd :Gdiffsplit<CR>
+nnoremap <leader>gb :Git blame<CR>
+nnoremap <leader>gl :Git log<CR>
+nnoremap <leader>gw :Gwrite<CR>
+nnoremap <leader>gc :Git commit<CR>
+nnoremap <leader>gp :Git push<CR>
+nnoremap <leader>gP :Git pull<CR>
+nnoremap <leader>gf :Git fetch<CR>
+nnoremap <leader>gB :GBrowse<CR>
+
+" -------------------------
+" GitGutter
+" -------------------------
+set updatetime=250
+let g:gitgutter_sign_added = '+'
+let g:gitgutter_sign_modified = '~'
+let g:gitgutter_sign_removed = '_'
+let g:gitgutter_sign_removed_first_line = '‾'
+let g:gitgutter_sign_modified_removed = '~_'
+nnoremap <leader>gh :GitGutterLineHighlightsToggle<CR>
+nmap <leader>ghp <Plug>(GitGutterPreviewHunk)
+nmap <leader>gu <Plug>(GitGutterUndoHunk)
+nmap ]h <Plug>(GitGutterNextHunk)
+nmap [h <Plug>(GitGutterPrevHunk)
+
+" -------------------------
+" EasyMotion
+" -------------------------
+let g:EasyMotion_do_mapping = 0
+let g:EasyMotion_smartcase = 1
+nmap s <Plug>(easymotion-s2)
+nmap S <Plug>(easymotion-overwin-f2)
+map <leader>j <Plug>(easymotion-j)
+map <leader>k <Plug>(easymotion-k)
+
+" -------------------------
+" WordMotion
+" -------------------------
+let g:wordmotion_prefix = '<Leader><Leader>'
+
+" -------------------------
+" NERDTree
+" -------------------------
+nnoremap <leader>n :NERDTreeToggle<CR>
+nnoremap <leader>nf :NERDTreeFind<CR>
+let NERDTreeShowHidden = 1
+let NERDTreeIgnore = ['\.pyc$', '__pycache__$', '\.swp$', '\.git$', '\.egg-info$']
+let NERDTreeMinimalUI = 1
+let NERDTreeDirArrows = 1
+let NERDTreeAutoDeleteBuffer = 1
+
+augroup nerdtree_autoclose
+  autocmd!
+  autocmd BufEnter * if tabpagenr('$') == 1 && winnr('$') == 1 && exists('b:NERDTree') && b:NERDTree.isTabTree() | quit | endif
+augroup END
+
+" [win] REMOVED tmux navigator config - no tmux on Windows.
+
+" -------------------------
+" Line Numbers
+" -------------------------
+set number
+set norelativenumber
+function! ToggleNumbers()
+  if &relativenumber
+    setlocal norelativenumber
+  elseif &number
+    setlocal nonumber
+  else
+    setlocal number relativenumber
+  endif
+endfunction
+nnoremap <leader>nu :call ToggleNumbers()<CR>
+
+" -------------------------
+" Tabs/Indent
+" -------------------------
+set tabstop=8
+set shiftwidth=4
+set softtabstop=4
+set expandtab
+set smarttab
+set autoindent
+" Filetype indent scripts already handle C#, PowerShell, Kotlin, etc.
+" Global smartindent can re-indent multi-line terminal pastes incorrectly.
+set nosmartindent
+set shiftround
+set copyindent
+
+" -------------------------
+" Wrapping
+" -------------------------
+set wrap
+set linebreak
+set textwidth=120
+set colorcolumn=+1
+set showbreak=>\ \ \
+set breakindent
+
+" -------------------------
+" Search
+" -------------------------
+set ignorecase
+set smartcase
+set incsearch
+set hlsearch
+set showmatch
+set gdefault
+nnoremap <leader>/ :noh<CR>
+nnoremap n nzzzv
+nnoremap N Nzzzv
+
+" -------------------------
+" Movement
+" -------------------------
+set scrolloff=5
+set sidescrolloff=10
+nnoremap j gj
+nnoremap k gk
+nnoremap H ^
+nnoremap L $
+nnoremap gV `[v`]
+
+" -------------------------
+" Splits
+" -------------------------
+set splitbelow
+set splitright
+nnoremap <C-Left> :vertical resize -5<CR>
+nnoremap <C-Right> :vertical resize +5<CR>
+nnoremap <C-Up> :resize +5<CR>
+nnoremap <C-Down> :resize -5<CR>
+
+" -------------------------
+" Invisible Chars
+" -------------------------
+set list
+set listchars=tab:▸\ ,trail:·,extends:❯,precedes:❮,nbsp:␣
+nnoremap <leader>i :set list!<CR>
+
+" -------------------------
+" Persistence
+" -------------------------
+" [win] // suffix (full path, % separators) is valid on Windows; fnameescape
+" guards against spaces in the profile path.
+set undofile
+execute 'set undodir=' . fnameescape(g:vim_undo_dir) . '//'
+set backup
+execute 'set backupdir=' . fnameescape(g:vim_backup_dir) . '//'
+set swapfile
+execute 'set directory=' . fnameescape(g:vim_swap_dir) . '//'
+execute 'set viminfo+=n' . fnameescape(g:vim_info_file)
+set viminfo='100,<50,s10,h,rA:,rB:
+
+" -------------------------
+" Sessions (Obsession)
+" -------------------------
+execute 'nnoremap <leader>os :Obsession ' . g:vim_session_dir . '/'
+execute 'nnoremap <leader>oo :source ' . g:vim_session_dir . '/'
+
+" -------------------------
+" Undotree
+" -------------------------
+nnoremap <leader>u :UndotreeToggle<CR>
+let g:undotree_WindowLayout = 2
+let g:undotree_SetFocusWhenToggle = 1
+
+" -------------------------
+" Rooter
+" -------------------------
+let g:rooter_silent_chdir = 1
+let g:rooter_resolve_links = 1
+
+" -------------------------
+" Dispatch
+" -------------------------
+" [win] vim-dispatch uses cmd `start` for async builds (no tmux).
+nnoremap <leader>m :Make<CR>
+nnoremap <leader>d :Dispatch<Space>
+
+" -------------------------
+" Signature
+" -------------------------
+let g:SignatureMap = {
+\ 'Leader':            'm',
+\ 'PlaceNextMark':     'm,',
+\ 'ToggleMarkAtLine':  'm.',
+\ 'PurgeMarksAtLine':  'm-',
+\ 'DeleteMark':        'dm',
+\ 'ListBufferMarks':   'm/',
+\ 'ListGlobalMarks':   'm?'
+\ }
+
+" -------------------------
+" Autocommands
+" -------------------------
+augroup line_return
+  autocmd!
+  autocmd BufReadPost * if line("'\"") > 1 && line("'\"") <= line("$") | execute 'normal! g`"zvzz' | endif
+augroup END
+
+augroup resize_splits
+  autocmd!
+  autocmd VimResized * wincmd =
+augroup END
+
+" [win] Re-source on save. Compared against g:vim_main (this file) rather than
+" $MYVIMRC, since with a loader $MYVIMRC is the loader. Case-insensitive and
+" slash-normalized so it matches regardless of how Windows reports the path.
+function! s:SourceIfMainVimrc() abort
+  if s:Slash(expand('<afile>:p')) ==? g:vim_main
+    execute 'source ' . fnameescape(g:vim_main)
+  endif
+endfunction
+augroup vimrc_auto_source
+  autocmd!
+  autocmd BufWritePost * call s:SourceIfMainVimrc()
+augroup END
+
+augroup auto_mkdir
+  autocmd!
+  autocmd BufWritePre * call mkdir(expand('<afile>:p:h'), 'p')
+augroup END
+
+" -------------------------
+" Conflict Markers
+" -------------------------
+match ErrorMsg '^\(<\|=\|>\)\{7\}\([^=].\+\)\?$'
+
+" -------------------------
+" Helpers
+" -------------------------
+function! StripTrailing()
+  let l:save = winsaveview()
+  keeppatterns %s/\s\+$//e
+  call winrestview(l:save)
+endfunction
+nnoremap <leader>W :call StripTrailing()<CR>
+
+" [win] REMOVED  w!!  sudo-tee save. For protected files, relaunch Vim as Admin.
+
+" Quick vimrc edit/reload - hardcoded to THIS file (loader makes $MYVIMRC wrong)
+execute 'nnoremap <leader>ev :edit ' . fnameescape(g:vim_main) . '<CR>'
+execute 'nnoremap <leader>sv :source ' . fnameescape(g:vim_main) . '<CR>'
+
+nnoremap <leader>D :diffoff!<CR>:set nowrap<CR>
+nnoremap Y y$
+xnoremap < <gv
+xnoremap > >gv
+nnoremap Q @q
+vnoremap Q :norm @q<CR>
+
+" -------------------------
+" System clipboard integration / reliable paste
+" -------------------------
+" [win] On Windows + and * refer to the same system clipboard.
+if has('clipboard')
+  set clipboard=unnamed
+
+  " Exact clipboard paste in Normal mode. These bypass Insert-mode
+  " autoindent, mappings, and abbreviations, so large code blocks retain
+  " their original whitespace.
+  nnoremap <silent> <leader>p "+p
+  nnoremap <silent> <leader>P "+P
+
+  " Replace a visual selection without overwriting the clipboard.
+  xnoremap <silent> <leader>p "_d"+P
+  xnoremap <silent> <leader>P "_d"+P
+
+  " Insert the clipboard literally at the cursor while already in Insert
+  " mode. <C-r><C-o> prevents indentation and mapping side effects.
+  inoremap <silent> <C-S-v> <C-r><C-o>+
+  cnoremap <silent> <C-S-v> <C-r>+
+endif
+
+" Manual paste-mode fallback for terminals that do not report bracketed
+" paste correctly. F2 toggles it; leaving Insert mode always turns it off.
+set pastetoggle=<F2>
+set nopaste
+augroup safe_paste_mode
+  autocmd!
+  autocmd InsertLeave * if &paste | set nopaste | echo "paste mode: off" | endif
+augroup END
+
+" Show the current paste-mode state without changing it.
+nnoremap <silent> <leader>ps :set paste?<CR>
+
+" -------------------------
+" Quick save/quit (buffer-aware)
+" -------------------------
+nnoremap <leader>w :update<CR>
+nnoremap <leader>q :quit<CR>
+nnoremap <leader>Q :bdelete<CR>
+nnoremap <leader>bq :bprevious <bar> bdelete #<CR>
+nnoremap <leader>z <C-w>o
+nnoremap <leader>= mzgg=G`z
+vnoremap = =gv
+nnoremap g. `.
+nnoremap g, `^
+
+" -------------------------
+" Typo Fixes
+" -------------------------
+command! -bang -nargs=* W w<bang> <args>
+command! -bang -nargs=* Wq wq<bang> <args>
+command! -bang -nargs=* WQ wq<bang> <args>
+command! -bang Q q<bang>
+command! -bang Qa qa<bang>
+command! -bang QA qa<bang>
+
+" -------------------------
+" Large File Handling
+" -------------------------
+augroup large_file
+  autocmd!
+  autocmd BufReadPre * if getfsize(expand("%")) > 1024*1024 |
+        \ setlocal noswapfile |
+        \ setlocal noundofile |
+        \ setlocal eventignore+=FileType |
+        \ setlocal bufhidden=unload |
+        \ endif
+augroup END

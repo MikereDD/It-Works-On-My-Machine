@@ -1,33 +1,59 @@
 # Auto-detect text files and normalize line endings in the repo.
 * text=auto
 
-# Shell scripts run on Linux / the Pi — keep them LF everywhere,
-# regardless of any machine's core.autocrlf setting.
+# ----------------------------------------------------------------------
+# Repository metadata
+# ----------------------------------------------------------------------
+
+.gitattributes   text eol=lf
+.gitignore       text eol=lf
+LICENSE          text eol=lf
+
+# ----------------------------------------------------------------------
+# Arakiel — Linux / Raspberry Pi
+#
+# Everything textual under Arakiel must remain LF regardless of the
+# machine cloning or editing the repository.
+#
+# Binary rules later in this file override this where applicable.
+# ----------------------------------------------------------------------
+
+Arakiel/**       text eol=lf
+
+# Shell scripts.
 *.sh             text eol=lf
 *.bash           text eol=lf
 
-# Extension-less scripts.
+# Extension-less scripts/config fragments used by shell environments.
 infocat-pi       text eol=lf
-
-# Extension-less shell config in ~/.bash.d/ matches at any repo depth.
 **/bash.d/*      text eol=lf
+**/zsh.d/*       text eol=lf
+
 aliases          text eol=lf
 env              text eol=lf
 motd             text eol=lf
 prompt           text eol=lf
 display          text eol=lf
+bashrc           text eol=lf
+zshrc            text eol=lf
+xinitrc          text eol=lf
+Xresources       text eol=lf
 
 # Vim config.
 vimrc            text eol=lf
 *.vim            text eol=lf
 
-# Other dotfile configs that must stay LF on Linux.
+# Linux / Unix configuration.
 *.conf           text eol=lf
 .xinitrc         text eol=lf
 .bashrc          text eol=lf
 .bash_profile    text eol=lf
+.zshrc           text eol=lf
 
-# Repo text/config files — keep LF for clean cross-platform diffs.
+# ----------------------------------------------------------------------
+# Cross-platform text/source formats
+# ----------------------------------------------------------------------
+
 *.md             text eol=lf
 *.txt            text eol=lf
 *.json           text eol=lf
@@ -37,32 +63,59 @@ vimrc            text eol=lf
 *.css            text eol=lf
 *.js             text eol=lf
 
-# Windows scripts — keep CRLF in the working tree.
+*.kt             text eol=lf
+*.kts            text eol=lf
+*.xml            text eol=lf
+*.gradle         text eol=lf
+*.properties     text eol=lf
+*.scad           text eol=lf
+
+# ----------------------------------------------------------------------
+# Netzach — Windows
+# ----------------------------------------------------------------------
+
 *.ps1            text eol=crlf
 *.psm1           text eol=crlf
 *.psd1           text eol=crlf
 *.vbs            text eol=crlf
 *.bat            text eol=crlf
 *.cmd            text eol=crlf
+*.cue            text eol=crlf
 
-# Treat common binaries as binary, with no line-ending conversion.
+# ----------------------------------------------------------------------
+# Binary files — never perform line-ending conversion
+# ----------------------------------------------------------------------
+
 *.png            binary
 *.jpg            binary
 *.jpeg           binary
 *.gif            binary
 *.webp           binary
 *.ico            binary
+*.bmp            binary
+
+*.ttf            binary
+*.otf            binary
+*.woff           binary
+*.woff2          binary
+
 *.pdf            binary
 *.zip            binary
 *.7z             binary
 *.rar            binary
+
 *.exe            binary
 *.dll            binary
+*.apk            binary
+*.jar            binary
+
+*.stl            binary
+
 *.mkv            binary
 *.mp4            binary
 *.m2ts           binary
 *.iso            binary
+
 *.flac           binary
 *.mp3            binary
 *.wav            binary
-*.cue            text eol=crlf

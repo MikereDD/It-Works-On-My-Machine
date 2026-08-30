@@ -1,1 +1,0 @@
-config/tmux/sessions/arakiel-tmux.sh

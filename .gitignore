@@ -1,7 +1,7 @@
-# outputs (adjust if you ever commit media)
+# Logs and generated output
 *.log
 
-# local config / secrets
+# Local configuration / secrets
 *.env
 *.key
 *.pem
@@ -11,37 +11,42 @@
 **/config.sh
 **/*rc.local.py
 
-# temp / junk
+# Temporary / OS junk
 *.tmp
 *.bak
 Thumbs.db
 Desktop.ini
 .DS_Store
 
-# editors
+# Editors
 *.swp
 *.swo
 *.swn
 
-# shell / system
+# Shell / system state
 .bash_history
+.zsh_history
 .ssh/
 
-# python
+# Python
 __pycache__/
 *.pyc
 
-# node (future)
+# Node
 node_modules/
 
 # Vim runtime/state
-.config/vim/viminfo
-.config/vim/backup/
-.config/vim/swap/
-.config/vim/undo/
+**/viminfo
+**/backup/
+**/swap/
+**/undo/
 
-# Private Wi-Fi config
-.config/wifi-menu/wifirc
+# Private Wi-Fi configuration
+**/wifi-menu/wifirc
 
-start-bot-api.sh
-etc/systemd/system/
+# Android / Gradle generated state
+**/.gradle/
+**/build/
+**/local.properties
+**/.idea/
+*.iml
