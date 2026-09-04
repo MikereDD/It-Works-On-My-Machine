@@ -492,7 +492,7 @@ let g:tmux_navigator_disable_when_zoomed = 1
 " Arakiel starts with absolute + relative numbers for keyboard-driven movement.
 " ,nu cycles relative -> absolute -> off -> relative.
 set number
-set relativenumber
+set norelativenumber
 
 " A single mapping owns the complete line-number state transition.
 function! ToggleNumbers()
@@ -527,7 +527,7 @@ set wrap
 set linebreak
 set textwidth=120
 set colorcolumn=+1
-set showbreak=>\ \ \ 
+set showbreak=>\ \ \
 set breakindent              " Visually indent wrapped lines
 
 " -------------------------
