@@ -1,7 +1,7 @@
-#--------------------------------------------
+﻿#--------------------------------------------
 # file:     ui.ps1
 # author:   Mike Redd
-# version:  1.3
+# version:  1.3.1
 # created:  2026-03-31
 # updated:  2026-09-13
 # desc:     Shared terminal UI and theme engine for Netzach PowerShell scripts
@@ -27,6 +27,9 @@
 .NOTES
     Loaded by the main PowerShell profile, but safe to dot-source directly.
 
+    Module metadata uses UI-prefixed variable names so dot-sourcing this file
+    cannot overwrite a caller's generic $ScriptName/$ScriptVersion variables.
+
     Design goals:
       - one visual language across maintained console scripts
       - semantic colors rather than script-specific color choices
@@ -34,9 +37,9 @@
       - no hard-coded user paths
 #>
 
-$ScriptName    = "UI Core"
-$ScriptVersion = "1.3"
-$ScriptAuthor  = "Mike Redd"
+$UiScriptName    = "UI Core"
+$UiScriptVersion = "1.3.1"
+$UiScriptAuthor  = "Mike Redd"
 
 # ── ANSI foundation ──────────────────────────────────────────
 $global:ESC = [char]27
@@ -166,7 +169,7 @@ function Write-UiBoxBorder {
     $accent = $global:UI_Theme.Accent
 
     Write-Host $pad -NoNewline
-    Write-Host "${accent}${global:UI_B}+$(("=" * $Width))+${global:UI_R}"
+    Write-Host "${accent}${global:UI_B}+$((("=" * $Width)))+${global:UI_R}"
 }
 
 function Write-UiBoxText {
