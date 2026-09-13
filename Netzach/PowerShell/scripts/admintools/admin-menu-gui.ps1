@@ -1,7 +1,7 @@
 ﻿#--------------------------------------------
 # file:     admin-menu-gui.ps1
 # author:   Mike Redd
-# version:  1.0.4
+# version:  1.1.3
 # created:  2026-06-19
 # updated:  2026-09-13
 # desc:     Unified Admin Tools dashboard (WinForms front-end for the
@@ -59,23 +59,141 @@ public static class ProcUtil {
 }
 "@ -ErrorAction SilentlyContinue
 
-# ── Theme ─────────────────────────────────────────────────────
+# ── Windows theme ──────────────────────────────────────────────
+# Keep the dashboard visually close to a native Windows 11 dark utility:
+# neutral dark surfaces, Segoe UI for controls, the current Windows selection
+# color for interactive emphasis, and restrained semantic status colors.
+#
+# The output panes stay monospaced because they present command/system data.
+$WinAccent = [System.Drawing.SystemColors]::Highlight
+$WinAccentText = [System.Drawing.SystemColors]::HighlightText
+
 $T = @{
-    Bg     = [System.Drawing.Color]::FromArgb(13,17,23)
-    Panel  = [System.Drawing.Color]::FromArgb(22,27,34)
-    Panel2 = [System.Drawing.Color]::FromArgb(28,33,40)
-    Text   = [System.Drawing.Color]::FromArgb(201,209,217)
-    Gray   = [System.Drawing.Color]::FromArgb(139,148,158)
-    Green  = [System.Drawing.Color]::FromArgb(63,185,80)
-    Cyan   = [System.Drawing.Color]::FromArgb(57,197,207)
-    Yellow = [System.Drawing.Color]::FromArgb(210,153,34)
-    Red    = [System.Drawing.Color]::FromArgb(248,81,73)
-    Mag    = [System.Drawing.Color]::FromArgb(188,140,255)
-    Sel    = [System.Drawing.Color]::FromArgb(33,40,48)
+    Bg        = [System.Drawing.Color]::FromArgb(32,32,32)
+    Surface   = [System.Drawing.Color]::FromArgb(37,37,37)
+    Panel     = [System.Drawing.Color]::FromArgb(43,43,43)
+    Panel2    = [System.Drawing.Color]::FromArgb(48,48,48)
+    Border    = [System.Drawing.Color]::FromArgb(62,62,62)
+    Text      = [System.Drawing.Color]::FromArgb(243,243,243)
+    Gray      = [System.Drawing.Color]::FromArgb(174,174,174)
+    Accent    = $WinAccent
+    AccentText= $WinAccentText
+    Green     = [System.Drawing.Color]::FromArgb(108,203,95)
+    Cyan      = $WinAccent
+    Yellow    = [System.Drawing.Color]::FromArgb(255,185,0)
+    Red       = [System.Drawing.Color]::FromArgb(255,99,99)
+    Mag       = [System.Drawing.Color]::FromArgb(196,154,255)
+    Sel       = [System.Drawing.Color]::FromArgb(55,55,55)
 }
-$MonoFont = New-Object System.Drawing.Font("Consolas",9.5)
-$MonoBig  = New-Object System.Drawing.Font("Consolas",11,[System.Drawing.FontStyle]::Bold)
+
+$MonoFont = New-Object System.Drawing.Font("Cascadia Mono",9.5)
+if (-not $MonoFont.Name) {
+    $MonoFont = New-Object System.Drawing.Font("Consolas",9.5)
+}
+$MonoBig  = New-Object System.Drawing.Font("Segoe UI Semibold",10.5)
 $UiFont   = New-Object System.Drawing.Font("Segoe UI",9)
+
+# Apply the native Windows dark title-bar treatment when supported.
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+
+public static class WindowTheme {
+    [DllImport("dwmapi.dll")]
+    public static extern int DwmSetWindowAttribute(
+        IntPtr hwnd,
+        int dwAttribute,
+        ref int pvAttribute,
+        int cbAttribute);
+}
+
+public static class TaskbarIdentity {
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+    public static extern int SetCurrentProcessExplicitAppUserModelID(
+        string AppID);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr SendMessage(
+        IntPtr hWnd,
+        uint Msg,
+        IntPtr wParam,
+        IntPtr lParam);
+}
+"@ -ErrorAction SilentlyContinue
+
+function Enable-WindowsDarkTitleBar {
+    param([Parameter(Mandatory)]$Form)
+
+    try {
+        $enabled = 1
+        # DWMWA_USE_IMMERSIVE_DARK_MODE = 20 on current Windows 10/11 builds.
+        [void][WindowTheme]::DwmSetWindowAttribute(
+            $Form.Handle,
+            20,
+            [ref]$enabled,
+            4
+        )
+    }
+    catch {
+        # Cosmetic only. The app must remain usable if DWM rejects the hint.
+    }
+}
+
+function Set-AdminToolsTaskbarIdentity {
+    param(
+        [Parameter(Mandatory)]$Form,
+        [Parameter(Mandatory)][string]$IconPath
+    )
+
+    try {
+        # PowerShell is the host process, so Windows can otherwise group the
+        # window under the generic PowerShell taskbar identity/icon. Give this
+        # dashboard its own explicit application identity.
+        [void][TaskbarIdentity]::SetCurrentProcessExplicitAppUserModelID(
+            "Typezero.AdminTools"
+        )
+    }
+    catch {
+        # App identity is cosmetic; never block startup if the shell rejects it.
+    }
+
+    if (-not (Test-Path -LiteralPath $IconPath)) {
+        return
+    }
+
+    try {
+        $icon = New-Object System.Drawing.Icon($IconPath)
+        $Form.Icon = $icon
+
+        # Explicitly set both small and large window icons. This keeps the same
+        # Admin Tools artwork in the title bar, Alt+Tab, and taskbar even though
+        # the executable hosting the form is powershell.exe.
+        $WM_SETICON = 0x0080
+        $ICON_SMALL = [IntPtr]0
+        $ICON_BIG   = [IntPtr]1
+
+        [void][TaskbarIdentity]::SendMessage(
+            $Form.Handle,
+            $WM_SETICON,
+            $ICON_SMALL,
+            $icon.Handle
+        )
+
+        [void][TaskbarIdentity]::SendMessage(
+            $Form.Handle,
+            $WM_SETICON,
+            $ICON_BIG,
+            $icon.Handle
+        )
+
+        # Keep the icon alive for the lifetime of the form.
+        $script:AdminToolsWindowIcon = $icon
+    }
+    catch {
+        # Icon failure is cosmetic; keep the dashboard usable.
+    }
+}
+
 
 # ── Admin check ───────────────────────────────────────────────
 $IsAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltinRole]::Administrator)
@@ -93,14 +211,17 @@ function New-Button($text, $accent) {
     $b.Text = $text
     $b.Font = $UiFont
     $b.FlatStyle = "Flat"
+    $b.UseVisualStyleBackColor = $false
     $b.FlatAppearance.BorderSize = 1
-    $b.FlatAppearance.BorderColor = $T.Panel2
+    $b.FlatAppearance.BorderColor = $T.Border
+    $b.FlatAppearance.MouseOverBackColor = $T.Sel
+    $b.FlatAppearance.MouseDownBackColor = $T.Panel
     $b.BackColor = $T.Panel2
-    if ($accent) { $b.ForeColor = $accent } else { $b.ForeColor = $T.Text }
+    $b.ForeColor = $(if ($accent) { $accent } else { $T.Text })
     $b.AutoSize = $false
-    $b.Height = 28
+    $b.Height = 30
     $b.Width = 150
-    $b.Margin = New-Object System.Windows.Forms.Padding(3)
+    $b.Margin = New-Object System.Windows.Forms.Padding(4)
     $b.Cursor = "Hand"
     return $b
 }
@@ -118,7 +239,7 @@ function New-Label($text, $color) {
 function New-Input($width) {
     $tb = New-Object System.Windows.Forms.TextBox
     $tb.Font = $MonoFont
-    $tb.BackColor = $T.Bg
+    $tb.BackColor = $T.Surface
     $tb.ForeColor = $T.Text
     $tb.BorderStyle = "FixedSingle"
     if ($width) { $tb.Width = $width } else { $tb.Width = 120 }
@@ -129,7 +250,7 @@ function New-Input($width) {
 function New-Output {
     $r = New-Object System.Windows.Forms.RichTextBox
     $r.Font = $MonoFont
-    $r.BackColor = $T.Bg
+    $r.BackColor = $T.Surface
     $r.ForeColor = $T.Text
     $r.BorderStyle = "None"
     $r.ReadOnly = $true
@@ -142,9 +263,9 @@ function New-Output {
 function New-Grid {
     $g = New-Object System.Windows.Forms.DataGridView
     $g.Dock = "Fill"
-    $g.BackgroundColor = $T.Bg
-    $g.GridColor = $T.Panel2
-    $g.BorderStyle = "None"
+    $g.BackgroundColor = $T.Surface
+    $g.GridColor = $T.Border
+    $g.BorderStyle = "FixedSingle"
     $g.Font = $MonoFont
     $g.ReadOnly = $true
     $g.AllowUserToAddRows = $false
@@ -156,14 +277,14 @@ function New-Grid {
     $g.EnableHeadersVisualStyles = $false
     $g.AutoSizeColumnsMode = "Fill"
     $g.ColumnHeadersHeightSizeMode = "DisableResizing"
-    $g.ColumnHeadersDefaultCellStyle.BackColor = $T.Panel
-    $g.ColumnHeadersDefaultCellStyle.ForeColor = $T.Cyan
+    $g.ColumnHeadersDefaultCellStyle.BackColor = $T.Panel2
+    $g.ColumnHeadersDefaultCellStyle.ForeColor = $T.Text
     $g.ColumnHeadersDefaultCellStyle.Font = $MonoFont
-    $g.DefaultCellStyle.BackColor = $T.Bg
+    $g.DefaultCellStyle.BackColor = $T.Surface
     $g.DefaultCellStyle.ForeColor = $T.Text
-    $g.DefaultCellStyle.SelectionBackColor = $T.Sel
-    $g.DefaultCellStyle.SelectionForeColor = $T.Green
-    $g.AlternatingRowsDefaultCellStyle.BackColor = $T.Panel
+    $g.DefaultCellStyle.SelectionBackColor = $T.Accent
+    $g.DefaultCellStyle.SelectionForeColor = $T.AccentText
+    $g.AlternatingRowsDefaultCellStyle.BackColor = $T.Bg
     return $g
 }
 
@@ -173,8 +294,8 @@ function New-Toolbar {
     $f.AutoSize = $true
     $f.AutoSizeMode = "GrowAndShrink"
     $f.WrapContents = $true
-    $f.BackColor = $T.Panel
-    $f.Padding = New-Object System.Windows.Forms.Padding(6,6,6,6)
+    $f.BackColor = $T.Bg
+    $f.Padding = New-Object System.Windows.Forms.Padding(8,8,8,8)
     return $f
 }
 
@@ -339,17 +460,22 @@ $Form.StartPosition = "CenterScreen"
 $Form.BackColor = $T.Bg
 $Form.ForeColor = $T.Text
 $Form.Font = $UiFont
+$Form.ShowIcon = $true
+# Resolve the icon now; apply it after the form handle exists so Windows can
+# use it consistently for the title bar, Alt+Tab, and taskbar.
+$IconPath = Join-Path $PSScriptRoot "assets\admin-tools.ico"
+
 
 # Status bar
 $StatusStrip = New-Object System.Windows.Forms.Panel
 $StatusStrip.Dock = "Bottom"
-$StatusStrip.Height = 24
-$StatusStrip.BackColor = $T.Panel
+$StatusStrip.Height = 28
+$StatusStrip.BackColor = $T.Surface
 $StatusLabel = New-Object System.Windows.Forms.Label
 $script:StatusLabel = $StatusLabel
 $StatusLabel.Dock = "Fill"
 $StatusLabel.TextAlign = "MiddleLeft"
-$StatusLabel.Font = $MonoFont
+$StatusLabel.Font = $UiFont
 $StatusLabel.ForeColor = $T.Gray
 $StatusLabel.Text = "  Ready  -  $env:USERNAME@$env:COMPUTERNAME"
 $StatusStrip.Controls.Add($StatusLabel)
@@ -358,7 +484,7 @@ $StatusStrip.Controls.Add($StatusLabel)
 $NavPanel = New-Object System.Windows.Forms.Panel
 $NavPanel.Dock = "Left"
 $NavPanel.Width = 196
-$NavPanel.BackColor = $T.Panel
+$NavPanel.BackColor = $T.Surface
 
 $NavTitle = New-Object System.Windows.Forms.Label
 $NavTitle.Text = "  Admin Tools"
@@ -366,14 +492,14 @@ $NavTitle.Dock = "Top"
 $NavTitle.Height = 40
 $NavTitle.TextAlign = "MiddleLeft"
 $NavTitle.Font = $MonoBig
-$NavTitle.ForeColor = $T.Cyan
-$NavTitle.BackColor = $T.Panel
+$NavTitle.ForeColor = $T.Text
+$NavTitle.BackColor = $T.Surface
 
 $Nav = New-Object System.Windows.Forms.ListBox
 $Nav.Dock = "Fill"
-$Nav.BackColor = $T.Panel
+$Nav.BackColor = $T.Surface
 $Nav.ForeColor = $T.Text
-$Nav.Font = $MonoFont
+$Nav.Font = $UiFont
 $Nav.BorderStyle = "None"
 $Nav.IntegralHeight = $false
 $Nav.ItemHeight = 30
@@ -381,6 +507,13 @@ $Nav.ItemHeight = 30
     "  SystemInfo","  Power","  Updates","  Network","  Disk",
     "  Events","  Services","  Watch","  Processes","  Logs","  About"
 ))
+
+# Keep DrawMode at the WinForms default. Native ListBox rendering already
+# follows the Windows selection/highlight colors and is more reliable than a
+# custom DrawItem handler in Windows PowerShell 5.1.
+$Nav.DrawMode = "Normal"
+
+
 
 $NavPanel.Controls.Add($Nav)
 $NavPanel.Controls.Add($NavTitle)
@@ -401,6 +534,76 @@ $Panels = @{}
 # explicit closure, later clicks resolve $out/$grid/etc. as $null (or as an
 # unrelated variable from another scope), producing the null-method errors this
 # dashboard previously emitted.
+
+function Get-DisplayInventory {
+    <#
+    .SYNOPSIS
+        Returns one record for every display Windows currently exposes.
+
+    .DESCRIPTION
+        System.Windows.Forms.Screen is the reliable source for attached desktop
+        displays and their active bounds. WmiMonitorID is used only to enrich
+        those records with monitor manufacturer/model names when Windows exposes
+        EDID data for an active panel.
+
+        WMI monitor enumeration order is not guaranteed to match Screen order,
+        so identity enrichment is best-effort. The important contract is that
+        every active Screen is always listed.
+    #>
+
+    $screens = @([System.Windows.Forms.Screen]::AllScreens)
+
+    $monitorIds = @(
+        Get-CimInstance `
+            -Namespace root\wmi `
+            -ClassName WmiMonitorID `
+            -ErrorAction SilentlyContinue |
+        Where-Object { $_.Active -eq $true }
+    )
+
+    function Convert-MonitorText {
+        param($Value)
+
+        if (-not $Value) {
+            return $null
+        }
+
+        $chars = @($Value | Where-Object { $_ -ne 0 } | ForEach-Object { [char]$_ })
+        if ($chars.Count -eq 0) {
+            return $null
+        }
+
+        return (-join $chars).Trim()
+    }
+
+    for ($i = 0; $i -lt $screens.Count; $i++) {
+        $screen = $screens[$i]
+        $monitor = if ($i -lt $monitorIds.Count) { $monitorIds[$i] } else { $null }
+
+        $manufacturer = if ($monitor) { Convert-MonitorText $monitor.ManufacturerName } else { $null }
+        $model = if ($monitor) { Convert-MonitorText $monitor.UserFriendlyName } else { $null }
+        $serial = if ($monitor) { Convert-MonitorText $monitor.SerialNumberID } else { $null }
+
+        $friendlyName = if ($model) {
+            if ($manufacturer) { "$manufacturer $model" } else { $model }
+        }
+        else {
+            "Display $($i + 1)"
+        }
+
+        [PSCustomObject]@{
+            Number       = $i + 1
+            FriendlyName = $friendlyName
+            DeviceName   = $screen.DeviceName
+            Width        = $screen.Bounds.Width
+            Height       = $screen.Bounds.Height
+            X            = $screen.Bounds.X
+            Y            = $screen.Bounds.Y
+            Primary      = $screen.Primary
+            Serial       = $serial
+        }
+    }
+}
 
 # ══════════════════════════════════════════════════════════════
 #  SYSTEMINFO TAB
@@ -495,14 +698,46 @@ function Build-SystemInfo {
             Write-SiHeader $out "DISPLAY ADAPTERS (GPU)"
             foreach ($g in Get-CimInstance Win32_VideoController) {
                 Write-SiRow $out "Name"    $g.Name $T.Green
-                if ($g.AdapterRAM -gt 0) { Write-SiRow $out "  VRAM" ("{0:N0} MB" -f ($g.AdapterRAM/1MB)) $T.Text }
+                if ($g.AdapterRAM -gt 0) {
+                    Write-SiRow $out "  VRAM" ("{0:N0} MB" -f ($g.AdapterRAM / 1MB)) $T.Text
+                }
                 Write-SiRow $out "  Driver" $g.DriverVersion $T.Gray
+
+                # Win32_VideoController reports an adapter's current mode, not a
+                # complete inventory of every attached monitor. Keep this line
+                # as adapter information and list displays separately below.
                 if ($g.CurrentHorizontalResolution) {
-                    Write-SiRow $out "  Resolution" "$($g.CurrentHorizontalResolution)x$($g.CurrentVerticalResolution) @ $($g.CurrentRefreshRate)Hz" $T.Text
+                    Write-SiRow $out "  Active Mode" "$($g.CurrentHorizontalResolution)x$($g.CurrentVerticalResolution) @ $($g.CurrentRefreshRate)Hz" $T.Text
+                }
+
+                Out-Line $out "" $T.Text
+            }
+
+            Write-SiHeader $out "CONNECTED DISPLAYS" -Append
+            $displays = @(Get-DisplayInventory)
+
+            if ($displays.Count -eq 0) {
+                Out-Line $out "    No active displays detected." $T.Yellow
+            }
+            else {
+                foreach ($display in $displays) {
+                    $primarySuffix = if ($display.Primary) { "  [Primary]" } else { "" }
+
+                    Write-SiRow $out "Display $($display.Number)" "$($display.FriendlyName)$primarySuffix" $T.Green
+                    Write-SiRow $out "  Device" $display.DeviceName $T.Gray
+                    Write-SiRow $out "  Resolution" "$($display.Width)x$($display.Height)" $T.Text
+                    Write-SiRow $out "  Position" "$($display.X), $($display.Y)" $T.Gray
+
+                    if ($display.Serial) {
+                        Write-SiRow $out "  Serial" $display.Serial $T.Gray
+                    }
+
+                    Out-Line $out "" $T.Text
                 }
             }
         }
-        Set-Status "GPU" $T.Green
+
+        Set-Status "GPU / displays" $T.Green
     }.GetNewClosure())
 
     $bNet = New-Button "Network" $T.Green
@@ -647,7 +882,7 @@ function Build-SystemInfo {
             }
             Out-Line $out "" $T.Text
 
-            # ── Display adapters ─────────────────────────────
+            # ── Display adapters / monitors ───────────────────
             Write-SiHeader $out "DISPLAY ADAPTERS (GPU)" -Append
             foreach ($g in Get-CimInstance Win32_VideoController) {
                 Write-SiRow $out "Name" $g.Name $T.Green
@@ -656,10 +891,32 @@ function Build-SystemInfo {
                 }
                 Write-SiRow $out "  Driver" $g.DriverVersion $T.Gray
                 if ($g.CurrentHorizontalResolution) {
-                    Write-SiRow $out "  Resolution" "$($g.CurrentHorizontalResolution)x$($g.CurrentVerticalResolution) @ $($g.CurrentRefreshRate)Hz" $T.Text
+                    Write-SiRow $out "  Active Mode" "$($g.CurrentHorizontalResolution)x$($g.CurrentVerticalResolution) @ $($g.CurrentRefreshRate)Hz" $T.Text
+                }
+                Out-Line $out "" $T.Text
+            }
+
+            Write-SiHeader $out "CONNECTED DISPLAYS" -Append
+            $displays = @(Get-DisplayInventory)
+            if ($displays.Count -eq 0) {
+                Out-Line $out "    No active displays detected." $T.Yellow
+            }
+            else {
+                foreach ($display in $displays) {
+                    $primarySuffix = if ($display.Primary) { "  [Primary]" } else { "" }
+
+                    Write-SiRow $out "Display $($display.Number)" "$($display.FriendlyName)$primarySuffix" $T.Green
+                    Write-SiRow $out "  Device" $display.DeviceName $T.Gray
+                    Write-SiRow $out "  Resolution" "$($display.Width)x$($display.Height)" $T.Text
+                    Write-SiRow $out "  Position" "$($display.X), $($display.Y)" $T.Gray
+
+                    if ($display.Serial) {
+                        Write-SiRow $out "  Serial" $display.Serial $T.Gray
+                    }
+
+                    Out-Line $out "" $T.Text
                 }
             }
-            Out-Line $out "" $T.Text
 
             # ── Network ──────────────────────────────────────
             Write-SiHeader $out "NETWORK ADAPTERS" -Append
@@ -1584,7 +1841,7 @@ function Build-About {
     $p.Controls.Add($out)
     Out-Line $out "" $T.Text
     Out-Line $out "  Admin Tools  -  GUI dashboard" $T.Cyan
-    Out-Line $out "  v1.0.4  by Mike Redd" $T.Gray
+    Out-Line $out "  v1.1.3  by Mike Redd" $T.Gray
     Out-Line $out "" $T.Text
     Out-Line $out "  A single front-end for the admin console menus:" $T.Text
     Out-Line $out "    SystemInfo - Power - Updates - Network - Disk" $T.Green
@@ -1644,4 +1901,9 @@ $Form.Add_FormClosing({ if ($script:WatchTimer) { $script:WatchTimer.Stop(); $sc
 $Nav.SelectedIndex = 0
 
 # ── Run ───────────────────────────────────────────────────────
+$Form.Add_Shown({
+    Enable-WindowsDarkTitleBar -Form $Form
+    Set-AdminToolsTaskbarIdentity -Form $Form -IconPath $IconPath
+}.GetNewClosure())
+
 [void]$Form.ShowDialog()
