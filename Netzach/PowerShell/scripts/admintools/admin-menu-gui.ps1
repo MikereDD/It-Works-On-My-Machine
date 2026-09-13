@@ -1,15 +1,42 @@
-#--------------------------------------------
+﻿#--------------------------------------------
 # file:     admin-menu-gui.ps1
 # author:   Mike Redd
-# version:  1.0.0
+# version:  1.0.4
 # created:  2026-06-19
-# updated:  2026-06-19
+# updated:  2026-09-13
 # desc:     Unified Admin Tools dashboard (WinForms front-end for the
 #           SystemInfo / Power / Updates / Network / Disk / Events /
 #           Services / Watch / Processes / Logs console menus).
 #           Standalone: does NOT depend on ui.ps1 / core.ps1.
 #           Requires Windows PowerShell 5.1 in -STA (WinForms).
 #--------------------------------------------
+
+# ── Host bootstrap ─────────────────────────────────────────────
+# This dashboard targets Windows PowerShell 5.1 in STA mode. The normal Typezer∅
+# Tool Menu runs under PowerShell 7, so a direct/menu launch must hand the GUI
+# off to the host it was designed and tested against.
+#
+# -NoProfile keeps the child GUI isolated from the caller's profile.
+# -ExecutionPolicy Bypass applies only to this child process; it does not alter
+# the machine or user execution policy.
+$needsWindowsPowerShell = ($PSVersionTable.PSEdition -ne "Desktop")
+$needsSta = ([Threading.Thread]::CurrentThread.ApartmentState -ne "STA")
+
+if ($needsWindowsPowerShell -or $needsSta) {
+    $windowsPowerShell = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
+
+    if (-not (Test-Path -LiteralPath $windowsPowerShell)) {
+        throw "Windows PowerShell 5.1 was not found at: $windowsPowerShell"
+    }
+
+    if (-not $PSCommandPath) {
+        throw "Cannot relaunch Admin Tools because the current script path is unavailable."
+    }
+
+    $arguments = "-NoProfile -ExecutionPolicy Bypass -STA -File `"$PSCommandPath`""
+    Start-Process -FilePath $windowsPowerShell -ArgumentList $arguments -WorkingDirectory $PSScriptRoot
+    return
+}
 
 # ── WinForms bootstrap ────────────────────────────────────────
 Add-Type -AssemblyName System.Windows.Forms
@@ -204,8 +231,19 @@ function Run-Busy($scriptblock) {
 }
 
 # ── Promoted tab helpers (script scope so click handlers can see them) ──
-function Write-SiHeader($out, $title) {
-    $out.Clear()
+function Write-SiHeader {
+    param(
+        [Parameter(Mandatory)]$out,
+        [Parameter(Mandatory)][string]$title,
+        [switch]$Append
+    )
+
+    # Individual SystemInfo views replace the current output. Full Report uses
+    # -Append so multiple sections can be rendered into one scrollable report.
+    if (-not $Append) {
+        $out.Clear()
+    }
+
     Out-Line $out "  $title" $T.Mag
     Out-Line $out "  ----------------------------------------------------" $T.Gray
 }
@@ -358,6 +396,12 @@ $Form.Controls.Add($StatusStrip)
 
 $Panels = @{}
 
+# WinForms callbacks created inside Build-* functions must use GetNewClosure().
+# Those builder-local variables disappear after the function returns; without an
+# explicit closure, later clicks resolve $out/$grid/etc. as $null (or as an
+# unrelated variable from another scope), producing the null-method errors this
+# dashboard previously emitted.
+
 # ══════════════════════════════════════════════════════════════
 #  SYSTEMINFO TAB
 # ══════════════════════════════════════════════════════════════
@@ -388,7 +432,7 @@ function Build-SystemInfo {
             Write-SiRow $out "Logged in"     "$env:USERNAME" $T.Text
         }
         Set-Status "System overview" $T.Green
-    })
+    }.GetNewClosure())
 
     $bCpu = New-Button "Processor" $T.Green
     $bCpu.Add_Click({
@@ -403,7 +447,7 @@ function Build-SystemInfo {
             }
         }
         Set-Status "Processor" $T.Green
-    })
+    }.GetNewClosure())
 
     $bMem = New-Button "Memory" $T.Green
     $bMem.Add_Click({
@@ -424,7 +468,7 @@ function Build-SystemInfo {
             }
         }
         Set-Status "Memory" $T.Green
-    })
+    }.GetNewClosure())
 
     $bStorage = New-Button "Storage" $T.Green
     $bStorage.Add_Click({
@@ -443,7 +487,7 @@ function Build-SystemInfo {
             }
         }
         Set-Status "Storage" $T.Green
-    })
+    }.GetNewClosure())
 
     $bGpu = New-Button "Display (GPU)" $T.Green
     $bGpu.Add_Click({
@@ -459,7 +503,7 @@ function Build-SystemInfo {
             }
         }
         Set-Status "GPU" $T.Green
-    })
+    }.GetNewClosure())
 
     $bNet = New-Button "Network" $T.Green
     $bNet.Add_Click({
@@ -475,7 +519,7 @@ function Build-SystemInfo {
             }
         }
         Set-Status "Network" $T.Green
-    })
+    }.GetNewClosure())
 
     $bBatt = New-Button "Battery" $T.Green
     $bBatt.Add_Click({
@@ -492,7 +536,7 @@ function Build-SystemInfo {
             }
         }
         Set-Status "Battery" $T.Green
-    })
+    }.GetNewClosure())
 
     $bPerf = New-Button "Performance" $T.Yellow
     $bPerf.Add_Click({
@@ -505,28 +549,188 @@ function Build-SystemInfo {
             Write-SiRow $out "Memory Used"  "$memPct%" $(if ($memPct -ge 85) { $T.Red } elseif ($memPct -ge 70) { $T.Yellow } else { $T.Green })
             $procCount = (Get-Process).Count
             Write-SiRow $out "Processes"    $procCount $T.Text
-            $thr = (Get-Process | Measure-Object -Property Threads -Sum).Sum
+            # Process.Threads is a ProcessThreadCollection, not a numeric value.
+            # Sum each collection's Count rather than asking Measure-Object to
+            # add the collection objects themselves.
+            $thr = (
+                Get-Process -ErrorAction SilentlyContinue |
+                ForEach-Object { $_.Threads.Count } |
+                Measure-Object -Sum
+            ).Sum
             if ($thr) { Write-SiRow $out "Threads" $thr $T.Gray }
         }
         Set-Status "Performance" $T.Green
-    })
+    }.GetNewClosure())
 
     $bFull = New-Button "Full Report" $T.Cyan
     $bFull.Add_Click({
         Run-Busy {
+            Set-Status "Building full system report..." $T.Yellow
             $out.Clear()
-            $bOverview.PerformClick(); Out-Line $out "" $T.Text
-            $bCpu.PerformClick();      Out-Line $out "" $T.Text
-            $bMem.PerformClick();      Out-Line $out "" $T.Text
-            $bStorage.PerformClick();  Out-Line $out "" $T.Text
-            $bGpu.PerformClick();      Out-Line $out "" $T.Text
-            $bNet.PerformClick();      Out-Line $out "" $T.Text
-            $bBatt.PerformClick();     Out-Line $out "" $T.Text
-            $bPerf.PerformClick()
-            $out.SelectionStart = 0; $out.ScrollToCaret()
+
+            # Full Report is rendered directly instead of clicking the other
+            # buttons. Those individual views intentionally clear $out, which
+            # previously meant the "full" report ended with only the final
+            # Performance section visible.
+            Out-Line $out "  ====================================================" $T.Cyan
+            Out-Line $out "  FULL SYSTEM REPORT" $T.Cyan
+            Out-Line $out "  $env:COMPUTERNAME  |  $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" $T.Gray
+            Out-Line $out "  ====================================================" $T.Cyan
+            Out-Line $out "" $T.Text
+
+            # ── System overview ───────────────────────────────
+            Write-SiHeader $out "SYSTEM OVERVIEW" -Append
+            $os   = Get-CimInstance Win32_OperatingSystem
+            $cs   = Get-CimInstance Win32_ComputerSystem
+            $bios = Get-CimInstance Win32_BIOS
+            $up   = (Get-Date) - $os.LastBootUpTime
+
+            Write-SiRow $out "Computer"      $cs.Name $T.Green
+            Write-SiRow $out "Manufacturer"  $cs.Manufacturer $T.Text
+            Write-SiRow $out "Model"         $cs.Model $T.Text
+            Write-SiRow $out "OS"            $os.Caption $T.Green
+            Write-SiRow $out "Version"       "$($os.Version) (build $($os.BuildNumber))" $T.Text
+            Write-SiRow $out "Architecture"  $os.OSArchitecture $T.Text
+            Write-SiRow $out "BIOS"          "$($bios.Manufacturer) $($bios.SMBIOSBIOSVersion)" $T.Text
+            Write-SiRow $out "Uptime"        ("{0}d {1}h {2}m" -f $up.Days, $up.Hours, $up.Minutes) $T.Yellow
+            Write-SiRow $out "Logged in"     $env:USERNAME $T.Text
+            Out-Line $out "" $T.Text
+
+            # ── Processor ────────────────────────────────────
+            Write-SiHeader $out "PROCESSOR (CPU)" -Append
+            foreach ($c in Get-CimInstance Win32_Processor) {
+                Write-SiRow $out "Name"         $c.Name $T.Green
+                Write-SiRow $out "Cores"        $c.NumberOfCores $T.Text
+                Write-SiRow $out "Logical"      $c.NumberOfLogicalProcessors $T.Text
+                Write-SiRow $out "Max Clock"    "$($c.MaxClockSpeed) MHz" $T.Text
+                Write-SiRow $out "Current Load" "$($c.LoadPercentage)%" $(if ($c.LoadPercentage -ge 80) { $T.Red } elseif ($c.LoadPercentage -ge 50) { $T.Yellow } else { $T.Green })
+            }
+            Out-Line $out "" $T.Text
+
+            # ── Memory ───────────────────────────────────────
+            Write-SiHeader $out "MEMORY (RAM)" -Append
+            $totalKB = $os.TotalVisibleMemorySize
+            $freeKB  = $os.FreePhysicalMemory
+            $usedKB  = $totalKB - $freeKB
+            $memPct  = [Math]::Round($usedKB / $totalKB * 100)
+
+            Write-SiRow $out "Total" ("{0:N1} GB" -f ($totalKB / 1MB)) $T.Text
+            Write-SiRow $out "Used"  ("{0:N1} GB  ({1}%)" -f ($usedKB / 1MB), $memPct) $(if ($memPct -ge 85) { $T.Red } elseif ($memPct -ge 70) { $T.Yellow } else { $T.Green })
+            Write-SiRow $out "Free"  ("{0:N1} GB" -f ($freeKB / 1MB)) $T.Green
+
+            foreach ($m in Get-CimInstance Win32_PhysicalMemory) {
+                $cap = [Math]::Round($m.Capacity / 1GB)
+                Write-SiRow $out "Module" "$cap GB @ $($m.Speed) MHz  ($($m.Manufacturer))" $T.Gray
+            }
+            Out-Line $out "" $T.Text
+
+            # ── Storage ──────────────────────────────────────
+            Write-SiHeader $out "STORAGE" -Append
+            $fixedDisks = @(Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3")
+            if ($fixedDisks.Count -eq 0) {
+                Out-Line $out "    No fixed disks found." $T.Yellow
+            }
+            else {
+                foreach ($d in $fixedDisks) {
+                    $totalGB = [Math]::Round($d.Size / 1GB, 1)
+                    $freeGB  = [Math]::Round($d.FreeSpace / 1GB, 1)
+                    $usedGB  = [Math]::Round(($d.Size - $d.FreeSpace) / 1GB, 1)
+                    $pct     = if ($d.Size -gt 0) { [Math]::Round(($d.Size - $d.FreeSpace) / $d.Size * 100) } else { 0 }
+                    $driveColor = if ($pct -ge 90) { $T.Red } elseif ($pct -ge 75) { $T.Yellow } else { $T.Green }
+                    $label = if ([string]::IsNullOrWhiteSpace($d.VolumeName)) { $d.DeviceID } else { "$($d.DeviceID)  $($d.VolumeName)" }
+
+                    Out-Line $out "    $label" $T.Cyan
+                    Write-SiRow $out "  Used"  "$usedGB GB ($pct%)" $driveColor
+                    Write-SiRow $out "  Free"  "$freeGB GB" $T.Green
+                    Write-SiRow $out "  Total" "$totalGB GB" $T.Gray
+                }
+            }
+            Out-Line $out "" $T.Text
+
+            # ── Display adapters ─────────────────────────────
+            Write-SiHeader $out "DISPLAY ADAPTERS (GPU)" -Append
+            foreach ($g in Get-CimInstance Win32_VideoController) {
+                Write-SiRow $out "Name" $g.Name $T.Green
+                if ($g.AdapterRAM -gt 0) {
+                    Write-SiRow $out "  VRAM" ("{0:N0} MB" -f ($g.AdapterRAM / 1MB)) $T.Text
+                }
+                Write-SiRow $out "  Driver" $g.DriverVersion $T.Gray
+                if ($g.CurrentHorizontalResolution) {
+                    Write-SiRow $out "  Resolution" "$($g.CurrentHorizontalResolution)x$($g.CurrentVerticalResolution) @ $($g.CurrentRefreshRate)Hz" $T.Text
+                }
+            }
+            Out-Line $out "" $T.Text
+
+            # ── Network ──────────────────────────────────────
+            Write-SiHeader $out "NETWORK ADAPTERS" -Append
+            $upAdapters = @(Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object Status -eq "Up")
+            if ($upAdapters.Count -eq 0) {
+                Out-Line $out "    No active network adapters found." $T.Yellow
+            }
+            else {
+                foreach ($a in $upAdapters) {
+                    Out-Line $out "    $($a.Name)" $T.Cyan
+                    Write-SiRow $out "  Interface" $a.InterfaceDescription $T.Text
+                    Write-SiRow $out "  Speed"     $a.LinkSpeed $T.Text
+                    Write-SiRow $out "  MAC"       $a.MacAddress $T.Gray
+
+                    $ips = Get-NetIPAddress -InterfaceIndex $a.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue
+                    foreach ($ip in $ips) {
+                        Write-SiRow $out "  IPv4" $ip.IPAddress $T.Green
+                    }
+                }
+            }
+            Out-Line $out "" $T.Text
+
+            # ── Battery ──────────────────────────────────────
+            Write-SiHeader $out "BATTERY" -Append
+            $batteries = @(Get-CimInstance Win32_Battery -ErrorAction SilentlyContinue)
+            if ($batteries.Count -eq 0) {
+                Out-Line $out "    No battery detected." $T.Yellow
+            }
+            else {
+                $statusMap = @{ 1="Discharging"; 2="AC Power"; 3="Fully Charged"; 4="Low"; 5="Critical" }
+                foreach ($bat in $batteries) {
+                    $charge = [int]$bat.EstimatedChargeRemaining
+                    $chargeColor = if ($charge -le 20) { $T.Red } elseif ($charge -le 40) { $T.Yellow } else { $T.Green }
+                    $st = $statusMap[[int]$bat.BatteryStatus]
+                    if (-not $st) { $st = "Status $($bat.BatteryStatus)" }
+
+                    Write-SiRow $out "Charge" "$charge%" $chargeColor
+                    Write-SiRow $out "Status" $st $T.Text
+                }
+            }
+            Out-Line $out "" $T.Text
+
+            # ── Performance snapshot ─────────────────────────
+            Write-SiHeader $out "PERFORMANCE SNAPSHOT" -Append
+            $cpuLoad = (Get-CimInstance Win32_Processor | Measure-Object -Property LoadPercentage -Average).Average
+            $procList = @(Get-Process -ErrorAction SilentlyContinue)
+            $procCount = $procList.Count
+            $threadCount = (
+                $procList |
+                ForEach-Object { $_.Threads.Count } |
+                Measure-Object -Sum
+            ).Sum
+
+            Write-SiRow $out "CPU Load"    "$([Math]::Round($cpuLoad))%" $(if ($cpuLoad -ge 80) { $T.Red } elseif ($cpuLoad -ge 50) { $T.Yellow } else { $T.Green })
+            Write-SiRow $out "Memory Used" "$memPct%" $(if ($memPct -ge 85) { $T.Red } elseif ($memPct -ge 70) { $T.Yellow } else { $T.Green })
+            Write-SiRow $out "Processes"   $procCount $T.Text
+            if ($threadCount) {
+                Write-SiRow $out "Threads" $threadCount $T.Gray
+            }
+
+            Out-Line $out "" $T.Text
+            Out-Line $out "  ====================================================" $T.Cyan
+            Out-Line $out "  END OF REPORT" $T.Gray
+            Out-Line $out "  ====================================================" $T.Cyan
+
+            $out.SelectionStart = 0
+            $out.ScrollToCaret()
         }
-        Set-Status "Full report complete" $T.Green
-    })
+
+        Set-Status "Full system report complete" $T.Green
+    }.GetNewClosure())
 
     foreach ($b in @($bFull,$bOverview,$bCpu,$bMem,$bStorage,$bGpu,$bNet,$bBatt,$bPerf)) { [void]$bar.Controls.Add($b) }
     return $p
@@ -552,24 +756,24 @@ function Build-Power {
             Set-Status "Sleeping..." $T.Yellow
             rundll32.exe powrprof.dll,SetSuspendState 0,1,0
         }
-    })
+    }.GetNewClosure())
 
     $bHib = New-Button "Hibernate" $T.Green
     $bHib.Add_Click({
         if (Confirm-Box "Hibernate now?") { Set-Status "Hibernating..." $T.Yellow; shutdown.exe /h }
-    })
+    }.GetNewClosure())
 
     $bLock = New-Button "Lock Screen" $T.Green
-    $bLock.Add_Click({ rundll32.exe user32.dll,LockWorkStation; Set-Status "Locked." $T.Green })
+    $bLock.Add_Click({ rundll32.exe user32.dll,LockWorkStation; Set-Status "Locked." $T.Green }.GetNewClosure())
 
     $bLogoff = New-Button "Log Off" $T.Mag
-    $bLogoff.Add_Click({ if (Confirm-Box "Log off now? Unsaved work will be lost.") { shutdown.exe /l } })
+    $bLogoff.Add_Click({ if (Confirm-Box "Log off now? Unsaved work will be lost.") { shutdown.exe /l } }.GetNewClosure())
 
     $bRestart = New-Button "Restart" $T.Yellow
-    $bRestart.Add_Click({ if (Confirm-Box "Restart now?") { Restart-Computer -Force } })
+    $bRestart.Add_Click({ if (Confirm-Box "Restart now?") { Restart-Computer -Force } }.GetNewClosure())
 
     $bShutdown = New-Button "Shutdown" $T.Red
-    $bShutdown.Add_Click({ if (Confirm-Box "Shut down now?") { Stop-Computer -Force } })
+    $bShutdown.Add_Click({ if (Confirm-Box "Shut down now?") { Stop-Computer -Force } }.GetNewClosure())
 
     $lblMin = New-Label "Delay (min):" $T.Gray
     $txtMin = New-Input 60
@@ -586,7 +790,7 @@ function Build-Power {
                 Set-Status "Restart scheduled ($m min)" $T.Yellow
             }
         } else { Out-Line $out "  Enter 1-1440 minutes." $T.Red }
-    })
+    }.GetNewClosure())
 
     $bShutdownIn = New-Button "Shutdown in..." $T.Red
     $bShutdownIn.Add_Click({
@@ -599,14 +803,14 @@ function Build-Power {
                 Set-Status "Shutdown scheduled ($m min)" $T.Red
             }
         } else { Out-Line $out "  Enter 1-1440 minutes." $T.Red }
-    })
+    }.GetNewClosure())
 
     $bCancel = New-Button "Cancel scheduled" $T.Cyan
     $bCancel.Add_Click({
         shutdown.exe /a 2>$null
         Out-Line $out "  Any scheduled shutdown/restart has been cancelled." $T.Green
         Set-Status "Schedule cancelled" $T.Green
-    })
+    }.GetNewClosure())
 
     foreach ($b in @($bSleep,$bHib,$bLock,$bLogoff,$bRestart,$bShutdown,$lblMin,$txtMin,$bRestartIn,$bShutdownIn,$bCancel)) {
         [void]$bar.Controls.Add($b)
@@ -638,7 +842,7 @@ function Build-Updates {
                 Out-Line $out "  PSWindowsUpdate installed." $T.Green
             } catch { Out-Line $out "  Install failed: $($_.Exception.Message)" $T.Red }
         }
-    })
+    }.GetNewClosure())
 
     $bScan = New-Button "Scan & List" $T.Green
     $bScan.Add_Click({
@@ -652,7 +856,7 @@ function Build-Updates {
                 Set-Status "Scan complete" $T.Green
             } catch { Out-Line $out "  Scan failed: $($_.Exception.Message)" $T.Red }
         }
-    })
+    }.GetNewClosure())
 
     $bHistory = New-Button "Update History" $T.Green
     $bHistory.Add_Click({
@@ -664,7 +868,7 @@ function Build-Updates {
                 Set-Status "History loaded" $T.Green
             } catch { Out-Line $out "  History failed: $($_.Exception.Message)" $T.Red }
         }
-    })
+    }.GetNewClosure())
 
     $bInstallAll = New-Button "Install All" $T.Yellow
     $bInstallAll.Add_Click({
@@ -678,7 +882,7 @@ function Build-Updates {
                 Out-Line $out "  Install pass complete. Reboot may be required." $T.Green
             } catch { Out-Line $out "  Install failed: $($_.Exception.Message)" $T.Red }
         }
-    })
+    }.GetNewClosure())
 
     $bSec = New-Button "Security Only" $T.Yellow
     $bSec.Add_Click({
@@ -691,10 +895,10 @@ function Build-Updates {
                 Out-Line $out "  Security update pass complete." $T.Green
             } catch { Out-Line $out "  Failed: $($_.Exception.Message)" $T.Red }
         }
-    })
+    }.GetNewClosure())
 
     $bReboot = New-Button "Reboot" $T.Red
-    $bReboot.Add_Click({ if ([System.Windows.Forms.MessageBox]::Show("Reboot now?","Confirm","YesNo","Warning") -eq "Yes") { Restart-Computer -Force } })
+    $bReboot.Add_Click({ if ([System.Windows.Forms.MessageBox]::Show("Reboot now?","Confirm","YesNo","Warning") -eq "Yes") { Restart-Computer -Force } }.GetNewClosure())
 
     foreach ($b in @($bScan,$bHistory,$bInstallAll,$bSec,$bReboot,$bInstallMod)) { [void]$bar.Controls.Add($b) }
     return $p
@@ -735,7 +939,7 @@ function Build-Network {
             Out-Line $out ("    {0,-22}{1}" -f "DNS Resolution", $(if ($dnsOk) { "Working" } else { "Failed" })) $(if ($dnsOk) { $T.Green } else { $T.Red })
         }
         Set-Status "Health check" $T.Green
-    })
+    }.GetNewClosure())
 
     $bInfo = New-Button "Network Info" $T.Green
     $bInfo.Add_Click({
@@ -750,7 +954,7 @@ function Build-Network {
             }
         }
         Set-Status "Network info" $T.Green
-    })
+    }.GetNewClosure())
 
     $bWifi = New-Button "Wi-Fi Details" $T.Green
     $bWifi.Add_Click({
@@ -762,7 +966,7 @@ function Build-Network {
             else { Out-Line $out "  No Wi-Fi interface or netsh unavailable." $T.Yellow }
         }
         Set-Status "Wi-Fi" $T.Green
-    })
+    }.GetNewClosure())
 
     $bPing = New-Button "Ping Host" $T.Green
     $bPing.Add_Click({
@@ -780,7 +984,7 @@ function Build-Network {
             } catch { Out-Line $out "    Host unreachable: $($_.Exception.Message)" $T.Red }
         }
         Set-Status "Ping" $T.Green
-    })
+    }.GetNewClosure())
 
     $bPort = New-Button "Test Port" $T.Green
     $bPort.Add_Click({
@@ -794,7 +998,7 @@ function Build-Network {
             else { Out-Line $out "    Port $pt CLOSED / filtered on $h" $T.Red }
         }
         Set-Status "Port test" $T.Green
-    })
+    }.GetNewClosure())
 
     $bDns = New-Button "DNS Lookup" $T.Green
     $bDns.Add_Click({
@@ -810,7 +1014,7 @@ function Build-Network {
             } catch { Out-Line $out "    Lookup failed: $($_.Exception.Message)" $T.Red }
         }
         Set-Status "DNS lookup" $T.Green
-    })
+    }.GetNewClosure())
 
     $bTrace = New-Button "Traceroute" $T.Green
     $bTrace.Add_Click({
@@ -825,7 +1029,7 @@ function Build-Network {
             }
         }
         Set-Status "Traceroute done" $T.Green
-    })
+    }.GetNewClosure())
 
     $bPubIp = New-Button "Public IP" $T.Green
     $bPubIp.Add_Click({
@@ -837,7 +1041,7 @@ function Build-Network {
             } catch { Out-Line $out "  Lookup failed: $($_.Exception.Message)" $T.Red }
         }
         Set-Status "Public IP" $T.Green
-    })
+    }.GetNewClosure())
 
     $bTcp = New-Button "Active TCP" $T.Green
     $bTcp.Add_Click({
@@ -851,7 +1055,7 @@ function Build-Network {
             }
         }
         Set-Status "Active TCP" $T.Green
-    })
+    }.GetNewClosure())
 
     $bListen = New-Button "Listening Ports" $T.Green
     $bListen.Add_Click({
@@ -865,7 +1069,7 @@ function Build-Network {
             }
         }
         Set-Status "Listening ports" $T.Green
-    })
+    }.GetNewClosure())
 
     foreach ($b in @($bHealth,$bInfo,$bWifi,$lblHost,$txtHost,$lblPort,$txtPort,$bPing,$bPort,$bDns,$bTrace,$bPubIp,$bTcp,$bListen)) {
         [void]$bar.Controls.Add($b)
@@ -909,7 +1113,7 @@ function Build-Disk {
             Set-Grid $grid $rows
         }
         Set-Status "Drive usage" $T.Green
-    })
+    }.GetNewClosure())
 
     $bFolders = New-Button "Largest Folders" $T.Green
     $bFolders.Add_Click({
@@ -923,7 +1127,7 @@ function Build-Disk {
             Set-Grid $grid $rows
         }
         Set-Status "Folders scanned" $T.Green
-    })
+    }.GetNewClosure())
 
     $bFiles = New-Button "Largest Files" $T.Green
     $bFiles.Add_Click({
@@ -936,7 +1140,7 @@ function Build-Disk {
             Set-Grid $grid $rows
         }
         Set-Status "Files scanned" $T.Green
-    })
+    }.GetNewClosure())
 
     $bCleanUser = New-Button "Clean User Temp" $T.Yellow
     $bCleanUser.Add_Click({
@@ -952,7 +1156,7 @@ function Build-Disk {
             Out-Line $out "  Removed $del item(s) from user temp." $T.Green
         }
         Set-Status "User temp cleaned" $T.Green
-    })
+    }.GetNewClosure())
 
     $bCleanWin = New-Button "Clean Win Temp" $T.Yellow
     $bCleanWin.Add_Click({
@@ -969,14 +1173,14 @@ function Build-Disk {
             Out-Line $out "  Removed $del item(s) from Windows temp." $T.Green
         }
         Set-Status "Windows temp cleaned" $T.Green
-    })
+    }.GetNewClosure())
 
     $bRecycle = New-Button "Empty Recycle Bin" $T.Red
     $bRecycle.Add_Click({
         if ([System.Windows.Forms.MessageBox]::Show("Empty the Recycle Bin?","Confirm","YesNo","Warning") -ne "Yes") { return }
         try { Clear-RecycleBin -Force -ErrorAction Stop; Out-Line $out "  Recycle Bin emptied." $T.Green }
         catch { Out-Line $out "  Failed: $($_.Exception.Message)" $T.Red }
-    })
+    }.GetNewClosure())
 
     $bExport = New-Button "Export CSV" $T.Cyan
     $bExport.Add_Click({
@@ -989,7 +1193,7 @@ function Build-Disk {
         } | Export-Csv -Path $dlg.FileName -NoTypeInformation
         Out-Line $out "  Exported to $($dlg.FileName)" $T.Green
         Set-Status "CSV exported" $T.Green
-    })
+    }.GetNewClosure())
 
     foreach ($b in @($bUsage,$lblPath,$txtPath,$bFolders,$bFiles,$bCleanUser,$bCleanWin,$bRecycle,$bExport)) { [void]$bar.Controls.Add($b) }
     return $p
@@ -1007,13 +1211,13 @@ function Build-Events {
 
 
     $bSysErr = New-Button "System Errors" $T.Green
-    $bSysErr.Add_Click({ Show-EventLog $grid "System" 2 "System errors" })
+    $bSysErr.Add_Click({ Show-EventLog $grid "System" 2 "System errors" }.GetNewClosure())
     $bAppErr = New-Button "App Errors" $T.Green
-    $bAppErr.Add_Click({ Show-EventLog $grid "Application" 2 "Application errors" })
+    $bAppErr.Add_Click({ Show-EventLog $grid "Application" 2 "Application errors" }.GetNewClosure())
     $bWarn = New-Button "Warnings" $T.Green
-    $bWarn.Add_Click({ Show-EventLog $grid "System" 3 "System warnings" })
+    $bWarn.Add_Click({ Show-EventLog $grid "System" 3 "System warnings" }.GetNewClosure())
     $bPsErr = New-Button "PowerShell Errors" $T.Green
-    $bPsErr.Add_Click({ Show-EventLog $grid "Windows PowerShell" 2 "PowerShell errors" })
+    $bPsErr.Add_Click({ Show-EventLog $grid "Windows PowerShell" 2 "PowerShell errors" }.GetNewClosure())
 
     $bLogon = New-Button "Failed Logons" $T.Green
     $bLogon.Add_Click({
@@ -1027,7 +1231,7 @@ function Build-Events {
                 Set-Status "Failed logons - $($ev.Count)" $T.Green
             } catch { Set-Grid $grid @([PSCustomObject]@{ Note = "No failed logons or access denied." }) }
         }
-    })
+    }.GetNewClosure())
 
     $bReboot = New-Button "Reboot/Shutdown" $T.Green
     $bReboot.Add_Click({
@@ -1041,7 +1245,7 @@ function Build-Events {
                 Set-Status "Power events - $($ev.Count)" $T.Green
             } catch { Set-Grid $grid @([PSCustomObject]@{ Note = "None found." }) }
         }
-    })
+    }.GetNewClosure())
 
     $bExport = New-Button "Export CSV" $T.Cyan
     $bExport.Add_Click({
@@ -1051,7 +1255,7 @@ function Build-Events {
         if ($dlg.ShowDialog() -ne "OK") { return }
         $grid.Tag | Export-Csv -Path $dlg.FileName -NoTypeInformation
         Set-Status "Exported to $($dlg.FileName)" $T.Green
-    })
+    }.GetNewClosure())
 
     foreach ($b in @($bSysErr,$bAppErr,$bWarn,$bPsErr,$bLogon,$bReboot,$bExport)) { [void]$bar.Controls.Add($b) }
     return $p
@@ -1076,27 +1280,27 @@ function Build-Services {
 
 
     $bRunning = New-Button "Running" $T.Green
-    $bRunning.Add_Click({ Load-ServiceList $grid $txtSearch "Running" })
+    $bRunning.Add_Click({ Load-ServiceList $grid $txtSearch "Running" }.GetNewClosure())
     $bStopped = New-Button "Stopped" $T.Green
-    $bStopped.Add_Click({ Load-ServiceList $grid $txtSearch "Stopped" })
+    $bStopped.Add_Click({ Load-ServiceList $grid $txtSearch "Stopped" }.GetNewClosure())
     $bAll = New-Button "All" $T.Green
-    $bAll.Add_Click({ Load-ServiceList $grid $txtSearch "All" })
+    $bAll.Add_Click({ Load-ServiceList $grid $txtSearch "All" }.GetNewClosure())
 
     $bStart = New-Button "Start" $T.Yellow
     $bStart.Add_Click({
         $n = Get-SelectedSvc $grid; if (-not $n) { Out-Line $out "  Select a service first." $T.Yellow; return }
         try { Start-Service -Name $n -ErrorAction Stop; Out-Line $out "  Started $n" $T.Green } catch { Out-Line $out "  Failed: $($_.Exception.Message)" $T.Red }
-    })
+    }.GetNewClosure())
     $bStop = New-Button "Stop" $T.Yellow
     $bStop.Add_Click({
         $n = Get-SelectedSvc $grid; if (-not $n) { Out-Line $out "  Select a service first." $T.Yellow; return }
         try { Stop-Service -Name $n -Force -ErrorAction Stop; Out-Line $out "  Stopped $n" $T.Green } catch { Out-Line $out "  Failed: $($_.Exception.Message)" $T.Red }
-    })
+    }.GetNewClosure())
     $bRestart = New-Button "Restart" $T.Yellow
     $bRestart.Add_Click({
         $n = Get-SelectedSvc $grid; if (-not $n) { Out-Line $out "  Select a service first." $T.Yellow; return }
         try { Restart-Service -Name $n -Force -ErrorAction Stop; Out-Line $out "  Restarted $n" $T.Green } catch { Out-Line $out "  Failed: $($_.Exception.Message)" $T.Red }
-    })
+    }.GetNewClosure())
 
     $cmbStart = New-Object System.Windows.Forms.ComboBox
     $cmbStart.DropDownStyle = "DropDownList"
@@ -1111,7 +1315,7 @@ function Build-Services {
         $n = Get-SelectedSvc $grid; if (-not $n) { Out-Line $out "  Select a service first." $T.Yellow; return }
         try { Set-Service -Name $n -StartupType $cmbStart.SelectedItem -ErrorAction Stop; Out-Line $out "  $n startup set to $($cmbStart.SelectedItem)" $T.Green }
         catch { Out-Line $out "  Failed: $($_.Exception.Message)" $T.Red }
-    })
+    }.GetNewClosure())
 
     foreach ($b in @($bRunning,$bStopped,$bAll,$lblSearch,$txtSearch,$bStart,$bStop,$bRestart,$cmbStart,$bSetStart)) { [void]$bar.Controls.Add($b) }
     return $p
@@ -1137,9 +1341,9 @@ function Build-Processes {
 
 
     $bCpu = New-Button "Top CPU" $T.Green
-    $bCpu.Add_Click({ Run-Busy { Set-Grid $grid (Get-ProcRows (Get-Process | Sort-Object CPU -Descending | Select-Object -First 25)) }; Set-Status "Top CPU" $T.Green })
+    $bCpu.Add_Click({ Run-Busy { Set-Grid $grid (Get-ProcRows (Get-Process | Sort-Object CPU -Descending | Select-Object -First 25)) }; Set-Status "Top CPU" $T.Green }.GetNewClosure())
     $bMem = New-Button "Top Memory" $T.Green
-    $bMem.Add_Click({ Run-Busy { Set-Grid $grid (Get-ProcRows (Get-Process | Sort-Object WorkingSet64 -Descending | Select-Object -First 25)) }; Set-Status "Top memory" $T.Green })
+    $bMem.Add_Click({ Run-Busy { Set-Grid $grid (Get-ProcRows (Get-Process | Sort-Object WorkingSet64 -Descending | Select-Object -First 25)) }; Set-Status "Top memory" $T.Green }.GetNewClosure())
 
     $bSearch = New-Button "Search" $T.Green
     $bSearch.Add_Click({
@@ -1150,7 +1354,7 @@ function Build-Processes {
             Set-Grid $grid (Get-ProcRows $procs)
         }
         Set-Status "Search done" $T.Green
-    })
+    }.GetNewClosure())
 
     $bByPort = New-Button "By Port" $T.Green
     $bByPort.Add_Click({
@@ -1162,7 +1366,7 @@ function Build-Processes {
             Set-Grid $grid (Get-ProcRows $procs)
         }
         Set-Status "Port lookup" $T.Green
-    })
+    }.GetNewClosure())
 
     $bDetails = New-Button "Details" $T.Cyan
     $bDetails.Add_Click({
@@ -1176,14 +1380,14 @@ function Build-Processes {
             Out-Line $out "    RAM:  $([Math]::Round($proc.WorkingSet64/1MB,1)) MB    Threads: $($proc.Threads.Count)" $T.Text
             if ($cim) { Out-Line $out "    Cmd:  $($cim.CommandLine)" $T.Gray }
         } catch { Out-Line $out "  Failed: $($_.Exception.Message)" $T.Red }
-    })
+    }.GetNewClosure())
 
     $bKill = New-Button "Kill" $T.Red
     $bKill.Add_Click({
         $procPid = Get-SelectedPid $grid; if (-not $procPid) { Out-Line $out "  Select a row." $T.Yellow; return }
         if ([System.Windows.Forms.MessageBox]::Show("Kill PID $procPid ?","Confirm","YesNo","Warning") -ne "Yes") { return }
         try { Stop-Process -Id $procPid -Force -ErrorAction Stop; Out-Line $out "  Killed PID $procPid" $T.Green } catch { Out-Line $out "  Failed: $($_.Exception.Message)" $T.Red }
-    })
+    }.GetNewClosure())
 
     $bSuspend = New-Button "Suspend" $T.Yellow
     $bSuspend.Add_Click({
@@ -1196,7 +1400,7 @@ function Build-Processes {
             }
             Out-Line $out "  Suspended PID $procPid" $T.Green
         } catch { Out-Line $out "  Failed: $($_.Exception.Message)" $T.Red }
-    })
+    }.GetNewClosure())
 
     $bResume = New-Button "Resume" $T.Yellow
     $bResume.Add_Click({
@@ -1209,7 +1413,7 @@ function Build-Processes {
             }
             Out-Line $out "  Resumed PID $procPid" $T.Green
         } catch { Out-Line $out "  Failed: $($_.Exception.Message)" $T.Red }
-    })
+    }.GetNewClosure())
 
     $bExport = New-Button "Export CSV" $T.Cyan
     $bExport.Add_Click({
@@ -1219,7 +1423,7 @@ function Build-Processes {
         if ($dlg.ShowDialog() -ne "OK") { return }
         $grid.Tag | Export-Csv -Path $dlg.FileName -NoTypeInformation
         Out-Line $out "  Exported to $($dlg.FileName)" $T.Green
-    })
+    }.GetNewClosure())
 
     foreach ($b in @($bCpu,$bMem,$lblName,$txtName,$bSearch,$lblPort,$txtPort,$bByPort,$bDetails,$bKill,$bSuspend,$bResume,$bExport)) { [void]$bar.Controls.Add($b) }
     return $p
@@ -1285,6 +1489,7 @@ function Build-Watch {
         }
         Set-Status "Watching: $($cmbWhat.SelectedItem)  -  $(Get-Date -Format HH:mm:ss)" $T.Cyan
     }
+    $refresh = $refresh.GetNewClosure()
     $timer.Add_Tick($refresh)
 
     $bStart = New-Button "Start" $T.Green
@@ -1293,9 +1498,9 @@ function Build-Watch {
         & $refresh
         $timer.Start()
         Set-Status "Watching: $($cmbWhat.SelectedItem)" $T.Cyan
-    })
+    }.GetNewClosure())
     $bStop = New-Button "Stop" $T.Red
-    $bStop.Add_Click({ $timer.Stop(); Set-Status "Watch stopped" $T.Gray })
+    $bStop.Add_Click({ $timer.Stop(); Set-Status "Watch stopped" $T.Gray }.GetNewClosure())
 
     foreach ($b in @($lblWhat,$cmbWhat,$lblInt,$numInt,$bStart,$bStop)) { [void]$bar.Controls.Add($b) }
     return $p
@@ -1322,15 +1527,15 @@ function Build-Logs {
         $dlg = New-Object System.Windows.Forms.OpenFileDialog
         $dlg.Filter = "Log files (*.log;*.txt)|*.log;*.txt|All files (*.*)|*.*"
         if ($dlg.ShowDialog() -eq "OK") { $txtFile.Text = $dlg.FileName }
-    })
+    }.GetNewClosure())
 
 
     $b25 = New-Button "Last 25" $T.Green
-    $b25.Add_Click({ Show-LogTail $out $txtFile 25 })
+    $b25.Add_Click({ Show-LogTail $out $txtFile 25 }.GetNewClosure())
     $b100 = New-Button "Last 100" $T.Green
-    $b100.Add_Click({ Show-LogTail $out $txtFile 100 })
+    $b100.Add_Click({ Show-LogTail $out $txtFile 100 }.GetNewClosure())
     $bFull = New-Button "Full Log" $T.Green
-    $bFull.Add_Click({ Show-LogTail $out $txtFile 0 })
+    $bFull.Add_Click({ Show-LogTail $out $txtFile 0 }.GetNewClosure())
 
     $bInfo = New-Button "Log Info" $T.Cyan
     $bInfo.Add_Click({
@@ -1342,7 +1547,7 @@ function Build-Logs {
         Out-Line $out "  Size     : $(Format-Bytes $fi.Length)" $T.Green
         Out-Line $out "  Lines    : $lc" $T.Green
         Out-Line $out "  Modified : $($fi.LastWriteTime)" $T.Gray
-    })
+    }.GetNewClosure())
 
     $bClear = New-Button "Clear Log" $T.Red
     $bClear.Add_Click({
@@ -1351,7 +1556,7 @@ function Build-Logs {
         if ([System.Windows.Forms.MessageBox]::Show("Erase all entries in`n$f ?","Confirm","YesNo","Warning") -ne "Yes") { return }
         Clear-Content -LiteralPath $f
         Out-Line $out "  Log cleared." $T.Green
-    })
+    }.GetNewClosure())
 
     $bTest = New-Button "Test Entries" $T.Yellow
     $bTest.Add_Click({
@@ -1363,7 +1568,7 @@ function Build-Logs {
         Add-Content -LiteralPath $f -Value "[$ts] [WARN] Sample warning"
         Add-Content -LiteralPath $f -Value "[$ts] [ERROR] Sample error"
         Out-Line $out "  Appended 3 test entries to $f" $T.Green
-    })
+    }.GetNewClosure())
 
     foreach ($b in @($lblFile,$txtFile,$bBrowse,$b25,$b100,$bFull,$bInfo,$bClear,$bTest)) { [void]$bar.Controls.Add($b) }
     return $p
@@ -1379,7 +1584,7 @@ function Build-About {
     $p.Controls.Add($out)
     Out-Line $out "" $T.Text
     Out-Line $out "  Admin Tools  -  GUI dashboard" $T.Cyan
-    Out-Line $out "  v1.0.0  by Mike Redd" $T.Gray
+    Out-Line $out "  v1.0.4  by Mike Redd" $T.Gray
     Out-Line $out "" $T.Text
     Out-Line $out "  A single front-end for the admin console menus:" $T.Text
     Out-Line $out "    SystemInfo - Power - Updates - Network - Disk" $T.Green
@@ -1396,7 +1601,7 @@ function Build-About {
                 Start-Process powershell.exe -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -STA -File `"$PSCommandPath`""
                 $Form.Close()
             } catch { Out-Line $out "  Elevation cancelled." $T.Red }
-        })
+        }.GetNewClosure())
         $p.Controls.Add($btn)
         $btn.BringToFront()
     }
