@@ -1,20 +1,49 @@
 #Requires -Version 7.0
 <#
 .SYNOPSIS
-    Windows system information cat.
+    Display a compact Windows system-information panel beside the infocat ASCII art.
 
 .DESCRIPTION
-    Rebuilt PowerShell companion to infocat-pi.
-    Standalone: does not require profile.d, ui.ps1, or hard-coded user paths.
+    PowerShell companion to infocat-pi for the Netzach Windows workstation.
+
+    The script takes a lightweight snapshot of the current Windows session and
+    hardware, formats that data into a fastfetch-style panel, and renders it next
+    to the preserved cat artwork.
+
+    It is intentionally standalone: it does not require profile.d, ui.ps1, or
+    hard-coded user paths.
+
+.PARAMETER NoColor
+    Disable ANSI color sequences. Useful when redirecting output or running in a
+    host that does not render virtual-terminal colors correctly.
+
+.NOTES
+    Machine:      Netzach / Windows
+    PowerShell:   7.0+
+    Dependencies: Built-in PowerShell cmdlets, CIM/WMI providers, Windows Forms,
+                  and the Windows networking cmdlets.
+
+    Design notes:
+      - Hardware queries are collected once and reused where practical.
+      - Logical drives are discovered dynamically; disconnected drive letters are
+        omitted instead of being displayed as "Not connected".
+      - Individual probes fail soft so one unavailable subsystem does not prevent
+        the rest of the panel from rendering.
 #>
 
-#--------------------------------------------
-# file:     infocat.ps1
-# author:   Mike Redd
-# version:  1.3
-# restored: 2026-07-12
-# desc:     Windows / PowerShell system info cat
-#--------------------------------------------
+# =============================================================================
+# File:        infocat.ps1
+# Author:      Mike Redd
+# Version:     1.4.2
+# Restored:    2026-07-12
+# Purpose:     Windows / PowerShell system-information cat.
+#
+# Output:
+#   Renders system information and ASCII art directly to the current terminal.
+#
+# Safety:
+#   Read-only. The script queries Windows state but does not modify the system.
+# =============================================================================
 
 [CmdletBinding()]
 param(
@@ -22,7 +51,10 @@ param(
 )
 
 Set-StrictMode -Version Latest
-$ErrorActionPreference = 'SilentlyContinue'
+
+# Keep unexpected script errors visible during maintenance. Individual hardware
+# probes handle expected failures locally so an unavailable subsystem stays quiet.
+$ErrorActionPreference = 'Continue'
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 
 $ESC = [char]27
@@ -32,14 +64,12 @@ function Get-Ansi {
     return "$ESC[$Code" + 'm'
 }
 
-$Reset  = Get-Ansi '0'
-$Bold   = Get-Ansi '1'
-$White  = Get-Ansi '97'
-$Gray   = Get-Ansi '90'
-$Blue   = Get-Ansi '94'
-$Cyan   = Get-Ansi '96'
-$Green  = Get-Ansi '92'
-$Yellow = Get-Ansi '93'
+$Reset = Get-Ansi '0'
+$Bold  = Get-Ansi '1'
+$White = Get-Ansi '97'
+$Gray  = Get-Ansi '90'
+$Blue  = Get-Ansi '94'
+$Cyan  = Get-Ansi '96'
 
 function Get-FirstValue {
     param(
@@ -69,44 +99,32 @@ function Format-Bytes {
     return ('{0:N0} B' -f $Bytes)
 }
 
-function Get-LogicalDrive {
-    param([Parameter(Mandatory)][string]$DriveName)
+function Format-DriveUsage {
+    param(
+        [Parameter(Mandatory)]
+        [object]$Drive
+    )
 
-    try {
-        $deviceId = "$($DriveName.ToUpperInvariant()):"
-
-        return Get-CimInstance Win32_LogicalDisk |
-            Where-Object DeviceID -eq $deviceId |
-            Select-Object -First 1
-    }
-    catch {
-        return $null
-    }
-}
-
-function Get-DriveUsage {
-    param([Parameter(Mandatory)][string]$DriveName)
-
-    $drive = Get-LogicalDrive -DriveName $DriveName
-    if (-not $drive) { return 'Not connected' }
-
-    # DriveType:
-    # 2 = Removable, 3 = Local disk, 4 = Network, 5 = Optical
-    if ($drive.DriveType -eq 5) {
-        if (-not $drive.Size -or [double]$drive.Size -le 0) {
+    # Win32_LogicalDisk DriveType values:
+    #   2 = removable, 3 = local disk, 4 = network, 5 = optical.
+    # Optical media may report no size when the tray is empty.
+    if ($Drive.DriveType -eq 5) {
+        if (-not $Drive.Size -or [double]$Drive.Size -le 0) {
             return 'Optical - Empty'
         }
 
-        $label = if ($drive.VolumeName) { $drive.VolumeName } else { 'Media' }
-        return 'Optical - {0} ({1})' -f $label, (Format-Bytes ([double]$drive.Size))
+        $label = if ($Drive.VolumeName) { $Drive.VolumeName } else { 'Media' }
+        return 'Optical - {0} ({1})' -f $label, (Format-Bytes ([double]$Drive.Size))
     }
 
-    if (-not $drive.Size -or [double]$drive.Size -le 0) {
+    # A present logical drive can still be unavailable, for example a mapped
+    # network drive whose remote endpoint is currently offline.
+    if (-not $Drive.Size -or [double]$Drive.Size -le 0) {
         return 'Detected - Unavailable'
     }
 
-    $total = [double]$drive.Size
-    $free = [double]$drive.FreeSpace
+    $total = [double]$Drive.Size
+    $free = [double]$Drive.FreeSpace
     $used = $total - $free
     $pct = [math]::Round(($used / $total) * 100)
 
@@ -115,24 +133,6 @@ function Get-DriveUsage {
     ), (
         Format-Bytes $total
     ), $pct
-}
-
-function Get-OpticalDriveStatus {
-    param([Parameter(Mandatory)][string]$DriveName)
-
-    $drive = Get-LogicalDrive -DriveName $DriveName
-    if (-not $drive) { return 'Not detected' }
-
-    if ($drive.DriveType -ne 5) {
-        return 'Detected - not optical'
-    }
-
-    if (-not $drive.Size -or [double]$drive.Size -le 0) {
-        return 'Optical - Empty'
-    }
-
-    $label = if ($drive.VolumeName) { $drive.VolumeName } else { 'Media' }
-    return 'Optical - {0} ({1})' -f $label, (Format-Bytes ([double]$drive.Size))
 }
 
 function Get-WindowsTheme {
@@ -171,6 +171,8 @@ function Get-ScreenResolution {
 }
 
 function Get-InstalledAppCount {
+    # Windows has separate uninstall registry views for native 64-bit apps,
+    # 32-bit apps, and per-user installs. De-duplicate names across all three.
     $paths = @(
         'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*',
         'HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*',
@@ -180,8 +182,11 @@ function Get-InstalledAppCount {
     try {
         $names = foreach ($path in $paths) {
             Get-ItemProperty $path -ErrorAction SilentlyContinue |
-                Where-Object DisplayName |
-                Select-Object -ExpandProperty DisplayName
+                Where-Object {
+                    $_.PSObject.Properties['DisplayName'] -and
+                    -not [string]::IsNullOrWhiteSpace([string]$_.DisplayName)
+                } |
+                ForEach-Object { [string]$_.DisplayName }
         }
 
         return @($names | Sort-Object -Unique).Count
@@ -193,20 +198,43 @@ function Get-InstalledAppCount {
 
 function Get-PrimaryIPv4 {
     try {
-        $config = Get-NetIPConfiguration |
+        # Prefer a real hardware-backed Ethernet/Wi-Fi interface over VPN and
+        # other virtual adapters. VPN software often installs a lower-metric
+        # default route, so metric alone is not a reliable definition of LAN.
+        $candidates = Get-NetIPConfiguration -ErrorAction SilentlyContinue |
             Where-Object {
+                $_.NetAdapter -and
                 $_.NetAdapter.Status -eq 'Up' -and
                 $_.IPv4Address -and
                 $_.IPv4DefaultGateway
             } |
-            Sort-Object { $_.NetAdapter.InterfaceMetric } |
+            ForEach-Object {
+                $adapter = Get-NetAdapter -InterfaceIndex $_.NetAdapter.ifIndex `
+                    -ErrorAction SilentlyContinue
+
+                $metric = [int]::MaxValue
+                if ($_.NetIPv4Interface -and
+                    $_.NetIPv4Interface.PSObject.Properties['InterfaceMetric']) {
+                    $metric = [int]$_.NetIPv4Interface.InterfaceMetric
+                }
+
+                [pscustomobject]@{
+                    Config       = $_
+                    PhysicalRank = if ($adapter -and $adapter.HardwareInterface) { 0 } else { 1 }
+                    Metric       = $metric
+                }
+            }
+
+        $selected = $candidates |
+            Sort-Object PhysicalRank, Metric |
             Select-Object -First 1
 
-        if ($config) {
+        if ($selected) {
+            $config = $selected.Config
             return '{0} ({1})' -f $config.IPv4Address.IPAddress, $config.InterfaceAlias
         }
 
-        $fallback = Get-NetIPAddress -AddressFamily IPv4 |
+        $fallback = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
             Where-Object {
                 $_.IPAddress -notlike '127.*' -and
                 $_.IPAddress -notlike '169.254.*'
@@ -221,18 +249,41 @@ function Get-PrimaryIPv4 {
     }
 }
 
-$computerSystem = Get-CimInstance Win32_ComputerSystem
-$operatingSystem = Get-CimInstance Win32_OperatingSystem
-$processor = Get-CimInstance Win32_Processor | Select-Object -First 1
-$videoControllers = Get-CimInstance Win32_VideoController
-$soundDevice = Get-CimInstance Win32_SoundDevice |
+# -----------------------------------------------------------------------------
+# System snapshot
+# -----------------------------------------------------------------------------
+# Collect each CIM class once. Reusing these objects avoids repeated WMI/CIM
+# round trips while the panel is being assembled.
+$computerSystem = Get-CimInstance Win32_ComputerSystem -ErrorAction SilentlyContinue
+$operatingSystem = Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue
+$processor = Get-CimInstance Win32_Processor -ErrorAction SilentlyContinue |
+    Select-Object -First 1
+$videoControllers = @(
+    Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue
+)
+$soundDevice = Get-CimInstance Win32_SoundDevice -ErrorAction SilentlyContinue |
     Where-Object Status -eq 'OK' |
     Select-Object -First 1
+$logicalDrives = @(
+    Get-CimInstance Win32_LogicalDisk -ErrorAction SilentlyContinue |
+        Where-Object DeviceID |
+        Sort-Object DeviceID
+)
 
 $timeNow = Get-Date -Format 'HH:mm'
 $dateNow = Get-Date -Format 'ddd dd MMM'
-$userName = if ($env:USERNAME) { $env:USERNAME } else { [Environment]::UserName }
-$hostName = if ($env:COMPUTERNAME) { $env:COMPUTERNAME.ToLowerInvariant() } else { [Environment]::MachineName.ToLowerInvariant() }
+$userName = if ($env:USERNAME) {
+    $env:USERNAME
+}
+else {
+    [Environment]::UserName
+}
+$hostName = if ($env:COMPUTERNAME) {
+    $env:COMPUTERNAME.ToLowerInvariant()
+}
+else {
+    [Environment]::MachineName.ToLowerInvariant()
+}
 
 $theme = Get-WindowsTheme
 $terminal = Get-TerminalName
@@ -246,32 +297,22 @@ $uptime = Get-FirstValue {
     return '{0}h {1}m' -f $span.Hours, $span.Minutes
 }
 
-# Build the drive rows from what Windows actually reports instead of keeping a
-# hard-coded list of letters. Missing/disconnected drives therefore disappear
-# completely from the output, while newly attached drives appear automatically.
-$presentDrives = @(
-    Get-CimInstance Win32_LogicalDisk |
-        Where-Object DeviceID |
-        Sort-Object DeviceID
-)
-
-$driveDetails = foreach ($drive in $presentDrives | Where-Object DriveType -ne 5) {
-    $driveName = $drive.DeviceID.TrimEnd(':')
-
+# Build rows directly from the cached logical-drive snapshot. Missing drive
+# letters are absent from Win32_LogicalDisk and therefore never become rows.
+$driveDetails = foreach ($drive in $logicalDrives | Where-Object DriveType -ne 5) {
     [pscustomobject]@{
-        Label = "$driveName`: Drive"
-        Value = Get-DriveUsage -DriveName $driveName
+        Label = "$($drive.DeviceID) Drive"
+        Value = Format-DriveUsage -Drive $drive
         Kind  = 'Normal'
     }
 }
 
-# Optical drives are also conditional: no detected optical device means no row.
-$opticalDetails = foreach ($drive in $presentDrives | Where-Object DriveType -eq 5) {
-    $driveName = $drive.DeviceID.TrimEnd(':')
-
+# Optical drives remain visible when the hardware exists, even with an empty
+# tray. If no optical drive is installed, no optical row is emitted.
+$opticalDetails = foreach ($drive in $logicalDrives | Where-Object DriveType -eq 5) {
     [pscustomobject]@{
-        Label = "$driveName`: Optical"
-        Value = Get-OpticalDriveStatus -DriveName $driveName
+        Label = "$($drive.DeviceID) Optical"
+        Value = Format-DriveUsage -Drive $drive
         Kind  = 'Normal'
     }
 }
@@ -280,7 +321,7 @@ $appCount = Get-InstalledAppCount
 $resolution = Get-ScreenResolution
 
 $osName = Get-FirstValue { $operatingSystem.Caption -replace '^Microsoft\s+', '' }
-$build = Get-FirstValue { '{0}.{1}' -f $operatingSystem.Version, $operatingSystem.BuildNumber }
+$build = Get-FirstValue { $operatingSystem.BuildNumber }
 $machine = Get-FirstValue { '{0} {1}' -f $computerSystem.Manufacturer.Trim(), $computerSystem.Model.Trim() }
 $cpu = Get-FirstValue {
     $name = ($processor.Name -replace '\s+', ' ').Trim()
@@ -305,6 +346,11 @@ $memory = Get-FirstValue {
 
 $lan = Get-PrimaryIPv4
 
+# -----------------------------------------------------------------------------
+# Display data
+# -----------------------------------------------------------------------------
+# Keep the artwork unchanged; the detail list is deliberately separate so
+# system-data changes do not disturb the ASCII art geometry.
 $catArt = @'
                     .c0N.   .'c.
          'Okdl:'  ;OMMMMKOKNMMW:;o0l  .'.
@@ -359,6 +405,9 @@ $details = @(
     [pscustomobject]@{ Label = '';            Value = 'the cat';                    Kind = 'Footer' }
 )
 
+# -----------------------------------------------------------------------------
+# Render
+# -----------------------------------------------------------------------------
 Write-Host ''
 Write-Host $Bold -NoNewline
 
@@ -376,10 +425,7 @@ for ($i = 0; $i -lt $lineCount; $i++) {
     }
 
     switch ($detail.Kind) {
-        'Title' {
-            Write-Host "${White}the ${Blue}cat${Reset}"
-        }
-        'Footer' {
+        { $_ -in 'Title', 'Footer' } {
             Write-Host "${White}the ${Blue}cat${Reset}"
         }
         'Blank' {
