@@ -1,7 +1,7 @@
 ﻿#--------------------------------------------
 # file:     admin-menu-gui.ps1
 # author:   Mike Redd
-# version:  1.1.3
+# version:  1.1.4
 # created:  2026-06-19
 # updated:  2026-09-13
 # desc:     Unified Admin Tools dashboard (WinForms front-end for the
@@ -480,51 +480,91 @@ $StatusLabel.ForeColor = $T.Gray
 $StatusLabel.Text = "  Ready  -  $env:USERNAME@$env:COMPUTERNAME"
 $StatusStrip.Controls.Add($StatusLabel)
 
-# Left nav
-$NavPanel = New-Object System.Windows.Forms.Panel
-$NavPanel.Dock = "Left"
-$NavPanel.Width = 196
-$NavPanel.BackColor = $T.Surface
+# Top navigation
+# Primary sections live in one fixed horizontal row. A TableLayoutPanel keeps
+# all eleven tabs on one line and automatically redistributes width as the
+# window is resized instead of wrapping or consuming content space at the left.
+$NavItems = @(
+    "SystemInfo","Power","Updates","Network","Disk",
+    "Events","Services","Watch","Processes","Logs","About"
+)
 
-$NavTitle = New-Object System.Windows.Forms.Label
-$NavTitle.Text = "  Admin Tools"
-$NavTitle.Dock = "Top"
-$NavTitle.Height = 40
-$NavTitle.TextAlign = "MiddleLeft"
-$NavTitle.Font = $MonoBig
-$NavTitle.ForeColor = $T.Text
-$NavTitle.BackColor = $T.Surface
+$TopNav = New-Object System.Windows.Forms.TableLayoutPanel
+$TopNav.Dock = "Top"
+$TopNav.Height = 42
+$TopNav.RowCount = 1
+$TopNav.ColumnCount = $NavItems.Count
+$TopNav.GrowStyle = [System.Windows.Forms.TableLayoutPanelGrowStyle]::FixedSize
+$TopNav.BackColor = $T.Surface
+$TopNav.Margin = New-Object System.Windows.Forms.Padding(0)
+$TopNav.Padding = New-Object System.Windows.Forms.Padding(0)
 
-$Nav = New-Object System.Windows.Forms.ListBox
-$Nav.Dock = "Fill"
-$Nav.BackColor = $T.Surface
-$Nav.ForeColor = $T.Text
-$Nav.Font = $UiFont
-$Nav.BorderStyle = "None"
-$Nav.IntegralHeight = $false
-$Nav.ItemHeight = 30
-[void]$Nav.Items.AddRange(@(
-    "  SystemInfo","  Power","  Updates","  Network","  Disk",
-    "  Events","  Services","  Watch","  Processes","  Logs","  About"
-))
+$columnPercent = [single](100.0 / $NavItems.Count)
+foreach ($null in $NavItems) {
+    $columnStyle = New-Object System.Windows.Forms.ColumnStyle
+    $columnStyle.SizeType = [System.Windows.Forms.SizeType]::Percent
+    $columnStyle.Width = $columnPercent
+    [void]$TopNav.ColumnStyles.Add($columnStyle)
+}
 
-# Keep DrawMode at the WinForms default. Native ListBox rendering already
-# follows the Windows selection/highlight colors and is more reliable than a
-# custom DrawItem handler in Windows PowerShell 5.1.
-$Nav.DrawMode = "Normal"
+$TopNavButtons = @{}
 
+function Set-TopNavSelection {
+    param([Parameter(Mandatory)][string]$Name)
 
+    foreach ($entry in $TopNavButtons.GetEnumerator()) {
+        $button = $entry.Value
+        $selected = ($entry.Key -eq $Name)
 
-$NavPanel.Controls.Add($Nav)
-$NavPanel.Controls.Add($NavTitle)
+        if ($selected) {
+            $button.BackColor = $T.Accent
+            $button.ForeColor = $T.AccentText
+            $button.FlatAppearance.MouseOverBackColor = $T.Accent
+            $button.FlatAppearance.MouseDownBackColor = $T.Accent
+        }
+        else {
+            $button.BackColor = $T.Surface
+            $button.ForeColor = $T.Text
+            $button.FlatAppearance.MouseOverBackColor = $T.Sel
+            $button.FlatAppearance.MouseDownBackColor = $T.Panel
+        }
+    }
+}
 
+for ($i = 0; $i -lt $NavItems.Count; $i++) {
+    $tabName = $NavItems[$i]
+
+    $button = New-Object System.Windows.Forms.Button
+    $button.Text = $tabName
+    $button.Dock = "Fill"
+    $button.Font = $UiFont
+    $button.FlatStyle = "Flat"
+    $button.UseVisualStyleBackColor = $false
+    $button.FlatAppearance.BorderSize = 0
+    $button.BackColor = $T.Surface
+    $button.ForeColor = $T.Text
+    $button.Margin = New-Object System.Windows.Forms.Padding(1,0,1,0)
+    $button.Cursor = "Hand"
+    $button.Tag = $tabName
+
+    # Capture this iteration's tab name. Without GetNewClosure(), PowerShell
+    # callbacks can all resolve the final loop value after construction ends.
+    $button.Add_Click({
+        Switch-Panel $tabName
+        Set-TopNavSelection $tabName
+        Set-Status $tabName $T.Gray
+    }.GetNewClosure())
+
+    $TopNavButtons[$tabName] = $button
+    $TopNav.Controls.Add($button, $i, 0)
+}
 # Content host
 $Content = New-Object System.Windows.Forms.Panel
 $Content.Dock = "Fill"
 $Content.BackColor = $T.Bg
 
 $Form.Controls.Add($Content)
-$Form.Controls.Add($NavPanel)
+$Form.Controls.Add($TopNav)
 $Form.Controls.Add($StatusStrip)
 
 $Panels = @{}
@@ -1841,7 +1881,7 @@ function Build-About {
     $p.Controls.Add($out)
     Out-Line $out "" $T.Text
     Out-Line $out "  Admin Tools  -  GUI dashboard" $T.Cyan
-    Out-Line $out "  v1.1.3  by Mike Redd" $T.Gray
+    Out-Line $out "  v1.1.4  by Mike Redd" $T.Gray
     Out-Line $out "" $T.Text
     Out-Line $out "  A single front-end for the admin console menus:" $T.Text
     Out-Line $out "    SystemInfo - Power - Updates - Network - Disk" $T.Green
@@ -1888,17 +1928,13 @@ function Switch-Panel($name) {
     if ($script:WatchTimer -and $name -ne "Watch") { $script:WatchTimer.Stop() }
 }
 
-$Nav.Add_SelectedIndexChanged({
-    if ($Nav.SelectedItem) {
-        $name = ([string]$Nav.SelectedItem).Trim()
-        Switch-Panel $name
-        Set-Status $name $T.Gray
-    }
-})
-
 $Form.Add_FormClosing({ if ($script:WatchTimer) { $script:WatchTimer.Stop(); $script:WatchTimer.Dispose() } })
 
-$Nav.SelectedIndex = 0
+# Start on SystemInfo and keep the visual tab selection synchronized with the
+# content panel from the first frame.
+Switch-Panel "SystemInfo"
+Set-TopNavSelection "SystemInfo"
+Set-Status "SystemInfo" $T.Gray
 
 # ── Run ───────────────────────────────────────────────────────
 $Form.Add_Shown({
