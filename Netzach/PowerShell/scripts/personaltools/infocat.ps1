@@ -11,7 +11,7 @@
 #--------------------------------------------
 # file:     infocat.ps1
 # author:   Mike Redd
-# version:  1.2
+# version:  1.3
 # restored: 2026-07-12
 # desc:     Windows / PowerShell system info cat
 #--------------------------------------------
@@ -246,16 +246,35 @@ $uptime = Get-FirstValue {
     return '{0}h {1}m' -f $span.Hours, $span.Minutes
 }
 
-$driveUsage = [ordered]@{
-    'C' = Get-DriveUsage 'C'
-    'E' = Get-DriveUsage 'E'
-    'F' = Get-DriveUsage 'F'
-    'G' = Get-DriveUsage 'G'
-    'H' = Get-DriveUsage 'H'
-    'P' = Get-DriveUsage 'P'
+# Build the drive rows from what Windows actually reports instead of keeping a
+# hard-coded list of letters. Missing/disconnected drives therefore disappear
+# completely from the output, while newly attached drives appear automatically.
+$presentDrives = @(
+    Get-CimInstance Win32_LogicalDisk |
+        Where-Object DeviceID |
+        Sort-Object DeviceID
+)
+
+$driveDetails = foreach ($drive in $presentDrives | Where-Object DriveType -ne 5) {
+    $driveName = $drive.DeviceID.TrimEnd(':')
+
+    [pscustomobject]@{
+        Label = "$driveName`: Drive"
+        Value = Get-DriveUsage -DriveName $driveName
+        Kind  = 'Normal'
+    }
 }
 
-$opticalDriveStatus = Get-OpticalDriveStatus 'D'
+# Optical drives are also conditional: no detected optical device means no row.
+$opticalDetails = foreach ($drive in $presentDrives | Where-Object DriveType -eq 5) {
+    $driveName = $drive.DeviceID.TrimEnd(':')
+
+    [pscustomobject]@{
+        Label = "$driveName`: Optical"
+        Value = Get-OpticalDriveStatus -DriveName $driveName
+        Kind  = 'Normal'
+    }
+}
 
 $appCount = Get-InstalledAppCount
 $resolution = Get-ScreenResolution
@@ -324,13 +343,8 @@ $details = @(
     [pscustomobject]@{ Label = 'Terminal';    Value = $terminal;                    Kind = 'Normal' }
     [pscustomobject]@{ Label = 'Shell';       Value = $shell;                       Kind = 'Normal' }
     [pscustomobject]@{ Label = 'Uptime';      Value = $uptime;                      Kind = 'Normal' }
-    [pscustomobject]@{ Label = 'C: Drive';    Value = $driveUsage['C'];              Kind = 'Normal' }
-    [pscustomobject]@{ Label = 'E: Drive';    Value = $driveUsage['E'];              Kind = 'Normal' }
-    [pscustomobject]@{ Label = 'F: Drive';    Value = $driveUsage['F'];              Kind = 'Normal' }
-    [pscustomobject]@{ Label = 'G: Drive';    Value = $driveUsage['G'];              Kind = 'Normal' }
-    [pscustomobject]@{ Label = 'H: Drive';    Value = $driveUsage['H'];              Kind = 'Normal' }
-    [pscustomobject]@{ Label = 'P: Drive';    Value = $driveUsage['P'];              Kind = 'Normal' }
-    [pscustomobject]@{ Label = 'D: Optical';  Value = $opticalDriveStatus;           Kind = 'Normal' }
+    $driveDetails
+    $opticalDetails
     [pscustomobject]@{ Label = 'Apps';        Value = "$appCount installed";         Kind = 'Normal' }
     [pscustomobject]@{ Label = 'Resolution';  Value = $resolution;                  Kind = 'Normal' }
     [pscustomobject]@{ Label = 'OS';          Value = $osName;                      Kind = 'Normal' }
