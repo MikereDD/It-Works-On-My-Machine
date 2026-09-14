@@ -1,7 +1,7 @@
 ﻿#--------------------------------------------
 # file:     admin-menu-gui.ps1
 # author:   Mike Redd
-# version:  1.1.4
+# version:  1.2.1
 # created:  2026-06-19
 # updated:  2026-09-13
 # desc:     Unified Admin Tools dashboard (WinForms front-end for the
@@ -206,23 +206,336 @@ function Format-Bytes($bytes) {
     return "$bytes B"
 }
 
+# ── Navigation/action icon helpers ─────────────────────────────
+# Admin Tools renders its navigation icons at runtime from Windows' built-in
+# Segoe MDL2 Assets font. Keeping the icons generated in-process avoids another
+# asset folder full of tiny PNGs and lets them follow the same semantic colors
+# as the rest of the dashboard.
+$script:AdminToolsIconCache = New-Object System.Collections.ArrayList
+
+function Get-AdminToolsGlyph {
+    param([Parameter(Mandatory)][string]$Name)
+
+    # These are Windows shell-style MDL2 glyphs. Where an action does not need a
+    # bespoke pictogram, it intentionally falls back to a simple command tile.
+    $map = @{
+        # Primary sections.
+        "SystemInfo"       = [char]0xE950
+        "Power"            = [char]0xE7E8
+        "Updates"          = [char]0xE72C
+        "Network"          = [char]0xE968
+        "Disk"             = [char]0xEDA2
+        "Events"           = [char]0xE8A5
+        "Services"         = [char]0xE713
+        "Watch"            = [char]0xE7F4
+        "Processes"        = [char]0xE9D9
+        "Logs"             = [char]0xE8A5
+        "About"            = [char]0xE946
+
+        # Common actions/options.
+        "Full Report"      = [char]0xE8A5
+        "System Overview"  = [char]0xE950
+        "Processor"        = [char]0xE950
+        "Memory"           = [char]0xE964
+        "Storage"          = [char]0xEDA2
+        "Display (GPU)"    = [char]0xE7F4
+        "Battery"          = [char]0xE850
+        "Performance"      = [char]0xE9D9
+        "Health Check"     = [char]0xE930
+        "Network Info"     = [char]0xE968
+        "Wi-Fi Details"    = [char]0xE701
+        "Ping Host"        = [char]0xE721
+        "Test Port"        = [char]0xE721
+        "DNS Lookup"       = [char]0xE721
+        "Traceroute"       = [char]0xE8F1
+        "Public IP"        = [char]0xE968
+        "Active TCP"       = [char]0xE968
+        "Listening Ports"  = [char]0xE968
+        "Drive Usage"      = [char]0xEDA2
+        "Largest Folders"  = [char]0xE8B7
+        "Largest Files"    = [char]0xE8A5
+        "Clean User Temp"  = [char]0xE74D
+        "Clean Win Temp"   = [char]0xE74D
+        "Empty Recycle Bin"= [char]0xE74D
+        "Export CSV"       = [char]0xE74E
+        "System Errors"    = [char]0xE783
+        "App Errors"       = [char]0xE783
+        "Warnings"         = [char]0xE7BA
+        "PowerShell Errors"= [char]0xE783
+        "Failed Logons"    = [char]0xE72E
+        "Reboot/Shutdown"  = [char]0xE7E8
+        "Running"          = [char]0xE768
+        "Stopped"          = [char]0xE71A
+        "All"              = [char]0xE8A9
+        "Start"            = [char]0xE768
+        "Stop"             = [char]0xE71A
+        "Restart"          = [char]0xE72C
+        "Set Startup"      = [char]0xE713
+        "Top CPU"          = [char]0xE9D9
+        "Top Memory"       = [char]0xE964
+        "Search"           = [char]0xE721
+        "By Port"          = [char]0xE721
+        "Details"          = [char]0xE946
+        "Kill"             = [char]0xE74D
+        "Suspend"          = [char]0xE769
+        "Resume"           = [char]0xE768
+        "Browse"           = [char]0xE8B7
+        "Last 25"          = [char]0xE8A5
+        "Last 100"         = [char]0xE8A5
+        "Full Log"         = [char]0xE8A5
+        "Log Info"         = [char]0xE946
+        "Clear Log"        = [char]0xE74D
+        "Test Entries"     = [char]0xE8A5
+        "Sleep"            = [char]0xE708
+        "Hibernate"        = [char]0xE708
+        "Lock Screen"      = [char]0xE72E
+        "Log Off"          = [char]0xE8AC
+        "Shutdown"         = [char]0xE7E8
+        "Restart in..."    = [char]0xE72C
+        "Shutdown in..."   = [char]0xE7E8
+        "Cancel scheduled" = [char]0xE711
+        "Scan & List"      = [char]0xE72C
+        "Update History"   = [char]0xE81C
+        "Install All"      = [char]0xE896
+        "Security Only"    = [char]0xEA18
+        "Reboot"           = [char]0xE72C
+        "Install Module"   = [char]0xE896
+    }
+
+    if ($map.ContainsKey($Name)) {
+        return [string]$map[$Name]
+    }
+
+    return [string][char]0xE945
+}
+
+function New-AdminToolsIcon {
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)][System.Drawing.Color]$Color,
+        [int]$Size = 20
+    )
+
+    $bitmap = New-Object System.Drawing.Bitmap($Size, $Size)
+    $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+
+    try {
+        $graphics.Clear([System.Drawing.Color]::Transparent)
+        $graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+
+        $penWidth = [single][Math]::Max(1.4, $Size / 12.0)
+        $pen = New-Object System.Drawing.Pen($Color, $penWidth)
+        $brush = New-Object System.Drawing.SolidBrush($Color)
+
+        try {
+            switch ($Name) {
+                "Full Report" {
+                    # Document outline with a folded upper-right corner and
+                    # three report lines. Drawn directly because the previous
+                    # font glyph rendered like stray brackets on some systems.
+                    $left = [single]($Size * 0.23)
+                    $top = [single]($Size * 0.12)
+                    $right = [single]($Size * 0.77)
+                    $bottom = [single]($Size * 0.88)
+                    $fold = [single]($Size * 0.18)
+
+                    $graphics.DrawLine($pen, $left, $top, $right - $fold, $top)
+                    $graphics.DrawLine($pen, $right - $fold, $top, $right, $top + $fold)
+                    $graphics.DrawLine($pen, $right, $top + $fold, $right, $bottom)
+                    $graphics.DrawLine($pen, $right, $bottom, $left, $bottom)
+                    $graphics.DrawLine($pen, $left, $bottom, $left, $top)
+                    $graphics.DrawLine($pen, $right - $fold, $top, $right - $fold, $top + $fold)
+                    $graphics.DrawLine($pen, $right - $fold, $top + $fold, $right, $top + $fold)
+
+                    foreach ($y in @(0.43, 0.58, 0.73)) {
+                        $graphics.DrawLine(
+                            $pen,
+                            [single]($Size * 0.34),
+                            [single]($Size * $y),
+                            [single]($Size * 0.66),
+                            [single]($Size * $y)
+                        )
+                    }
+                }
+
+                { $_ -in @("SystemInfo","Processor","Top CPU") } {
+                    # CPU/chip icon.
+                    $rect = New-Object System.Drawing.RectangleF(
+                        [single]($Size * 0.25),
+                        [single]($Size * 0.25),
+                        [single]($Size * 0.50),
+                        [single]($Size * 0.50)
+                    )
+                    $graphics.DrawRectangle(
+                        $pen,
+                        $rect.X,
+                        $rect.Y,
+                        $rect.Width,
+                        $rect.Height
+                    )
+
+                    foreach ($v in @(0.34,0.50,0.66)) {
+                        $x = [single]($Size * $v)
+                        $graphics.DrawLine($pen, $x, [single]($Size * 0.10), $x, [single]($Size * 0.25))
+                        $graphics.DrawLine($pen, $x, [single]($Size * 0.75), $x, [single]($Size * 0.90))
+                        $graphics.DrawLine($pen, [single]($Size * 0.10), $x, [single]($Size * 0.25), $x)
+                        $graphics.DrawLine($pen, [single]($Size * 0.75), $x, [single]($Size * 0.90), $x)
+                    }
+                }
+
+                { $_ -in @("Memory","Top Memory") } {
+                    # RAM module icon.
+                    $graphics.DrawRectangle(
+                        $pen,
+                        [single]($Size * 0.14),
+                        [single]($Size * 0.32),
+                        [single]($Size * 0.72),
+                        [single]($Size * 0.36)
+                    )
+
+                    foreach ($xFrac in @(0.28,0.43,0.58,0.73)) {
+                        $graphics.FillRectangle(
+                            $brush,
+                            [single]($Size * $xFrac - $Size * 0.055),
+                            [single]($Size * 0.41),
+                            [single]($Size * 0.11),
+                            [single]($Size * 0.18)
+                        )
+                    }
+
+                    foreach ($xFrac in @(0.24,0.36,0.48,0.60,0.72)) {
+                        $x = [single]($Size * $xFrac)
+                        $graphics.DrawLine(
+                            $pen,
+                            $x,
+                            [single]($Size * 0.68),
+                            $x,
+                            [single]($Size * 0.80)
+                        )
+                    }
+                }
+
+                "Details" {
+                    # Information icon.
+                    $graphics.DrawEllipse(
+                        $pen,
+                        [single]($Size * 0.18),
+                        [single]($Size * 0.18),
+                        [single]($Size * 0.64),
+                        [single]($Size * 0.64)
+                    )
+                    $graphics.FillEllipse(
+                        $brush,
+                        [single]($Size * 0.46),
+                        [single]($Size * 0.32),
+                        [single]($Size * 0.08),
+                        [single]($Size * 0.08)
+                    )
+                    $graphics.DrawLine(
+                        $pen,
+                        [single]($Size * 0.50),
+                        [single]($Size * 0.47),
+                        [single]($Size * 0.50),
+                        [single]($Size * 0.68)
+                    )
+                }
+
+                default {
+                    # All other icons continue to use the Windows shell glyph
+                    # set so the dashboard stays visually native and compact.
+                    $graphics.TextRenderingHint = [System.Drawing.Text.TextRenderingHint]::ClearTypeGridFit
+
+                    $fontSize = [Math]::Max(10, [Math]::Round($Size * 0.68))
+                    $font = New-Object System.Drawing.Font(
+                        "Segoe MDL2 Assets",
+                        [single]$fontSize,
+                        [System.Drawing.FontStyle]::Regular,
+                        [System.Drawing.GraphicsUnit]::Pixel
+                    )
+                    $format = New-Object System.Drawing.StringFormat
+                    $format.Alignment = [System.Drawing.StringAlignment]::Center
+                    $format.LineAlignment = [System.Drawing.StringAlignment]::Center
+
+                    try {
+                        $rect = New-Object System.Drawing.RectangleF(0, 0, $Size, $Size)
+                        $graphics.DrawString((Get-AdminToolsGlyph $Name), $font, $brush, $rect, $format)
+                    }
+                    finally {
+                        $format.Dispose()
+                        $font.Dispose()
+                    }
+                }
+            }
+        }
+        finally {
+            $brush.Dispose()
+            $pen.Dispose()
+        }
+    }
+    finally {
+        $graphics.Dispose()
+    }
+
+    # WinForms does not clone assigned images. Keep each bitmap alive for the
+    # lifetime of the dashboard and dispose them when the form exits.
+    [void]$script:AdminToolsIconCache.Add($bitmap)
+    return $bitmap
+}
+
+function Set-SubNavSelection {
+    param([Parameter(Mandatory)]$Button)
+
+    $parent = $Button.Parent
+    if (-not $parent) {
+        return
+    }
+
+    foreach ($control in $parent.Controls) {
+        if ($control -isnot [System.Windows.Forms.Button]) {
+            continue
+        }
+
+        $control.BackColor = $T.Panel2
+        if ($control.Tag -is [System.Drawing.Color]) {
+            $control.ForeColor = $control.Tag
+        }
+        else {
+            $control.ForeColor = $T.Text
+        }
+    }
+
+    $Button.BackColor = $T.Accent
+    $Button.ForeColor = $T.AccentText
+}
 function New-Button($text, $accent) {
     $b = New-Object System.Windows.Forms.Button
     $b.Text = $text
     $b.Font = $UiFont
     $b.FlatStyle = "Flat"
     $b.UseVisualStyleBackColor = $false
-    $b.FlatAppearance.BorderSize = 1
-    $b.FlatAppearance.BorderColor = $T.Border
+    $b.FlatAppearance.BorderSize = 0
     $b.FlatAppearance.MouseOverBackColor = $T.Sel
     $b.FlatAppearance.MouseDownBackColor = $T.Panel
     $b.BackColor = $T.Panel2
     $b.ForeColor = $(if ($accent) { $accent } else { $T.Text })
+    $b.Tag = $b.ForeColor
     $b.AutoSize = $false
-    $b.Height = 30
-    $b.Width = 150
-    $b.Margin = New-Object System.Windows.Forms.Padding(4)
+    $b.Height = 42
+    $b.Width = 214
+    $b.Margin = New-Object System.Windows.Forms.Padding(0,0,0,4)
+    $b.Padding = New-Object System.Windows.Forms.Padding(12,0,8,0)
     $b.Cursor = "Hand"
+    $b.TextAlign = "MiddleLeft"
+    $b.ImageAlign = "MiddleLeft"
+    $b.TextImageRelation = "ImageBeforeText"
+    $b.Image = New-AdminToolsIcon -Name $text -Color $b.ForeColor -Size 22
+
+    # This visual handler runs before the action-specific handler added by the
+    # Build-* function. It gives every option menu the same selected-row cue.
+    $b.Add_Click({
+        Set-SubNavSelection $this
+    })
+
     return $b
 }
 
@@ -232,7 +545,7 @@ function New-Label($text, $color) {
     $l.Font = $UiFont
     $l.AutoSize = $true
     if ($color) { $l.ForeColor = $color } else { $l.ForeColor = $T.Gray }
-    $l.Margin = New-Object System.Windows.Forms.Padding(6,8,2,0)
+    $l.Margin = New-Object System.Windows.Forms.Padding(8,8,2,2)
     return $l
 }
 
@@ -279,7 +592,8 @@ function New-Grid {
     $g.ColumnHeadersHeightSizeMode = "DisableResizing"
     $g.ColumnHeadersDefaultCellStyle.BackColor = $T.Panel2
     $g.ColumnHeadersDefaultCellStyle.ForeColor = $T.Text
-    $g.ColumnHeadersDefaultCellStyle.Font = $MonoFont
+    $g.ColumnHeadersDefaultCellStyle.Font = $UiFont
+    $g.ColumnHeadersDefaultCellStyle.Alignment = "MiddleLeft"
     $g.DefaultCellStyle.BackColor = $T.Surface
     $g.DefaultCellStyle.ForeColor = $T.Text
     $g.DefaultCellStyle.SelectionBackColor = $T.Accent
@@ -290,12 +604,15 @@ function New-Grid {
 
 function New-Toolbar {
     $f = New-Object System.Windows.Forms.FlowLayoutPanel
-    $f.Dock = "Top"
-    $f.AutoSize = $true
-    $f.AutoSizeMode = "GrowAndShrink"
-    $f.WrapContents = $true
-    $f.BackColor = $T.Bg
-    $f.Padding = New-Object System.Windows.Forms.Padding(8,8,8,8)
+    $f.Dock = "Left"
+    $f.Width = 236
+    $f.AutoSize = $false
+    $f.WrapContents = $false
+    $f.FlowDirection = [System.Windows.Forms.FlowDirection]::TopDown
+    $f.AutoScroll = $true
+    $f.BackColor = $T.Surface
+    $f.BorderStyle = "FixedSingle"
+    $f.Padding = New-Object System.Windows.Forms.Padding(10,12,10,12)
     return $f
 }
 
@@ -426,8 +743,8 @@ function Get-ProcRows($procs) {
         [PSCustomObject]@{
             Name      = $_.ProcessName
             PID       = $_.Id
-            "CPU(s)"  = if ($_.CPU) { [Math]::Round($_.CPU,1) } else { 0 }
-            "RAM(MB)" = [Math]::Round($_.WorkingSet64/1MB,1)
+            "CPU Time (s)" = if ($_.CPU) { [Math]::Round($_.CPU,1) } else { 0 }
+            "Memory (MB)" = [Math]::Round($_.WorkingSet64/1MB,1)
         }
     }
 }
@@ -491,7 +808,7 @@ $NavItems = @(
 
 $TopNav = New-Object System.Windows.Forms.TableLayoutPanel
 $TopNav.Dock = "Top"
-$TopNav.Height = 42
+$TopNav.Height = 72
 $TopNav.RowCount = 1
 $TopNav.ColumnCount = $NavItems.Count
 $TopNav.GrowStyle = [System.Windows.Forms.TableLayoutPanelGrowStyle]::FixedSize
@@ -519,12 +836,14 @@ function Set-TopNavSelection {
         if ($selected) {
             $button.BackColor = $T.Accent
             $button.ForeColor = $T.AccentText
+            $button.Image = New-AdminToolsIcon -Name $entry.Key -Color $T.AccentText -Size 24
             $button.FlatAppearance.MouseOverBackColor = $T.Accent
             $button.FlatAppearance.MouseDownBackColor = $T.Accent
         }
         else {
             $button.BackColor = $T.Surface
             $button.ForeColor = $T.Text
+            $button.Image = New-AdminToolsIcon -Name $entry.Key -Color $T.Text -Size 24
             $button.FlatAppearance.MouseOverBackColor = $T.Sel
             $button.FlatAppearance.MouseDownBackColor = $T.Panel
         }
@@ -538,6 +857,11 @@ for ($i = 0; $i -lt $NavItems.Count; $i++) {
     $button.Text = $tabName
     $button.Dock = "Fill"
     $button.Font = $UiFont
+    $button.Image = New-AdminToolsIcon -Name $tabName -Color $T.Text -Size 24
+    $button.ImageAlign = "TopCenter"
+    $button.TextAlign = "BottomCenter"
+    $button.TextImageRelation = "ImageAboveText"
+    $button.Padding = New-Object System.Windows.Forms.Padding(2,8,2,7)
     $button.FlatStyle = "Flat"
     $button.UseVisualStyleBackColor = $false
     $button.FlatAppearance.BorderSize = 0
@@ -1758,11 +2082,11 @@ function Build-Watch {
         switch ($cmbWhat.SelectedItem) {
             "Top CPU" {
                 Set-Grid $grid (Get-Process | Sort-Object CPU -Descending | Select-Object -First 15 |
-                    ForEach-Object { [PSCustomObject]@{ Name=$_.ProcessName; PID=$_.Id; "CPU(s)"=if($_.CPU){[Math]::Round($_.CPU,1)}else{0}; "RAM(MB)"=[Math]::Round($_.WorkingSet64/1MB,1) } })
+                    ForEach-Object { [PSCustomObject]@{ Name=$_.ProcessName; PID=$_.Id; "CPU Time (s)"=if($_.CPU){[Math]::Round($_.CPU,1)}else{0}; "Memory (MB)"=[Math]::Round($_.WorkingSet64/1MB,1) } })
             }
             "Top Memory" {
                 Set-Grid $grid (Get-Process | Sort-Object WorkingSet64 -Descending | Select-Object -First 15 |
-                    ForEach-Object { [PSCustomObject]@{ Name=$_.ProcessName; PID=$_.Id; "RAM(MB)"=[Math]::Round($_.WorkingSet64/1MB,1); "CPU(s)"=if($_.CPU){[Math]::Round($_.CPU,1)}else{0} } })
+                    ForEach-Object { [PSCustomObject]@{ Name=$_.ProcessName; PID=$_.Id; "Memory (MB)"=[Math]::Round($_.WorkingSet64/1MB,1); "CPU Time (s)"=if($_.CPU){[Math]::Round($_.CPU,1)}else{0} } })
             }
             "Active TCP" {
                 Set-Grid $grid (Get-NetTCPConnection -State Established -ErrorAction SilentlyContinue | Select-Object -First 30 |
@@ -1881,7 +2205,7 @@ function Build-About {
     $p.Controls.Add($out)
     Out-Line $out "" $T.Text
     Out-Line $out "  Admin Tools  -  GUI dashboard" $T.Cyan
-    Out-Line $out "  v1.1.4  by Mike Redd" $T.Gray
+    Out-Line $out "  v1.2.1  by Mike Redd" $T.Gray
     Out-Line $out "" $T.Text
     Out-Line $out "  A single front-end for the admin console menus:" $T.Text
     Out-Line $out "    SystemInfo - Power - Updates - Network - Disk" $T.Green
@@ -1928,7 +2252,18 @@ function Switch-Panel($name) {
     if ($script:WatchTimer -and $name -ne "Watch") { $script:WatchTimer.Stop() }
 }
 
-$Form.Add_FormClosing({ if ($script:WatchTimer) { $script:WatchTimer.Stop(); $script:WatchTimer.Dispose() } })
+$Form.Add_FormClosing({
+    if ($script:WatchTimer) {
+        $script:WatchTimer.Stop()
+        $script:WatchTimer.Dispose()
+    }
+
+    foreach ($image in @($script:AdminToolsIconCache)) {
+        if ($image) {
+            $image.Dispose()
+        }
+    }
+})
 
 # Start on SystemInfo and keep the visual tab selection synchronized with the
 # content panel from the first frame.
