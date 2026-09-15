@@ -20,7 +20,7 @@ MUSICBOT="$BASE/Sandalphon/musicbot.py"
 KOKABIEL_DIR="$BASE/Kokabiel"
 KOKABIEL_PYTHON="$KOKABIEL_DIR/.venv/bin/python"
 KOKABIEL="$KOKABIEL_DIR/kokabiel.py"
-CARDBOT="$BASE/Gabriel/cardbot.py"
+GABRIEL="$BASE/Gabriel/gabriel.py"
 FORWARDBOT="$BASE/Selaphiel/forwardbot.py"
 
 die() {
@@ -66,7 +66,7 @@ touch \
     "$LOGS/ytbot.log" \
     "$LOGS/musicbot.log" \
     "$LOGS/kokabiel/kokabiel.log" \
-    "$LOGS/cardbot.log" \
+    "$LOGS/gabriel.log" \
     "$LOGS/forwardbot.log"
 
 # Create a generously sized detached session.
@@ -191,14 +191,14 @@ mapfile -t PANE_IDS < <(
 YT_PANE="${PANE_IDS[0]}"
 MUSIC_PANE="${PANE_IDS[1]}"
 KOKABIEL_PANE="${PANE_IDS[2]}"
-CARD_PANE="${PANE_IDS[3]}"
+GABRIEL_PANE="${PANE_IDS[3]}"
 FORWARD_PANE="${PANE_IDS[4]}"
 LOGS_PANE="${PANE_IDS[5]}"
 
 # Intended visible layout:
 #
 #   1 ytbot / Raziel          | 2 musicbot / Sandalphon
-#   3 Kokabiel                 | 4 cardbot / Gabriel
+#   3 Kokabiel                 | 4 gabriel / Gabriel
 #   5 forwardbot / Selaphiel  | 6 logs
 
 # Pane 1 → ytbot / Raziel
@@ -219,10 +219,10 @@ tmux send-keys \
     "cd '$KOKABIEL_DIR' && '$KOKABIEL_PYTHON' '$KOKABIEL'" \
     C-m
 
-# Pane 4 → cardbot / Gabriel
+# Pane 4 → gabriel / Gabriel
 tmux send-keys \
-    -t "$CARD_PANE" \
-    "cd '$BASE' && '$VENV' '$CARDBOT' 2>&1 | tee -a '$LOGS/cardbot.log'" \
+    -t "$GABRIEL_PANE" \
+    "cd '$BASE' && '$VENV' '$GABRIEL' 2>&1 | tee -a '$LOGS/gabriel.log'" \
     C-m
 
 # Pane 5 → forwardbot / Selaphiel
@@ -259,8 +259,8 @@ tmux set -p -t "$MUSIC_PANE" \
 tmux set -p -t "$KOKABIEL_PANE" \
     @label "media guide (Kokabiel)"
 
-tmux set -p -t "$CARD_PANE" \
-    @label "cardbot (Gabriel)"
+tmux set -p -t "$GABRIEL_PANE" \
+    @label "gabriel (Gabriel)"
 
 tmux set -p -t "$FORWARD_PANE" \
     @label "forwardbot (Selaphiel)"
