@@ -10,7 +10,7 @@
 #--------------------------------------------
 
 # ── Shared UI: defer to core.sh / ui.sh in the lib dir ────────
-# brlib.sh lives in ~/scripts/lib alongside core.sh and ui.sh. We source them
+# brlib.sh lives in ~/lib alongside core.sh and ui.sh. We source them
 # so ui.sh stays the single source of truth for colors, then fill the few
 # helpers/colors ui.sh does not provide. If neither is found (e.g. brlib was
 # copied next to the scripts), we fall back to built-in defaults below.

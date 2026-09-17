@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # file: core.sh
-# version: 1.2
+# version: 1.3
 
 # Exit on error
 set -o errexit
@@ -12,7 +12,7 @@ set -o nounset
 # when core.sh is sourced via process substitution (where BASH_SOURCE is a pipe).
 if [[ -z "${LIB_DIR:-}" || ! -f "${LIB_DIR:-}/ui.sh" ]]; then
     _self="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
-    for _d in "$_self" "$HOME/lib" "$HOME/scripts/lib"; do
+    for _d in "$_self" "$HOME/lib"; do
         [[ -n "$_d" && -f "$_d/ui.sh" ]] && { LIB_DIR="$_d"; break; }
     done
 fi
