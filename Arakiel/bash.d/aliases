@@ -38,7 +38,7 @@ alias cls='clear'               # Windows-style shorthand for clearing terminal.
 # "update" performs Arch's normal full system upgrade rather than a partial
 # package upgrade, which is intentionally avoided on Arch.
 alias update='sudo pacman -Syu'
-alias install='sudo pacman -S'
+alias pkginstall='sudo pacman -S'
 alias search='pacman -Ss'
 
 # Network ----------------------------------------------------------------------
