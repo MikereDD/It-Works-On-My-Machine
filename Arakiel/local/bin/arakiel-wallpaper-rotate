@@ -3,7 +3,7 @@
 set -u
 
 WALLPAPER_DIR="$HOME/wallpapers/arakiel-wallpapers"
-INTERVAL="${1:-1800}"
+INTERVAL="${1:-300}"
 
 mapfile -t WALLPAPERS < <(
     find "$WALLPAPER_DIR" \
