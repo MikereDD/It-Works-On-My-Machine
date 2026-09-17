@@ -2,7 +2,7 @@
 #
 # file:    tool-menu.sh
 # author:  Mike Redd
-# version: 1.4
+# version: 1.5
 # desc:    Main launcher (Admin + Personal)
 #
 
@@ -71,7 +71,7 @@ admin_menu() {
 
         case "$choice" in
             1)  run_script "admintools/system-info.sh" ;;
-            2)  run_script "admintools/rp5-systeminfo.sh" ;;
+            2)  run_script "admintools/rp5-systeminfo-menu.sh" ;;
             3)  run_script "admintools/logview.sh" ;;
             4)  run_script "admintools/disk-cleanup.sh" ;;
             5)  run_script "admintools/backup.sh" ;;
