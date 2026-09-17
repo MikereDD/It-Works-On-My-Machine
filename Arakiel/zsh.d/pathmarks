@@ -1,12 +1,11 @@
-#!/usr/bin/env bash
+#!/usr/bin/env zsh
 #--------------------------------------------
-# file:     ~/.bash.d/pathmarks
+# file:     ~/.zsh.d/pathmarks
 # author:   Mike Redd
 # version:  2.0
-# desc:     Bash loader for shared Arakiel Pathmarks
+# desc:     Zsh loader for shared Arakiel Pathmarks
 #--------------------------------------------
 
 if [[ -r "$HOME/lib/pathmarks.sh" ]]; then
-    # shellcheck source=/dev/null
     source "$HOME/lib/pathmarks.sh"
 fi
