@@ -1,0 +1,181 @@
+# ============================================================================
+# Pathmarks for Bash
+# ============================================================================
+# Script:      pathmarks
+# Component:   Typezerø shell utilities / persistent directory bookmarks
+# Platform:    Linux / Bash (Arakiel)
+# Purpose:     Save short names for frequently used directories and jump back
+#              to them from any Bash session.
+# Storage:     ~/.config/pmarks/pathmarks.tsv
+# Dependencies: Bash plus standard mkdir, awk, sort, mv, rm, and pwd utilities.
+#
+# Commands:
+#   mark <name> [path] - Save the current directory, or an explicit directory.
+#   jump <name>        - Change to a saved directory.
+#   marks              - List saved directories and whether they still exist.
+#   unmark <name>      - Remove a saved directory.
+#   pathmarks-help     - Show command help and examples.
+#
+# Design notes:
+#   - Bookmark data is machine-local rather than tracked in Git. Creating or
+#     removing a bookmark must never dirty It-Works-On-My-Machine.
+#   - TSV is intentional: it keeps the Bash implementation dependency-light
+#     and avoids requiring jq merely to read a tiny bookmark database.
+#   - Bookmark names use the same conservative character set as PowerShell so
+#     the command vocabulary behaves consistently on Netzach and Arakiel.
+#   - Database updates are assembled in a temporary file and moved into place
+#     only after successful processing, reducing partial-write risk.
+#   - `jump` is deliberately used instead of `go`; Go is installed on both
+#     Netzach and Arakiel, so Pathmarks must not shadow the Go toolchain.
+#   - These must be sourced shell functions: an external process cannot change
+#     the working directory of the interactive shell that launched it.
+# ============================================================================
+
+PATHMARKS_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/pmarks"
+PATHMARKS_FILE="$PATHMARKS_DIR/pathmarks.tsv"
+
+# ── Storage initialization ──────────────────────────────────────────────────
+_pathmarks_init() {
+    # Keep initialization explicit: failure to create the configuration
+    # directory must not fall through into an attempted database write.
+    mkdir -p -- "$PATHMARKS_DIR" || return 1
+    [[ -f "$PATHMARKS_FILE" ]] || : > "$PATHMARKS_FILE"
+}
+
+# ── Public command: mark ────────────────────────────────────────────────────
+mark() {
+    local name="${1:-}" target="${2:-$PWD}" resolved tmp
+
+    [[ "$name" =~ ^[A-Za-z0-9._-]+$ ]] || {
+        printf 'usage: mark <name> [directory]\n' >&2
+        return 2
+    }
+
+    [[ -d "$target" ]] || {
+        printf 'pathmarks: directory not found: %s\n' "$target" >&2
+        return 1
+    }
+
+    # Store a physical absolute path so a bookmark does not depend on the
+    # directory from which it was originally created.
+    resolved="$(cd -- "$target" && pwd -P)" || return 1
+    _pathmarks_init || return 1
+
+    # Reusing a name replaces its previous record rather than creating duplicates.
+    tmp="${PATHMARKS_FILE}.tmp.$$"
+    if ! awk -F '\t' -v n="$name" '$1 != n' "$PATHMARKS_FILE" > "$tmp"; then
+        rm -f -- "$tmp"
+        return 1
+    fi
+
+    if ! printf '%s\t%s\n' "$name" "$resolved" >> "$tmp"; then
+        rm -f -- "$tmp"
+        return 1
+    fi
+
+    if ! mv -f -- "$tmp" "$PATHMARKS_FILE"; then
+        rm -f -- "$tmp"
+        return 1
+    fi
+
+    printf '  marked  %s -> %s\n' "$name" "$resolved"
+}
+
+# ── Public command: jump ────────────────────────────────────────────────────
+jump() {
+    local name="${1:-}" target
+
+    [[ -n "$name" ]] || {
+        printf 'usage: jump <name>\n' >&2
+        return 2
+    }
+
+    _pathmarks_init || return 1
+    target="$(awk -F '\t' -v n="$name" '$1 == n {print substr($0,index($0,"\t")+1); exit}' "$PATHMARKS_FILE")"
+
+    [[ -n "$target" ]] || {
+        printf "pathmarks: unknown mark '%s'. Run 'marks' to list saved marks.\n" "$name" >&2
+        return 1
+    }
+
+    [[ -d "$target" ]] || {
+        printf "pathmarks: pathmark '%s' points to a missing directory: %s\n" "$name" "$target" >&2
+        return 1
+    }
+
+    # This must be a sourced shell function so cd changes the current shell.
+    cd -- "$target"
+}
+
+# ── Public command: marks ───────────────────────────────────────────────────
+marks() {
+    local name target state
+
+    _pathmarks_init || return 1
+    [[ -s "$PATHMARKS_FILE" ]] || {
+        printf '  No pathmarks saved.\n'
+        return
+    }
+
+    printf '%-18s %-7s %s\n' NAME EXISTS PATH
+    while IFS=$'\t' read -r name target; do
+        [[ -d "$target" ]] && state=yes || state=no
+        printf '%-18s %-7s %s\n' "$name" "$state" "$target"
+    done < <(sort -t $'\t' -k1,1 "$PATHMARKS_FILE")
+}
+
+un# ── Public command: mark ────────────────────────────────────────────────────
+mark() {
+    local name="${1:-}" tmp
+
+    [[ -n "$name" ]] || {
+        printf 'usage: unmark <name>\n' >&2
+        return 2
+    }
+
+    _pathmarks_init || return 1
+
+    if ! awk -F '\t' -v n="$name" '$1 == n {found=1} END {exit !found}' "$PATHMARKS_FILE"; then
+        printf "pathmarks: unknown mark '%s'.\n" "$name" >&2
+        return 1
+    fi
+
+    tmp="${PATHMARKS_FILE}.tmp.$$"
+    if ! awk -F '\t' -v n="$name" '$1 != n' "$PATHMARKS_FILE" > "$tmp"; then
+        rm -f -- "$tmp"
+        return 1
+    fi
+
+    if ! mv -f -- "$tmp" "$PATHMARKS_FILE"; then
+        rm -f -- "$tmp"
+        return 1
+    fi
+
+    printf '  removed %s\n' "$name"
+}
+
+# ── Public command: help ────────────────────────────────────────────────────
+pathmarks-help() {
+    cat <<'HELP'
+PATHMARKS
+
+Persistent directory bookmarks.
+
+  mark <name>          Save the current directory
+  mark <name> <path>   Save a specific directory
+  jump <name>          Jump to a saved directory
+  marks                List saved directories
+  unmark <name>        Remove a saved directory
+  pathmarks-help       Show this help
+
+Examples:
+  mark repo
+  mark work /mnt/nvme1/work
+  jump repo
+  marks
+  unmark repo
+
+Storage:
+  ~/.config/pmarks/pathmarks.tsv
+HELP
+}

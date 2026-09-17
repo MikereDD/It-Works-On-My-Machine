@@ -84,6 +84,23 @@ if (Test-Path $coreFile) {
     Write-Host "  [profile] core.ps1 not found at $coreFile" -ForegroundColor Yellow
 }
 
+# ── Load Pathmarks ───────────────────────────────────────────
+# Persistent directory bookmarks shared conceptually with the Bash
+# implementation on Arakiel. Bookmark data is stored outside the
+# repository so adding or removing marks never dirties the Git tree.
+$pathmarksFile = Join-Path $ProfileDir "pathmarks.ps1"
+
+if (Test-Path $pathmarksFile) {
+    try {
+        . $pathmarksFile
+        Write-Host "  pathmarks loaded" -ForegroundColor DarkCyan
+    } catch {
+        Write-Host "  [profile] failed to load pathmarks.ps1: $($_.Exception.Message)" -ForegroundColor Yellow
+    }
+} else {
+    Write-Host "  [profile] pathmarks.ps1 not found at $pathmarksFile" -ForegroundColor Yellow
+}
+
 # ── Load SSH aliases ─────────────────────────────────────────
 $sshAliasFile = Join-Path $ProfileDir "ssh-aliases.ps1"
 
