@@ -99,16 +99,42 @@ clean_cache() {
 
 check_reboot() {
     ui_section "Reboot check"
-    local running newest
+
+    local running kernel_pkg installed
+
     running="$(uname -r)"
-    # newest installed kernel image version (best-effort)
-    newest="$(pacman -Q linux 2>/dev/null | awk '{print $2}')"
+
+    # On Arch Linux ARM the generic "linux" package name may resolve to the
+    # installed Raspberry Pi kernel provider (for example linux-rpi-16k).
+    # Capture both the real package name and its complete installed version
+    # rather than assuming Arakiel always uses a package literally named linux.
+    read -r kernel_pkg installed < <(
+        pacman -Q linux 2>/dev/null || true
+    )
+
     ui_row "Running kernel" "$running" "$UI_GRY"
-    [[ -n "$newest" ]] && ui_row "Installed linux" "$newest" "$UI_GRY"
-    if [[ -n "$newest" && "$running" != *"$(echo "$newest" | cut -d- -f1)"* ]]; then
-        printf '  %sKernel changed — a reboot is recommended.%s\n' "$UI_YLW" "$UI_R"
-    else
+
+    if [[ -z "$kernel_pkg" || -z "$installed" ]]; then
+        printf '  %sUnable to determine the installed kernel package.%s\n' \
+            "$UI_YLW" "$UI_R"
+        return
+    fi
+
+    ui_row "Kernel package" "$kernel_pkg" "$UI_GRY"
+    ui_row "Installed kernel" "$installed" "$UI_GRY"
+
+    # Arch ARM appends the kernel flavor to uname -r. For example:
+    #
+    #   package:  linux-rpi-16k 6.18.48-1
+    #   running:  6.18.48-1-rpi-16k
+    #
+    # Therefore a running kernel whose release begins with the complete
+    # installed package version is the currently installed kernel.
+    if [[ "$running" == "$installed"-* || "$running" == "$installed" ]]; then
         printf '  %sNo reboot indicated.%s\n' "$UI_GRN" "$UI_R"
+    else
+        printf '  %sKernel changed — a reboot is recommended.%s\n' \
+            "$UI_YLW" "$UI_R"
     fi
 }
 
