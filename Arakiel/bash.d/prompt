@@ -2,21 +2,23 @@
 #--------------------------------------------
 # file:     ~/.bash.d/prompt
 # author:   Mike Redd
-# version:  1.1
-# desc:     Clean prompt (Arakiel) with SSH + Git
+# version:  1.2
+# desc:     Arakiel prompt with SSH + Git context
 #--------------------------------------------
 
 # ── Git branch helper ──────────────────────
-git_branch() {
-    git branch --show-current 2>/dev/null | awk 'NF {print " (" $1 ")"}'
+_arakiel_git_branch() {
+    local branch
+
+    branch=$(command git branch --show-current 2>/dev/null) || return 0
+    [[ -n "$branch" ]] && printf ' (%s)' "$branch"
 }
 
-# ── Prompt ────────────────────────────────
-
+# ── Prompt ─────────────────────────────────
 if [[ -n "$SSH_CLIENT" || -n "$SSH_TTY" ]]; then
-    # SSH session (slightly marked)
-    PS1='\[\e[0;96m\]┌─[\[\e[0;31m\]SSH\[\e[0;96m\]]-[\[\e[0;92m\]\u@\h \[\e[0;37m\]\W\[\e[0;96m\]$(git_branch)\[\e[0;96m\]]\n\[\e[0;96m\]└─╼\[\e[0m\] '
+    # SSH session
+    PS1='\[\e[0;96m\]┌─[\[\e[0;31m\]SSH\[\e[0;96m\]]-[\[\e[0;92m\]\u@\h \[\e[0;37m\]\W\[\e[0;96m\]$(_arakiel_git_branch)\[\e[0;96m\]]\n\[\e[0;96m\]└─╼\[\e[0m\] '
 else
-    # Local session (clean)
-    PS1='\[\e[0;96m\]┌─[\[\e[0;92m\]\u@\h \[\e[0;37m\]\W\[\e[0;96m\]$(git_branch)\[\e[0;96m\]]\n\[\e[0;96m\]└─╼\[\e[0m\] '
+    # Local session
+    PS1='\[\e[0;96m\]┌─[\[\e[0;92m\]\u@\h \[\e[0;37m\]\W\[\e[0;96m\]$(_arakiel_git_branch)\[\e[0;96m\]]\n\[\e[0;96m\]└─╼\[\e[0m\] '
 fi
