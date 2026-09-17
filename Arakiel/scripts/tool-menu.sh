@@ -2,10 +2,11 @@
 #
 # file:    tool-menu.sh
 # author:  Mike Redd
-# version: 1.3
+# version: 1.4
 # desc:    Main launcher (Admin + Personal)
 #
 
+# shellcheck source=/dev/null
 source "$HOME/lib/core.sh"
 # core.sh enables errexit/nounset; relax so the menu survives a child script
 # that exits non-zero (e.g. a tool whose dependency is missing).
