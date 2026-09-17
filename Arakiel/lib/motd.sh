@@ -1,0 +1,270 @@
+#--------------------------------------------
+# file:     ~/lib/motd.sh
+# author:   Mike Redd
+# version:  3.0
+# desc:     Shared Arakiel SSH MOTD renderer for Bash and Zsh
+#--------------------------------------------
+
+# This file is sourced by ~/.bash.d/motd and ~/.zsh.d/motd.
+#
+# Compatibility rule:
+#   Keep this implementation inside the Bash/Zsh common subset. Do not source
+#   core.sh or ui.sh here: those libraries intentionally use Bash-specific
+#   features and would make the Zsh loader dependent on Bash behavior.
+#
+# Display rule:
+#   Show only for SSH sessions and only once per inherited login environment.
+#   New tmux panes and nested interactive shells inherit ARAKIEL_MOTD_SHOWN.
+
+if [[ -n "${SSH_CONNECTION:-}" && -z "${ARAKIEL_MOTD_SHOWN:-}" ]]; then
+    export ARAKIEL_MOTD_SHOWN=1
+
+    # Run the renderer in a subshell. This keeps colors, helper functions, and
+    # collected status variables from leaking into either interactive shell.
+    (
+        # ── Presentation ────────────────────────────────────────────────────
+        RED=$'\033[0;31m'
+        GREEN=$'\033[0;32m'
+        YELLOW=$'\033[1;33m'
+        MAGENTA=$'\033[0;35m'
+        CYAN=$'\033[0;36m'
+        WHITE=$'\033[1;37m'
+        BOLD=$'\033[1m'
+        NC=$'\033[0m'
+
+        MOTD_WIDTH=66
+
+        motd_center() {
+            border_color=$1
+            text_color=$2
+            text=$3
+            text_len=${#text}
+            left=$(( (MOTD_WIDTH - text_len) / 2 ))
+            right=$(( MOTD_WIDTH - text_len - left ))
+
+            (( left < 0 )) && left=0
+            (( right < 0 )) && right=0
+
+            printf '%b│%*s%b%s%b%*s│%b\n' \
+                "$border_color" "$left" "" \
+                "$text_color" "$text" \
+                "$border_color" "$right" "" "$NC"
+        }
+
+        motd_rule() {
+            color=$1
+            left=$2
+            fill=$3
+            right=$4
+            i=0
+
+            printf '%b%s' "$color" "$left"
+            while (( i < MOTD_WIDTH )); do
+                printf '%s' "$fill"
+                i=$((i + 1))
+            done
+            printf '%s%b\n' "$right" "$NC"
+        }
+
+        motd_info_row() {
+            label=$1
+            value=$2
+            value_width=50
+
+            # printf field widths count UTF-8 bytes on Bash, which makes values
+            # such as "39.1°C" one terminal cell short. Pad from the shell's
+            # character count instead so the right border stays aligned.
+            if (( ${#value} > value_width )); then
+                value=${value:0:value_width}
+            fi
+
+            value_padding=$(( value_width - ${#value} ))
+
+            printf '%b│%b  %b%-12s%b %s%*s %b│%b\n' \
+                "$CYAN" "$NC" "$GREEN" "$label" "$NC" \
+                "$value" "$value_padding" "" "$CYAN" "$NC"
+        }
+
+        motd_security_row() {
+            icon_color=$1
+            icon=$2
+            label=$3
+            value_color=$4
+            value=$5
+
+            printf '%b│%b  %b%s%b %-10s %b%-48.48s%b %b│%b\n' \
+                "$YELLOW" "$NC" \
+                "$icon_color" "$icon" "$NC" "$label" \
+                "$value_color" "$value" "$NC" \
+                "$YELLOW" "$NC"
+        }
+
+        motd_command_row() {
+            command_name=$1
+            description=$2
+            printf '%b│%b  %b%-10s%b → %-50.50s %b│%b\n' \
+                "$GREEN" "$NC" "$WHITE" "$command_name" "$NC" \
+                "$description" "$GREEN" "$NC"
+        }
+
+        # ── System information ──────────────────────────────────────────────
+        HOST_NAME=$(uname -n 2>/dev/null || printf 'Unknown')
+        KERNEL=$(uname -r 2>/dev/null || printf 'Unknown')
+        LOAD=$(awk '{print $1", "$2", "$3}' /proc/loadavg 2>/dev/null)
+        [[ -n "$LOAD" ]] || LOAD="Unavailable"
+
+        MEM=$(free -h 2>/dev/null | awk '/^Mem:/ {print $3"/"$2; exit}')
+        [[ -n "$MEM" ]] || MEM="Unavailable"
+
+        DISK=$(df -h / 2>/dev/null | awk 'NR==2 {print $3"/"$2" ("$5")"; exit}')
+        [[ -n "$DISK" ]] || DISK="Unavailable"
+
+        if [[ -r /sys/class/thermal/thermal_zone0/temp ]]; then
+            TEMP=$(awk '{printf "%.1f°C", $1/1000}' \
+                /sys/class/thermal/thermal_zone0/temp 2>/dev/null)
+        else
+            TEMP=""
+        fi
+        [[ -n "$TEMP" ]] || TEMP="Unavailable"
+
+        UPTIME=$(uptime -p 2>/dev/null | sed 's/^up //')
+        [[ -n "$UPTIME" ]] || UPTIME="Unavailable"
+
+        SESSIONS=$(who 2>/dev/null | wc -l | tr -d '[:space:]')
+        [[ -n "$SESSIONS" ]] || SESSIONS="0"
+
+        PACKAGES=$(pacman -Q 2>/dev/null | wc -l | tr -d '[:space:]')
+        [[ -n "$PACKAGES" ]] || PACKAGES="Unavailable"
+
+        # ── Security status ─────────────────────────────────────────────────
+        # UFW on Arakiel is verified through the INPUT chain. sudo -n prevents
+        # an MOTD check from ever pausing an SSH login for a password prompt.
+        if sudo -n iptables -L INPUT 2>/dev/null |
+            grep -q 'ufw-before-input'; then
+            UFW_STATUS="UFW: Active"
+            UFW_ICON_COLOR=$GREEN
+            UFW_VALUE_COLOR=$GREEN
+            UFW_ICON='[+]'
+        else
+            UFW_STATUS="UFW: Inactive / unavailable"
+            UFW_ICON_COLOR=$RED
+            UFW_VALUE_COLOR=$RED
+            UFW_ICON='[!]'
+        fi
+
+        if systemctl is-active --quiet sshguard 2>/dev/null; then
+            SG_STATUS="SSHGuard: Active"
+            SG_ICON_COLOR=$GREEN
+            SG_VALUE_COLOR=$GREEN
+            SG_ICON='[+]'
+        else
+            SG_STATUS="SSHGuard: Inactive"
+            SG_ICON_COLOR=$RED
+            SG_VALUE_COLOR=$RED
+            SG_ICON='[!]'
+        fi
+
+        # Query effective sshd settings instead of hard-coding the password
+        # authentication state. Prefer an unprivileged query, then sudo -n.
+        SSHD_EFFECTIVE=$(
+            sshd -T 2>/dev/null ||
+            sudo -n sshd -T 2>/dev/null ||
+            true
+        )
+        PASSWORD_AUTH=$(
+            printf '%s\n' "$SSHD_EFFECTIVE" |
+                awk 'tolower($1) == "passwordauthentication" {print $2; exit}'
+        )
+        PUBKEY_AUTH=$(
+            printf '%s\n' "$SSHD_EFFECTIVE" |
+                awk 'tolower($1) == "pubkeyauthentication" {print $2; exit}'
+        )
+
+        case "$PASSWORD_AUTH" in
+            no)
+                SSH_STATUS="Password auth: disabled"
+                SSH_ICON_COLOR=$GREEN
+                SSH_VALUE_COLOR=$GREEN
+                SSH_ICON='[+]'
+                ;;
+            yes)
+                SSH_STATUS="Password auth: enabled"
+                SSH_ICON_COLOR=$RED
+                SSH_VALUE_COLOR=$RED
+                SSH_ICON='[!]'
+                ;;
+            *)
+                SSH_STATUS="Password auth: unknown"
+                SSH_ICON_COLOR=$YELLOW
+                SSH_VALUE_COLOR=$YELLOW
+                SSH_ICON='[?]'
+                ;;
+        esac
+
+        if [[ "$PUBKEY_AUTH" == "no" ]]; then
+            SSH_STATUS="$SSH_STATUS; keys disabled"
+            SSH_ICON_COLOR=$RED
+            SSH_VALUE_COLOR=$RED
+            SSH_ICON='[!]'
+        fi
+
+        # ── Render ──────────────────────────────────────────────────────────
+        printf '\n'
+
+        motd_rule "${BOLD}${MAGENTA}" '┌' '─' '┐'
+        printf '%b│%66s│%b\n' "${BOLD}${MAGENTA}" "" "$NC"
+        motd_center "${BOLD}${MAGENTA}" "${BOLD}${WHITE}" \
+            "WELCOME TO ARAKIEL"
+        motd_center "${BOLD}${MAGENTA}" "$CYAN" \
+            "Raspberry Pi 5 |  Arch Linux"
+        printf '%b│%66s│%b\n' "${BOLD}${MAGENTA}" "" "$NC"
+        motd_rule "${BOLD}${MAGENTA}" '└' '─' '┘'
+        printf '\n'
+
+        motd_rule "${BOLD}${CYAN}" '┌' '─' '┐'
+        motd_center "${BOLD}${CYAN}" "${BOLD}${WHITE}" \
+            "SYSTEM INFORMATION"
+        motd_rule "${BOLD}${CYAN}" '├' '─' '┤'
+        motd_info_row "Hostname" "$HOST_NAME"
+        motd_info_row "Kernel" "$KERNEL"
+        motd_info_row "Uptime" "$UPTIME"
+        motd_info_row "Load Avg" "$LOAD"
+        motd_info_row "Memory" "$MEM"
+        motd_info_row "Disk (root)" "$DISK"
+        motd_info_row "CPU Temp" "$TEMP"
+        motd_info_row "Packages" "$PACKAGES"
+        motd_info_row "Sessions" "$SESSIONS"
+        motd_rule "${BOLD}${CYAN}" '└' '─' '┘'
+        printf '\n'
+
+        motd_rule "${BOLD}${YELLOW}" '┌' '─' '┐'
+        motd_center "${BOLD}${YELLOW}" "${BOLD}${WHITE}" \
+            "SECURITY STATUS"
+        motd_rule "${BOLD}${YELLOW}" '├' '─' '┤'
+        motd_security_row \
+            "$UFW_ICON_COLOR" "$UFW_ICON" "UFW" \
+            "$UFW_VALUE_COLOR" "$UFW_STATUS"
+        motd_security_row \
+            "$SG_ICON_COLOR" "$SG_ICON" "SSHGuard" \
+            "$SG_VALUE_COLOR" "$SG_STATUS"
+        motd_security_row \
+            "$SSH_ICON_COLOR" "$SSH_ICON" "SSH" \
+            "$SSH_VALUE_COLOR" "$SSH_STATUS"
+        motd_rule "${BOLD}${YELLOW}" '└' '─' '┘'
+        printf '\n'
+
+        motd_rule "${BOLD}${GREEN}" '┌' '─' '┐'
+        motd_center "${BOLD}${GREEN}" "${BOLD}${WHITE}" \
+            "QUICK COMMANDS"
+        motd_rule "${BOLD}${GREEN}" '├' '─' '┤'
+        motd_command_row "tools" "Tool menu"
+        motd_command_row "rp5si" "Full system info"
+        motd_command_row "pifw" "Firewall manager"
+        motd_command_row "ff" "Fast system info (fastfetch)"
+        motd_command_row "update" "System update (pacman -Syu)"
+        motd_command_row "tmuxaa" "Attach to arakiel tmux session"
+        motd_rule "${BOLD}${GREEN}" '└' '─' '┘'
+        printf '\n'
+    )
+fi
+
