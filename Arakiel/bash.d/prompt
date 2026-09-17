@@ -2,16 +2,25 @@
 #--------------------------------------------
 # file:     ~/.bash.d/prompt
 # author:   Mike Redd
-# version:  1.2
+# version:  1.3
 # desc:     Arakiel prompt with SSH + Git context
 #--------------------------------------------
 
 # ── Git branch helper ──────────────────────
 _arakiel_git_branch() {
-    local branch
+    local branch dirty
 
     branch=$(command git branch --show-current 2>/dev/null) || return 0
-    [[ -n "$branch" ]] && printf ' (%s)' "$branch"
+    [[ -n "$branch" ]] || return 0
+
+    dirty=$(command git status --porcelain 2>/dev/null | command wc -l)
+    dirty=${dirty//[[:space:]]/}
+
+    if [[ -n "$dirty" && "$dirty" -gt 0 ]]; then
+        printf ' (%s*%s)' "$branch" "$dirty"
+    else
+        printf ' (%s)' "$branch"
+    fi
 }
 
 # ── Prompt ─────────────────────────────────
