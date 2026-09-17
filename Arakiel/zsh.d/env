@@ -1,25 +1,52 @@
 #!/usr/bin/env zsh
+# -----------------------------------------------------------------------------
+# file:     ~/.zsh.d/env
+# author:   Mike Redd
+# version:  1.1
+# desc:     Shared interactive environment defaults for Zsh on Arakiel.
+#
+# Purpose
+# -------
+# Defines the small set of environment variables that should be available
+# throughout an interactive Zsh session:
+#
+#   - Vim as the default terminal editor.
+#   - less as the default pager.
+#   - User-owned executable directories ahead of the system PATH.
+#   - ANSI styling used by less/man-page output.
+#
+# Keep this file limited to environment setup. Aliases, prompt behavior, MOTD
+# output, and other interactive shell features belong in their corresponding
+# ~/.zsh.d files.
+# -----------------------------------------------------------------------------
 
-#--------------------------------------------
-# file: ~/.zsh.d/env
-# author: Mike Redd
-# version: 1.0
-# desc: Environment variables
-#--------------------------------------------
-
+# Use Vim whenever a program asks for either the traditional EDITOR variable
+# or the more specific VISUAL variable.
 export EDITOR=vim
 export VISUAL=vim
+
+# Use less for commands that honor the standard PAGER variable.
 export PAGER=less
 
+# Prefer user-maintained commands without replacing the existing system PATH.
+# $HOME/bin contains Arakiel-specific utilities; $HOME/.local/bin is the
+# conventional location for per-user installed executables.
 export PATH="$HOME/bin:$HOME/.local/bin:$PATH"
 
-# Remove duplicate entries while preserving PATH order
+# Zsh exposes PATH as the tied array $path. Marking both as unique removes
+# duplicate directories while preserving their first occurrence and therefore
+# the intended search priority above.
 typeset -U path PATH
 
-export LESS_TERMCAP_mb=$'\E[01;31m'
-export LESS_TERMCAP_md=$'\E[01;31m'
-export LESS_TERMCAP_me=$'\E[0m'
-export LESS_TERMCAP_se=$'\E[0m'
-export LESS_TERMCAP_so=$'\E[01;44;33m'
-export LESS_TERMCAP_ue=$'\E[0m'
-export LESS_TERMCAP_us=$'\E[01;32m'
+# less/man-page terminal styling.
+#
+# LESS_TERMCAP_* overrides terminal capability sequences used by less when it
+# renders formatted text. These values provide visible emphasis while retaining
+# the normal terminal state after each styled region.
+export LESS_TERMCAP_mb=$'\E[01;31m'    # Begin blinking text: bold red
+export LESS_TERMCAP_md=$'\E[01;31m'    # Begin bold text: bold red
+export LESS_TERMCAP_me=$'\E[0m'        # End mode: reset attributes
+export LESS_TERMCAP_se=$'\E[0m'        # End standout mode: reset attributes
+export LESS_TERMCAP_so=$'\E[01;44;33m' # Begin standout: yellow on blue
+export LESS_TERMCAP_ue=$'\E[0m'        # End underline: reset attributes
+export LESS_TERMCAP_us=$'\E[01;32m'    # Begin underline: bold green
