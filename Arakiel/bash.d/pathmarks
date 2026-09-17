@@ -124,8 +124,8 @@ marks() {
     done < <(sort -t $'\t' -k1,1 "$PATHMARKS_FILE")
 }
 
-un# ── Public command: mark ────────────────────────────────────────────────────
-mark() {
+# ── Public command: unmark ────────────────────────────────────────────────────
+unmark() {
     local name="${1:-}" tmp
 
     [[ -n "$name" ]] || {
