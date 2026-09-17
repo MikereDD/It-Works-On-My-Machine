@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+
+set -u
+
+WALLPAPER_DIR="$HOME/wallpapers/arakiel-wallpapers"
+INTERVAL="${1:-1800}"
+
+mapfile -t WALLPAPERS < <(
+    find "$WALLPAPER_DIR" \
+        -maxdepth 1 \
+        -type f \
+        -name 'arakiel-wallpaper-*.png' \
+        | sort
+)
+
+if (( ${#WALLPAPERS[@]} == 0 )); then
+    echo "No Arakiel wallpapers found in $WALLPAPER_DIR" >&2
+    exit 1
+fi
+
+while true; do
+    for wallpaper in "${WALLPAPERS[@]}"; do
+        feh --no-fehbg --bg-fill "$wallpaper"
+        sleep "$INTERVAL"
+    done
+done
