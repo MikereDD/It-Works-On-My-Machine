@@ -1,0 +1,87 @@
+# -----------------------------------------------------------------------------
+# Arakiel shared interactive aliases
+# -----------------------------------------------------------------------------
+# Component:   Typezer∅ shell aliases
+# Platform:    Linux / Bash + Zsh (Arakiel)
+# Purpose:     Common aliases and convenience functions shared by both shells.
+#
+# More complex behavior belongs in ~/bin or ~/scripts rather than being hidden
+# inside shell aliases.
+# -----------------------------------------------------------------------------
+
+# Filesystem -------------------------------------------------------------------
+# Familiar compact forms of ls. ll includes hidden entries; la omits only "."
+# and ".."; l uses ls classification suffixes and column-oriented output.
+alias ll='ls -alF'
+alias la='ls -A'
+alias l='ls -CF'
+
+# Navigation -------------------------------------------------------------------
+alias ..='cd ..'       # Move up one directory.
+alias ...='cd ../..'   # Move up two directories.
+
+# Core utilities ---------------------------------------------------------------
+alias grep='grep --color=auto'  # Highlight matches when output supports color.
+alias cls='clear'               # Windows-style shorthand for clearing terminal.
+
+# Arch package management ------------------------------------------------------
+# "update" performs Arch's normal full system upgrade rather than a partial
+# package upgrade, which is intentionally avoided on Arch.
+alias update='sudo pacman -Syu'
+alias pkginstall='sudo pacman -S'
+alias search='pacman -Ss'
+
+# Network ----------------------------------------------------------------------
+# Show TCP/UDP sockets with listening state, process, and numeric endpoint data.
+alias ports='ss -tulpen'
+
+# Print the local IPv4 address selected by the active route. Route lookup is
+# used instead of assuming a fixed interface name because Arakiel may have more
+# than one network interface available.
+myip() {
+    ip -4 route get 1.1.1.1 2>/dev/null |
+        awk '{print $7; exit}'
+}
+
+# Typezer∅ / Arakiel tools -----------------------------------------------------
+# These paths refer to the deployed copies in the typezero home directory.
+alias arakiel='$HOME/bin/arakiel-tmux.sh'                  # tmux launcher
+alias tools='$HOME/scripts/tool-menu.sh'                    # unified tool menu
+alias pifw='sudo $HOME/scripts/admintools/pi-fw.sh'         # firewall manager
+alias tmuxaa='tmux attach -d -t arakiel'                    # attach/detach client
+
+# System information -----------------------------------------------------------
+alias ff='fastfetch --logo small'                           # quick summary
+alias rp5si='sudo $HOME/scripts/admintools/rp5-systeminfo.sh' # Pi 5 details
+
+# Telegram Bot API -------------------------------------------------------------
+# The local Bot API server is managed as a systemd service on Arakiel.
+alias botapi='systemctl status telegram-bot-api'
+alias botapi-start='sudo systemctl start telegram-bot-api'
+alias botapi-stop='sudo systemctl stop telegram-bot-api'
+alias botapi-restart='sudo systemctl restart telegram-bot-api'
+alias botapi-log='journalctl -u telegram-bot-api -f'
+
+# Git --------------------------------------------------------------------------
+alias gs='git status'
+
+# WARNING: ga stages changes beneath the current directory, including new files.
+# Review `git status` before committing when the working tree contains unrelated
+# work.
+alias ga='git add .'
+
+# gc expects the commit message as its next argument, for example:
+#   gc "Document Arakiel aliases"
+alias gc='git commit -m'
+
+alias gca='git commit --amend --no-edit'
+alias gp='git push'
+alias gpf='git push --force-with-lease'
+alias gl='git log --oneline --graph --decorate -20'
+alias gd='git diff'
+alias gpl='git pull'
+alias gpu='git pull && git push'
+
+# Undo the latest local commit while leaving its changes staged. This rewrites
+# the current branch tip and should therefore be used deliberately.
+alias gundo='git reset --soft HEAD~1'
