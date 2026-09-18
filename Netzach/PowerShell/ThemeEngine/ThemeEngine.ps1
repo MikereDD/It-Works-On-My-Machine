@@ -64,7 +64,7 @@ function Convert-HexToAnsi {
     $g = [Convert]::ToInt32($h.Substring(2, 2), 16)
     $b = [Convert]::ToInt32($h.Substring(4, 2), 16)
 
-    return "$([char]27)[38;2;$r;$g;${b}m"
+    return "$([char]27)[38;2;$r;$g;$($b)m"
 }
 
 function Write-CurrentTheme {
