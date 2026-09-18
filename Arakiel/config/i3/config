@@ -75,19 +75,24 @@ exec_always --no-startup-id ~/.local/bin/arakiel-wallpaper-rotate
 
 bar {
     position top
+    height 42
+
     status_command i3blocks -c ~/.config/i3/i3blocks.conf
 
-    font pango:monospace 10
+    font pango:JetBrainsMono Nerd Font Mono SemiBold 13
+
+    tray_output none
+    strip_workspace_numbers no
 
     colors {
-        background #191919
-        statusline #FEFEFA
-        separator  #444444
+        background #070A0E
+        statusline #D9E1E8
+        separator  #2A3540
 
-        focused_workspace  #2e3440 #2e3440 #81a1c1
-        active_workspace   #3b4252 #3b4252 #d8dee9
-        inactive_workspace #3b4252 #3b4252 #4c566a
-        urgent_workspace   #bf616a #bf616a #eceff4
+        focused_workspace  #9DB5C8 #1D2933 #FFFFFF
+        active_workspace   #607587 #141C23 #DDE5EB
+        inactive_workspace #222D37 #070A0E #7F8D99
+        urgent_workspace   #C96A72 #54232A #FFFFFF
     }
 }
 
