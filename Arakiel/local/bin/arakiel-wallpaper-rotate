@@ -2,6 +2,11 @@
 
 set -u
 
+LOCKFILE="${XDG_RUNTIME_DIR:-/tmp}/arakiel-wallpaper-rotate.lock"
+
+exec 9>"$LOCKFILE"
+flock -n 9 || exit 0
+
 WALLPAPER_DIR="$HOME/wallpapers/arakiel-wallpapers"
 INTERVAL="${1:-300}"
 

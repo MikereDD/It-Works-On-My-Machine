@@ -69,7 +69,7 @@ bindsym $mod+Shift+5 move container to workspace $ws5
 # ── Startup ────────────────────────────────
 
 exec_always --no-startup-id xrdb -merge ~/.Xresources
-exec_always --no-startup-id feh --bg-fill ~/wallpapers/bg.png
+exec_always --no-startup-id ~/.local/bin/arakiel-wallpaper-rotate
 
 # ── Status Bar ─────────────────────────────
 
