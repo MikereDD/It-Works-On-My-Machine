@@ -315,6 +315,13 @@ function Set-Theme {
     $vimColors = Join-Path $HOME 'config\vim\colors\typezero.vim'
     Write-ThemeTemplate -Source $vimTemplate -Destination $vimColors -Theme $t
 
+    # Lightline uses its own colorscheme API rather than Vim highlight groups.
+    # Generate its palette beside the native Vim theme so both surfaces follow
+    # the same ThemeEngine semantic roles and switch together.
+    $lightlineTemplate = Join-Path $TemplatesRoot 'shared\vim-lightline.vim.tpl'
+    $lightlineColors = Join-Path $HOME 'config\vim\autoload\lightline\colorscheme\typezero.vim'
+    Write-ThemeTemplate -Source $lightlineTemplate -Destination $lightlineColors -Theme $t
+
     Set-WindowsTerminalTheme $t
     Set-Content -LiteralPath $CurrentFile -Value $Id -Encoding ascii
     Write-Host "Applied theme: $($t['THEME_NAME'])"

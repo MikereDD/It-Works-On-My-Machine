@@ -153,6 +153,13 @@ apply_theme() {
     render "$TEMPLATES_DIR/shared/vim-colors.vim.tpl" \
         "$HOME/.config/vim/colors/typezero.vim"
 
+    # Lightline uses its own colorscheme API rather than Vim highlight groups.
+    # Generate its palette beside the native Vim theme so both surfaces follow
+    # the same ThemeEngine semantic roles and switch together.
+    mkdir -p "$HOME/.config/vim/autoload/lightline/colorscheme"
+    render "$TEMPLATES_DIR/shared/vim-lightline.vim.tpl" \
+        "$HOME/.config/vim/autoload/lightline/colorscheme/typezero.vim"
+
     write_shell_theme
 
     printf '%s\n' "$id" > "$CURRENT_FILE"
