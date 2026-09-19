@@ -206,6 +206,41 @@ function Set-WindowsTerminalTheme {
 
     $settings.schemes = @($otherSchemes) + @([pscustomobject]$scheme)
 
+    # Keep Windows Terminal's application chrome visually aligned with the
+    # active Typezero palette. The active tab follows the terminal pane while
+    # the surrounding tab row uses the theme background. This deliberately
+    # leaves profile-specific wallpaper, opacity, typography, and other user
+    # preferences untouched.
+    $terminalThemeName = "Typezero ThemeEngine"
+
+    $terminalTheme = [ordered]@{
+        name = $terminalThemeName
+        window = [ordered]@{
+            applicationTheme = "dark"
+        }
+        tab = [ordered]@{
+            background          = "terminalBackground"
+            unfocusedBackground = $T["BG"]
+            showCloseButton      = "hover"
+        }
+        tabRow = [ordered]@{
+            background          = $T["BG"]
+            unfocusedBackground = $T["BG"]
+        }
+    }
+
+    $existingThemes = @(
+        $settings.themes |
+            Where-Object { $_.name -ne $terminalThemeName }
+    )
+
+    $settings.themes = @($existingThemes) + @([pscustomobject]$terminalTheme)
+    if ($settings.PSObject.Properties["theme"]) {
+        $settings.theme = $terminalThemeName
+    } else {
+        $settings | Add-Member -NotePropertyName theme -NotePropertyValue $terminalThemeName
+    }
+
     # Target PowerShell 7 by its stable Windows Terminal profile GUID rather
     # than relying solely on a display name that the user may rename.
     $powerShellGuid = "{574e775e-4f2a-5b96-ac1e-a2962a402336}"
