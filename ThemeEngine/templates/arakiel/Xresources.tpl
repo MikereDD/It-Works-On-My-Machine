@@ -7,6 +7,13 @@ URxvt*background: {{BG}}
 URxvt*foreground: {{TEXT}}
 URxvt*cursorColor: {{ACCENT_BRIGHT}}
 
+! URxvt pseudo-transparency exposes the rotating Arakiel wallpaper without a
+! compositor. Tinting with the active theme background preserves each palette's
+! character while shading keeps the terminal readable over detailed artwork.
+URxvt*transparent: true
+URxvt*tint: {{BG}}
+URxvt*shading: 80
+
 URxvt*font: xft:{{XFT_FONT}}
 URxvt*letterSpace: 0
 URxvt*scrollBar: false
