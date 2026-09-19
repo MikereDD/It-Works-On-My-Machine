@@ -42,7 +42,7 @@ else
   resolution="TTY/Headless"
 fi
 
-xdef="$HOME/.Xresources"
+xdef="$HOME/.Xresources.theme"
 termfont=""
 
 if [[ -f "$xdef" ]]; then
