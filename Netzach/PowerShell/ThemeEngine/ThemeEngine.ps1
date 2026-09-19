@@ -20,6 +20,7 @@ $ErrorActionPreference = "Stop"
 
 $EngineRoot   = Join-Path $env:LOCALAPPDATA "Typezero\ThemeEngine"
 $ThemesRoot   = Join-Path $EngineRoot "themes"
+$TemplatesRoot = Join-Path $EngineRoot "templates"
 $CurrentFile  = Join-Path $EngineRoot "current-theme"
 $PreviousFile = Join-Path $EngineRoot "previous-theme"
 $CurrentPs1   = Join-Path $EngineRoot "current.ps1"
@@ -54,6 +55,30 @@ function Read-ThemeFile {
     return $result
 }
 
+function Write-ThemeTemplate {
+    param(
+        [Parameter(Mandatory)][string]$Source,
+        [Parameter(Mandatory)][string]$Destination,
+        [Parameter(Mandatory)][System.Collections.IDictionary]$Theme
+    )
+
+    # Shared templates use {{ROLE}} tokens matching theme.conf keys. Rendering
+    # from the parsed theme dictionary keeps consumer files palette-agnostic
+    # and gives Windows the same template contract used by Arakiel.
+    if (-not (Test-Path -LiteralPath $Source)) {
+        throw "Theme template not found: $Source"
+    }
+
+    $content = Get-Content -LiteralPath $Source -Raw
+
+    foreach ($key in $Theme.Keys) {
+        $content = $content.Replace("{{$key}}", [string]$Theme[$key])
+    }
+
+    $parent = Split-Path -Parent $Destination
+    New-Item -ItemType Directory -Force -Path $parent | Out-Null
+    Set-Content -LiteralPath $Destination -Value $content -NoNewline -Encoding utf8
+}
 function Convert-HexToAnsi {
     param([Parameter(Mandatory)][string]$Hex)
 
@@ -282,6 +307,14 @@ function Set-Theme {
     }
 
     Write-CurrentTheme $t
+
+    # Vim receives a generated native colorscheme from the same semantic
+    # palette used by the shell and Windows Terminal. Keep the output inside
+    # Netzach's established Vim config tree rather than a second runtime.
+    $vimTemplate = Join-Path $TemplatesRoot 'shared\vim-colors.vim.tpl'
+    $vimColors = Join-Path $HOME 'config\vim\colors\typezero.vim'
+    Write-ThemeTemplate -Source $vimTemplate -Destination $vimColors -Theme $t
+
     Set-WindowsTerminalTheme $t
     Set-Content -LiteralPath $CurrentFile -Value $Id -Encoding ascii
     Write-Host "Applied theme: $($t['THEME_NAME'])"
@@ -290,18 +323,30 @@ function Set-Theme {
 switch ($Command) {
     "bootstrap" {
         if (-not $RepoRoot) { $RepoRoot = (Get-Location).Path }
-        $source = Join-Path $RepoRoot "ThemeEngine\themes"
-        if (-not (Test-Path -LiteralPath $source)) {
+        $themeSource = Join-Path $RepoRoot "ThemeEngine\themes"
+        $templateSource = Join-Path $RepoRoot "ThemeEngine\templates"
+
+        if (-not (Test-Path -LiteralPath $themeSource)) {
             throw "ThemeEngine\themes not found under: $RepoRoot"
         }
-
-        if (Test-Path -LiteralPath $ThemesRoot) {
-            Remove-Item -LiteralPath $ThemesRoot -Recurse -Force
+        if (-not (Test-Path -LiteralPath $templateSource)) {
+            throw "ThemeEngine\templates not found under: $RepoRoot"
         }
 
-        New-Item -ItemType Directory -Force -Path $ThemesRoot | Out-Null
-        Copy-Item -Path (Join-Path $source "*") -Destination $ThemesRoot -Recurse -Force
+        # Bootstrap themes and templates together so normal operation uses
+        # installed ThemeEngine data rather than the development repository.
+        foreach ($installRoot in @($ThemesRoot, $TemplatesRoot)) {
+            if (Test-Path -LiteralPath $installRoot) {
+                Remove-Item -LiteralPath $installRoot -Recurse -Force
+            }
+            New-Item -ItemType Directory -Force -Path $installRoot | Out-Null
+        }
+
+        Copy-Item -Path (Join-Path $themeSource "*") -Destination $ThemesRoot -Recurse -Force
+        Copy-Item -Path (Join-Path $templateSource "*") -Destination $TemplatesRoot -Recurse -Force
+
         Write-Host "ThemeEngine themes installed under $ThemesRoot"
+        Write-Host "ThemeEngine templates installed under $TemplatesRoot"
     }
 
     "list" {

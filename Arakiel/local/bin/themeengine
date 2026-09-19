@@ -145,6 +145,14 @@ apply_theme() {
     render "$TEMPLATES_DIR/arakiel/i3blocks.conf.tpl" "$HOME/.config/i3/i3blocks.conf"
     render "$TEMPLATES_DIR/arakiel/Xresources.tpl" "$HOME/.Xresources.theme"
     render "$TEMPLATES_DIR/arakiel/tmux.conf.tpl" "$HOME/.config/tmux/theme.conf"
+
+    # Vim consumes the same semantic palette as the desktop, terminal, tmux,
+    # and shell. Keep the generated colorscheme inside Vim's existing config
+    # tree so ThemeEngine does not introduce a second Vim runtime location.
+    mkdir -p "$HOME/.config/vim/colors"
+    render "$TEMPLATES_DIR/shared/vim-colors.vim.tpl" \
+        "$HOME/.config/vim/colors/typezero.vim"
+
     write_shell_theme
 
     printf '%s\n' "$id" > "$CURRENT_FILE"
