@@ -117,8 +117,15 @@ reload_runtime() {
     fi
 
     pkill -x i3blocks >/dev/null 2>&1 || true
+    # Theme application regenerates i3's included theme configuration and
+    # i3blocks resources. Re-exec i3 after applying them so the graphical
+    # session immediately reflects the new theme without requiring the user
+    # to invoke the normal Mod+Shift+R restart manually.
+    #
+    # i3 restart preserves the running session and window layout while
+    # replacing the window manager process with the newly configured one.
     if command -v i3-msg >/dev/null 2>&1; then
-        DISPLAY="$display" XAUTHORITY="$xauth" i3-msg reload >/dev/null 2>&1 || true
+        DISPLAY="$display" XAUTHORITY="$xauth" i3-msg restart >/dev/null 2>&1 || true
     fi
 }
 
