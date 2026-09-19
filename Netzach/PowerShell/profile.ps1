@@ -36,6 +36,22 @@ if (Test-Path $envFile) {
     Write-Host "  [profile] env.ps1 not found at $envFile" -ForegroundColor Yellow
 }
 
+# ── Load ThemeEngine bridge ──────────────────────────────────
+# ThemeEngine is loaded after the base environment establishes the shared
+# PowerShell paths and before the UI layer is initialized. This makes the
+# generated TE_Theme semantic palette available to presentation helpers while
+# keeping profile startup usable if ThemeEngine is missing or unavailable.
+$themeFile = Join-Path $ProfileDir "theme.ps1"
+if (Test-Path $themeFile) {
+    try {
+        . $themeFile
+    } catch {
+        Write-Host "  [profile] failed to load theme.ps1: $($_.Exception.Message)" -ForegroundColor Yellow
+    }
+} else {
+    Write-Host "  [profile] theme.ps1 not found at $themeFile" -ForegroundColor Yellow
+}
+
 # ── Load aliases ─────────────────────────────────────────────
 $aliasFile = Join-Path $ProfileDir "aliases.ps1"
 if (Test-Path $aliasFile) {
