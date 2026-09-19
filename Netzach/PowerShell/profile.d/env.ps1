@@ -11,7 +11,7 @@
 
 # ── Toggles ───────────────────────────────────────────────────
 # Silence all "loaded" messages on startup.
-$global:ShowProfileLoad = $true
+$global:ShowProfileLoad = $false
 # Show git branch + dirty count in the prompt. Turn off if a large
 # repo (e.g. the monorepo) makes `git status` lag the prompt.
 $global:ShowGitStatus   = $true

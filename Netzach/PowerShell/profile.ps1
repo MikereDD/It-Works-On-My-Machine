@@ -131,4 +131,12 @@ if (Test-Path $sshAliasFile) {
 }
 
 # ── Ready message ────────────────────────────────────────────
-Write-Host "  profile ready" -ForegroundColor DarkCyan
+# A successful startup gets one concise identity line. Individual components
+# remain quiet unless ShowProfileLoad is enabled for troubleshooting; their
+# warning/error paths remain visible regardless.
+if ($global:UI_Theme) {
+    $ui = $global:UI_Theme
+    Write-Host "$($ui.Accent)$($ui.Bold)  Netzach$($ui.Reset)$($ui.Muted) • $($ui.Reset)$($ui.Text)$($ui.Name)$($ui.Reset)$($ui.Muted) • $($ui.Reset)$($ui.Success)ready$($ui.Reset)"
+} else {
+    Write-Host "  Netzach • ready" -ForegroundColor DarkCyan
+}

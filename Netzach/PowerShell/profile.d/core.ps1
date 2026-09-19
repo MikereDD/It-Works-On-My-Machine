@@ -7,12 +7,17 @@
 # desc:     Shared core helpers (logic, safety, logging)
 #--------------------------------------------
 
-# ── Load UI (optional but recommended) ────────────────────────
-$uiPath = "$env:USERPROFILE\PS\profile.d\ui.ps1"
-if (Test-Path $uiPath) {
-    try {
-        . $uiPath
-    } catch {}
+# ── Load UI when Core is used standalone ─────────────────────
+# The main profile loads ui.ps1 before core.ps1. Avoid initializing the UI a
+# second time during normal startup, while preserving Core's ability to work
+# when this file is dot-sourced independently.
+if (-not $global:UI_Theme) {
+    $uiPath = Join-Path $env:USERPROFILE "PS\profile.d\ui.ps1"
+    if (Test-Path $uiPath) {
+        try {
+            . $uiPath
+        } catch {}
+    }
 }
 
 # ── Fallback UI values if ui.ps1 is unavailable ───────────────
