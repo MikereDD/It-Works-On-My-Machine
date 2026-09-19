@@ -109,6 +109,128 @@ function Write-CurrentTheme {
     Set-Content -LiteralPath $CurrentPs1 -Value $content -Encoding utf8
 }
 
+function Get-WindowsTerminalSettingsPath {
+    # Windows Terminal's packaged settings location. ThemeEngine deliberately
+    # manages only the named Typezero scheme and the PowerShell profile's
+    # colorScheme property; unrelated Terminal settings remain untouched.
+    $packagePath = Join-Path $env:LOCALAPPDATA `
+        "Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json"
+
+    if (Test-Path -LiteralPath $packagePath) {
+        return $packagePath
+    }
+
+    return $null
+}
+
+function Set-WindowsTerminalTheme {
+    param([Parameter(Mandatory)][System.Collections.IDictionary]$T)
+
+    $settingsPath = Get-WindowsTerminalSettingsPath
+    if (-not $settingsPath) {
+        return
+    }
+
+    # A complete ANSI palette is required before ThemeEngine touches Terminal.
+    # Themes without one remain valid for other renderers and are simply
+    # skipped here rather than receiving guessed or partially mapped colors.
+    $ansiKeys = @(
+        "ANSI_BLACK",
+        "ANSI_RED",
+        "ANSI_GREEN",
+        "ANSI_YELLOW",
+        "ANSI_BLUE",
+        "ANSI_PURPLE",
+        "ANSI_CYAN",
+        "ANSI_WHITE",
+        "ANSI_BRIGHT_BLACK",
+        "ANSI_BRIGHT_RED",
+        "ANSI_BRIGHT_GREEN",
+        "ANSI_BRIGHT_YELLOW",
+        "ANSI_BRIGHT_BLUE",
+        "ANSI_BRIGHT_PURPLE",
+        "ANSI_BRIGHT_CYAN",
+        "ANSI_BRIGHT_WHITE"
+    )
+
+    foreach ($key in $ansiKeys) {
+        if (-not $T.Contains($key) -or -not $T[$key]) {
+            Write-Host "Windows Terminal: skipped (theme has no complete ANSI palette)"
+            return
+        }
+    }
+
+    $settings = Get-Content -LiteralPath $settingsPath -Raw |
+        ConvertFrom-Json
+
+    # Preserve the user's original file before ThemeEngine's first write.
+    # This is intentionally a stable backup rather than a rotating snapshot:
+    # it represents the pre-ThemeEngine Windows Terminal configuration.
+    $backupPath = "$settingsPath.typezero-backup"
+    if (-not (Test-Path -LiteralPath $backupPath)) {
+        Copy-Item -LiteralPath $settingsPath -Destination $backupPath
+    }
+
+    $schemeName = "Typezero $($T['THEME_NAME'])"
+
+    $scheme = [ordered]@{
+        name                = $schemeName
+        background          = $T["BG"]
+        foreground          = $T["TEXT"]
+        cursorColor         = $T["ACCENT_BRIGHT"]
+        selectionBackground = $T["BORDER"]
+        black               = $T["ANSI_BLACK"]
+        red                 = $T["ANSI_RED"]
+        green               = $T["ANSI_GREEN"]
+        yellow              = $T["ANSI_YELLOW"]
+        blue                = $T["ANSI_BLUE"]
+        purple              = $T["ANSI_PURPLE"]
+        cyan                = $T["ANSI_CYAN"]
+        white               = $T["ANSI_WHITE"]
+        brightBlack         = $T["ANSI_BRIGHT_BLACK"]
+        brightRed           = $T["ANSI_BRIGHT_RED"]
+        brightGreen         = $T["ANSI_BRIGHT_GREEN"]
+        brightYellow        = $T["ANSI_BRIGHT_YELLOW"]
+        brightBlue          = $T["ANSI_BRIGHT_BLUE"]
+        brightPurple        = $T["ANSI_BRIGHT_PURPLE"]
+        brightCyan          = $T["ANSI_BRIGHT_CYAN"]
+        brightWhite         = $T["ANSI_BRIGHT_WHITE"]
+    }
+
+    # Replace only ThemeEngine's scheme for this theme. Other custom schemes
+    # remain untouched.
+    $otherSchemes = @(
+        $settings.schemes |
+            Where-Object { $_.name -ne $schemeName }
+    )
+
+    $settings.schemes = @($otherSchemes) + @([pscustomobject]$scheme)
+
+    # Target PowerShell 7 by its stable Windows Terminal profile GUID rather
+    # than relying solely on a display name that the user may rename.
+    $powerShellGuid = "{574e775e-4f2a-5b96-ac1e-a2962a402336}"
+    $profile = $settings.profiles.list |
+        Where-Object { $_.guid -eq $powerShellGuid } |
+        Select-Object -First 1
+
+    if (-not $profile) {
+        throw "Windows Terminal PowerShell profile not found: $powerShellGuid"
+    }
+
+    if ($profile.PSObject.Properties["colorScheme"]) {
+        $profile.colorScheme = $schemeName
+    } else {
+        $profile | Add-Member -NotePropertyName colorScheme -NotePropertyValue $schemeName
+    }
+
+    # ConvertFrom/To-Json necessarily reformats settings.json, but preserves
+    # its data. ThemeEngine changes only the scheme collection described above
+    # and the PowerShell profile's colorScheme association.
+    $json = $settings | ConvertTo-Json -Depth 100
+    Set-Content -LiteralPath $settingsPath -Value $json -Encoding utf8
+
+    Write-Host "Windows Terminal: $schemeName"
+}
 function Set-Theme {
     param(
         [Parameter(Mandatory)][string]$Id,
@@ -125,6 +247,7 @@ function Set-Theme {
     }
 
     Write-CurrentTheme $t
+    Set-WindowsTerminalTheme $t
     Set-Content -LiteralPath $CurrentFile -Value $Id -Encoding ascii
     Write-Host "Applied theme: $($t['THEME_NAME'])"
 }
@@ -212,6 +335,8 @@ switch ($Command) {
         Write-Host ("  current       " + $(if (Test-Path $CurrentFile) { (Get-Content $CurrentFile -Raw).Trim() } else { "none" }))
         Write-Host ("  renderer      PowerShell $($PSVersionTable.PSVersion)")
         Write-Host ("  current.ps1   " + $(if (Test-Path $CurrentPs1) { "PASS" } else { "MISSING" }))
+        $terminalSettings = Get-WindowsTerminalSettingsPath
+        Write-Host ("  terminal      " + $(if ($terminalSettings) { "PASS" } else { "NOT FOUND" }))
     }
 
     default {
