@@ -269,3 +269,8 @@ footer {
         letter-spacing: -0.035em;
     }
 }
+
+/* ThemeEngine spans both systems as a shared visual subsystem. */
+.themeengine {
+    grid-column: 1 / -1;
+}
