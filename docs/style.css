@@ -40,6 +40,10 @@ body {
     line-height: 1.55;
 }
 
+a {
+    color: inherit;
+}
+
 .shell {
     width: min(1120px, calc(100% - 32px));
     margin: auto;
@@ -192,6 +196,25 @@ h1 {
     margin-bottom: 0;
 }
 
+.repo-link,
+.doc-links a {
+    display: inline-block;
+    margin-top: 16px;
+
+    color: var(--muted);
+    text-decoration: none;
+
+    border-bottom: 1px solid transparent;
+}
+
+.repo-link:hover,
+.repo-link:focus-visible,
+.doc-links a:hover,
+.doc-links a:focus-visible {
+    color: var(--white);
+    border-bottom-color: currentColor;
+}
+
 .grid article:nth-child(odd) h3 {
     color: var(--cyan);
 }
@@ -202,6 +225,27 @@ h1 {
 
 .grid p {
     margin-bottom: 0;
+}
+
+/* ThemeEngine spans both systems as a shared visual subsystem. */
+.themeengine {
+    grid-column: 1 / -1;
+}
+
+.theme-list {
+    color: var(--muted);
+    font-size: 0.86rem;
+}
+
+.doc-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 20px;
+    margin-top: 6px;
+}
+
+.doc-links a {
+    margin-top: 8px;
 }
 
 
@@ -255,6 +299,10 @@ footer {
         grid-template-columns: 1fr;
     }
 
+    .themeengine {
+        grid-column: auto;
+    }
+
     .machine,
     .grid article,
     .tree {
@@ -268,9 +316,4 @@ footer {
     h1 {
         letter-spacing: -0.035em;
     }
-}
-
-/* ThemeEngine spans both systems as a shared visual subsystem. */
-.themeengine {
-    grid-column: 1 / -1;
 }

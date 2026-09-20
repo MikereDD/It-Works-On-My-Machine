@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="It-Works-On-My-Machine — the TypezerØ systems repository for Netzach and Arakiel.">
   <title>It-Works-On-My-Machine // TypezerØ</title>
-  <link rel="stylesheet" href="style.css?v=12">
+  <link rel="stylesheet" href="style.css?v=13">
 </head>
 <body>
   <main class="shell">
@@ -22,29 +22,69 @@
         <div class="machine-head"><span class="node">01</span><h2>NETZACH</h2></div>
         <p class="role">DEVELOPMENT WORKSTATION</p>
         <p>Windows development, builds, testing, media tooling, dotfiles, PowerShell automation, and the prototypes that start larger ideas.</p>
-        <ul><li>PowerShell + profile.d</li><li>Vim configuration</li><li>Admin + personal tools</li><li>Build / test / create</li></ul>
+        <ul>
+          <li>PowerShell + profile.d</li>
+          <li>ThemeEngine + Windows Terminal</li>
+          <li>Vim + developer tooling</li>
+          <li>Build / test / create</li>
+        </ul>
+        <a class="repo-link" href="https://github.com/MikereDD/It-Works-On-My-Machine/tree/main/Netzach">browse Netzach/ →</a>
       </article>
 
       <article class="machine arakiel">
         <div class="machine-head"><span class="node">02</span><h2>ARAKIEL</h2></div>
         <p class="role">SERVER / AUTOMATION NODE</p>
         <p>Arch Linux on Raspberry Pi 5: always-on services, shell environments, tmux, system administration, networking, and automation.</p>
-        <ul><li>Bash + Zsh</li><li>tmux + Vim + i3</li><li>Pi / network administration</li><li>Services + automation</li></ul>
+        <ul>
+          <li>Bash + Zsh</li>
+          <li>Shared shell libraries</li>
+          <li>tmux + Vim + i3</li>
+          <li>Services + automation</li>
+        </ul>
+        <a class="repo-link" href="https://github.com/MikereDD/It-Works-On-My-Machine/tree/main/Arakiel">browse Arakiel/ →</a>
       </article>
     </section>
 
     <section class="grid" aria-label="Repository areas">
       <article class="themeengine">
         <h3>THEMEENGINE</h3>
-        <p>One semantic palette, rendered natively across Netzach and Arakiel — Windows Terminal, PowerShell, Xresources/URxvt, i3, i3blocks, tmux, shell UI, Vim, and Lightline.</p>
+        <p>One semantic palette rendered natively across Netzach and Arakiel — Windows Terminal, PowerShell, Xresources/URxvt, i3, i3blocks, tmux, shell UI, Vim, and Lightline.</p>
+        <p class="theme-list">Obsidian Silver · Catppuccin Mocha · Everforest Dark · Gruvbox · Kanagawa Paper · OneDark · Dusty's Pink AF Theme</p>
+        <div class="doc-links">
+          <a href="https://github.com/MikereDD/It-Works-On-My-Machine/blob/main/ThemeEngine/README.md">overview</a>
+          <a href="https://github.com/MikereDD/It-Works-On-My-Machine/blob/main/ThemeEngine/INTEGRATIONS.md">integrations</a>
+          <a href="https://github.com/MikereDD/It-Works-On-My-Machine/blob/main/ThemeEngine/RUNTIME.md">runtime</a>
+          <a href="https://github.com/MikereDD/It-Works-On-My-Machine/blob/main/ThemeEngine/theme.conf.template">theme contract</a>
+        </div>
       </article>
-      <article><h3>SHARED</h3><p>Portable scripts, tools, dotfiles, and templates that genuinely belong to both systems.</p></article>
-      <article><h3>EXPERIMENTS</h3><p>3D printing, Android, games, prototypes, and whatever strange idea becomes useful next.</p></article>
-      <article><h3>LINEAGE</h3><p>Useful ancestors stay. PowerShell prototypes can remain even after their descendants graduate into standalone repositories.</p></article>
-      <article><h3>WORKFLOW</h3><p>Discover → Build → Use → Refine → Graduate.</p></article>
+
+      <article>
+        <h3>SHARED</h3>
+        <p>Portable scripts, tools, dotfiles, and templates that genuinely belong to both systems.</p>
+      </article>
+
+      <article>
+        <h3>SHELLS</h3>
+        <p>Different operating systems, familiar working habits: comparable navigation, prompt context, status language, and semantic UI without hiding native platform differences.</p>
+      </article>
+
+      <article>
+        <h3>EXPERIMENTS</h3>
+        <p>3D printing, Android, games, prototypes, and whatever strange idea becomes useful next.</p>
+      </article>
+
+      <article>
+        <h3>LINEAGE</h3>
+        <p>Useful ancestors stay. Prototypes can remain even after their descendants graduate into standalone repositories.</p>
+      </article>
+
+      <article>
+        <h3>WORKFLOW</h3>
+        <p>Discover → Build → Use → Refine → Graduate.</p>
+      </article>
     </section>
 
-    <section class="tree">
+    <section class="tree" aria-label="Repository tree">
       <div class="prompt"><span>miker@netzach</span>:<span>~/It-Works-On-My-Machine</span>$ tree -L 2</div>
       <pre>.
 ├── Netzach/
@@ -54,10 +94,14 @@
 │   └── experiments/
 ├── Arakiel/
 │   ├── bash.d/  zsh.d/  bin/
-│   ├── scripts/  lib/  config/
-│   ├── services/
+│   ├── scripts/  lib/  local/
+│   ├── config/  services/
 │   └── setup/
 ├── ThemeEngine/
+│   ├── README.md
+│   ├── INTEGRATIONS.md
+│   ├── RUNTIME.md
+│   ├── theme.conf.template
 │   ├── themes/
 │   └── templates/
 ├── Shared/
@@ -68,9 +112,9 @@
 
     <footer>
       <span>TYPEZERØ // DOTFILES // SCRIPTS // TOOLS // EXPERIMENTS</span>
-      <span>last update: <time id="last-updated">--</time></span>
+      <span>last commit: <time id="last-updated">loading…</time></span>
     </footer>
   </main>
-  <script src="script.js?v=12"></script>
+  <script src="script.js?v=13"></script>
 </body>
 </html>
