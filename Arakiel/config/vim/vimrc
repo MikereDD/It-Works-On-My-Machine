@@ -28,6 +28,12 @@
 
 scriptencoding utf-8
 set nocompatible
+
+" This configuration lives outside Vim's traditional ~/.vim runtime tree.
+" Register it explicitly so ThemeEngine-generated colors and other local
+" runtime assets are discoverable through Vim's normal lookup mechanism.
+set runtimepath^=~/.config/vim
+
 filetype plugin indent on
 syntax on
 
@@ -63,7 +69,7 @@ set report=0                 " Always report changed lines
 set nostartofline            " Keep cursor column on motions like Ctrl-D/U
 set signcolumn=yes           " Always show sign column (prevents jumpiness with GitGutter/ALE)
 
-" Enable true colors for proper gruvbox rendering
+" Enable true colors for ThemeEngine-generated palettes
 if exists('+termguicolors')
     let &t_8f = "\<Esc>[38;2;%lu;%lu;%lum"
     let &t_8b = "\<Esc>[48;2;%lu;%lu;%lum"
@@ -160,8 +166,6 @@ Plug 'dyng/ctrlsf.vim'
 Plug 'itchyny/lightline.vim'
 " ALE diagnostic indicators inside Lightline.
 Plug 'maximbaz/lightline-ale'
-" Primary colorscheme.
-Plug 'morhetz/gruvbox'
 " Visual indentation guides.
 Plug 'Yggdroot/indentLine'
 " Filetype/devicons for supported UI components.
@@ -228,19 +232,22 @@ call plug#end()
 packadd! matchit
 
 " -------------------------
-" Gruvbox
+" ThemeEngine
 " -------------------------
+" ThemeEngine generates colors/typezero.vim from the active shared palette.
+" Keep Vim usable before ThemeEngine has been bootstrapped on a fresh system.
 set background=dark
-let g:gruvbox_contrast_dark = 'hard'
-let g:gruvbox_italic = 1
-let g:gruvbox_bold = 1
-colorscheme gruvbox
+try
+    colorscheme typezero
+catch /^Vim\%((\a\+)\)\=:E185/
+    colorscheme default
+endtry
 
 " -------------------------
 " Lightline (with ALE integration fixed)
 " -------------------------
 let g:lightline = {
-    \ 'colorscheme': 'gruvbox',
+    \ 'colorscheme': 'typezero',
     \ 'active': {
     \   'left': [['mode', 'paste'], ['gitbranch', 'readonly', 'filename', 'modified']],
     \   'right': [['lineinfo'], ['percent'], ['linter_checking', 'linter_errors', 'linter_warnings', 'linter_ok'], ['fileformat', 'fileencoding', 'filetype']]
