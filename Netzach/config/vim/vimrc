@@ -31,6 +31,10 @@
 scriptencoding utf-8
 set encoding=utf-8              " [win] force UTF-8 so glyphs/listchars render
 set nocompatible
+
+" This config lives outside Vim's default ~/vimfiles runtime tree.
+" Add it explicitly so ThemeEngine-generated runtime assets are discoverable.
+set runtimepath^=~/config/vim
 filetype plugin indent on
 syntax on
 
@@ -270,19 +274,22 @@ call plug#end()
 packadd! matchit
 
 " -------------------------
-" Gruvbox
+" ThemeEngine
 " -------------------------
+" ThemeEngine generates colors/typezero.vim from the active shared palette.
+" Keep Vim usable before ThemeEngine has been bootstrapped on a fresh system.
 set background=dark
-let g:gruvbox_contrast_dark = 'hard'
-let g:gruvbox_italic = 1
-let g:gruvbox_bold = 1
-silent! colorscheme gruvbox            " [win] guard for first (pre-install) run
+try
+    colorscheme typezero
+catch /^Vim\%((\a\+)\)\=:E185/
+    colorscheme default
+endtry
 
 " -------------------------
 " Lightline (with ALE integration)
 " -------------------------
 let g:lightline = {
-\ 'colorscheme': 'gruvbox',
+\ 'colorscheme': 'typezero',
 \ 'active': {
 \   'left': [['mode', 'paste'], ['gitbranch', 'readonly', 'filename', 'modified']],
 \   'right': [['lineinfo'], ['percent'], ['linter_checking', 'linter_errors', 'linter_warnings', 'linter_ok'], ['fileformat', 'fileencoding', 'filetype']]
