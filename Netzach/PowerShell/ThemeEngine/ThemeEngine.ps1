@@ -70,6 +70,11 @@ function Write-ThemeTemplate {
     }
 
     $content = Get-Content -LiteralPath $Source -Raw
+          # Vim runtime files must use deterministic LF endings on every platform.
+    # Normalizing template input here prevents carriage returns from surviving
+    # rendering as literal ^M characters that Vim interprets as command text.
+    $content = $content -replace "`r`n", "`n"
+    $content = $content -replace "`r", "`n"
 
     foreach ($key in $Theme.Keys) {
         $content = $content.Replace("{{$key}}", [string]$Theme[$key])
