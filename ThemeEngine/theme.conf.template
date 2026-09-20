@@ -1,0 +1,282 @@
+# =============================================================================
+# Typezero ThemeEngine theme.conf template
+# =============================================================================
+#
+# Purpose
+# -------
+# Copy this file into:
+#
+#   ThemeEngine/themes/<theme-id>/theme.conf
+#
+# Then replace every placeholder value before using ThemeEngine.
+#
+# ThemeEngine themes define appearance by semantic role rather than by
+# application. The renderers map these roles into Windows Terminal, PowerShell,
+# Xresources/URxvt, i3, i3blocks, tmux, Vim, Lightline, and other supported
+# surfaces.
+#
+# Formatting rules
+# ----------------
+# - Use KEY=VALUE assignments, one per line.
+# - Lines beginning with # are comments.
+# - Quote values that contain spaces.
+# - Colors should use six-digit hexadecimal RGB: #RRGGBB.
+# - Keep comments on their own lines. Do NOT append inline comments to values;
+#   ThemeEngine's parser treats everything after "=" as part of the value.
+# - Keep THEME_ID filesystem-safe and lowercase with hyphens.
+# - THEME_NAME is the human-readable display name.
+# - Do not remove required roles unless the renderers are intentionally changed.
+#
+# Palette guidance
+# ----------------
+# Prefer colors from the upstream/source theme whenever possible. ThemeEngine
+# should translate that palette into semantic roles rather than inventing a
+# vaguely similar color scheme.
+#
+# Think in layers:
+#
+#   BG < SURFACE < SURFACE_ALT < BORDER_DARK < BORDER
+#
+# These do not have to be mathematically ordered by luminance, but they should
+# create a clear visual hierarchy.
+#
+# Keep TEXT readable against BG and SURFACE. MUTED should remain legible while
+# visibly subordinate. ACCENT should identify the theme without overwhelming
+# ordinary content.
+#
+# When adapting an upstream theme, document the source palette/variant in this
+# file so future maintenance does not require reverse-engineering the mapping.
+# =============================================================================
+
+
+# -----------------------------------------------------------------------------
+# Theme identity
+# -----------------------------------------------------------------------------
+
+# Stable machine-facing identifier.
+# Must normally match the containing directory name.
+THEME_ID=example-theme
+
+# Human-facing name shown by ThemeEngine.
+THEME_NAME="Example Theme"
+
+
+# -----------------------------------------------------------------------------
+# Typography and desktop geometry
+# -----------------------------------------------------------------------------
+#
+# These values are part of the Typezero environment rather than necessarily
+# part of an upstream color palette. Preserve the established metrics unless a
+# theme genuinely requires different typography.
+
+# Primary font family used by renderers that consume the generic font role.
+FONT_FAMILY="JetBrainsMono Nerd Font Mono"
+
+# Generic font style metadata.
+FONT_STYLE="SemiBold"
+
+# Arakiel i3/i3blocks bar font.
+# Current Typezero convention is compact 11 pt text in a 32 px bar.
+BAR_FONT="JetBrainsMono Nerd Font Mono SemiBold 11"
+
+# Arakiel i3 bar height in pixels.
+BAR_HEIGHT=32
+
+# Xft font string used by URxvt on Arakiel.
+# Medium 11 is the established default for current themes.
+XFT_FONT="JetBrainsMono Nerd Font Mono:style=Medium:size=11"
+
+
+# -----------------------------------------------------------------------------
+# Core semantic palette
+# -----------------------------------------------------------------------------
+#
+# These are the most important ThemeEngine roles. Application templates should
+# consume these concepts rather than hardcoding theme-specific colors.
+
+# Primary background.
+# Usually the dominant terminal/editor/desktop surface.
+BG=#RRGGBB
+
+# Dark structural surface.
+# Useful for secondary panels, inactive regions, status areas, or chrome.
+SURFACE=#RRGGBB
+
+# Raised/alternate surface.
+# Commonly used for selections, active panels, popup-like regions, or contrast
+# against BG/SURFACE.
+SURFACE_ALT=#RRGGBB
+
+# Subtle border/divider color.
+# Should separate regions without competing with content.
+BORDER_DARK=#RRGGBB
+
+# Stronger border/divider color.
+# Used where a boundary needs clearer visibility.
+BORDER=#RRGGBB
+
+# De-emphasized foreground.
+# Intended for comments, inactive information, secondary metadata, etc.
+MUTED=#RRGGBB
+
+# Primary readable foreground.
+TEXT=#RRGGBB
+
+# Brightest neutral foreground.
+# Use for high-emphasis neutral text rather than colored accents.
+BRIGHT=#RRGGBB
+
+# Primary theme identity color.
+# This is normally the strongest non-semantic accent in the palette.
+ACCENT=#RRGGBB
+
+# Brighter/lighter companion to ACCENT.
+# Useful for stronger emphasis, cursor roles, or bright terminal output.
+ACCENT_BRIGHT=#RRGGBB
+
+
+# -----------------------------------------------------------------------------
+# Semantic accent roles
+# -----------------------------------------------------------------------------
+#
+# Keep these meanings stable between themes. A user should be able to recognize
+# success/warning/error/information by role even when the hue character changes
+# to match a particular upstream palette.
+
+# Positive/success state.
+SUCCESS=#RRGGBB
+
+# Caution/warning state.
+WARNING=#RRGGBB
+
+# Error/destructive/urgent state.
+ERROR=#RRGGBB
+
+# Secondary decorative/emphasis accent distinct from ACCENT.
+# Often maps naturally to purple, pink, orange, or another upstream accent.
+SECONDARY=#RRGGBB
+
+# Informational/accented state.
+# Often maps naturally to blue or cyan, but preserve upstream theme character.
+INFO=#RRGGBB
+
+
+# -----------------------------------------------------------------------------
+# Arakiel i3 workspace/client roles
+# -----------------------------------------------------------------------------
+#
+# These roles let i3 express the same theme semantics while preserving clear
+# focus state and urgency. Values should be selected from the source palette
+# where possible rather than invented independently.
+
+# Border of the currently focused client/workspace.
+FOCUSED_BORDER=#RRGGBB
+
+# Background associated with focused state.
+FOCUSED_BG=#RRGGBB
+
+# Border for active-but-not-focused state.
+ACTIVE_BORDER=#RRGGBB
+
+# Background for active-but-not-focused state.
+ACTIVE_BG=#RRGGBB
+
+# Border for inactive state.
+INACTIVE_BORDER=#RRGGBB
+
+# Background for inactive state.
+# Often equal or close to BG.
+INACTIVE_BG=#RRGGBB
+
+# Border for urgent state.
+# Usually derived from ERROR or the upstream theme's urgent/error color.
+URGENT_BORDER=#RRGGBB
+
+# Background for urgent state.
+# Prefer a dark error-tinted surface rather than a fully saturated red field.
+URGENT_BG=#RRGGBB
+
+
+# -----------------------------------------------------------------------------
+# ANSI terminal palette
+# -----------------------------------------------------------------------------
+#
+# ThemeEngine uses a complete 16-color ANSI palette for Windows Terminal and
+# terminal-oriented renderers.
+#
+# The ANSI palette does NOT need to duplicate the semantic roles exactly.
+# Instead, preserve the source theme's terminal character while keeping common
+# command-line color expectations recognizable.
+#
+# Notes:
+# - ANSI_BLACK may differ from BG.
+# - ANSI_WHITE may differ from TEXT.
+# - ANSI_BRIGHT_BLACK commonly serves as a bright grey/muted tone.
+# - Windows Terminal names ANSI magenta as "purple"; ThemeEngine therefore uses
+#   ANSI_PURPLE / ANSI_BRIGHT_PURPLE.
+# - Bright colors should be visibly distinguishable from their normal partners,
+#   but they should remain faithful to the source palette.
+
+ANSI_BLACK=#RRGGBB
+ANSI_RED=#RRGGBB
+ANSI_GREEN=#RRGGBB
+ANSI_YELLOW=#RRGGBB
+ANSI_BLUE=#RRGGBB
+ANSI_PURPLE=#RRGGBB
+ANSI_CYAN=#RRGGBB
+ANSI_WHITE=#RRGGBB
+
+ANSI_BRIGHT_BLACK=#RRGGBB
+ANSI_BRIGHT_RED=#RRGGBB
+ANSI_BRIGHT_GREEN=#RRGGBB
+ANSI_BRIGHT_YELLOW=#RRGGBB
+ANSI_BRIGHT_BLUE=#RRGGBB
+ANSI_BRIGHT_PURPLE=#RRGGBB
+ANSI_BRIGHT_CYAN=#RRGGBB
+ANSI_BRIGHT_WHITE=#RRGGBB
+
+
+# =============================================================================
+# Validation checklist
+# =============================================================================
+#
+# Before committing a new theme:
+#
+# 1. Confirm every #RRGGBB placeholder has been replaced with a valid hex color.
+# 2. Run:
+#
+#      git diff --check
+#
+# 3. Bootstrap the repository theme data on the target system.
+#
+#      Netzach:
+#        themeengine bootstrap -RepoRoot $PWD
+#
+#      Arakiel:
+#        themeengine bootstrap "$PWD"
+#
+# 4. Confirm the new theme appears in:
+#
+#      themeengine list
+#
+# 5. Apply and visually inspect it on both systems.
+#
+#      themeengine apply <theme-id>
+#
+# 6. Test at minimum:
+#      - Windows Terminal / URxvt
+#      - PowerShell / shell UI
+#      - Vim syntax colors
+#      - Lightline
+#      - i3/i3blocks/tmux on Arakiel
+#
+# 7. Open a fresh Vim instance after applying the theme. Existing Vim instances
+#    do not automatically reload newly generated ThemeEngine colors.
+#
+# 8. Verify rollback before committing:
+#
+#      themeengine rollback
+#
+# 9. Keep source/provenance comments with the theme so future changes remain
+#    evidence-based and reproducible.
+# =============================================================================
