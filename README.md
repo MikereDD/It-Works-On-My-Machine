@@ -65,6 +65,9 @@ It-Works-On-My-Machine/
 ├── ThemeEngine/
 │   ├── themes/
 │   └── templates/
+├── ThemeEngine/
+│   ├── themes/
+│   └── templates/
 ├── Shared/
 │   ├── scripts/
 │   ├── tools/
@@ -90,6 +93,14 @@ It-Works-On-My-Machine/
 It currently coordinates supported Windows Terminal and PowerShell surfaces on Netzach and Xresources/URxvt, i3, i3blocks, tmux, shell UI, Vim, and Lightline surfaces on Arakiel. Vim and Lightline use shared generated templates on both systems so the active ThemeEngine palette follows the user across machines.
 
 Current themes include **Obsidian Silver**, **Catppuccin Mocha**, **Everforest Dark**, and **Gruvbox**. See [`ThemeEngine/README.md`](ThemeEngine/README.md) for architecture and usage details.
+
+## ThemeEngine
+
+`ThemeEngine/` is the shared cross-platform theming subsystem for Netzach and Arakiel. Themes define semantic color roles once and render them into platform-native configuration.
+
+It currently coordinates Windows Terminal and PowerShell surfaces on Netzach; Xresources/URxvt, i3, i3blocks, tmux, and shell UI on Arakiel; and Vim and Lightline on both systems.
+
+Current themes are **Obsidian Silver**, **Catppuccin Mocha**, **Everforest Dark**, and **Gruvbox**. See [`ThemeEngine/README.md`](ThemeEngine/README.md) for architecture and usage.
 
 ## Shared
 
