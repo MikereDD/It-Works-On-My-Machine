@@ -6,20 +6,26 @@
 # desc:     Pi 5 / Arch Linux system info cat
 #--------------------------------------------
 
-f=3 b=4
-for j in f b; do
-  for i in {0..7}; do
-    printf -v "$j$i" '%b' "\e[${!j}${i}m"
-  done
-done
+LIB_DIR="${LIB_DIR:-$HOME/lib}"
+if [[ -f "$LIB_DIR/ui.sh" ]]; then
+  # shellcheck source=/dev/null
+  source <(sed 's/\r$//' "$LIB_DIR/ui.sh")
+fi
 
-# ── Added lighter colors ─────────────────────
-f14=$'\e[37m'   # light gray (used for values)
-f15=$'\e[97m'   # bright white (optional)
+# Preserve the original infocat color-slot names while mapping them onto
+# ThemeEngine semantic roles.
+f1="${UI_CYN:-}"
+f2="${UI_GRN:-}"
+f4="${UI_RED:-}"
+f6="${UI_INFO:-${UI_CYN:-}}"
+f7="${UI_TEXT:-${UI_WHT:-}}"
+f8="${UI_GRY:-}"
+f14="${UI_GRY:-}"
+f15="${UI_WHT:-}"
 
 bld=$'\e[1m'
-rst=$'\e[0m'
-NC=$rst
+rst="${UI_RST:-}"
+NC="$rst"
 
 gtkrc="$HOME/.gtkrc-2.0"
 gtktheme="None"
