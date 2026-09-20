@@ -2,128 +2,547 @@
 
 ThemeEngine is the shared cross-platform theming subsystem of **It-Works-On-My-Machine**.
 
-A theme is defined once using semantic roles and rendered into native configuration for Netzach and Arakiel. The systems keep their platform-specific tools while sharing a consistent visual identity.
+It defines a theme once using semantic roles, then renders that theme into the native formats used by Netzach and Arakiel.
+
+The intent is simple:
+
+> Define appearance once by semantic role, then render it natively for each platform.
+
+ThemeEngine owns appearance. Applications and platforms keep ownership of their behavior.
+
+---
 
 ## Current Themes
+
+ThemeEngine currently includes:
 
 - **Obsidian Silver**
 - **Catppuccin Mocha**
 - **Everforest Dark**
 - **Gruvbox**
+- **Kanagawa Paper**
+- **OneDark**
 
-## Architecture
+Each theme is stored as:
 
-Theme definitions live in `themes/` and describe colors by purpose rather than by application.
+```text
+ThemeEngine/themes/<theme-id>/theme.conf
+```
 
-Core semantic roles include:
+Theme definitions describe colors by purpose rather than by application-specific settings.
 
-- `BG`
-- `SURFACE`
-- `SURFACE_ALT`
-- `BORDER_DARK`
-- `BORDER`
-- `MUTED`
-- `TEXT`
-- `BRIGHT`
-- `ACCENT`
-- `ACCENT_BRIGHT`
-- `SUCCESS`
-- `WARNING`
-- `ERROR`
-- `SECONDARY`
-- `INFO`
+---
 
-Platform-specific values such as fonts and i3 bar geometry may live alongside the semantic palette when they are part of reproducing the complete theme.
+## What ThemeEngine Controls
 
-Templates under `templates/` translate shared semantic roles into application-specific configuration. Themes and templates are the source of truth; generated files are deployment outputs.
+### Netzach
 
-## Netzach
+ThemeEngine currently coordinates:
 
-Netzach uses the PowerShell renderer:
-
-`Netzach/PowerShell/ThemeEngine/ThemeEngine.ps1`
-
-ThemeEngine currently coordinates these supported surfaces:
-
+- Windows Terminal color scheme
 - Windows Terminal application chrome
-- PowerShell UI and startup presentation
+- PowerShell semantic UI colors
 - Vim colors
 - Lightline colors
 
-The generated Vim colorscheme and Lightline palette live inside the existing Netzach Vim configuration tree.
+Renderer:
 
-## Arakiel
+```text
+Netzach/PowerShell/ThemeEngine/ThemeEngine.ps1
+```
 
-Arakiel uses the shell renderer:
+PowerShell bridge:
 
-`Arakiel/local/bin/themeengine`
+```text
+Netzach/PowerShell/profile.d/theme.ps1
+```
 
-ThemeEngine currently coordinates these supported surfaces:
+---
 
-- Xresources and URxvt
+### Arakiel
+
+ThemeEngine currently coordinates:
+
+- Xresources / URxvt
 - i3
 - i3blocks
 - tmux
-- shell UI
+- shell UI colors
 - Vim colors
 - Lightline colors
 
-URxvt uses the active semantic background as its tint while retaining pseudo-transparency, allowing the rotating Arakiel wallpaper to remain visible without abandoning the active palette.
+Renderer:
 
-## Vim and Lightline
-
-Vim is themed from the shared template:
-
-`templates/shared/vim-colors.vim.tpl`
-
-Lightline uses its own generated palette:
-
-`templates/shared/vim-lightline.vim.tpl`
-
-Both are rendered from the same semantic roles used elsewhere by ThemeEngine. This keeps syntax highlighting and the status line synchronized with the active theme without depending on a third-party Vim colorscheme.
-
-The generated Vim colorscheme is named `typezero`.
-
-Existing Vim instances do not automatically reload newly generated colors after a theme change. A newly started Vim instance loads the current palette.
-
-## Commands
-
-The ThemeEngine interface includes:
-
-- `list`
-- `current`
-- `preview`
-- `apply`
-- `reload`
-- `rollback`
-- `doctor`
-- `bootstrap`
-- `help`
-
-`current` is the canonical way to query the active theme.
-
-Applying a theme updates ThemeEngine state, renders platform-specific outputs, and refreshes supported runtime surfaces where appropriate.
-
-## Bootstrap
-
-Bootstrap installs the shared themes and templates required by the local renderer.
-
-Arakiel uses the positional repository-root form:
-
-```bash
-themeengine bootstrap "$PWD"
+```text
+Arakiel/local/bin/themeengine
 ```
 
-Netzach uses:
+---
+
+## Architecture
+
+ThemeEngine follows this flow:
+
+```text
+theme.conf
+    ↓
+bootstrap installs themes + templates
+    ↓
+platform renderer
+    ↓
+generated native files
+    ↓
+application / shell consumers
+    ↓
+runtime refresh where supported
+```
+
+A theme defines semantic roles such as:
+
+```text
+BG
+SURFACE
+SURFACE_ALT
+BORDER_DARK
+BORDER
+MUTED
+TEXT
+BRIGHT
+ACCENT
+ACCENT_BRIGHT
+SUCCESS
+WARNING
+ERROR
+SECONDARY
+INFO
+```
+
+It also defines:
+
+- focused / active / inactive / urgent desktop roles
+- typography metadata
+- a complete 16-color ANSI palette
+
+Platform renderers decide how those roles map into native application configuration.
+
+---
+
+## Repository Layout
+
+```text
+ThemeEngine/
+├── README.md
+├── INTEGRATIONS.md
+├── theme.conf.template
+├── themes/
+│   ├── catppuccin-mocha/
+│   ├── everforest-dark/
+│   ├── gruvbox/
+│   ├── kanagawa-paper/
+│   ├── obsidian-silver/
+│   └── onedark/
+└── templates/
+    ├── arakiel/
+    │   ├── Xresources.tpl
+    │   ├── i3-theme.conf.tpl
+    │   ├── i3blocks.conf.tpl
+    │   └── tmux.conf.tpl
+    └── shared/
+        ├── vim-colors.vim.tpl
+        └── vim-lightline.vim.tpl
+```
+
+The `ThemeEngine/` directory contains the portable theme definitions, templates, and documentation.
+
+Platform-specific renderers remain under the Netzach and Arakiel trees because they also contain machine-specific paths, runtime behavior, and application integration logic.
+
+---
+
+## Theme Definitions
+
+Theme files use simple `KEY=VALUE` assignments.
+
+Example:
+
+```text
+THEME_ID=onedark
+THEME_NAME="OneDark"
+
+BG=#282C34
+TEXT=#ABB2BF
+ACCENT=#61AFEF
+SUCCESS=#98C379
+WARNING=#E5C07B
+ERROR=#E86671
+```
+
+The complete documented authoring contract is:
+
+```text
+ThemeEngine/theme.conf.template
+```
+
+Use that file as the starting point for new themes.
+
+Important parser rule:
+
+> Keep comments on their own lines.
+
+ThemeEngine treats everything after the first `=` as the value, so inline comments should not be appended to assignments.
+
+---
+
+## Templates
+
+Templates translate semantic roles into application-specific configuration.
+
+### Shared templates
+
+```text
+ThemeEngine/templates/shared/vim-colors.vim.tpl
+ThemeEngine/templates/shared/vim-lightline.vim.tpl
+```
+
+These are used by both Netzach and Arakiel.
+
+They generate the native Vim colorscheme and Lightline palette named:
+
+```text
+typezero
+```
+
+---
+
+### Arakiel templates
+
+```text
+ThemeEngine/templates/arakiel/Xresources.tpl
+ThemeEngine/templates/arakiel/i3-theme.conf.tpl
+ThemeEngine/templates/arakiel/i3blocks.conf.tpl
+ThemeEngine/templates/arakiel/tmux.conf.tpl
+```
+
+These generate the native files consumed by URxvt, i3, i3blocks, and tmux.
+
+---
+
+## Quick Start
+
+ThemeEngine uses installed copies of the repository themes and templates.
+
+After changing or adding themes, bootstrap the current repository data before testing.
+
+### Netzach
+
+From the repository root:
 
 ```powershell
 themeengine bootstrap -RepoRoot $PWD
 ```
 
-The two implementations intentionally retain native command syntax for their respective platforms.
+List installed themes:
 
-## Design Rule
+```powershell
+themeengine list
+```
 
-ThemeEngine owns **semantic appearance**, while applications and platforms retain ownership of their behavior.
+Preview a theme:
 
-A theme describes concepts such as background, text, accent, success, warning, and error once. Renderers and templates decide how those concepts map onto Windows Terminal, PowerShell, Xresources, i3, tmux, Vim, Lightline, and other supported surfaces.
+```powershell
+themeengine preview onedark
+```
+
+Apply a theme:
+
+```powershell
+themeengine apply onedark
+```
+
+Show the current theme:
+
+```powershell
+themeengine current
+```
+
+Rollback:
+
+```powershell
+themeengine rollback
+```
+
+Run diagnostics:
+
+```powershell
+themeengine doctor
+```
+
+---
+
+### Arakiel
+
+From the repository root:
+
+```bash
+themeengine bootstrap "$PWD"
+```
+
+List installed themes:
+
+```bash
+themeengine list
+```
+
+Preview a theme:
+
+```bash
+themeengine preview onedark
+```
+
+Apply a theme:
+
+```bash
+themeengine apply onedark
+```
+
+Show the current theme:
+
+```bash
+themeengine current
+```
+
+Rollback:
+
+```bash
+themeengine rollback
+```
+
+Run diagnostics:
+
+```bash
+themeengine doctor
+```
+
+When applying a theme over SSH to Arakiel's live X session, target that session explicitly:
+
+```bash
+export DISPLAY=:0
+export XAUTHORITY="$HOME/.Xauthority"
+
+themeengine apply onedark
+```
+
+---
+
+## Commands
+
+The ThemeEngine interface includes:
+
+```text
+list
+current
+preview
+apply
+reload
+rollback
+doctor
+bootstrap
+help
+```
+
+`current` is the canonical way to query the active theme.
+
+`reload` reapplies the currently selected theme without changing theme history.
+
+`rollback` returns to the previously active theme when previous-theme state exists.
+
+---
+
+## Generated Outputs
+
+Generated files are deployment outputs.
+
+They are not the source of truth.
+
+The source of truth is:
+
+```text
+ThemeEngine/themes/
+ThemeEngine/templates/
+```
+
+### Arakiel generated outputs
+
+Theme application currently generates:
+
+```text
+~/.config/i3/theme.conf
+~/.config/i3/i3blocks.conf
+~/.Xresources.theme
+~/.config/tmux/theme.conf
+~/.config/vim/colors/typezero.vim
+~/.config/vim/autoload/lightline/colorscheme/typezero.vim
+~/.config/typezero/themeengine/current.sh
+```
+
+ThemeEngine also maintains current and previous theme state under:
+
+```text
+~/.config/typezero/themeengine/
+```
+
+Installed themes and templates live under:
+
+```text
+~/.local/share/typezero/themeengine/
+```
+
+---
+
+### Netzach generated state
+
+ThemeEngine runtime data lives under:
+
+```text
+%LOCALAPPDATA%\Typezero\ThemeEngine
+```
+
+This includes installed themes and templates, current / previous theme state, and the generated PowerShell theme state.
+
+Generated Vim files live under the existing Netzach Vim configuration tree:
+
+```text
+$HOME\config\vim\colors\typezero.vim
+$HOME\config\vim\autoload\lightline\colorscheme\typezero.vim
+```
+
+ThemeEngine also updates its own Windows Terminal color scheme and application theme.
+
+---
+
+## Vim and Lightline
+
+Vim and Lightline use shared ThemeEngine templates on both platforms.
+
+Vim colors:
+
+```text
+ThemeEngine/templates/shared/vim-colors.vim.tpl
+```
+
+Lightline colors:
+
+```text
+ThemeEngine/templates/shared/vim-lightline.vim.tpl
+```
+
+Both are rendered from the same semantic roles used by the rest of ThemeEngine.
+
+This keeps terminal, shell, desktop, Vim, and Lightline colors synchronized without depending on a third-party Vim colorscheme at runtime.
+
+Existing Vim processes do not automatically reload newly generated colors.
+
+Start a fresh Vim instance after applying a new theme.
+
+---
+
+## Creating a Theme
+
+Start with:
+
+```text
+ThemeEngine/theme.conf.template
+```
+
+Then:
+
+1. copy it to `ThemeEngine/themes/<theme-id>/theme.conf`
+2. replace every placeholder
+3. preserve the upstream/source palette where practical
+4. map source colors into ThemeEngine semantic roles
+5. bootstrap the repository data
+6. preview and apply the theme
+7. test it on both Netzach and Arakiel
+8. verify rollback
+9. run `git diff --check` before committing
+
+A good ThemeEngine theme should preserve the identity of its source palette while still respecting ThemeEngine's semantic contract.
+
+---
+
+## Ownership Rule
+
+ThemeEngine owns **semantic appearance**.
+
+Applications and platforms own **behavior**.
+
+Examples of ThemeEngine-owned concerns:
+
+- semantic palette values
+- ANSI palettes
+- terminal colors
+- Vim colors
+- Lightline colors
+- i3 theme colors
+- i3blocks colors
+- tmux colors
+- URxvt theme-dependent appearance
+- PowerShell semantic UI colors
+- ThemeEngine-managed Windows Terminal scheme/chrome
+
+Examples of application-owned concerns:
+
+- i3 keybindings
+- workspace behavior
+- Vim editing behavior
+- shell command behavior
+- tmux workflow behavior
+- application business logic
+- unrelated Windows Terminal profile preferences
+- wallpaper content and wallpaper rotation logic
+
+This boundary prevents ThemeEngine from becoming a general configuration manager.
+
+---
+
+## Integration Reference
+
+The complete source → renderer → generated output → consumer map is documented in:
+
+```text
+ThemeEngine/INTEGRATIONS.md
+```
+
+That document should be reviewed when changing:
+
+- ThemeEngine paths
+- state-file names
+- renderer behavior
+- generated-file locations
+- semantic role names
+- application integration points
+- runtime refresh behavior
+
+---
+
+## Design Direction
+
+ThemeEngine currently belongs to **It-Works-On-My-Machine** because it directly coordinates the visual environment of Netzach and Arakiel.
+
+Its internal structure intentionally keeps portable pieces separate from platform-specific integration:
+
+```text
+portable:
+    themes
+    templates
+    theme authoring contract
+
+platform-specific:
+    renderers
+    application paths
+    runtime refresh logic
+    machine integration
+```
+
+That separation keeps the subsystem understandable and reusable without requiring it to become a standalone project.
+
+If ThemeEngine ever graduates into its own repository, its theme definitions, templates, authoring contract, and architecture are already separated cleanly enough to make that transition practical.
