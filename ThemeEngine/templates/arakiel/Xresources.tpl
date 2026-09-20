@@ -5,7 +5,7 @@
 ! typography, and ANSI palette through this generated resource file.
 URxvt*background: {{BG}}
 URxvt*foreground: {{TEXT}}
-URxvt*cursorColor: {{ACCENT_BRIGHT}}
+URxvt*cursorColor: {{CURSOR}}
 
 ! URxvt pseudo-transparency exposes the rotating Arakiel wallpaper without a
 ! compositor. Tinting with the active theme background preserves each palette's

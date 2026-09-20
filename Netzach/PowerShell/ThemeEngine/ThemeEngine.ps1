@@ -52,6 +52,19 @@ function Read-ThemeFile {
         $result[$key] = $val
     }
 
+    # Interaction-state roles extend the semantic palette without breaking
+    # existing themes. Missing values inherit the exact roles ThemeEngine
+    # historically used for these surfaces.
+    if (-not $result.Contains("SELECTION") -or -not $result["SELECTION"]) {
+        $result["SELECTION"] = $result["BORDER"]
+    }
+    if (-not $result.Contains("CURSOR") -or -not $result["CURSOR"]) {
+        $result["CURSOR"] = $result["ACCENT_BRIGHT"]
+    }
+    if (-not $result.Contains("FOCUS") -or -not $result["FOCUS"]) {
+        $result["FOCUS"] = $result["ACCENT"]
+    }
+
     return $result
 }
 
@@ -207,8 +220,8 @@ function Set-WindowsTerminalTheme {
         name                = $schemeName
         background          = $T["BG"]
         foreground          = $T["TEXT"]
-        cursorColor         = $T["ACCENT_BRIGHT"]
-        selectionBackground = $T["BORDER"]
+        cursorColor         = $T["CURSOR"]
+        selectionBackground = $T["SELECTION"]
         black               = $T["ANSI_BLACK"]
         red                 = $T["ANSI_RED"]
         green               = $T["ANSI_GREEN"]
@@ -395,7 +408,7 @@ switch ($Command) {
         Write-Host "  $($t['THEME_NAME'])"
         Write-Host ""
 
-        foreach ($role in @("ACCENT","ACCENT_BRIGHT","TEXT","MUTED","SUCCESS","WARNING","ERROR","SECONDARY","INFO")) {
+        foreach ($role in @("ACCENT","ACCENT_BRIGHT","SELECTION","CURSOR","FOCUS","TEXT","MUTED","SUCCESS","WARNING","ERROR","SECONDARY","INFO")) {
             $c = Convert-HexToAnsi $t[$role]
             Write-Host "$c  $($role.PadRight(14)) $($t[$role])$([char]27)[0m"
         }

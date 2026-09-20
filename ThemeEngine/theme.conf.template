@@ -131,8 +131,29 @@ BRIGHT=#RRGGBB
 ACCENT=#RRGGBB
 
 # Brighter/lighter companion to ACCENT.
-# Useful for stronger emphasis, cursor roles, or bright terminal output.
+# Useful for stronger emphasis or bright terminal output.
 ACCENT_BRIGHT=#RRGGBB
+
+
+# -----------------------------------------------------------------------------
+# Interaction-state roles
+# -----------------------------------------------------------------------------
+#
+# New themes should define these explicitly when the source palette has useful
+# state-specific colors. Older themes remain valid: renderers provide the
+# backwards-compatible fallbacks documented below.
+
+# Selection/highlight background.
+# Fallback when omitted: BORDER.
+SELECTION=#RRGGBB
+
+# Primary text/editor/terminal cursor color.
+# Fallback when omitted: ACCENT_BRIGHT.
+CURSOR=#RRGGBB
+
+# Active/focused application chrome or status emphasis.
+# Fallback when omitted: ACCENT.
+FOCUS=#RRGGBB
 
 
 # -----------------------------------------------------------------------------

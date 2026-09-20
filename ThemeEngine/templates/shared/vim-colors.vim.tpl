@@ -19,7 +19,7 @@ set background=dark
 " Core editor surfaces
 highlight Normal       guifg={{TEXT}}          guibg={{BG}}          ctermfg=White      ctermbg=Black
 highlight NormalNC     guifg={{MUTED}}         guibg={{BG}}          ctermfg=DarkGray   ctermbg=Black
-highlight Cursor       guifg={{BG}}            guibg={{ACCENT_BRIGHT}} ctermfg=Black    ctermbg=White
+highlight Cursor       guifg={{BG}}            guibg={{CURSOR}} ctermfg=Black    ctermbg=White
 highlight CursorLine   guibg={{SURFACE}}                              ctermbg=DarkGray
 highlight CursorColumn guibg={{SURFACE}}                              ctermbg=DarkGray
 highlight ColorColumn  guibg={{SURFACE_ALT}}                          ctermbg=DarkGray
@@ -30,17 +30,17 @@ highlight VertSplit    guifg={{BORDER}}        guibg={{BG}}          ctermfg=Dar
 highlight WinSeparator guifg={{BORDER}}        guibg={{BG}}          ctermfg=DarkGray   ctermbg=Black
 
 " Selection, search, and navigation
-highlight Visual       guifg={{BRIGHT}}        guibg={{BORDER}}      ctermfg=White      ctermbg=DarkGray
+highlight Visual       guifg={{BRIGHT}}        guibg={{SELECTION}}      ctermfg=White      ctermbg=DarkGray
 highlight Search       guifg={{BG}}            guibg={{WARNING}}     ctermfg=Black      ctermbg=Yellow
 highlight IncSearch    guifg={{BG}}            guibg={{ACCENT_BRIGHT}} ctermfg=Black    ctermbg=Yellow
 highlight MatchParen   guifg={{BRIGHT}}        guibg={{BORDER}} gui=bold ctermfg=White ctermbg=DarkGray cterm=bold
 highlight Directory    guifg={{INFO}}                                 ctermfg=Blue
 
 " Interface chrome
-highlight StatusLine   guifg={{BG}}            guibg={{ACCENT}} gui=bold ctermfg=Black ctermbg=Yellow cterm=bold
+highlight StatusLine   guifg={{BG}}            guibg={{FOCUS}} gui=bold ctermfg=Black ctermbg=Yellow cterm=bold
 highlight StatusLineNC guifg={{MUTED}}         guibg={{SURFACE_ALT}} ctermfg=DarkGray ctermbg=Black
 highlight TabLine      guifg={{MUTED}}         guibg={{SURFACE}}     ctermfg=DarkGray ctermbg=Black
-highlight TabLineSel   guifg={{BG}}            guibg={{ACCENT}} gui=bold ctermfg=Black ctermbg=Yellow cterm=bold
+highlight TabLineSel   guifg={{BG}}            guibg={{FOCUS}} gui=bold ctermfg=Black ctermbg=Yellow cterm=bold
 highlight TabLineFill  guibg={{SURFACE}}                              ctermbg=Black
 highlight Pmenu        guifg={{TEXT}}          guibg={{SURFACE_ALT}} ctermfg=White ctermbg=DarkGray
 highlight PmenuSel     guifg={{BG}}            guibg={{ACCENT}} gui=bold ctermfg=Black ctermbg=Yellow cterm=bold
