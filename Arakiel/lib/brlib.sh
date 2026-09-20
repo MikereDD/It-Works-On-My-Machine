@@ -30,22 +30,10 @@ _brlib_source "$BRLIB_DIR/ui.sh" 2>/dev/null || true
 set +e +u 2>/dev/null || true
 set -o pipefail 2>/dev/null || true
 
-# ui.sh stores colors as literal "\033[..m" (for `echo -e`). Normalize to real
-# escape bytes so they work with printf, map its UI_RST -> UI_R, and add the
-# extra colors brlib needs. Blank everything when stdout is not a terminal.
-# shellcheck disable=SC2034
-if [[ -t 1 ]]; then
-    UI_CYN="$(printf '%b' "${UI_CYN:-$'\e[36m'}")"
-    UI_GRN="$(printf '%b' "${UI_GRN:-$'\e[32m'}")"
-    UI_YLW="$(printf '%b' "${UI_YLW:-$'\e[33m'}")"
-    UI_RED="$(printf '%b' "${UI_RED:-$'\e[31m'}")"
-    UI_R="$(printf  '%b' "${UI_RST:-$'\e[0m'}")"
-    UI_MAG="${UI_MAG:-$'\e[35m'}"
-    UI_GRY="${UI_GRY:-$'\e[90m'}"
-    UI_DIM="${UI_DIM:-$'\e[2m'}"
-else
-    UI_CYN=""; UI_GRN=""; UI_YLW=""; UI_RED=""; UI_R=""; UI_MAG=""; UI_GRY=""; UI_DIM=""
-fi
+# ui.sh already provides real terminal escape sequences and disables styling
+# automatically for non-interactive output. Retain UI_R as the historical reset
+# alias used throughout the Blu-ray helpers.
+UI_R="${UI_RST:-${UI_R:-}}"
 
 # Helpers ui.sh / core.sh don't define (added only if missing so theirs win).
 declare -F core_error   >/dev/null || core_error()   { if declare -F ui_error >/dev/null; then ui_error "$1"; else printf '  %sError:%s %s\n' "$UI_RED" "$UI_R" "$1" >&2; fi; }
