@@ -60,11 +60,13 @@ if [[ -f "$LIB_DIR/core.sh" ]]; then
     source <(sed 's/\r$//' "$LIB_DIR/core.sh")
 fi
 
-RED="${UI_RED:-$'\e[31m'}"
-YEL="${UI_YLW:-$'\e[33m'}"
-GRN="${UI_GRN:-$'\e[32m'}"
-CYN="${UI_CYN:-$'\e[36m'}"
-RST="${UI_R:-$'\e[0m'}"
+RED="${UI_RED:-}"
+YEL="${UI_YLW:-}"
+GRN="${UI_GRN:-}"
+CYN="${UI_INFO:-${UI_CYN:-}}"
+RST="${UI_RST:-${UI_R:-}}"
+
+# Text attribute, not a theme color.
 BLD=$'\e[1m'
 
 info() { echo -e "${CYN}[*]${RST} $*"; }
