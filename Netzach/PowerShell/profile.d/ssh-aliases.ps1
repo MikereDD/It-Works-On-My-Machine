@@ -9,7 +9,7 @@
 
 # ── Remote host config ────────────────────────────────────────
 $global:ArakielUser = "typezero"
-$global:ArakielHost = "192.168.4.85"
+$global:ArakielHost = "arakiel.local"
 $global:ArakielSSH  = "$global:ArakielUser@$global:ArakielHost"
 
 # ── Local paths ───────────────────────────────────────────────
