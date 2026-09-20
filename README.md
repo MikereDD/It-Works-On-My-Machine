@@ -8,7 +8,7 @@
 
 `It-Works-On-My-Machine` is the working systems repository for **Netzach**, the Windows development workstation, and **Arakiel**, the Arch Linux / Raspberry Pi 5 server and automation node.
 
-This is where dotfiles, shell environments, administration scripts, personal tools, machine setup, reusable pieces, experiments, and prototypes live. It is also a workshop: small ideas can begin here, prove themselves useful, and eventually become standalone repositories without losing the lineage that started them.
+This is where dotfiles, shell environments, administration scripts, personal tools, machine setup, reusable pieces, experiments, and prototypes live. A shared ThemeEngine also keeps supported terminal, shell, desktop, tmux, Vim, and Lightline surfaces visually consistent across both machines. It is also a workshop: small ideas can begin here, prove themselves useful, and eventually become standalone repositories without losing the lineage that started them.
 
 ## Systems
 
@@ -62,6 +62,9 @@ It-Works-On-My-Machine/
 │   │   └── x11/
 │   ├── services/
 │   └── setup/
+├── ThemeEngine/
+│   ├── themes/
+│   └── templates/
 ├── Shared/
 │   ├── scripts/
 │   ├── tools/
@@ -79,6 +82,14 @@ It-Works-On-My-Machine/
 ├── LICENSE
 └── README.md
 ```
+
+## ThemeEngine
+
+`ThemeEngine/` is the shared cross-platform theming subsystem for Netzach and Arakiel. Themes are defined once using semantic color roles and rendered into platform-specific configuration.
+
+It currently coordinates supported Windows Terminal and PowerShell surfaces on Netzach and Xresources/URxvt, i3, i3blocks, tmux, shell UI, Vim, and Lightline surfaces on Arakiel. Vim and Lightline use shared generated templates on both systems so the active ThemeEngine palette follows the user across machines.
+
+Current themes include **Obsidian Silver**, **Catppuccin Mocha**, **Everforest Dark**, and **Gruvbox**. See [`ThemeEngine/README.md`](ThemeEngine/README.md) for architecture and usage details.
 
 ## Shared
 
