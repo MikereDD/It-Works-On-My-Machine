@@ -63,7 +63,7 @@ function arakiel-fastfetch {
 # ── File copy helpers ─────────────────────────────────────────
 function push-bots {
     if (-not (Test-Path $global:LocalBotsDir)) {
-        Write-Host "  Local Bots directory not found: $global:LocalBotsDir" -ForegroundColor Yellow
+        Write-Host "  $($global:UI_Theme.Warning)Local Bots directory not found: $global:LocalBotsDir$($global:UI_Theme.Reset)"
         return
     }
 
@@ -82,5 +82,5 @@ function pull-logs {
 
 # ── Load message ──────────────────────────────────────────────
 if ($global:ShowProfileLoad) {
-    Write-Host "  ssh aliases loaded" -ForegroundColor DarkGray
+    Write-Host "  $($global:UI_Theme.Muted)ssh aliases loaded$($global:UI_Theme.Reset)"
 }

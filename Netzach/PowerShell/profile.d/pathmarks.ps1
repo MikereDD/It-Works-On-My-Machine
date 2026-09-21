@@ -102,7 +102,7 @@ function mark {
     $table[$Name] = $resolved.Path
     Save-PathmarkTable -Table $table
 
-    Write-Host '  marked  ' -ForegroundColor DarkCyan -NoNewline
+    Write-Host "  $($global:UI_Theme.Accent)marked$($global:UI_Theme.Reset)  " -NoNewline
     Write-Host "$Name -> $($resolved.Path)"
 }
 
@@ -134,7 +134,7 @@ function jump {
 function marks {
     $table = Get-PathmarkTable
     if ($table.Count -eq 0) {
-        Write-Host '  No pathmarks saved.' -ForegroundColor DarkGray
+        Write-Host "  $($global:UI_Theme.Muted)No pathmarks saved.$($global:UI_Theme.Reset)"
         return
     }
 
@@ -168,7 +168,7 @@ function unmark {
     $table.Remove($Name)
     Save-PathmarkTable -Table $table
 
-    Write-Host '  removed ' -ForegroundColor DarkCyan -NoNewline
+    Write-Host "  $($global:UI_Theme.Accent)removed$($global:UI_Theme.Reset) " -NoNewline
     Write-Host $Name
 }
 
