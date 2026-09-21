@@ -20,19 +20,23 @@ if (-not $global:UI_Theme) {
     }
 }
 
-# ── Fallback UI values if ui.ps1 is unavailable ───────────────
-if (-not $global:UI_R)   { $global:UI_R   = "" }
-if (-not $global:UI_B)   { $global:UI_B   = "" }
-if (-not $global:UI_DIM) { $global:UI_DIM = "" }
-
-if (-not $global:UI_CYN) { $global:UI_CYN = "" }
-if (-not $global:UI_YLW) { $global:UI_YLW = "" }
-if (-not $global:UI_GRN) { $global:UI_GRN = "" }
-if (-not $global:UI_RED) { $global:UI_RED = "" }
-if (-not $global:UI_GRY) { $global:UI_GRY = "" }
-if (-not $global:UI_WHT) { $global:UI_WHT = "" }
-if (-not $global:UI_MAG) { $global:UI_MAG = "" }
-if (-not $global:UI_BLU) { $global:UI_BLU = "" }
+# ── Semantic fallback if ui.ps1 is unavailable ──────────────
+if (-not $global:UI_Theme) {
+    $global:UI_Theme = [ordered]@{
+        Accent    = ""
+        Title     = ""
+        Success   = ""
+        Warning   = ""
+        Error     = ""
+        Muted     = ""
+        Text      = ""
+        Secondary = ""
+        Info      = ""
+        Reset     = ""
+        Bold      = ""
+        Dim       = ""
+    }
+}
 
 # ── Logging toggle ────────────────────────────────────────────
 $global:CORE_LOG_ENABLED = $false
@@ -71,7 +75,7 @@ function Write-CoreSuccess {
         [string]$Message
     )
 
-    Write-Host "  $($global:UI_GRN)$Message$($global:UI_R)"
+    Write-Host "  $($global:UI_Theme.Success)$Message$($global:UI_Theme.Reset)"
     Write-CoreLog "SUCCESS: $Message"
 }
 
@@ -81,7 +85,7 @@ function Write-CoreError {
         [string]$Message
     )
 
-    Write-Host "  $($global:UI_RED)$Message$($global:UI_R)"
+    Write-Host "  $($global:UI_Theme.Error)$Message$($global:UI_Theme.Reset)"
     Write-CoreLog "ERROR: $Message"
 }
 
@@ -97,7 +101,7 @@ function Invoke-Safe {
         Write-CoreLog "SUCCESS: $ErrorMessage"
         return $true
     } catch {
-        Write-Host "  $($global:UI_RED)${ErrorMessage}: $($_.Exception.Message)$($global:UI_R)"
+        Write-Host "  $($global:UI_Theme.Error)${ErrorMessage}: $($_.Exception.Message)$($global:UI_Theme.Reset)"
         Write-CoreLog "ERROR: $ErrorMessage :: $($_.Exception.Message)"
         return $false
     }
@@ -110,7 +114,7 @@ function Confirm-Core {
     )
 
     Write-Host ""
-    Write-Host -NoNewline "  $($global:UI_YLW)$Message (y/n): $($global:UI_R)"
+    Write-Host -NoNewline "  $($global:UI_Theme.Warning)$Message (y/n): $($global:UI_Theme.Reset)"
     $c = Read-Host
     return $c -match '^[Yy]$'
 }
@@ -153,6 +157,6 @@ function Export-CoreData {
         default { $Data | Out-File $path }
     }
 
-    Write-Host "  $($global:UI_GRN)Saved to:$($global:UI_R) $path"
+    Write-Host "  $($global:UI_Theme.Success)Saved to:$($global:UI_Theme.Reset) $path"
     Write-CoreLog "EXPORT: $path"
 }
