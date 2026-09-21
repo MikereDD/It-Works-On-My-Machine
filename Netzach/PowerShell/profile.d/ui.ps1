@@ -72,39 +72,43 @@ $global:UI_BLU = C "94"
 # Prefer ThemeEngine's generated semantic palette when the main profile has
 # loaded it. The legacy ANSI tokens remain the fallback so ui.ps1 is still
 # safe to dot-source by itself and older scripts retain their existing API.
-if ($global:TE_Theme) {
-    $global:UI_Theme = [ordered]@{
-        Name      = $global:TE_Theme.Name
-        Accent    = $global:TE_Theme.Accent
-        Title     = $global:TE_Theme.AccentBright
-        Success   = $global:TE_Theme.Success
-        Warning   = $global:TE_Theme.Warning
-        Error     = $global:TE_Theme.Error
-        Muted     = $global:TE_Theme.Muted
-        Text      = $global:TE_Theme.Text
-        Secondary = $global:TE_Theme.Secondary
-        Info      = $global:TE_Theme.Info
-        Reset     = $global:TE_Theme.Reset
-        Bold      = $global:TE_Theme.Bold
-        Dim       = $global:TE_Theme.Dim
-    }
-} else {
-    $global:UI_Theme = [ordered]@{
-        Name      = "Netzach"
-        Accent    = $global:UI_CYN
-        Title     = $global:UI_YLW
-        Success   = $global:UI_GRN
-        Warning   = $global:UI_YLW
-        Error     = $global:UI_RED
-        Muted     = $global:UI_GRY
-        Text      = $global:UI_WHT
-        Secondary = $global:UI_MAG
-        Info      = $global:UI_BLU
-        Reset     = $global:UI_R
-        Bold      = $global:UI_B
-        Dim       = $global:UI_DIM
+function global:Update-TypezeroUiTheme {
+    if ($global:TE_Theme) {
+        $global:UI_Theme = [ordered]@{
+            Name      = $global:TE_Theme.Name
+            Accent    = $global:TE_Theme.Accent
+            Title     = $global:TE_Theme.AccentBright
+            Success   = $global:TE_Theme.Success
+            Warning   = $global:TE_Theme.Warning
+            Error     = $global:TE_Theme.Error
+            Muted     = $global:TE_Theme.Muted
+            Text      = $global:TE_Theme.Text
+            Secondary = $global:TE_Theme.Secondary
+            Info      = $global:TE_Theme.Info
+            Reset     = $global:TE_Theme.Reset
+            Bold      = $global:TE_Theme.Bold
+            Dim       = $global:TE_Theme.Dim
+        }
+    } else {
+        $global:UI_Theme = [ordered]@{
+            Name      = "Netzach"
+            Accent    = $global:UI_CYN
+            Title     = $global:UI_YLW
+            Success   = $global:UI_GRN
+            Warning   = $global:UI_YLW
+            Error     = $global:UI_RED
+            Muted     = $global:UI_GRY
+            Text      = $global:UI_WHT
+            Secondary = $global:UI_MAG
+            Info      = $global:UI_BLU
+            Reset     = $global:UI_R
+            Bold      = $global:UI_B
+            Dim       = $global:UI_DIM
+        }
     }
 }
+
+Update-TypezeroUiTheme
 
 function Get-UiThemeColor {
     param(

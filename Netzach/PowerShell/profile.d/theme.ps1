@@ -25,6 +25,10 @@ function global:themeengine {
 
     if ($args.Count -gt 0 -and $args[0] -in @("apply","reload","rollback")) {
         Import-TypezeroTheme
+
+        if (Get-Command Update-TypezeroUiTheme -ErrorAction SilentlyContinue) {
+            Update-TypezeroUiTheme
+        }
     }
 }
 

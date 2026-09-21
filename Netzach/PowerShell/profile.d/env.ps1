@@ -64,15 +64,29 @@ $global:HasGit = [bool](Get-Command git -ErrorAction SilentlyContinue)
 
 # ── Prompt ────────────────────────────────────────────────────
 function global:prompt {
-    $esc    = [char]27
-    $cyan   = "$esc[96m"
-    $green  = "$esc[92m"
-    $yellow = "$esc[93m"
-    $red    = "$esc[91m"
-    $white  = "$esc[37m"
-    $dim    = "$esc[2m"
-    $bold   = "$esc[1m"
-    $reset  = "$esc[0m"
+    # Resolve semantic ThemeEngine roles at prompt-render time.
+    # env.ps1 loads before theme.ps1/ui.ps1, so retain ANSI fallbacks.
+    $esc = [char]27
+
+    if ($global:UI_Theme) {
+        $accent  = $global:UI_Theme.Accent
+        $success = $global:UI_Theme.Success
+        $warning = $global:UI_Theme.Warning
+        $error   = $global:UI_Theme.Error
+        $text    = $global:UI_Theme.Text
+        $dim     = $global:UI_Theme.Dim
+        $bold    = $global:UI_Theme.Bold
+        $reset   = $global:UI_Theme.Reset
+    } else {
+        $accent  = "$esc[96m"
+        $success = "$esc[92m"
+        $warning = "$esc[93m"
+        $error   = "$esc[91m"
+        $text    = "$esc[37m"
+        $dim     = "$esc[2m"
+        $bold    = "$esc[1m"
+        $reset   = "$esc[0m"
+    }
 
     $hostName = $env:COMPUTERNAME.ToLower()
     $userName = $env:USERNAME.ToLower()
@@ -93,10 +107,10 @@ function global:prompt {
                 $status = git status --porcelain 2>$null
                 if ($status) {
                     $changed  = ($status | Measure-Object).Count
-                    $dirtyStr = "${yellow}*${changed}${reset}"
-                    $git = " ${dim}${white}(${reset}${cyan}$branch${reset}${dirtyStr}${dim}${white})${reset}"
+                    $dirtyStr = "${warning}*${changed}${reset}"
+                    $git = " ${dim}${text}(${reset}${accent}$branch${reset}${dirtyStr}${dim}${text})${reset}"
                 } else {
-                    $git = " ${dim}${white}(${reset}${cyan}$branch${reset}${dim}${white})${reset}"
+                    $git = " ${dim}${text}(${reset}${accent}$branch${reset}${dim}${text})${reset}"
                 }
             }
         } catch {}
@@ -107,18 +121,18 @@ function global:prompt {
     $id = [Security.Principal.WindowsIdentity]::GetCurrent()
     $p  = New-Object Security.Principal.WindowsPrincipal($id)
     if ($p.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-        $adminStr = " ${red}${bold}[ADMIN]${reset}"
+        $adminStr = " ${error}${bold}[ADMIN]${reset}"
     }
 
     # ── Build prompt ──────────────────────────────────────────
     if ($isSSH) {
-        Write-Host -NoNewline "${red}${bold}┌─[SSH]${reset}${red}─[${reset}${yellow}$userName${red}@${yellow}$hostName${reset}${red}]─[${reset}${red}$dir${reset}${red}]${reset}${git}${adminStr}"
+        Write-Host -NoNewline "${error}${bold}┌─[SSH]${reset}${error}─[${reset}${warning}$userName${error}@${warning}$hostName${reset}${error}]─[${reset}${error}$dir${reset}${error}]${reset}${git}${adminStr}"
     } else {
-        Write-Host -NoNewline "${cyan}┌─[${reset}${green}$userName${dim}${white}@${reset}${cyan}$hostName${reset}${cyan}]─[${reset}${white}$dir${reset}${cyan}]${reset}${git}${adminStr}"
+        Write-Host -NoNewline "${accent}┌─[${reset}${success}$userName${dim}${text}@${reset}${accent}$hostName${reset}${accent}]─[${reset}${text}$dir${reset}${accent}]${reset}${git}${adminStr}"
     }
 
     Write-Host ""
-    Write-Host -NoNewline "${cyan}└─╼${reset} "
+    Write-Host -NoNewline "${accent}└─╼${reset} "
 
     return " "
 }
