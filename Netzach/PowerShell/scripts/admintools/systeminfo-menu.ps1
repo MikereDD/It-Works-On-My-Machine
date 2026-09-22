@@ -48,38 +48,38 @@ function Show-Header {
 
     Write-UiHeader -Title $ScriptName -Subtitle "v$ScriptVersion  by $ScriptAuthor" -Width $w
     Write-UiRow "User" "$env:USERNAME@$env:COMPUTERNAME"
-    Write-UiRow "Version" "v$ScriptVersion  by $ScriptAuthor" $global:UI_GRY
+    Write-UiRow "Version" "v$ScriptVersion  by $ScriptAuthor" $global:UI_Theme.Muted
     Write-UiBlankLine
 }
 
 # ── Section Helper ────────────────────────────────────────────
 function Section($icon, $title) {
     Write-UiBlankLine
-    Write-Host "  $($global:UI_MAG)$($global:UI_B)$icon  $title$($global:UI_R)"
-    Write-Host "  $($global:UI_GRY)  ----------------------------------------------------$($global:UI_R)"
+    Write-Host "  $($global:UI_Theme.Secondary)$($global:UI_Theme.Bold)$icon  $title$($global:UI_Theme.Reset)"
+    Write-Host "  $($global:UI_Theme.Muted)  ----------------------------------------------------$($global:UI_Theme.Reset)"
 }
 
 # ── Row Helpers ───────────────────────────────────────────────
 function Row($label, $value) {
     if ($value -and "$value" -ne "" -and "$value" -ne "Unknown") {
         $lbl = $label.PadRight(26)
-        Write-Host "    $($global:UI_DIM)$($global:UI_WHT)$lbl$($global:UI_R)  $($global:UI_GRN)$value$($global:UI_R)"
+        Write-Host "    $($global:UI_Theme.Dim)$($global:UI_Theme.Text)$lbl$($global:UI_Theme.Reset)  $($global:UI_Theme.Accent)$value$($global:UI_Theme.Reset)"
     }
 }
 
 function RowWarn($label, $value) {
     $lbl = $label.PadRight(26)
-    Write-Host "    $($global:UI_DIM)$($global:UI_WHT)$lbl$($global:UI_R)  $($global:UI_YLW)$value$($global:UI_R)"
+    Write-Host "    $($global:UI_Theme.Dim)$($global:UI_Theme.Text)$lbl$($global:UI_Theme.Reset)  $($global:UI_Theme.Warning)$value$($global:UI_Theme.Reset)"
 }
 
 function RowAlert($label, $value) {
     $lbl = $label.PadRight(26)
-    Write-Host "    $($global:UI_DIM)$($global:UI_WHT)$lbl$($global:UI_R)  $($global:UI_RED)$value$($global:UI_R)"
+    Write-Host "    $($global:UI_Theme.Dim)$($global:UI_Theme.Text)$lbl$($global:UI_Theme.Reset)  $($global:UI_Theme.Error)$value$($global:UI_Theme.Reset)"
 }
 
 # ── Divider Helper ────────────────────────────────────────────
 function Divider {
-    Write-Host "  $($global:UI_GRY)  ....................................................$($global:UI_R)"
+    Write-Host "  $($global:UI_Theme.Muted)  ....................................................$($global:UI_Theme.Reset)"
 }
 
 # ── Usage Bar Helper ──────────────────────────────────────────
@@ -88,17 +88,17 @@ function MakeBar($pct, $len) {
     if ($filled -lt 0) { $filled = 0 }
     if ($filled -gt $len) { $filled = $len }
     $empty = $len - $filled
-    $bc = if ($pct -ge 85) { $global:UI_RED } elseif ($pct -ge 60) { $global:UI_YLW } else { $global:UI_GRN }
-    return "${bc}" + ("#" * $filled) + "$($global:UI_GRY)" + ("-" * $empty) + "$($global:UI_R)"
+    $bc = if ($pct -ge 85) { $global:UI_Theme.Error } elseif ($pct -ge 60) { $global:UI_Theme.Warning } else { $global:UI_Theme.Success }
+    return "${bc}" + ("#" * $filled) + "$($global:UI_Theme.Muted)" + ("-" * $empty) + "$($global:UI_Theme.Reset)"
 }
 
 # ── Footer Helper ─────────────────────────────────────────────
 function Footer {
     Write-UiBlankLine
-    Write-Host "  $($global:UI_CYN)$($global:UI_B)+==============================================================+$($global:UI_R)"
-    Write-Host "  $($global:UI_CYN)$($global:UI_B)|$($global:UI_R)  $($global:UI_GRY)Report complete.                                            $($global:UI_R)$($global:UI_CYN)$($global:UI_B)|$($global:UI_R)"
-    Write-Host "  $($global:UI_CYN)$($global:UI_B)|$($global:UI_R)  $($global:UI_YLW)Tip: Run as Administrator for full device detail.            $($global:UI_R)$($global:UI_CYN)$($global:UI_B)|$($global:UI_R)"
-    Write-Host "  $($global:UI_CYN)$($global:UI_B)+==============================================================+$($global:UI_R)"
+    Write-Host "  $($global:UI_Theme.Info)$($global:UI_Theme.Bold)+==============================================================+$($global:UI_Theme.Reset)"
+    Write-Host "  $($global:UI_Theme.Info)$($global:UI_Theme.Bold)|$($global:UI_Theme.Reset)  $($global:UI_Theme.Muted)Report complete.                                            $($global:UI_Theme.Reset)$($global:UI_Theme.Info)$($global:UI_Theme.Bold)|$($global:UI_Theme.Reset)"
+    Write-Host "  $($global:UI_Theme.Info)$($global:UI_Theme.Bold)|$($global:UI_Theme.Reset)  $($global:UI_Theme.Warning)Tip: Run as Administrator for full device detail.            $($global:UI_Theme.Reset)$($global:UI_Theme.Info)$($global:UI_Theme.Bold)|$($global:UI_Theme.Reset)"
+    Write-Host "  $($global:UI_Theme.Info)$($global:UI_Theme.Bold)+==============================================================+$($global:UI_Theme.Reset)"
     Write-UiBlankLine
 }
 
@@ -113,26 +113,26 @@ function Show-Menu {
     $w = Get-UiBoxWidth -MaxWidth 60 -MinWidth 44
     Write-UiBoxTitle -Title "SELECT A SECTION" -Width $w
 
-    Write-Host "  $($global:UI_GRN)$($global:UI_B)  A)$($global:UI_R)  Run Full Report (all sections)"
+    Write-Host "  $($global:UI_Theme.Accent)$($global:UI_Theme.Bold)  A)$($global:UI_Theme.Reset)  Run Full Report (all sections)"
     Write-UiBlankLine
-    Write-Host "  $($global:UI_YLW)     -- Individual Sections --$($global:UI_R)"
-    Write-Host "  $($global:UI_GRN)  1)$($global:UI_R)  System Overview"
-    Write-Host "  $($global:UI_GRN)  2)$($global:UI_R)  Processor (CPU)"
-    Write-Host "  $($global:UI_GRN)  3)$($global:UI_R)  Memory (RAM)"
-    Write-Host "  $($global:UI_GRN)  4)$($global:UI_R)  Storage"
-    Write-Host "  $($global:UI_GRN)  5)$($global:UI_R)  Display Adapters (GPU)"
-    Write-Host "  $($global:UI_GRN)  6)$($global:UI_R)  Monitors"
-    Write-Host "  $($global:UI_GRN)  7)$($global:UI_R)  Audio Devices"
-    Write-Host "  $($global:UI_GRN)  8)$($global:UI_R)  Input Devices (Keyboard / Mouse)"
-    Write-Host "  $($global:UI_GRN)  9)$($global:UI_R)  USB & Connected Devices"
-    Write-Host "  $($global:UI_GRN) 10)$($global:UI_R)  Bluetooth"
-    Write-Host "  $($global:UI_GRN) 11)$($global:UI_R)  Network"
-    Write-Host "  $($global:UI_GRN) 12)$($global:UI_R)  Battery"
-    Write-Host "  $($global:UI_GRN) 13)$($global:UI_R)  Cameras"
-    Write-Host "  $($global:UI_GRN) 14)$($global:UI_R)  Printers"
-    Write-Host "  $($global:UI_GRN) 15)$($global:UI_R)  Performance Snapshot"
+    Write-Host "  $($global:UI_Theme.Muted)     -- Individual Sections --$($global:UI_Theme.Reset)"
+    Write-Host "  $($global:UI_Theme.Accent)  1)$($global:UI_Theme.Reset)  System Overview"
+    Write-Host "  $($global:UI_Theme.Accent)  2)$($global:UI_Theme.Reset)  Processor (CPU)"
+    Write-Host "  $($global:UI_Theme.Accent)  3)$($global:UI_Theme.Reset)  Memory (RAM)"
+    Write-Host "  $($global:UI_Theme.Accent)  4)$($global:UI_Theme.Reset)  Storage"
+    Write-Host "  $($global:UI_Theme.Accent)  5)$($global:UI_Theme.Reset)  Display Adapters (GPU)"
+    Write-Host "  $($global:UI_Theme.Accent)  6)$($global:UI_Theme.Reset)  Monitors"
+    Write-Host "  $($global:UI_Theme.Accent)  7)$($global:UI_Theme.Reset)  Audio Devices"
+    Write-Host "  $($global:UI_Theme.Accent)  8)$($global:UI_Theme.Reset)  Input Devices (Keyboard / Mouse)"
+    Write-Host "  $($global:UI_Theme.Accent)  9)$($global:UI_Theme.Reset)  USB & Connected Devices"
+    Write-Host "  $($global:UI_Theme.Accent) 10)$($global:UI_Theme.Reset)  Bluetooth"
+    Write-Host "  $($global:UI_Theme.Accent) 11)$($global:UI_Theme.Reset)  Network"
+    Write-Host "  $($global:UI_Theme.Accent) 12)$($global:UI_Theme.Reset)  Battery"
+    Write-Host "  $($global:UI_Theme.Accent) 13)$($global:UI_Theme.Reset)  Cameras"
+    Write-Host "  $($global:UI_Theme.Accent) 14)$($global:UI_Theme.Reset)  Printers"
+    Write-Host "  $($global:UI_Theme.Accent) 15)$($global:UI_Theme.Reset)  Performance Snapshot"
     Write-UiBlankLine
-    Write-Host "  $($global:UI_RED)  Q)$($global:UI_R)  Quit"
+    Write-Host "  $($global:UI_Theme.Muted)  Q)$($global:UI_Theme.Reset)  Quit"
     Write-UiBlankLine
 }
 
@@ -218,7 +218,7 @@ function Show-CPU {
             Row "Socket"           $cpu.SocketDesignation
             $load = $cpu.LoadPercentage
             $bar  = MakeBar $load 30
-            Write-Host "    $($global:UI_DIM)$($global:UI_WHT)Current Load               $($global:UI_R)  [$bar] ${load}%$($global:UI_R)"
+            Write-Host "    $($global:UI_Theme.Dim)$($global:UI_Theme.Text)Current Load               $($global:UI_Theme.Reset)  [$bar] ${load}%$($global:UI_Theme.Reset)"
             $i++
         }
     } catch {
@@ -243,7 +243,7 @@ function Show-Memory {
         Row "Used"      "${usedGB} GB  (${usedPct}%)"
         Row "Free"      "${freeGB} GB"
         $bar = MakeBar $usedPct 40
-        Write-Host "    $($global:UI_DIM)$($global:UI_WHT)Usage                      $($global:UI_R)  [$bar] ${usedPct}%$($global:UI_R)"
+        Write-Host "    $($global:UI_Theme.Dim)$($global:UI_Theme.Text)Usage                      $($global:UI_Theme.Reset)  [$bar] ${usedPct}%$($global:UI_Theme.Reset)"
 
         Divider
         $sticks = Get-CimInstance Win32_PhysicalMemory
@@ -302,12 +302,12 @@ function Show-Storage {
                         $pct   = if ($totV -gt 0) { [Math]::Round(($usedV / $totV) * 100, 1) } else { 0 }
                         $bar   = MakeBar $pct 30
                         Write-UiBlankLine
-                        Write-Host "    $($global:UI_BLU)$($global:UI_B)  $($ltr.DriveLetter): $($vol.FileSystemLabel)$($global:UI_R)"
+                        Write-Host "    $($global:UI_Theme.Accent)$($global:UI_Theme.Bold)  $($ltr.DriveLetter): $($vol.FileSystemLabel)$($global:UI_Theme.Reset)"
                         Row "  File System" $vol.FileSystem
                         Row "  Total" "${totV} GB"
                         Row "  Used" "${usedV} GB  (${pct}%)"
                         Row "  Free" "${freeV} GB"
-                        Write-Host "    $($global:UI_DIM)$($global:UI_WHT)  Usage                    $($global:UI_R)  [$bar]"
+                        Write-Host "    $($global:UI_Theme.Dim)$($global:UI_Theme.Text)  Usage                    $($global:UI_Theme.Reset)  [$bar]"
                     }
                 }
                 continue
@@ -322,12 +322,12 @@ function Show-Storage {
                     $pct   = if ($totV -gt 0) { [Math]::Round(($usedV / $totV) * 100, 1) } else { 0 }
                     $bar   = MakeBar $pct 30
                     Write-UiBlankLine
-                    Write-Host "    $($global:UI_BLU)$($global:UI_B)  $($vol.DeviceID) $($vol.VolumeName)$($global:UI_R)"
+                    Write-Host "    $($global:UI_Theme.Accent)$($global:UI_Theme.Bold)  $($vol.DeviceID) $($vol.VolumeName)$($global:UI_Theme.Reset)"
                     Row "  File System" $vol.FileSystem
                     Row "  Total" "${totV} GB"
                     Row "  Used" "${usedV} GB  (${pct}%)"
                     Row "  Free" "${freeV} GB"
-                    Write-Host "    $($global:UI_DIM)$($global:UI_WHT)  Usage                    $($global:UI_R)  [$bar]"
+                    Write-Host "    $($global:UI_Theme.Dim)$($global:UI_Theme.Text)  Usage                    $($global:UI_Theme.Reset)  [$bar]"
                 }
             }
         }
@@ -392,13 +392,13 @@ function Show-Monitors {
                 $hcm = $sz.MaxVerticalImageSize
                 if ($wcm -gt 0 -and $hcm -gt 0) {
                     $diag = [Math]::Round([Math]::Sqrt($wcm*$wcm + $hcm*$hcm) / 2.54, 1)
-                    Write-Host "    $($global:UI_DIM)$($global:UI_WHT)Monitor $j Physical Size   $($global:UI_R)  $($global:UI_GRN)${wcm}cm x ${hcm}cm  (~${diag} inch diagonal)$($global:UI_R)"
+                    Write-Host "    $($global:UI_Theme.Dim)$($global:UI_Theme.Text)Monitor $j Physical Size   $($global:UI_Theme.Reset)  $($global:UI_Theme.Accent)${wcm}cm x ${hcm}cm  (~${diag} inch diagonal)$($global:UI_Theme.Reset)"
                 }
                 $j++
             }
         } catch {}
     } catch {
-        Write-Host "    $($global:UI_YLW)  WMI monitor data unavailable. Trying fallback...$($global:UI_R)"
+        Write-Host "    $($global:UI_Theme.Warning)  WMI monitor data unavailable. Trying fallback...$($global:UI_Theme.Reset)"
         try {
             Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue
             $screens = [System.Windows.Forms.Screen]::AllScreens
@@ -431,9 +431,9 @@ function Show-Audio {
         $pnpAudio = Get-PnpDevice -Class AudioEndpoint -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq "OK" }
         if ($pnpAudio) {
             Divider
-            Write-Host "    $($global:UI_BLU)$($global:UI_B)  Active Audio Endpoints:$($global:UI_R)"
+            Write-Host "    $($global:UI_Theme.Accent)$($global:UI_Theme.Bold)  Active Audio Endpoints:$($global:UI_Theme.Reset)"
             foreach ($ep in $pnpAudio) {
-                Write-Host "    $($global:UI_GRN)  * $($ep.FriendlyName)$($global:UI_R)"
+                Write-Host "    $($global:UI_Theme.Success)  * $($ep.FriendlyName)$($global:UI_Theme.Reset)"
             }
         }
     } catch {
@@ -452,7 +452,7 @@ function Show-Input {
         $kbs = Get-PnpDevice -Class Keyboard -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq "OK" }
         if ($kbs) {
             foreach ($kb in $kbs) {
-                Write-Host "    $($global:UI_GRN)  * $($kb.FriendlyName)$($global:UI_R)"
+                Write-Host "    $($global:UI_Theme.Success)  * $($kb.FriendlyName)$($global:UI_Theme.Reset)"
             }
         } else {
             $kbs2 = Get-CimInstance Win32_Keyboard
@@ -467,7 +467,7 @@ function Show-Input {
         $mice = Get-PnpDevice -Class Mouse -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq "OK" }
         if ($mice) {
             foreach ($m in $mice) {
-                Write-Host "    $($global:UI_GRN)  * $($m.FriendlyName)$($global:UI_R)"
+                Write-Host "    $($global:UI_Theme.Success)  * $($m.FriendlyName)$($global:UI_Theme.Reset)"
             }
         } else {
             $mice2 = Get-CimInstance Win32_PointingDevice
@@ -487,7 +487,7 @@ function Show-USB {
         Section ">>" "USB CONTROLLERS"
         $usb = Get-CimInstance Win32_USBController
         foreach ($u in $usb) {
-            Write-Host "    $($global:UI_GRN)  * $($u.Name)$($global:UI_R)  $($global:UI_GRY)[Status: $($u.Status)]$($global:UI_R)"
+            Write-Host "    $($global:UI_Theme.Success)  * $($u.Name)$($global:UI_Theme.Reset)  $($global:UI_Theme.Muted)[Status: $($u.Status)]$($global:UI_Theme.Reset)"
         }
 
         Divider
@@ -499,10 +499,10 @@ function Show-USB {
 
         if ($usbDev) {
             foreach ($d in $usbDev) {
-                Write-Host "    $($global:UI_GRN)  * $($d.FriendlyName)$($global:UI_R)"
+                Write-Host "    $($global:UI_Theme.Success)  * $($d.FriendlyName)$($global:UI_Theme.Reset)"
             }
         } else {
-            Write-Host "    $($global:UI_GRY)  No extra USB devices found (try running as Admin).$($global:UI_R)"
+            Write-Host "    $($global:UI_Theme.Muted)  No extra USB devices found (try running as Admin).$($global:UI_Theme.Reset)"
         }
     } catch {
 		Write-CoreError "Could not retrieve USB info: $($_)"
@@ -519,14 +519,14 @@ function Show-Bluetooth {
         if ($bt) {
             Section ">>" "BLUETOOTH DEVICES"
             foreach ($b in $bt) {
-                $sc = if ($b.Status -eq "OK") { $global:UI_GRN } else { $global:UI_YLW }
-                Write-Host "    ${sc}  * $($b.FriendlyName)$($global:UI_R)  $($global:UI_GRY)[$($b.Status)]$($global:UI_R)"
+                $sc = if ($b.Status -eq "OK") { $global:UI_Theme.Success } else { $global:UI_Theme.Warning }
+                Write-Host "    ${sc}  * $($b.FriendlyName)$($global:UI_Theme.Reset)  $($global:UI_Theme.Muted)[$($b.Status)]$($global:UI_Theme.Reset)"
             }
         } else {
-            Write-Host "    $($global:UI_GRY)  No Bluetooth devices found.$($global:UI_R)"
+            Write-Host "    $($global:UI_Theme.Muted)  No Bluetooth devices found.$($global:UI_Theme.Reset)"
         }
     } catch {
-        Write-Host "    $($global:UI_YLW)  Bluetooth query may need Admin.$($global:UI_R)"
+        Write-Host "    $($global:UI_Theme.Warning)  Bluetooth query may need Admin.$($global:UI_Theme.Reset)"
     }
 }
 
@@ -555,7 +555,7 @@ function Show-Network {
             $wifi = netsh wlan show interfaces 2>$null
             if ($wifi -match "SSID") {
                 Divider
-                Write-Host "    $($global:UI_BLU)$($global:UI_B)  Wi-Fi Details:$($global:UI_R)"
+                Write-Host "    $($global:UI_Theme.Accent)$($global:UI_Theme.Bold)  Wi-Fi Details:$($global:UI_Theme.Reset)"
                 $wifi | Where-Object { $_ -match "^\s+(SSID|Signal|Radio type|Authentication|Channel)\s+:" } | ForEach-Object {
                     $parts = $_ -split ":", 2
                     if ($parts.Count -eq 2) {
@@ -582,7 +582,7 @@ function Show-Battery {
                 Row "Name" $b.Name
                 $pct = $b.EstimatedChargeRemaining
                 $bar = MakeBar $pct 40
-                Write-Host "    $($global:UI_DIM)$($global:UI_WHT)Charge Level               $($global:UI_R)  [$bar] ${pct}%$($global:UI_R)"
+                Write-Host "    $($global:UI_Theme.Dim)$($global:UI_Theme.Text)Charge Level               $($global:UI_Theme.Reset)  [$bar] ${pct}%$($global:UI_Theme.Reset)"
                 $status = switch ($b.BatteryStatus) {
                     1  { "Discharging" }
                     2  { "AC Power" }
@@ -620,8 +620,8 @@ function Show-Battery {
                         Row "Full Charge Cap" "$($bi.FullChargeCapacity) mWh"
                         if ([int]$bi.DesignCapacity -gt 0) {
                             $health = [Math]::Round(([int]$bi.FullChargeCapacity / [int]$bi.DesignCapacity) * 100, 1)
-                            $hc = if ($health -ge 80) { $global:UI_GRN } elseif ($health -ge 50) { $global:UI_YLW } else { $global:UI_RED }
-                            Write-Host "    $($global:UI_DIM)$($global:UI_WHT)Battery Health             $($global:UI_R)  ${hc}$($global:UI_B)${health}% of original capacity$($global:UI_R)"
+                            $hc = if ($health -ge 80) { $global:UI_Theme.Success } elseif ($health -ge 50) { $global:UI_Theme.Warning } else { $global:UI_Theme.Error }
+                            Write-Host "    $($global:UI_Theme.Dim)$($global:UI_Theme.Text)Battery Health             $($global:UI_Theme.Reset)  ${hc}$($global:UI_Theme.Bold)${health}% of original capacity$($global:UI_Theme.Reset)"
                         }
                         Row "Cycle Count" $bi.CycleCount
                     }
@@ -629,7 +629,7 @@ function Show-Battery {
                 }
             } catch {}
         } else {
-            Write-Host "    $($global:UI_GRY)  No battery detected (desktop or VM).$($global:UI_R)"
+            Write-Host "    $($global:UI_Theme.Muted)  No battery detected (desktop or VM).$($global:UI_Theme.Reset)"
         }
     } catch {
 		Write-CoreError "Could not retrieve battery info: $($_)"
@@ -649,14 +649,14 @@ function Show-Cameras {
         if ($cams) {
             Section ">>" "CAMERAS & IMAGING"
             foreach ($c in $cams) {
-                $sc = if ($c.Status -eq "OK") { $global:UI_GRN } else { $global:UI_YLW }
-                Write-Host "    ${sc}  * $($c.FriendlyName)$($global:UI_R)  $($global:UI_GRY)[$($c.Status)]$($global:UI_R)"
+                $sc = if ($c.Status -eq "OK") { $global:UI_Theme.Success } else { $global:UI_Theme.Warning }
+                Write-Host "    ${sc}  * $($c.FriendlyName)$($global:UI_Theme.Reset)  $($global:UI_Theme.Muted)[$($c.Status)]$($global:UI_Theme.Reset)"
             }
         } else {
-            Write-Host "    $($global:UI_GRY)  No cameras detected.$($global:UI_R)"
+            Write-Host "    $($global:UI_Theme.Muted)  No cameras detected.$($global:UI_Theme.Reset)"
         }
     } catch {
-        Write-Host "    $($global:UI_GRY)  Camera query unavailable.$($global:UI_R)"
+        Write-Host "    $($global:UI_Theme.Muted)  Camera query unavailable.$($global:UI_Theme.Reset)"
     }
 }
 
@@ -670,16 +670,16 @@ function Show-Printers {
         if ($printers) {
             Section ">>" "INSTALLED PRINTERS"
             foreach ($p in $printers) {
-                $def = if ($p.Default) { "$($global:UI_YLW)[DEFAULT]  $($global:UI_R)" } else { "" }
-                Write-Host "    $($global:UI_GRN)  * $($p.Name)$($global:UI_R)  $def$($global:UI_GRY)[$($p.PortName)]$($global:UI_R)"
+                $def = if ($p.Default) { "$($global:UI_Theme.Warning)[DEFAULT]  $($global:UI_Theme.Reset)" } else { "" }
+                Write-Host "    $($global:UI_Theme.Success)  * $($p.Name)$($global:UI_Theme.Reset)  $def$($global:UI_Theme.Muted)[$($p.PortName)]$($global:UI_Theme.Reset)"
                 Row "  Driver" $p.DriverName
                 Row "  Network" $p.Network
             }
         } else {
-            Write-Host "    $($global:UI_GRY)  No printers installed.$($global:UI_R)"
+            Write-Host "    $($global:UI_Theme.Muted)  No printers installed.$($global:UI_Theme.Reset)"
         }
     } catch {
-        Write-Host "    $($global:UI_GRY)  Printer query unavailable.$($global:UI_R)"
+        Write-Host "    $($global:UI_Theme.Muted)  Printer query unavailable.$($global:UI_Theme.Reset)"
     }
 }
 
@@ -692,22 +692,22 @@ function Show-Performance {
         Section ">>" "LIVE METRICS"
         $cpuLoad = (Get-CimInstance Win32_Processor | Measure-Object -Property LoadPercentage -Average).Average
         $bar = MakeBar $cpuLoad 40
-        Write-Host "    $($global:UI_DIM)$($global:UI_WHT)CPU Usage                  $($global:UI_R)  [$bar] ${cpuLoad}%$($global:UI_R)"
+        Write-Host "    $($global:UI_Theme.Dim)$($global:UI_Theme.Text)CPU Usage                  $($global:UI_Theme.Reset)  [$bar] ${cpuLoad}%$($global:UI_Theme.Reset)"
 
         $os3    = Get-CimInstance Win32_OperatingSystem
         $totGB  = [Math]::Round($os3.TotalVisibleMemorySize / 1MB, 2)
         $freeGB = [Math]::Round($os3.FreePhysicalMemory / 1MB, 2)
         $ramPct = [Math]::Round((($totGB - $freeGB) / $totGB) * 100, 1)
         $bar    = MakeBar $ramPct 40
-        Write-Host "    $($global:UI_DIM)$($global:UI_WHT)RAM Usage                  $($global:UI_R)  [$bar] ${ramPct}%$($global:UI_R)"
+        Write-Host "    $($global:UI_Theme.Dim)$($global:UI_Theme.Text)RAM Usage                  $($global:UI_Theme.Reset)  [$bar] ${ramPct}%$($global:UI_Theme.Reset)"
 
         Divider
-        Write-Host "    $($global:UI_BLU)$($global:UI_B)  Top 5 Processes by CPU Time:$($global:UI_R)"
+        Write-Host "    $($global:UI_Theme.Accent)$($global:UI_Theme.Bold)  Top 5 Processes by CPU Time:$($global:UI_Theme.Reset)"
         Get-Process | Sort-Object CPU -Descending | Select-Object -First 5 | ForEach-Object {
             $cpuS  = [Math]::Round($_.CPU, 1)
             $memMB = [Math]::Round($_.WorkingSet64 / 1MB, 1)
             $name  = $_.ProcessName.PadRight(25)
-            Write-Host "    $($global:UI_GRN)  $name$($global:UI_R)  CPU: $($global:UI_YLW)${cpuS}s$($global:UI_R)   RAM: $($global:UI_CYN)${memMB} MB$($global:UI_R)"
+            Write-Host "    $($global:UI_Theme.Text)  $name$($global:UI_Theme.Reset)  CPU: $($global:UI_Theme.Warning)${cpuS}s$($global:UI_Theme.Reset)   RAM: $($global:UI_Theme.Info)${memMB} MB$($global:UI_Theme.Reset)"
         }
     } catch {
 		Write-CoreError "Could not retrieve performance info: $($_)"
@@ -759,7 +759,7 @@ while ($true) {
 
         "Q"  {
             Write-UiBlankLine
-            Write-Host "  $($global:UI_CYN)  Goodbye.$($global:UI_R)"
+            Write-Host "  $($global:UI_Theme.Accent)  Goodbye.$($global:UI_Theme.Reset)"
             Write-UiBlankLine
             return
         }
