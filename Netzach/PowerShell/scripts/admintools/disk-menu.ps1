@@ -55,18 +55,18 @@ function Show-Header {
 function Show-Menu {
     Write-UiSection "Disk Tools"
 
-    Write-Host "  $($global:UI_GRN)  1)$($global:UI_R)  Show drive usage"
-    Write-Host "  $($global:UI_GRN)  2)$($global:UI_R)  Show largest folders in a path"
-    Write-Host "  $($global:UI_GRN)  3)$($global:UI_R)  Show largest files in a path"
-    Write-Host "  $($global:UI_GRN)  4)$($global:UI_R)  Show 20 biggest files on system drive"
-    Write-Host "  $($global:UI_GRN)  5)$($global:UI_R)  Show 20 biggest files on system drive (quiet scan)"
-    Write-Host "  $($global:UI_YLW)  6)$($global:UI_R)  Clean user temp files"
-    Write-Host "  $($global:UI_YLW)  7)$($global:UI_R)  Clean Windows temp files"
-    Write-Host "  $($global:UI_RED)  8)$($global:UI_R)  Empty recycle bin"
-    Write-Host "  $($global:UI_CYN)  9)$($global:UI_R)  Export drive usage to CSV"
+    Write-Host "  $($global:UI_Theme.Accent)  1)$($global:UI_Theme.Reset)  Show drive usage"
+    Write-Host "  $($global:UI_Theme.Accent)  2)$($global:UI_Theme.Reset)  Show largest folders in a path"
+    Write-Host "  $($global:UI_Theme.Accent)  3)$($global:UI_Theme.Reset)  Show largest files in a path"
+    Write-Host "  $($global:UI_Theme.Accent)  4)$($global:UI_Theme.Reset)  Show 20 biggest files on system drive"
+    Write-Host "  $($global:UI_Theme.Accent)  5)$($global:UI_Theme.Reset)  Show 20 biggest files on system drive (quiet scan)"
+    Write-Host "  $($global:UI_Theme.Warning)  6)$($global:UI_Theme.Reset)  Clean user temp files"
+    Write-Host "  $($global:UI_Theme.Warning)  7)$($global:UI_Theme.Reset)  Clean Windows temp files"
+    Write-Host "  $($global:UI_Theme.Error)  8)$($global:UI_Theme.Reset)  Empty recycle bin"
+    Write-Host "  $($global:UI_Theme.Info)  9)$($global:UI_Theme.Reset)  Export drive usage to CSV"
 
     Write-UiDivider
-    Write-Host "  $($global:UI_GRY)  Q)$($global:UI_R)  Quit"
+    Write-Host "  $($global:UI_Theme.Muted)  Q)$($global:UI_Theme.Reset)  Quit"
     Write-UiBlankLine
 }
 
@@ -93,8 +93,8 @@ function Format-Bytes($bytes) {
 function MakeBar($pct, $len = 25) {
     $filled = [Math]::Min($len, [Math]::Round($pct / 100 * $len))
     $empty  = $len - $filled
-    $bc     = if ($pct -ge 90) { $global:UI_RED } elseif ($pct -ge 70) { $global:UI_YLW } else { $global:UI_GRN }
-    return "${bc}" + ("#" * $filled) + "$($global:UI_GRY)" + ("-" * $empty) + "$($global:UI_R)"
+    $bc     = if ($pct -ge 90) { $global:UI_Theme.Error } elseif ($pct -ge 70) { $global:UI_Theme.Warning } else { $global:UI_Theme.Success }
+    return "${bc}" + ("#" * $filled) + "$($global:UI_Theme.Muted)" + ("-" * $empty) + "$($global:UI_Theme.Reset)"
 }
 
 # ── Folder size helper ────────────────────────────────────────
@@ -123,14 +123,14 @@ function Show-DriveUsage {
             $pct     = if ($totalGB -gt 0) { [Math]::Round(($usedGB / $totalGB) * 100, 1) } else { 0 }
             $bar     = MakeBar $pct
 
-            $usedColor = if ($pct -ge 90) { $global:UI_RED } elseif ($pct -ge 70) { $global:UI_YLW } else { $global:UI_GRN }
+            $usedColor = if ($pct -ge 90) { $global:UI_Theme.Error } elseif ($pct -ge 70) { $global:UI_Theme.Warning } else { $global:UI_Theme.Success }
 
-            Write-Host "  $($global:UI_MAG)$($global:UI_B)  $($_.DeviceID)  $($_.VolumeName)$($global:UI_R)  $($global:UI_GRY)[$($_.FileSystem)]$($global:UI_R)"
-            Write-Host "  $($global:UI_GRY)  ----------------------------------------------------$($global:UI_R)"
-            Write-Host "  $($global:UI_DIM)$($global:UI_WHT)  $("Used".PadRight(10))$($global:UI_R)  ${usedColor}$usedGB GB  ($pct%)$($global:UI_R)"
-            Write-Host "  $($global:UI_DIM)$($global:UI_WHT)  $("Free".PadRight(10))$($global:UI_R)  $($global:UI_GRN)$freeGB GB$($global:UI_R)"
-            Write-Host "  $($global:UI_DIM)$($global:UI_WHT)  $("Total".PadRight(10))$($global:UI_R)  $($global:UI_GRY)$totalGB GB$($global:UI_R)"
-            Write-Host "  $($global:UI_DIM)$($global:UI_WHT)  $("Usage".PadRight(10))$($global:UI_R)  [$bar] ${usedColor}$pct%$($global:UI_R)"
+            Write-Host "  $($global:UI_Theme.Secondary)$($global:UI_Theme.Bold)  $($_.DeviceID)  $($_.VolumeName)$($global:UI_Theme.Reset)  $($global:UI_Theme.Muted)[$($_.FileSystem)]$($global:UI_Theme.Reset)"
+            Write-Host "  $($global:UI_Theme.Muted)  ----------------------------------------------------$($global:UI_Theme.Reset)"
+            Write-Host "  $($global:UI_Theme.Dim)$($global:UI_Theme.Text)  $("Used".PadRight(10))$($global:UI_Theme.Reset)  ${usedColor}$usedGB GB  ($pct%)$($global:UI_Theme.Reset)"
+            Write-Host "  $($global:UI_Theme.Dim)$($global:UI_Theme.Text)  $("Free".PadRight(10))$($global:UI_Theme.Reset)  $($global:UI_Theme.Success)$freeGB GB$($global:UI_Theme.Reset)"
+            Write-Host "  $($global:UI_Theme.Dim)$($global:UI_Theme.Text)  $("Total".PadRight(10))$($global:UI_Theme.Reset)  $($global:UI_Theme.Muted)$totalGB GB$($global:UI_Theme.Reset)"
+            Write-Host "  $($global:UI_Theme.Dim)$($global:UI_Theme.Text)  $("Usage".PadRight(10))$($global:UI_Theme.Reset)  [$bar] ${usedColor}$pct%$($global:UI_Theme.Reset)"
             Write-UiBlankLine
         }
     } catch {
@@ -143,7 +143,7 @@ function Show-LargestFolders {
     Show-Header
     $w = Get-UiBoxWidth -MaxWidth 52 -MinWidth 40
     Write-UiBoxTitle -Title "LARGEST FOLDERS" -Width $w
-    Write-Host -NoNewline "  $($global:UI_YLW)  Path (default C:\): $($global:UI_R)"
+    Write-Host -NoNewline "  $($global:UI_Theme.Warning)  Path (default C:\): $($global:UI_Theme.Reset)"
     $targetPath = Read-Host
     if (-not $targetPath) { $targetPath = "C:\" }
 
@@ -153,8 +153,8 @@ function Show-LargestFolders {
     }
 
     Write-UiBlankLine
-    Write-Host "  $($global:UI_CYN)  Scanning top-level folders in: $targetPath$($global:UI_R)"
-    Write-Host "  $($global:UI_GRY)  This may take a moment...$($global:UI_R)"
+    Write-Host "  $($global:UI_Theme.Info)  Scanning top-level folders in: $targetPath$($global:UI_Theme.Reset)"
+    Write-Host "  $($global:UI_Theme.Muted)  This may take a moment...$($global:UI_Theme.Reset)"
     Write-UiBlankLine
 
     try {
@@ -165,15 +165,15 @@ function Show-LargestFolders {
             } | Sort-Object Size -Descending | Select-Object -First 15
 
         if (-not $results) {
-            Write-Host "  $($global:UI_GRY)  No folders found.$($global:UI_R)"
+            Write-Host "  $($global:UI_Theme.Muted)  No folders found.$($global:UI_Theme.Reset)"
             return
         }
 
-        Write-Host "  $($global:UI_GRY)  Size          Folder$($global:UI_R)"
-        Write-Host "  $($global:UI_GRY)  ----------    ------$($global:UI_R)"
+        Write-Host "  $($global:UI_Theme.Muted)  Size          Folder$($global:UI_Theme.Reset)"
+        Write-Host "  $($global:UI_Theme.Muted)  ----------    ------$($global:UI_Theme.Reset)"
         foreach ($r in $results) {
             $sizeStr = (Format-Bytes $r.Size).PadRight(12)
-            Write-Host "  $($global:UI_GRN)  $sizeStr$($global:UI_R)  $($global:UI_WHT)$($r.Folder)$($global:UI_R)"
+            Write-Host "  $($global:UI_Theme.Accent)  $sizeStr$($global:UI_Theme.Reset)  $($global:UI_Theme.Text)$($r.Folder)$($global:UI_Theme.Reset)"
         }
     } catch {
         Write-CoreError "Failed: $($_.Exception.Message)"
@@ -186,7 +186,7 @@ function Show-LargestFiles {
     $w = Get-UiBoxWidth -MaxWidth 52 -MinWidth 40
     Write-UiBoxTitle -Title "LARGEST FILES" -Width $w
     Write-UiBlankLine
-    Write-Host -NoNewline "  $($global:UI_YLW)  Path (default C:\Users): $($global:UI_R)"
+    Write-Host -NoNewline "  $($global:UI_Theme.Warning)  Path (default C:\Users): $($global:UI_Theme.Reset)"
     $targetPath = Read-Host
     if (-not $targetPath) { $targetPath = "$env:USERPROFILE" }
 
@@ -196,8 +196,8 @@ function Show-LargestFiles {
     }
 
     Write-UiBlankLine
-    Write-Host "  $($global:UI_CYN)  Scanning: $targetPath$($global:UI_R)"
-    Write-Host "  $($global:UI_GRY)  This may take a moment...$($global:UI_R)"
+    Write-Host "  $($global:UI_Theme.Info)  Scanning: $targetPath$($global:UI_Theme.Reset)"
+    Write-Host "  $($global:UI_Theme.Muted)  This may take a moment...$($global:UI_Theme.Reset)"
     Write-UiBlankLine
 
     try {
@@ -205,15 +205,15 @@ function Show-LargestFiles {
             Sort-Object Length -Descending | Select-Object -First 20
 
         if (-not $files) {
-            Write-Host "  $($global:UI_GRY)  No files found.$($global:UI_R)"
+            Write-Host "  $($global:UI_Theme.Muted)  No files found.$($global:UI_Theme.Reset)"
             return
         }
 
-        Write-Host "  $($global:UI_GRY)  Size          File$($global:UI_R)"
-        Write-Host "  $($global:UI_GRY)  ----------    ----$($global:UI_R)"
+        Write-Host "  $($global:UI_Theme.Muted)  Size          File$($global:UI_Theme.Reset)"
+        Write-Host "  $($global:UI_Theme.Muted)  ----------    ----$($global:UI_Theme.Reset)"
         foreach ($f in $files) {
             $sizeStr = (Format-Bytes $f.Length).PadRight(12)
-            Write-Host "  $($global:UI_GRN)  $sizeStr$($global:UI_R)  $($global:UI_WHT)$($f.FullName)$($global:UI_R)"
+            Write-Host "  $($global:UI_Theme.Accent)  $sizeStr$($global:UI_Theme.Reset)  $($global:UI_Theme.Text)$($f.FullName)$($global:UI_Theme.Reset)"
         }
     } catch {
         Write-CoreError "Failed: $($_.Exception.Message)"
@@ -242,11 +242,11 @@ function Show-BiggestSystemFiles($quiet = $false) {
         "$sysDrive\System Volume Information"
     )
 
-    Write-Host "  $($global:UI_CYN)  Scanning: $sysDrive\$($global:UI_R)"
+    Write-Host "  $($global:UI_Theme.Info)  Scanning: $sysDrive\$($global:UI_Theme.Reset)"
     if ($quiet) {
-        Write-Host "  $($global:UI_GRY)  Excluding system/WinSxS folders for faster results$($global:UI_R)"
+        Write-Host "  $($global:UI_Theme.Muted)  Excluding system/WinSxS folders for faster results$($global:UI_Theme.Reset)"
     }
-    Write-Host "  $($global:UI_GRY)  This will take a while...$($global:UI_R)"
+    Write-Host "  $($global:UI_Theme.Muted)  This will take a while...$($global:UI_Theme.Reset)"
     Write-UiBlankLine
 
     try {
@@ -261,12 +261,12 @@ function Show-BiggestSystemFiles($quiet = $false) {
 
         $top = $files | Sort-Object Length -Descending | Select-Object -First 20
 
-        Write-Host "  $($global:UI_GRY)  Size          File$($global:UI_R)"
-        Write-Host "  $($global:UI_GRY)  ----------    ----$($global:UI_R)"
+        Write-Host "  $($global:UI_Theme.Muted)  Size          File$($global:UI_Theme.Reset)"
+        Write-Host "  $($global:UI_Theme.Muted)  ----------    ----$($global:UI_Theme.Reset)"
         foreach ($f in $top) {
             $sizeStr = (Format-Bytes $f.Length).PadRight(12)
-            $sizeColor = if ($f.Length -ge 1GB) { $global:UI_RED } elseif ($f.Length -ge 500MB) { $global:UI_YLW } else { $global:UI_GRN }
-            Write-Host "  ${sizeColor}  $sizeStr$($global:UI_R)  $($global:UI_WHT)$($f.FullName)$($global:UI_R)"
+            $sizeColor = if ($f.Length -ge 1GB) { $global:UI_Theme.Error } elseif ($f.Length -ge 500MB) { $global:UI_Theme.Warning } else { $global:UI_Theme.Success }
+            Write-Host "  ${sizeColor}  $sizeStr$($global:UI_Theme.Reset)  $($global:UI_Theme.Text)$($f.FullName)$($global:UI_Theme.Reset)"
         }
     } catch {
         Write-CoreError "Failed: $($_.Exception.Message)"
@@ -280,23 +280,23 @@ function Clean-UserTemp {
     Write-UiBoxTitle -Title "CLEAN USER TEMP" -Width $w
 
     $tempPath = $env:TEMP
-    Write-Host "  $($global:UI_DIM)$($global:UI_WHT)  Path      $($global:UI_R)  $($global:UI_GRY)$tempPath$($global:UI_R)"
+    Write-Host "  $($global:UI_Theme.Dim)$($global:UI_Theme.Text)  Path      $($global:UI_Theme.Reset)  $($global:UI_Theme.Muted)$tempPath$($global:UI_Theme.Reset)"
 
     $items = Get-ChildItem -LiteralPath $tempPath -Force -ErrorAction SilentlyContinue
     $count = ($items | Measure-Object).Count
     $size  = ($items | Get-ChildItem -Recurse -Force -ErrorAction SilentlyContinue |
         Measure-Object -Property Length -Sum).Sum
-    Write-Host "  $($global:UI_DIM)$($global:UI_WHT)  Items     $($global:UI_R)  $($global:UI_YLW)$count files/folders$($global:UI_R)"
-    Write-Host "  $($global:UI_DIM)$($global:UI_WHT)  Est. size $($global:UI_R)  $($global:UI_YLW)$(Format-Bytes $size)$($global:UI_R)"
+    Write-Host "  $($global:UI_Theme.Dim)$($global:UI_Theme.Text)  Items     $($global:UI_Theme.Reset)  $($global:UI_Theme.Warning)$count files/folders$($global:UI_Theme.Reset)"
+    Write-Host "  $($global:UI_Theme.Dim)$($global:UI_Theme.Text)  Est. size $($global:UI_Theme.Reset)  $($global:UI_Theme.Warning)$(Format-Bytes $size)$($global:UI_Theme.Reset)"
     Write-UiBlankLine
 
     if (-not (Confirm-Action "Delete files from user temp?")) {
-        Write-Host "  $($global:UI_GRY)  Cancelled.$($global:UI_R)"
+        Write-Host "  $($global:UI_Theme.Muted)  Cancelled.$($global:UI_Theme.Reset)"
         return
     }
 
     Write-UiBlankLine
-    Write-Host "  $($global:UI_CYN)  Cleaning...$($global:UI_R)"
+    Write-Host "  $($global:UI_Theme.Info)  Cleaning...$($global:UI_Theme.Reset)"
     $deleted = 0
     $failed = 0
     foreach ($item in $items) {
@@ -317,24 +317,24 @@ function Clean-WindowsTemp {
     Write-UiBoxTitle -Title "CLEAN WINDOWS TEMP" -Width $w
 
     $tempPath = Join-Path $env:SystemRoot "Temp"
-    Write-Host "  $($global:UI_DIM)$($global:UI_WHT)  Path      $($global:UI_R)  $($global:UI_GRY)$tempPath$($global:UI_R)"
-    Write-Host "  $($global:UI_YLW)  Admin rights required for some files.$($global:UI_R)"
+    Write-Host "  $($global:UI_Theme.Dim)$($global:UI_Theme.Text)  Path      $($global:UI_Theme.Reset)  $($global:UI_Theme.Muted)$tempPath$($global:UI_Theme.Reset)"
+    Write-Host "  $($global:UI_Theme.Warning)  Admin rights required for some files.$($global:UI_Theme.Reset)"
 
     $items = Get-ChildItem -LiteralPath $tempPath -Force -ErrorAction SilentlyContinue
     $count = ($items | Measure-Object).Count
     $size  = ($items | Get-ChildItem -Recurse -Force -ErrorAction SilentlyContinue |
         Measure-Object -Property Length -Sum).Sum
-    Write-Host "  $($global:UI_DIM)$($global:UI_WHT)  Items     $($global:UI_R)  $($global:UI_YLW)$count files/folders$($global:UI_R)"
-    Write-Host "  $($global:UI_DIM)$($global:UI_WHT)  Est. size $($global:UI_R)  $($global:UI_YLW)$(Format-Bytes $size)$($global:UI_R)"
+    Write-Host "  $($global:UI_Theme.Dim)$($global:UI_Theme.Text)  Items     $($global:UI_Theme.Reset)  $($global:UI_Theme.Warning)$count files/folders$($global:UI_Theme.Reset)"
+    Write-Host "  $($global:UI_Theme.Dim)$($global:UI_Theme.Text)  Est. size $($global:UI_Theme.Reset)  $($global:UI_Theme.Warning)$(Format-Bytes $size)$($global:UI_Theme.Reset)"
     Write-UiBlankLine
 
     if (-not (Confirm-Action "Delete files from Windows temp?")) {
-        Write-Host "  $($global:UI_GRY)  Cancelled.$($global:UI_R)"
+        Write-Host "  $($global:UI_Theme.Muted)  Cancelled.$($global:UI_Theme.Reset)"
         return
     }
 
     Write-UiBlankLine
-    Write-Host "  $($global:UI_CYN)  Cleaning...$($global:UI_R)"
+    Write-Host "  $($global:UI_Theme.Info)  Cleaning...$($global:UI_Theme.Reset)"
     $deleted = 0
     $failed = 0
     foreach ($item in $items) {
@@ -355,7 +355,7 @@ function Empty-RecycleBin {
     Write-UiBoxTitle -Title "EMPTY RECYCLE BIN" -Width $w
 
     if (-not (Confirm-Action "Empty the recycle bin?")) {
-        Write-Host "  $($global:UI_GRY)  Cancelled.$($global:UI_R)"
+        Write-Host "  $($global:UI_Theme.Muted)  Cancelled.$($global:UI_Theme.Reset)"
         return
     }
 
@@ -374,8 +374,8 @@ function Export-DriveUsageCsv {
     Write-UiBoxTitle -Title "EXPORT DRIVE USAGE CSV" -Width $w
 
     $defaultFile = "$HOME\drive_usage_$(Get-Date -Format 'yyyyMMdd_HHmmss').csv"
-    Write-Host "  $($global:UI_GRY)  Default: $defaultFile$($global:UI_R)"
-    Write-Host -NoNewline "  $($global:UI_YLW)  Output path (Enter for default): $($global:UI_R)"
+    Write-Host "  $($global:UI_Theme.Muted)  Default: $defaultFile$($global:UI_Theme.Reset)"
+    Write-Host -NoNewline "  $($global:UI_Theme.Warning)  Output path (Enter for default): $($global:UI_Theme.Reset)"
     $outFile = Read-Host
     if (-not $outFile) { $outFile = $defaultFile }
 
@@ -420,7 +420,7 @@ while ($true) {
 
         "Q" {
             Write-UiBlankLine
-            Write-Host "  $($global:UI_CYN)  Bye.$($global:UI_R)"
+            Write-Host "  $($global:UI_Theme.Accent)  Bye.$($global:UI_Theme.Reset)"
             Write-UiBlankLine
             return
         }
