@@ -39,7 +39,7 @@ if (-not $global:UI_Theme) {
 }
 
 # ── Logging toggle ────────────────────────────────────────────
-$global:CORE_LOG_ENABLED = $false
+$global:CORE_LOG_ENABLED = $true
 $global:CORE_LOG_FILE    = "$env:USERPROFILE\PS\logs\toolkit.log"
 
 # ── Enable logging ────────────────────────────────────────────
