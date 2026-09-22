@@ -17,7 +17,6 @@ $global:LocalLogPullDir = Join-Path $HOME "Downloads\arakiel-logs"
 
 # ── Remote paths ──────────────────────────────────────────────
 $global:RemoteWorkDir = "/mnt/nvme1/work"
-$global:RemoteBotsDir = "/mnt/nvme1/work/bots"
 $global:RemoteLogsDir = "/mnt/nvme1/work/bots/logs"
 
 # ── SSH helpers ───────────────────────────────────────────────
