@@ -97,6 +97,86 @@ It-Works-On-My-Machine/
 └── README.md
 ```
 
+## Configuration Model
+
+The repository is the canonical source for maintained machine configuration.
+Live files are deployed from the tracked machine trees, while generated,
+runtime, cache, secret, and native dependency files remain local where
+appropriate.
+
+### Netzach
+
+Tracked PowerShell source:
+
+    Netzach/PowerShell/
+
+Live PowerShell deployment:
+
+    $HOME\PS\
+
+Tracked Vim source:
+
+    Netzach/config/vim/
+
+Live Vim configuration:
+
+    $HOME\_vimrc
+    $HOME\config\vim\vimrc
+
+`$HOME\_vimrc` is only a compatibility loader. The canonical live Vim
+configuration is `$HOME\config\vim\vimrc`.
+
+Detailed Netzach architecture and synchronization rules are documented in
+[`Netzach/README.md`](Netzach/README.md).
+
+### Arakiel
+
+Tracked machine configuration lives under:
+
+    Arakiel/
+
+Live configuration follows the corresponding Linux locations under `$HOME`,
+`$HOME/.config`, `$HOME/.local/bin`, and the system locations documented by
+the individual components.
+
+Shared shell implementations live under `Arakiel/lib/`, while Bash and Zsh
+loaders remain deliberately small.
+
+Detailed Arakiel architecture and synchronization rules are documented in
+[`Arakiel/README.md`](Arakiel/README.md).
+
+### Generated and local-only state
+
+Generated ThemeEngine output, application caches, logs, local credentials,
+runtime configuration, editor state, and native dependencies are not treated
+as source drift when intentionally excluded from version control.
+
+Home-relative paths should use `$HOME` in scripts and documentation rather
+than embedding a specific Windows or Linux username.
+
+Environment-owned Windows paths should use variables such as
+`$env:LOCALAPPDATA`, `$env:APPDATA`, and `$env:TEMP`.
+
+### Repository flow
+
+Forgejo is the primary working remote and GitHub is the public mirror.
+
+Maintained configuration changes should normally follow this flow:
+
+    tracked source
+        -> validation
+        -> live deployment
+        -> runtime verification
+        -> Forgejo
+        -> GitHub
+
+The desired steady state is:
+
+    tracked source == live deployed source
+
+except for explicitly documented generated, secret, cache, log, state, and
+runtime-only files.
+
 ## Shell Environment
 
 Netzach and Arakiel are different operating systems, but the interactive shell experience is intended to remain familiar between them.
