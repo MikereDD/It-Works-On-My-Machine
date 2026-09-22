@@ -13,8 +13,6 @@ $global:ArakielHost = "arakiel.local"
 $global:ArakielSSH  = "$global:ArakielUser@$global:ArakielHost"
 
 # ── Local paths ───────────────────────────────────────────────
-$global:LocalRepoDir = Join-Path $HOME "GitHub\It-Works-On-My-Machine"
-$global:LocalBotsDir = Join-Path $global:LocalRepoDir "Bots"
 $global:LocalLogPullDir = Join-Path $HOME "Downloads\arakiel-logs"
 
 # ── Remote paths ──────────────────────────────────────────────
@@ -61,16 +59,6 @@ function arakiel-fastfetch {
 }
 
 # ── File copy helpers ─────────────────────────────────────────
-function push-bots {
-    if (-not (Test-Path $global:LocalBotsDir)) {
-        Write-Host "  $($global:UI_Theme.Warning)Local Bots directory not found: $global:LocalBotsDir$($global:UI_Theme.Reset)"
-        return
-    }
-
-    scp -r `
-        $global:LocalBotsDir `
-        "$global:ArakielSSH`:$global:RemoteWorkDir/"
-}
 
 function pull-logs {
     New-Item -ItemType Directory -Force -Path $global:LocalLogPullDir | Out-Null
