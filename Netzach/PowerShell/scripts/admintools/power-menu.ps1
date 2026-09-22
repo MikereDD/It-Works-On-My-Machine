@@ -73,40 +73,40 @@ function Show-Header {
     $uptime = Get-Uptime
 
     Write-UiRow "User"   "$env:USERNAME@$env:COMPUTERNAME"
-    Write-UiRow "Time"   $ts $global:UI_GRY
-    Write-UiRow "Uptime" $uptime $global:UI_GRY
-    Write-UiRow "Version" "v$Version  by $Author" $global:UI_GRY
+    Write-UiRow "Time"   $ts $global:UI_Theme.Muted
+    Write-UiRow "Uptime" $uptime $global:UI_Theme.Muted
+    Write-UiRow "Version" "v$Version  by $Author" $global:UI_Theme.Muted
     Write-UiBlankLine
 }
 
 # ── Menu ──────────────────────────────────────────────────────
 function Show-Menu($hibernateOK) {
     Write-UiDivider
-    Write-Host "  $($global:UI_GRN)  1)$($global:UI_R)  Sleep"
+    Write-Host "  $($global:UI_Theme.Accent)  1)$($global:UI_Theme.Reset)  Sleep"
 
     if ($hibernateOK) {
-        Write-Host "  $($global:UI_GRN)  2)$($global:UI_R)  Hibernate"
+        Write-Host "  $($global:UI_Theme.Accent)  2)$($global:UI_Theme.Reset)  Hibernate"
     } else {
-        Write-Host "  $($global:UI_GRY)  2)  Hibernate  $($global:UI_DIM)(unavailable on this system)$($global:UI_R)"
+        Write-Host "  $($global:UI_Theme.Muted)  2)  Hibernate  $($global:UI_Theme.Dim)(unavailable on this system)$($global:UI_Theme.Reset)"
     }
 
-    Write-Host "  $($global:UI_GRN)  3)$($global:UI_R)  Lock Screen"
+    Write-Host "  $($global:UI_Theme.Accent)  3)$($global:UI_Theme.Reset)  Lock Screen"
     Write-UiDivider
-    Write-Host "  $($global:UI_YLW)  4)$($global:UI_R)  Restart"
-    Write-Host "  $($global:UI_YLW)  5)$($global:UI_R)  Restart in...  $($global:UI_DIM)(delayed)$($global:UI_R)"
-    Write-Host "  $($global:UI_RED)  6)$($global:UI_R)  Shutdown"
-    Write-Host "  $($global:UI_RED)  7)$($global:UI_R)  Shutdown in... $($global:UI_DIM)(delayed)$($global:UI_R)"
+    Write-Host "  $($global:UI_Theme.Warning)  4)$($global:UI_Theme.Reset)  Restart"
+    Write-Host "  $($global:UI_Theme.Warning)  5)$($global:UI_Theme.Reset)  Restart in...  $($global:UI_Theme.Dim)(delayed)$($global:UI_Theme.Reset)"
+    Write-Host "  $($global:UI_Theme.Error)  6)$($global:UI_Theme.Reset)  Shutdown"
+    Write-Host "  $($global:UI_Theme.Error)  7)$($global:UI_Theme.Reset)  Shutdown in... $($global:UI_Theme.Dim)(delayed)$($global:UI_Theme.Reset)"
     Write-UiDivider
-    Write-Host "  $($global:UI_MAG)  8)$($global:UI_R)  Log Off"
+    Write-Host "  $($global:UI_Theme.Secondary)  8)$($global:UI_Theme.Reset)  Log Off"
     Write-UiDivider
-    Write-Host "  $($global:UI_GRY)  Q)$($global:UI_R)  Quit"
+    Write-Host "  $($global:UI_Theme.Muted)  Q)$($global:UI_Theme.Reset)  Quit"
     Write-UiBlankLine
 }
 
 # ── Countdown abort window ────────────────────────────────────
 function Start-Countdown($action, $seconds = 5) {
     Write-UiBlankLine
-    Write-Host "  $($global:UI_YLW)$($global:UI_B)  $action in $seconds seconds.  Press any key to cancel...$($global:UI_R)"
+    Write-Host "  $($global:UI_Theme.Warning)$($global:UI_Theme.Bold)  $action in $seconds seconds.  Press any key to cancel...$($global:UI_Theme.Reset)"
     Write-UiBlankLine
 
     $elapsed = 0
@@ -119,12 +119,12 @@ function Start-Countdown($action, $seconds = 5) {
         }
 
         $remaining = $seconds - $elapsed
-        Write-Host -NoNewline "`r  $($global:UI_RED)$($global:UI_B)  $remaining...  $($global:UI_R)   "
+        Write-Host -NoNewline "`r  $($global:UI_Theme.Error)$($global:UI_Theme.Bold)  $remaining...  $($global:UI_Theme.Reset)   "
         Start-Sleep -Seconds 1
         $elapsed++
     }
 
-    Write-Host -NoNewline "`r  $($global:UI_RED)$($global:UI_B)  Executing...   $($global:UI_R)"
+    Write-Host -NoNewline "`r  $($global:UI_Theme.Error)$($global:UI_Theme.Bold)  Executing...   $($global:UI_Theme.Reset)"
     Write-Host ""
     return $true
 }
@@ -132,10 +132,10 @@ function Start-Countdown($action, $seconds = 5) {
 # ── Delayed shutdown/restart prompt ───────────────────────────
 function Get-DelayMinutes($action) {
     Write-UiBlankLine
-    Write-Host "  $($global:UI_YLW)  $action in how many minutes?$($global:UI_R)"
-    Write-Host "  $($global:UI_GRY)  (Enter 0 to cancel, max 1440)$($global:UI_R)"
+    Write-Host "  $($global:UI_Theme.Warning)  $action in how many minutes?$($global:UI_Theme.Reset)"
+    Write-Host "  $($global:UI_Theme.Muted)  (Enter 0 to cancel, max 1440)$($global:UI_Theme.Reset)"
     Write-UiBlankLine
-    Write-Host -NoNewline "  $($global:UI_YLW)  Minutes: $($global:UI_R)"
+    Write-Host -NoNewline "  $($global:UI_Theme.Warning)  Minutes: $($global:UI_Theme.Reset)"
     $input = Read-Host
 
     if ($input -match '^\d+$') {
@@ -143,7 +143,7 @@ function Get-DelayMinutes($action) {
         if ($mins -eq 0) { return $null }
 
         if ($mins -gt 1440) {
-            Write-Host "  $($global:UI_RED)  Max is 1440 minutes (24 hours).$($global:UI_R)"
+            Write-Host "  $($global:UI_Theme.Error)  Max is 1440 minutes (24 hours).$($global:UI_Theme.Reset)"
             Start-Sleep -Seconds 2
             return $null
         }
@@ -164,7 +164,7 @@ function Confirm($message) {
 # ── Cancel scheduled shutdown ─────────────────────────────────
 function Cancel-Scheduled {
     shutdown.exe /a 2>$null
-    Write-Host "  $($global:UI_GRN)  Any scheduled shutdown/restart has been cancelled.$($global:UI_R)"
+    Write-Host "  $($global:UI_Theme.Success)  Any scheduled shutdown/restart has been cancelled.$($global:UI_Theme.Reset)"
     Start-Sleep -Seconds 2
 }
 
@@ -191,7 +191,7 @@ while ($true) {
         # ── Hibernate ──────────────────────────────────────────
         "2" {
             if (-not $hibernateOK) {
-                Write-Host "  $($global:UI_RED)  Hibernate is not available on this system.$($global:UI_R)"
+                Write-Host "  $($global:UI_Theme.Error)  Hibernate is not available on this system.$($global:UI_Theme.Reset)"
                 Start-Sleep -Seconds 2
                 continue
             }
@@ -205,7 +205,7 @@ while ($true) {
 
         # ── Lock Screen ────────────────────────────────────────
         "3" {
-            Write-Host "  $($global:UI_GRN)  Locking screen...$($global:UI_R)"
+            Write-Host "  $($global:UI_Theme.Accent)  Locking screen...$($global:UI_Theme.Reset)"
             Start-Sleep -Milliseconds 500
             rundll32.exe user32.dll,LockWorkStation
         }
@@ -227,8 +227,8 @@ while ($true) {
                 $when = (Get-Date).AddMinutes($mins).ToString("HH:mm")
                 if (Confirm "Schedule restart in $mins minute(s) at $when?") {
                     shutdown.exe /r /t $secs /c "Scheduled restart via Power Menu"
-                    Write-Host "  $($global:UI_GRN)  Restart scheduled for $when  ($mins min).$($global:UI_R)"
-                    Write-Host "  $($global:UI_GRY)  Run this script again and choose option 5 again to cancel.$($global:UI_R)"
+                    Write-Host "  $($global:UI_Theme.Success)  Restart scheduled for $when  ($mins min).$($global:UI_Theme.Reset)"
+                    Write-Host "  $($global:UI_Theme.Muted)  Run this script again and choose option 5 again to cancel.$($global:UI_Theme.Reset)"
                     Start-Sleep -Seconds 3
                 }
             }
@@ -251,8 +251,8 @@ while ($true) {
                 $when = (Get-Date).AddMinutes($mins).ToString("HH:mm")
                 if (Confirm "Schedule shutdown in $mins minute(s) at $when?") {
                     shutdown.exe /s /t $secs /c "Scheduled shutdown via Power Menu"
-                    Write-Host "  $($global:UI_GRN)  Shutdown scheduled for $when  ($mins min).$($global:UI_R)"
-                    Write-Host "  $($global:UI_GRY)  Run this script again and choose option 7 again to cancel.$($global:UI_R)"
+                    Write-Host "  $($global:UI_Theme.Success)  Shutdown scheduled for $when  ($mins min).$($global:UI_Theme.Reset)"
+                    Write-Host "  $($global:UI_Theme.Muted)  Run this script again and choose option 7 again to cancel.$($global:UI_Theme.Reset)"
                     Start-Sleep -Seconds 3
                 }
             }
