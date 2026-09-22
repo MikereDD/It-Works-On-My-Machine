@@ -48,22 +48,22 @@ function Show-Header {
 
     Write-UiHeader -Title $ScriptName -Subtitle "v$ScriptVersion  by $ScriptAuthor" -Width $w
     Write-UiRow "User" "$env:USERNAME@$env:COMPUTERNAME"
-    Write-UiRow "Version" "v$ScriptVersion  by $ScriptAuthor" $global:UI_GRY
+    Write-UiRow "Version" "v$ScriptVersion  by $ScriptAuthor" $global:UI_Theme.Muted
     Write-UiBlankLine
 }
 
 function Show-Menu {
     Write-UiDivider
-    Write-Host "  $($global:UI_GRN)  1)$($global:UI_R)  Watch top CPU processes"
-    Write-Host "  $($global:UI_GRN)  2)$($global:UI_R)  Watch top memory processes"
-    Write-Host "  $($global:UI_GRN)  3)$($global:UI_R)  Watch active TCP connections"
-    Write-Host "  $($global:UI_GRN)  4)$($global:UI_R)  Watch listening ports"
-    Write-Host "  $($global:UI_GRN)  5)$($global:UI_R)  Watch drive usage"
-    Write-Host "  $($global:UI_GRN)  6)$($global:UI_R)  Watch service status"
-    Write-Host "  $($global:UI_GRN)  7)$($global:UI_R)  Watch recent System errors"
-    Write-Host "  $($global:UI_GRN)  8)$($global:UI_R)  Watch custom command"
+    Write-Host "  $($global:UI_Theme.Accent)  1)$($global:UI_Theme.Reset)  Watch top CPU processes"
+    Write-Host "  $($global:UI_Theme.Accent)  2)$($global:UI_Theme.Reset)  Watch top memory processes"
+    Write-Host "  $($global:UI_Theme.Accent)  3)$($global:UI_Theme.Reset)  Watch active TCP connections"
+    Write-Host "  $($global:UI_Theme.Accent)  4)$($global:UI_Theme.Reset)  Watch listening ports"
+    Write-Host "  $($global:UI_Theme.Accent)  5)$($global:UI_Theme.Reset)  Watch drive usage"
+    Write-Host "  $($global:UI_Theme.Accent)  6)$($global:UI_Theme.Reset)  Watch service status"
+    Write-Host "  $($global:UI_Theme.Accent)  7)$($global:UI_Theme.Reset)  Watch recent System errors"
+    Write-Host "  $($global:UI_Theme.Accent)  8)$($global:UI_Theme.Reset)  Watch custom command"
     Write-UiDivider
-    Write-Host "  $($global:UI_GRY)  Q)$($global:UI_R)  Quit"
+    Write-Host "  $($global:UI_Theme.Muted)  Q)$($global:UI_Theme.Reset)  Quit"
     Write-UiBlankLine
 }
 
@@ -71,13 +71,13 @@ function Show-Menu {
 function MakeBar($pct, $len = 20) {
     $filled = [Math]::Min($len, [Math]::Round($pct / 100 * $len))
     $empty  = $len - $filled
-    $bc     = if ($pct -ge 90) { $global:UI_RED } elseif ($pct -ge 70) { $global:UI_YLW } else { $global:UI_GRN }
-    return "${bc}" + ("#" * $filled) + "$($global:UI_GRY)" + ("-" * $empty) + "$($global:UI_R)"
+    $bc     = if ($pct -ge 90) { $global:UI_Theme.Error } elseif ($pct -ge 70) { $global:UI_Theme.Warning } else { $global:UI_Theme.Success }
+    return "${bc}" + ("#" * $filled) + "$($global:UI_Theme.Muted)" + ("-" * $empty) + "$($global:UI_Theme.Reset)"
 }
 
 # ── Refresh interval helper ───────────────────────────────────
 function Get-Interval($default = 2) {
-    Write-Host -NoNewline "  $($global:UI_YLW)  Refresh interval seconds (default $default): $($global:UI_R)"
+    Write-Host -NoNewline "  $($global:UI_Theme.Warning)  Refresh interval seconds (default $default): $($global:UI_Theme.Reset)"
     $s = Read-Host
     if ($s -match '^\d+$' -and [int]$s -gt 0) { return [int]$s }
     return $default
@@ -106,7 +106,7 @@ function Invoke-WatchLoop {
             Write-UiHeader -Title "$ScriptName -- $Title" -Width $w
 
             $ts = Get-Date -Format "HH:mm:ss"
-            Write-Host "  $($global:UI_GRY)  $ts  |  Refreshing every ${IntervalSeconds}s  |  Ctrl+C to return to menu$($global:UI_R)"
+            Write-Host "  $($global:UI_Theme.Muted)  $ts  |  Refreshing every ${IntervalSeconds}s  |  Ctrl+C to return to menu$($global:UI_Theme.Reset)"
             Write-UiBlankLine
 
             try {
@@ -135,17 +135,17 @@ function Invoke-WatchLoop {
 function Watch-TopCPU {
     $interval = Get-Interval 2
     Invoke-WatchLoop -Title "Top CPU" -IntervalSeconds $interval -CommandBlock {
-        Write-Host "  $($global:UI_GRY)  Name                         PID      CPU(s)    RAM$($global:UI_R)"
-        Write-Host "  $($global:UI_GRY)  ---------------------------  -------  --------  ---$($global:UI_R)"
+        Write-Host "  $($global:UI_Theme.Muted)  Name                         PID      CPU(s)    RAM$($global:UI_Theme.Reset)"
+        Write-Host "  $($global:UI_Theme.Muted)  ---------------------------  -------  --------  ---$($global:UI_Theme.Reset)"
         Get-Process | Sort-Object CPU -Descending | Select-Object -First 15 | ForEach-Object {
             $cpu      = if ($_.CPU) { [Math]::Round($_.CPU,1) } else { 0 }
             $mem      = [Math]::Round($_.WorkingSet64 / 1MB, 1)
-            $cpuColor = if ($cpu -ge 50) { $global:UI_RED } elseif ($cpu -ge 10) { $global:UI_YLW } else { $global:UI_GRN }
-            $memColor = if ($mem -ge 1000) { $global:UI_RED } elseif ($mem -ge 300) { $global:UI_YLW } else { $global:UI_GRN }
+            $cpuColor = if ($cpu -ge 50) { $global:UI_Theme.Error } elseif ($cpu -ge 10) { $global:UI_Theme.Warning } else { $global:UI_Theme.Success }
+            $memColor = if ($mem -ge 1000) { $global:UI_Theme.Error } elseif ($mem -ge 300) { $global:UI_Theme.Warning } else { $global:UI_Theme.Success }
             $nameStr  = $_.ProcessName.PadRight(28)
             $pidStr   = "$($_.Id)".PadRight(7)
             $cpuStr   = ("{0:N1}" -f $cpu).PadRight(8)
-            Write-Host "  $($global:UI_WHT)  $nameStr$($global:UI_R)  $($global:UI_GRY)$pidStr$($global:UI_R)  ${cpuColor}$cpuStr$($global:UI_R)  ${memColor}$mem MB$($global:UI_R)"
+            Write-Host "  $($global:UI_Theme.Text)  $nameStr$($global:UI_Theme.Reset)  $($global:UI_Theme.Muted)$pidStr$($global:UI_Theme.Reset)  ${cpuColor}$cpuStr$($global:UI_Theme.Reset)  ${memColor}$mem MB$($global:UI_Theme.Reset)"
         }
     }
 }
@@ -154,17 +154,17 @@ function Watch-TopCPU {
 function Watch-TopMemory {
     $interval = Get-Interval 2
     Invoke-WatchLoop -Title "Top Memory" -IntervalSeconds $interval -CommandBlock {
-        Write-Host "  $($global:UI_GRY)  Name                         PID      RAM       CPU(s)$($global:UI_R)"
-        Write-Host "  $($global:UI_GRY)  ---------------------------  -------  --------  ------$($global:UI_R)"
+        Write-Host "  $($global:UI_Theme.Muted)  Name                         PID      RAM       CPU(s)$($global:UI_Theme.Reset)"
+        Write-Host "  $($global:UI_Theme.Muted)  ---------------------------  -------  --------  ------$($global:UI_Theme.Reset)"
         Get-Process | Sort-Object WorkingSet64 -Descending | Select-Object -First 15 | ForEach-Object {
             $cpu      = if ($_.CPU) { [Math]::Round($_.CPU,1) } else { 0 }
             $mem      = [Math]::Round($_.WorkingSet64 / 1MB, 1)
-            $memColor = if ($mem -ge 1000) { $global:UI_RED } elseif ($mem -ge 300) { $global:UI_YLW } else { $global:UI_GRN }
-            $cpuColor = if ($cpu -ge 50) { $global:UI_RED } elseif ($cpu -ge 10) { $global:UI_YLW } else { $global:UI_GRN }
+            $memColor = if ($mem -ge 1000) { $global:UI_Theme.Error } elseif ($mem -ge 300) { $global:UI_Theme.Warning } else { $global:UI_Theme.Success }
+            $cpuColor = if ($cpu -ge 50) { $global:UI_Theme.Error } elseif ($cpu -ge 10) { $global:UI_Theme.Warning } else { $global:UI_Theme.Success }
             $nameStr  = $_.ProcessName.PadRight(28)
             $pidStr   = "$($_.Id)".PadRight(7)
             $memStr   = ("{0:N1} MB" -f $mem).PadRight(8)
-            Write-Host "  $($global:UI_WHT)  $nameStr$($global:UI_R)  $($global:UI_GRY)$pidStr$($global:UI_R)  ${memColor}$memStr$($global:UI_R)  ${cpuColor}$cpu$($global:UI_R)"
+            Write-Host "  $($global:UI_Theme.Text)  $nameStr$($global:UI_Theme.Reset)  $($global:UI_Theme.Muted)$pidStr$($global:UI_Theme.Reset)  ${memColor}$memStr$($global:UI_Theme.Reset)  ${cpuColor}$cpu$($global:UI_Theme.Reset)"
         }
     }
 }
@@ -173,8 +173,8 @@ function Watch-TopMemory {
 function Watch-TcpConnections {
     $interval = Get-Interval 3
     Invoke-WatchLoop -Title "TCP Connections" -IntervalSeconds $interval -CommandBlock {
-        Write-Host "  $($global:UI_GRY)  LocalAddr         LPort  RemoteAddr        RPort  State         Process$($global:UI_R)"
-        Write-Host "  $($global:UI_GRY)  ----------------  -----  ----------------  -----  ------------  -------$($global:UI_R)"
+        Write-Host "  $($global:UI_Theme.Muted)  LocalAddr         LPort  RemoteAddr        RPort  State         Process$($global:UI_Theme.Reset)"
+        Write-Host "  $($global:UI_Theme.Muted)  ----------------  -----  ----------------  -----  ------------  -------$($global:UI_Theme.Reset)"
         Get-NetTCPConnection -ErrorAction SilentlyContinue |
             Where-Object { $_.State -ne "Listen" } |
             Sort-Object State, LocalPort |
@@ -182,17 +182,17 @@ function Watch-TcpConnections {
                 $proc      = Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue
                 $procName  = if ($proc) { $proc.ProcessName } else { "?" }
                 $stateColor = switch ($_.State) {
-                    "Established" { $global:UI_GRN }
-                    "TimeWait"    { $global:UI_YLW }
-                    "CloseWait"   { $global:UI_YLW }
-                    default       { $global:UI_GRY }
+                    "Established" { $global:UI_Theme.Success }
+                    "TimeWait"    { $global:UI_Theme.Warning }
+                    "CloseWait"   { $global:UI_Theme.Warning }
+                    default       { $global:UI_Theme.Muted }
                 }
                 $la = $_.LocalAddress.PadRight(16)
                 $ra = $_.RemoteAddress.PadRight(16)
                 $lp = "$($_.LocalPort)".PadRight(5)
                 $rp = "$($_.RemotePort)".PadRight(5)
                 $st = "$($_.State)".PadRight(12)
-                Write-Host "  $($global:UI_DIM)  $la  $lp  $ra  $rp  $($global:UI_R)${stateColor}$st$($global:UI_R)  $($global:UI_WHT)$procName$($global:UI_R)"
+                Write-Host "  $($global:UI_Theme.Dim)  $la  $lp  $ra  $rp  $($global:UI_Theme.Reset)${stateColor}$st$($global:UI_Theme.Reset)  $($global:UI_Theme.Text)$procName$($global:UI_Theme.Reset)"
             }
     }
 }
@@ -201,15 +201,15 @@ function Watch-TcpConnections {
 function Watch-ListeningPorts {
     $interval = Get-Interval 3
     Invoke-WatchLoop -Title "Listening Ports" -IntervalSeconds $interval -CommandBlock {
-        Write-Host "  $($global:UI_GRY)  Port   Address           Process$($global:UI_R)"
-        Write-Host "  $($global:UI_GRY)  -----  ----------------  -------$($global:UI_R)"
+        Write-Host "  $($global:UI_Theme.Muted)  Port   Address           Process$($global:UI_Theme.Reset)"
+        Write-Host "  $($global:UI_Theme.Muted)  -----  ----------------  -------$($global:UI_Theme.Reset)"
         Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue |
             Sort-Object LocalPort | ForEach-Object {
                 $proc     = Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue
                 $procName = if ($proc) { $proc.ProcessName } else { "?" }
                 $port     = "$($_.LocalPort)".PadRight(5)
                 $addr     = $_.LocalAddress.PadRight(16)
-                Write-Host "  $($global:UI_GRN)  $port$($global:UI_R)  $($global:UI_GRY)$addr$($global:UI_R)  $($global:UI_WHT)$procName$($global:UI_R)"
+                Write-Host "  $($global:UI_Theme.Accent)  $port$($global:UI_Theme.Reset)  $($global:UI_Theme.Muted)$addr$($global:UI_Theme.Reset)  $($global:UI_Theme.Text)$procName$($global:UI_Theme.Reset)"
             }
     }
 }
@@ -225,11 +225,11 @@ function Watch-DriveUsage {
             $pct     = if ($totalGB -gt 0) { [Math]::Round(($usedGB / $totalGB) * 100, 1) } else { 0 }
 
             $bar      = MakeBar $pct
-            $usedColor = if ($pct -ge 90) { $global:UI_RED } elseif ($pct -ge 70) { $global:UI_YLW } else { $global:UI_GRN }
+            $usedColor = if ($pct -ge 90) { $global:UI_Theme.Error } elseif ($pct -ge 70) { $global:UI_Theme.Warning } else { $global:UI_Theme.Success }
 
-            Write-Host "  $($global:UI_MAG)$($global:UI_B)  $($_.DeviceID)  $($_.VolumeName)$($global:UI_R)  $($global:UI_GRY)[$($_.FileSystem)]$($global:UI_R)"
-            Write-Host "  $($global:UI_DIM)$($global:UI_WHT)  $("Used".PadRight(8))$($global:UI_R)  ${usedColor}$usedGB GB  ($pct%)$($global:UI_R)  [$bar]"
-            Write-Host "  $($global:UI_DIM)$($global:UI_WHT)  $("Free".PadRight(8))$($global:UI_R)  $($global:UI_GRN)$freeGB GB$($global:UI_R)  $($global:UI_GRY)Total: $totalGB GB$($global:UI_R)"
+            Write-Host "  $($global:UI_Theme.Secondary)$($global:UI_Theme.Bold)  $($_.DeviceID)  $($_.VolumeName)$($global:UI_Theme.Reset)  $($global:UI_Theme.Muted)[$($_.FileSystem)]$($global:UI_Theme.Reset)"
+            Write-Host "  $($global:UI_Theme.Dim)$($global:UI_Theme.Text)  $("Used".PadRight(8))$($global:UI_Theme.Reset)  ${usedColor}$usedGB GB  ($pct%)$($global:UI_Theme.Reset)  [$bar]"
+            Write-Host "  $($global:UI_Theme.Dim)$($global:UI_Theme.Text)  $("Free".PadRight(8))$($global:UI_Theme.Reset)  $($global:UI_Theme.Success)$freeGB GB$($global:UI_Theme.Reset)  $($global:UI_Theme.Muted)Total: $totalGB GB$($global:UI_Theme.Reset)"
             Write-UiBlankLine
         }
     }
@@ -238,10 +238,10 @@ function Watch-DriveUsage {
 # ── 6 — Watch Service ─────────────────────────────────────────
 function Watch-ServiceStatus {
     Show-Header
-    Write-Host -NoNewline "  $($global:UI_YLW)  Service name: $($global:UI_R)"
+    Write-Host -NoNewline "  $($global:UI_Theme.Warning)  Service name: $($global:UI_Theme.Reset)"
     $serviceName = Read-Host
     if (-not $serviceName) {
-        Write-Host "  $($global:UI_GRY)  No service entered.$($global:UI_R)"
+        Write-Host "  $($global:UI_Theme.Muted)  No service entered.$($global:UI_Theme.Reset)"
         Start-Sleep -Seconds 1
         return
     }
@@ -252,15 +252,15 @@ function Watch-ServiceStatus {
             $svc = Get-Service -Name $serviceName -ErrorAction Stop
             $cim = Get-CimInstance Win32_Service -Filter "Name='$($svc.Name)'" -ErrorAction SilentlyContinue
             $statusColor = switch ("$($svc.Status)") {
-                "Running" { $global:UI_GRN }
-                "Stopped" { $global:UI_RED }
-                "Paused"  { $global:UI_YLW }
-                default   { $global:UI_GRY }
+                "Running" { $global:UI_Theme.Success }
+                "Stopped" { $global:UI_Theme.Error }
+                "Paused"  { $global:UI_Theme.Warning }
+                default   { $global:UI_Theme.Muted }
             }
-            Write-Host "  $($global:UI_DIM)$($global:UI_WHT)  Name         $($global:UI_R)  $($global:UI_WHT)$($svc.Name)$($global:UI_R)"
-            Write-Host "  $($global:UI_DIM)$($global:UI_WHT)  Display Name $($global:UI_R)  $($global:UI_WHT)$($svc.DisplayName)$($global:UI_R)"
-            Write-Host "  $($global:UI_DIM)$($global:UI_WHT)  Status       $($global:UI_R)  ${statusColor}$($global:UI_B)$($svc.Status)$($global:UI_R)"
-            Write-Host "  $($global:UI_DIM)$($global:UI_WHT)  Startup Type $($global:UI_R)  $($global:UI_GRY)$(if ($cim) { $cim.StartMode } else { 'Unknown' })$($global:UI_R)"
+            Write-Host "  $($global:UI_Theme.Dim)$($global:UI_Theme.Text)  Name         $($global:UI_Theme.Reset)  $($global:UI_Theme.Text)$($svc.Name)$($global:UI_Theme.Reset)"
+            Write-Host "  $($global:UI_Theme.Dim)$($global:UI_Theme.Text)  Display Name $($global:UI_Theme.Reset)  $($global:UI_Theme.Text)$($svc.DisplayName)$($global:UI_Theme.Reset)"
+            Write-Host "  $($global:UI_Theme.Dim)$($global:UI_Theme.Text)  Status       $($global:UI_Theme.Reset)  ${statusColor}$($global:UI_Theme.Bold)$($svc.Status)$($global:UI_Theme.Reset)"
+            Write-Host "  $($global:UI_Theme.Dim)$($global:UI_Theme.Text)  Startup Type $($global:UI_Theme.Reset)  $($global:UI_Theme.Muted)$(if ($cim) { $cim.StartMode } else { 'Unknown' })$($global:UI_Theme.Reset)"
         } catch {
             Write-CoreError "Service not found: $serviceName"
         }
@@ -275,16 +275,16 @@ function Watch-SystemErrors {
             Where-Object { $_.LevelDisplayName -eq "Error" } | Select-Object -First 10
 
         if (-not $events) {
-            Write-Host "  $($global:UI_GRN)  No recent errors.$($global:UI_R)"
+            Write-Host "  $($global:UI_Theme.Success)  No recent errors.$($global:UI_Theme.Reset)"
             return
         }
 
-        Write-Host "  $($global:UI_GRY)  Time                  ID      Source$($global:UI_R)"
-        Write-Host "  $($global:UI_GRY)  -------------------   -----   ------$($global:UI_R)"
+        Write-Host "  $($global:UI_Theme.Muted)  Time                  ID      Source$($global:UI_Theme.Reset)"
+        Write-Host "  $($global:UI_Theme.Muted)  -------------------   -----   ------$($global:UI_Theme.Reset)"
         foreach ($e in $events) {
             $time = $e.TimeCreated.ToString("yyyy-MM-dd HH:mm:ss")
             $id   = "$($e.Id)".PadRight(5)
-            Write-Host "  $($global:UI_RED)  $time   $id$($global:UI_R)   $($global:UI_WHT)$($e.ProviderName)$($global:UI_R)"
+            Write-Host "  $($global:UI_Theme.Error)  $time   $id$($global:UI_Theme.Reset)   $($global:UI_Theme.Text)$($e.ProviderName)$($global:UI_Theme.Reset)"
         }
     }
 }
@@ -292,10 +292,10 @@ function Watch-SystemErrors {
 # ── 8 — Watch Custom Command ──────────────────────────────────
 function Watch-CustomCommand {
     Show-Header
-    Write-Host -NoNewline "  $($global:UI_YLW)  PowerShell command to watch: $($global:UI_R)"
+    Write-Host -NoNewline "  $($global:UI_Theme.Warning)  PowerShell command to watch: $($global:UI_Theme.Reset)"
     $cmd = Read-Host
     if (-not $cmd) {
-        Write-Host "  $($global:UI_GRY)  No command entered.$($global:UI_R)"
+        Write-Host "  $($global:UI_Theme.Muted)  No command entered.$($global:UI_Theme.Reset)"
         Start-Sleep -Seconds 1
         return
     }
@@ -324,7 +324,7 @@ while ($true) {
 
         "Q" {
             Write-UiBlankLine
-            Write-Host "  $($global:UI_CYN)  Bye.$($global:UI_R)"
+            Write-Host "  $($global:UI_Theme.Accent)  Bye.$($global:UI_Theme.Reset)"
             Write-UiBlankLine
             return
         }
