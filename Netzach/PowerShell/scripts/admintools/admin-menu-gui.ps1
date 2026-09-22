@@ -59,33 +59,130 @@ public static class ProcUtil {
 }
 "@ -ErrorAction SilentlyContinue
 
-# ── Windows theme ──────────────────────────────────────────────
-# Keep the dashboard visually close to a native Windows 11 dark utility:
-# neutral dark surfaces, Segoe UI for controls, the current Windows selection
-# color for interactive emphasis, and restrained semantic status colors.
-#
-# The output panes stay monospaced because they present command/system data.
-$WinAccent = [System.Drawing.SystemColors]::Highlight
-$WinAccentText = [System.Drawing.SystemColors]::HighlightText
+# ── ThemeEngine / Windows theme ────────────────────────────────
+# Admin Tools remains standalone, but consumes the active Typezero ThemeEngine
+# palette when available. If ThemeEngine state is unavailable or invalid, the
+# dashboard falls back to its original Windows-dark palette.
 
-$T = @{
-    Bg        = [System.Drawing.Color]::FromArgb(32,32,32)
-    Surface   = [System.Drawing.Color]::FromArgb(37,37,37)
-    Panel     = [System.Drawing.Color]::FromArgb(43,43,43)
-    Panel2    = [System.Drawing.Color]::FromArgb(48,48,48)
-    Border    = [System.Drawing.Color]::FromArgb(62,62,62)
-    Text      = [System.Drawing.Color]::FromArgb(243,243,243)
-    Gray      = [System.Drawing.Color]::FromArgb(174,174,174)
-    Accent    = $WinAccent
-    AccentText= $WinAccentText
-    Green     = [System.Drawing.Color]::FromArgb(108,203,95)
-    Cyan      = $WinAccent
-    Yellow    = [System.Drawing.Color]::FromArgb(255,185,0)
-    Red       = [System.Drawing.Color]::FromArgb(255,99,99)
-    Mag       = [System.Drawing.Color]::FromArgb(196,154,255)
-    Sel       = [System.Drawing.Color]::FromArgb(55,55,55)
+function Convert-HexToDrawingColor {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Hex
+    )
+
+    $h = $Hex.Trim().TrimStart('#')
+
+    if ($h.Length -ne 6) {
+        throw "Invalid RGB color: $Hex"
+    }
+
+    return [System.Drawing.Color]::FromArgb(
+        [Convert]::ToInt32($h.Substring(0, 2), 16),
+        [Convert]::ToInt32($h.Substring(2, 2), 16),
+        [Convert]::ToInt32($h.Substring(4, 2), 16)
+    )
 }
 
+function Read-AdminToolsTheme {
+    try {
+        $engineRoot  = Join-Path $env:LOCALAPPDATA "Typezero\ThemeEngine"
+        $currentFile = Join-Path $engineRoot "current-theme"
+
+        if (-not (Test-Path -LiteralPath $currentFile)) {
+            return $null
+        }
+
+        $themeId = (Get-Content -LiteralPath $currentFile -Raw).Trim()
+
+        if (-not $themeId) {
+            return $null
+        }
+
+        $themeFile = Join-Path `
+            (Join-Path (Join-Path $engineRoot "themes") $themeId) `
+            "theme.conf"
+
+        if (-not (Test-Path -LiteralPath $themeFile)) {
+            return $null
+        }
+
+        $theme = @{}
+
+        foreach ($raw in Get-Content -LiteralPath $themeFile) {
+            $line = $raw.Trim()
+
+            if (
+                -not $line -or
+                $line.StartsWith("#") -or
+                -not $line.Contains("=")
+            ) {
+                continue
+            }
+
+            $idx = $line.IndexOf("=")
+            $key = $line.Substring(0, $idx).Trim()
+            $val = $line.Substring($idx + 1).Trim()
+
+            if (
+                ($val.StartsWith('"') -and $val.EndsWith('"')) -or
+                ($val.StartsWith("'") -and $val.EndsWith("'"))
+            ) {
+                $val = $val.Substring(1, $val.Length - 2)
+            }
+
+            $theme[$key] = $val
+        }
+
+        return $theme
+    }
+    catch {
+        return $null
+    }
+}
+
+$WinAccent     = [System.Drawing.SystemColors]::Highlight
+$WinAccentText = [System.Drawing.SystemColors]::HighlightText
+
+$Theme = Read-AdminToolsTheme
+
+if ($Theme) {
+    $T = @{
+        Bg         = Convert-HexToDrawingColor $Theme["BG"]
+        Surface    = Convert-HexToDrawingColor $Theme["SURFACE"]
+        Panel      = Convert-HexToDrawingColor $Theme["SURFACE_ALT"]
+        Panel2     = Convert-HexToDrawingColor $Theme["FOCUSED_BG"]
+        Border     = Convert-HexToDrawingColor $Theme["BORDER"]
+        Text       = Convert-HexToDrawingColor $Theme["TEXT"]
+        Gray       = Convert-HexToDrawingColor $Theme["MUTED"]
+        Accent     = Convert-HexToDrawingColor $Theme["ACCENT"]
+        AccentText = Convert-HexToDrawingColor $Theme["BG"]
+        Green      = Convert-HexToDrawingColor $Theme["SUCCESS"]
+        Cyan       = Convert-HexToDrawingColor $Theme["INFO"]
+        Yellow     = Convert-HexToDrawingColor $Theme["WARNING"]
+        Red        = Convert-HexToDrawingColor $Theme["ERROR"]
+        Mag        = Convert-HexToDrawingColor $Theme["SECONDARY"]
+        Sel        = Convert-HexToDrawingColor $Theme["SURFACE_ALT"]
+    }
+}
+else {
+    $T = @{
+        Bg         = [System.Drawing.Color]::FromArgb(32,32,32)
+        Surface    = [System.Drawing.Color]::FromArgb(37,37,37)
+        Panel      = [System.Drawing.Color]::FromArgb(43,43,43)
+        Panel2     = [System.Drawing.Color]::FromArgb(48,48,48)
+        Border     = [System.Drawing.Color]::FromArgb(62,62,62)
+        Text       = [System.Drawing.Color]::FromArgb(243,243,243)
+        Gray       = [System.Drawing.Color]::FromArgb(174,174,174)
+        Accent     = $WinAccent
+        AccentText = $WinAccentText
+        Green      = [System.Drawing.Color]::FromArgb(108,203,95)
+        Cyan       = $WinAccent
+        Yellow     = [System.Drawing.Color]::FromArgb(255,185,0)
+        Red        = [System.Drawing.Color]::FromArgb(255,99,99)
+        Mag        = [System.Drawing.Color]::FromArgb(196,154,255)
+        Sel        = [System.Drawing.Color]::FromArgb(55,55,55)
+    }
+}
 $MonoFont = New-Object System.Drawing.Font("Cascadia Mono",9.5)
 if (-not $MonoFont.Name) {
     $MonoFont = New-Object System.Drawing.Font("Consolas",9.5)
@@ -2229,6 +2326,138 @@ function Build-About {
     return $p
 }
 
+# ── Live ThemeEngine refresh ──────────────────────────────────
+function New-AdminToolsPalette {
+    param([Parameter(Mandatory)]$Theme)
+
+    return @{
+        Bg         = Convert-HexToDrawingColor $Theme["BG"]
+        Surface    = Convert-HexToDrawingColor $Theme["SURFACE"]
+        Panel      = Convert-HexToDrawingColor $Theme["SURFACE_ALT"]
+        Panel2     = Convert-HexToDrawingColor $Theme["FOCUSED_BG"]
+        Border     = Convert-HexToDrawingColor $Theme["BORDER"]
+        Text       = Convert-HexToDrawingColor $Theme["TEXT"]
+        Gray       = Convert-HexToDrawingColor $Theme["MUTED"]
+        Accent     = Convert-HexToDrawingColor $Theme["ACCENT"]
+        AccentText = Convert-HexToDrawingColor $Theme["BG"]
+        Green      = Convert-HexToDrawingColor $Theme["SUCCESS"]
+        Cyan       = Convert-HexToDrawingColor $Theme["INFO"]
+        Yellow     = Convert-HexToDrawingColor $Theme["WARNING"]
+        Red        = Convert-HexToDrawingColor $Theme["ERROR"]
+        Mag        = Convert-HexToDrawingColor $Theme["SECONDARY"]
+        Sel        = Convert-HexToDrawingColor $Theme["SURFACE_ALT"]
+    }
+}
+
+function Update-AdminToolsLiveTheme {
+    $theme = Read-AdminToolsTheme
+
+    if (-not $theme) {
+        throw "Unable to read active ThemeEngine theme."
+    }
+
+    $activePanel = if ($script:ActivePanel) {
+        $script:ActivePanel
+    }
+    else {
+        "SystemInfo"
+    }
+
+    if ($script:WatchTimer) {
+        $script:WatchTimer.Stop()
+        $script:WatchTimer.Dispose()
+        $script:WatchTimer = $null
+    }
+
+    $script:T = New-AdminToolsPalette $theme
+    Set-Variable -Name T -Scope Script -Value $script:T
+
+    $Form.SuspendLayout()
+
+    try {
+        $Form.BackColor = $T.Bg
+        $Form.ForeColor = $T.Text
+
+        $Content.BackColor = $T.Bg
+        $TopNav.BackColor = $T.Surface
+
+        $StatusStrip.BackColor = $T.Surface
+        $StatusLabel.ForeColor = $T.Gray
+
+        $Content.Controls.Clear()
+
+        foreach ($panel in @($Panels.Values)) {
+            if ($panel) {
+                $panel.Dispose()
+            }
+        }
+
+        $Panels.Clear()
+
+        $Panels["SystemInfo"] = Build-SystemInfo
+        $Panels["Power"]      = Build-Power
+        $Panels["Updates"]    = Build-Updates
+        $Panels["Network"]    = Build-Network
+        $Panels["Disk"]       = Build-Disk
+        $Panels["Events"]     = Build-Events
+        $Panels["Services"]   = Build-Services
+        $Panels["Watch"]      = Build-Watch
+        $Panels["Processes"]  = Build-Processes
+        $Panels["Logs"]       = Build-Logs
+        $Panels["About"]      = Build-About
+
+        foreach ($key in $Panels.Keys) {
+            $Content.Controls.Add($Panels[$key])
+        }
+
+        Switch-Panel $activePanel
+        Set-TopNavSelection $activePanel
+
+        $StatusLabel.Text = "  Theme refreshed: $($theme['THEME_NAME'])"
+        $StatusLabel.ForeColor = $T.Green
+    }
+    finally {
+        $Form.ResumeLayout($true)
+        $Form.Refresh()
+    }
+}
+
+$script:CurrentAdminToolsThemeId = if ($Theme) {
+    [string]$Theme["THEME_ID"]
+}
+else {
+    $null
+}
+
+$script:ThemeTimer = New-Object System.Windows.Forms.Timer
+$script:ThemeTimer.Interval = 750
+
+$script:ThemeTimer.Add_Tick({
+    try {
+        $currentFile = Join-Path `
+            (Join-Path $env:LOCALAPPDATA "Typezero\ThemeEngine") `
+            "current-theme"
+
+        if (-not (Test-Path -LiteralPath $currentFile)) {
+            return
+        }
+
+        $activeId = (Get-Content -LiteralPath $currentFile -Raw).Trim()
+
+        if (
+            $activeId -and
+            $activeId -ne $script:CurrentAdminToolsThemeId
+        ) {
+            Update-AdminToolsLiveTheme
+            $script:CurrentAdminToolsThemeId = $activeId
+        }
+    }
+    catch {
+        $StatusLabel.Text = "  Theme refresh failed: $($_.Exception.Message)"
+        $StatusLabel.ForeColor = $T.Red
+    }
+})
+
 # ══════════════════════════════════════════════════════════════
 #  WIRE UP
 # ══════════════════════════════════════════════════════════════
@@ -2247,12 +2476,18 @@ $Panels["About"]      = Build-About
 foreach ($key in $Panels.Keys) { $Content.Controls.Add($Panels[$key]) }
 
 function Switch-Panel($name) {
+    $script:ActivePanel = $name
     foreach ($key in $Panels.Keys) { $Panels[$key].Visible = $false }
     if ($Panels.ContainsKey($name)) { $Panels[$name].Visible = $true; $Panels[$name].BringToFront() }
     if ($script:WatchTimer -and $name -ne "Watch") { $script:WatchTimer.Stop() }
 }
 
 $Form.Add_FormClosing({
+    if ($script:ThemeTimer) {
+        $script:ThemeTimer.Stop()
+        $script:ThemeTimer.Dispose()
+    }
+
     if ($script:WatchTimer) {
         $script:WatchTimer.Stop()
         $script:WatchTimer.Dispose()
@@ -2276,5 +2511,9 @@ $Form.Add_Shown({
     Enable-WindowsDarkTitleBar -Form $Form
     Set-AdminToolsTaskbarIdentity -Form $Form -IconPath $IconPath
 }.GetNewClosure())
+
+
+
+$script:ThemeTimer.Start()
 
 [void]$Form.ShowDialog()
