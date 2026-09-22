@@ -43,24 +43,24 @@ function Show-Header {
     $w = Get-UiBoxWidth -MaxWidth 52 -MinWidth 40
     Write-UiHeader -Title $ScriptName -Subtitle "v$ScriptVersion  by $ScriptAuthor" -Width $w
     Write-UiRow "User" "$env:USERNAME@$env:COMPUTERNAME"
-    Write-UiRow "Version" "v$ScriptVersion  by $ScriptAuthor" $global:UI_GRY
+    Write-UiRow "Version" "v$ScriptVersion  by $ScriptAuthor" $global:UI_Theme.Muted
     Write-UiBlankLine
 }
 
 # ── Menu ──────────────────────────────────────────────────────
 function Show-Menu {
     Write-UiDivider
-    Write-Host "  $($global:UI_GRN)  1)$($global:UI_R)  Running services"
-    Write-Host "  $($global:UI_GRN)  2)$($global:UI_R)  Stopped services"
-    Write-Host "  $($global:UI_GRN)  3)$($global:UI_R)  Search service"
-    Write-Host "  $($global:UI_GRN)  4)$($global:UI_R)  Service details"
+    Write-Host "  $($global:UI_Theme.Accent)  1)$($global:UI_Theme.Reset)  Running services"
+    Write-Host "  $($global:UI_Theme.Accent)  2)$($global:UI_Theme.Reset)  Stopped services"
+    Write-Host "  $($global:UI_Theme.Accent)  3)$($global:UI_Theme.Reset)  Search service"
+    Write-Host "  $($global:UI_Theme.Accent)  4)$($global:UI_Theme.Reset)  Service details"
     Write-UiDivider
-    Write-Host "  $($global:UI_YLW)  5)$($global:UI_R)  Start a service"
-    Write-Host "  $($global:UI_YLW)  6)$($global:UI_R)  Stop a service"
-    Write-Host "  $($global:UI_YLW)  7)$($global:UI_R)  Restart a service"
-    Write-Host "  $($global:UI_YLW)  8)$($global:UI_R)  Set startup type"
+    Write-Host "  $($global:UI_Theme.Warning)  5)$($global:UI_Theme.Reset)  Start a service"
+    Write-Host "  $($global:UI_Theme.Warning)  6)$($global:UI_Theme.Reset)  Stop a service"
+    Write-Host "  $($global:UI_Theme.Warning)  7)$($global:UI_Theme.Reset)  Restart a service"
+    Write-Host "  $($global:UI_Theme.Warning)  8)$($global:UI_Theme.Reset)  Set startup type"
     Write-UiDivider
-    Write-Host "  $($global:UI_GRY)  Q)$($global:UI_R)  Quit"
+    Write-Host "  $($global:UI_Theme.Muted)  Q)$($global:UI_Theme.Reset)  Quit"
     Write-UiBlankLine
 }
 
@@ -77,21 +77,21 @@ function Confirm-Action($message) {
 # ── Status Color Helper ───────────────────────────────────────
 function Get-StatusColor($status) {
     switch ("$status") {
-        "Running" { return $global:UI_GRN }
-        "Stopped" { return $global:UI_RED }
-        "Paused"  { return $global:UI_YLW }
-        default   { return $global:UI_GRY }
+        "Running" { return $global:UI_Theme.Success }
+        "Stopped" { return $global:UI_Theme.Error }
+        "Paused"  { return $global:UI_Theme.Warning }
+        default   { return $global:UI_Theme.Muted }
     }
 }
 
 # ── Startup Color Helper ──────────────────────────────────────
 function Get-StartupColor($startup) {
     switch ("$startup") {
-        "Automatic"        { return $global:UI_GRN }
-        "AutomaticDelayed" { return $global:UI_GRN }
-        "Manual"           { return $global:UI_YLW }
-        "Disabled"         { return $global:UI_RED }
-        default            { return $global:UI_GRY }
+        "Automatic"        { return $global:UI_Theme.Success }
+        "AutomaticDelayed" { return $global:UI_Theme.Success }
+        "Manual"           { return $global:UI_Theme.Warning }
+        "Disabled"         { return $global:UI_Theme.Error }
+        default            { return $global:UI_Theme.Muted }
     }
 }
 
@@ -115,7 +115,7 @@ function Print-ServiceRow($s) {
     $startStr     = "$($s.StartType)".PadRight(14)
     $displayStr   = if ($s.DisplayName.Length -gt 40) { $s.DisplayName.Substring(0,37) + "..." } else { $s.DisplayName }
 
-    Write-Host "  $($global:UI_WHT)  $nameStr$($global:UI_R)  ${statusColor}$statusStr$($global:UI_R)  ${startupColor}$startStr$($global:UI_R)  $($global:UI_GRY)$displayStr$($global:UI_R)"
+    Write-Host "  $($global:UI_Theme.Text)  $nameStr$($global:UI_Theme.Reset)  ${statusColor}$statusStr$($global:UI_Theme.Reset)  ${startupColor}$startStr$($global:UI_Theme.Reset)  $($global:UI_Theme.Muted)$displayStr$($global:UI_Theme.Reset)"
 }
 
 # ── 1 — Running Services ──────────────────────────────────────
@@ -126,10 +126,10 @@ function Show-RunningServices {
     Write-UiBlankLine
 
     $svcs = Get-Service | Where-Object { $_.Status -eq "Running" } | Sort-Object DisplayName
-    Write-Host "  $($global:UI_GRY)  Found $($global:UI_GRN)$($svcs.Count)$($global:UI_GRY) running service(s)$($global:UI_R)"
+    Write-Host "  $($global:UI_Theme.Muted)  Found $($global:UI_Theme.Success)$($svcs.Count)$($global:UI_Theme.Muted) running service(s)$($global:UI_Theme.Reset)"
     Write-UiBlankLine
-    Write-Host "  $($global:UI_GRY)  Name                           Status      Startup         Display$($global:UI_R)"
-    Write-Host "  $($global:UI_GRY)  -----------------------------  ----------  --------------  -------$($global:UI_R)"
+    Write-Host "  $($global:UI_Theme.Muted)  Name                           Status      Startup         Display$($global:UI_Theme.Reset)"
+    Write-Host "  $($global:UI_Theme.Muted)  -----------------------------  ----------  --------------  -------$($global:UI_Theme.Reset)"
     foreach ($s in $svcs) {
         Print-ServiceRow (Get-ServiceEnriched $s)
     }
@@ -145,7 +145,7 @@ while ($true) {
         "1" { Show-RunningServices; Pause-Script }
         "Q" {
             Write-UiBlankLine
-            Write-Host "  $($global:UI_CYN)  Bye.$($global:UI_R)"
+            Write-Host "  $($global:UI_Theme.Accent)  Bye.$($global:UI_Theme.Reset)"
             Write-UiBlankLine
             return
         }
