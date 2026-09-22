@@ -54,16 +54,16 @@ function Show-Header {
 # ── Menu ──────────────────────────────────────────────────────
 function Show-Menu {
     Write-UiDivider
-    Write-Host "  $($global:UI_GRN)  1)$($global:UI_R)  Recent System errors"
-    Write-Host "  $($global:UI_GRN)  2)$($global:UI_R)  Recent Application errors"
-    Write-Host "  $($global:UI_GRN)  3)$($global:UI_R)  Recent warnings  $($global:UI_GRY)(System + Application)$($global:UI_R)"
-    Write-Host "  $($global:UI_GRN)  4)$($global:UI_R)  Recent PowerShell errors"
-    Write-Host "  $($global:UI_GRN)  5)$($global:UI_R)  Failed logons  $($global:UI_GRY)(requires Admin)$($global:UI_R)"
-    Write-Host "  $($global:UI_GRN)  6)$($global:UI_R)  Reboot / shutdown events"
+    Write-Host "  $($global:UI_Theme.Accent)  1)$($global:UI_Theme.Reset)  Recent System errors"
+    Write-Host "  $($global:UI_Theme.Accent)  2)$($global:UI_Theme.Reset)  Recent Application errors"
+    Write-Host "  $($global:UI_Theme.Accent)  3)$($global:UI_Theme.Reset)  Recent warnings  $($global:UI_Theme.Muted)(System + Application)$($global:UI_Theme.Reset)"
+    Write-Host "  $($global:UI_Theme.Accent)  4)$($global:UI_Theme.Reset)  Recent PowerShell errors"
+    Write-Host "  $($global:UI_Theme.Accent)  5)$($global:UI_Theme.Reset)  Failed logons  $($global:UI_Theme.Muted)(requires Admin)$($global:UI_Theme.Reset)"
+    Write-Host "  $($global:UI_Theme.Accent)  6)$($global:UI_Theme.Reset)  Reboot / shutdown events"
     Write-UiDivider
-    Write-Host "  $($global:UI_CYN)  7)$($global:UI_R)  Export errors to CSV  $($global:UI_GRY)(choose log)$($global:UI_R)"
+    Write-Host "  $($global:UI_Theme.Info)  7)$($global:UI_Theme.Reset)  Export errors to CSV  $($global:UI_Theme.Muted)(choose log)$($global:UI_Theme.Reset)"
     Write-UiDivider
-    Write-Host "  $($global:UI_GRY)  Q)$($global:UI_R)  Quit"
+    Write-Host "  $($global:UI_Theme.Muted)  Q)$($global:UI_Theme.Reset)  Quit"
     Write-UiBlankLine
 }
 
@@ -75,25 +75,25 @@ function Pause-Script {
 # ── Event level color ─────────────────────────────────────────
 function Get-LevelColor($level) {
     switch ("$level".ToLower()) {
-        "error"       { return $global:UI_RED }
-        "critical"    { return $global:UI_RED }
-        "warning"     { return $global:UI_YLW }
-        "information" { return $global:UI_GRN }
-        default       { return $global:UI_GRY }
+        "error"       { return $global:UI_Theme.Error }
+        "critical"    { return $global:UI_Theme.Error }
+        "warning"     { return $global:UI_Theme.Warning }
+        "information" { return $global:UI_Theme.Info }
+        default       { return $global:UI_Theme.Muted }
     }
 }
 
 # ── Print events in colored rows ─────────────────────────────
 function Show-Events($events, $title) {
     if (-not $events -or $events.Count -eq 0) {
-        Write-Host "  $($global:UI_GRY)  No events found.$($global:UI_R)"
+        Write-Host "  $($global:UI_Theme.Muted)  No events found.$($global:UI_Theme.Reset)"
         return
     }
 
-    Write-Host "  $($global:UI_GRY)  Found $($global:UI_R)$($global:UI_YLW)$($events.Count)$($global:UI_R)$($global:UI_GRY) event(s)$($global:UI_R)"
+    Write-Host "  $($global:UI_Theme.Muted)  Found $($global:UI_Theme.Reset)$($global:UI_Theme.Accent)$($events.Count)$($global:UI_Theme.Reset)$($global:UI_Theme.Muted) event(s)$($global:UI_Theme.Reset)"
     Write-UiBlankLine
-    Write-Host "  $($global:UI_GRY)  Time                  Level        ID      Source$($global:UI_R)"
-    Write-Host "  $($global:UI_GRY)  -------------------   ----------   -----   ------$($global:UI_R)"
+    Write-Host "  $($global:UI_Theme.Muted)  Time                  Level        ID      Source$($global:UI_Theme.Reset)"
+    Write-Host "  $($global:UI_Theme.Muted)  -------------------   ----------   -----   ------$($global:UI_Theme.Reset)"
 
     foreach ($e in $events) {
         $levelColor = Get-LevelColor $e.LevelDisplayName
@@ -102,11 +102,11 @@ function Show-Events($events, $title) {
         $id         = "$($e.Id)".PadRight(5)
         $provider   = if ($e.ProviderName.Length -gt 35) { $e.ProviderName.Substring(0,32) + "..." } else { $e.ProviderName }
 
-        Write-Host "  $($global:UI_GRY)  $time   $($global:UI_R)$levelColor$level$($global:UI_R)   $($global:UI_GRY)$id$($global:UI_R)   $($global:UI_WHT)$provider$($global:UI_R)"
+        Write-Host "  $($global:UI_Theme.Muted)  $time   $($global:UI_Theme.Reset)$levelColor$level$($global:UI_Theme.Reset)   $($global:UI_Theme.Muted)$id$($global:UI_Theme.Reset)   $($global:UI_Theme.Text)$provider$($global:UI_Theme.Reset)"
     }
 
     Write-UiBlankLine
-    Write-Host "  $($global:UI_GRY)  -- Message preview (last 3 events) --$($global:UI_R)"
+    Write-Host "  $($global:UI_Theme.Muted)  -- Message preview (last 3 events) --$($global:UI_Theme.Reset)"
     Write-UiBlankLine
 
     foreach ($e in ($events | Select-Object -Last 3)) {
@@ -114,8 +114,8 @@ function Show-Events($events, $title) {
         $msg        = if ($e.Message) { $e.Message.Split("`n")[0].Trim() } else { "(no message)" }
         if ($msg.Length -gt 110) { $msg = $msg.Substring(0,107) + "..." }
 
-        Write-Host "  ${levelColor}  [$($e.LevelDisplayName)] $($e.TimeCreated.ToString('HH:mm:ss'))$($global:UI_R)"
-        Write-Host "  $($global:UI_WHT)  $msg$($global:UI_R)"
+        Write-Host "  ${levelColor}  [$($e.LevelDisplayName)] $($e.TimeCreated.ToString('HH:mm:ss'))$($global:UI_Theme.Reset)"
+        Write-Host "  $($global:UI_Theme.Text)  $msg$($global:UI_Theme.Reset)"
         Write-UiBlankLine
     }
 }
@@ -175,7 +175,7 @@ function Show-PowerShellErrors {
 
     $logs = @("Windows PowerShell","Microsoft-Windows-PowerShell/Operational")
     foreach ($log in $logs) {
-        Write-Host "  $($global:UI_MAG)$($global:UI_B)  >> $log$($global:UI_R)"
+        Write-Host "  $($global:UI_Theme.Secondary)$($global:UI_Theme.Bold)  >> $log$($global:UI_Theme.Reset)"
         Write-UiBlankLine
         try {
             $events = Get-WinEvent -LogName $log -MaxEvents 50 -ErrorAction Stop |
@@ -194,40 +194,40 @@ function Show-FailedLogons {
     Show-Header
     $w = Get-UiBoxWidth -MaxWidth 52 -MinWidth 40
     Write-UiBoxTitle -Title "FAILED LOGONS" -Width $w
-    Write-Host "  $($global:UI_YLW)  Security log requires Admin rights.$($global:UI_R)"
+    Write-Host "  $($global:UI_Theme.Warning)  Security log requires Admin rights.$($global:UI_Theme.Reset)"
     Write-UiBlankLine
 
     try {
         $events = Get-WinEvent -FilterHashtable @{ LogName = 'Security'; Id = 4625 } -MaxEvents 20 -ErrorAction Stop
 
         if (-not $events -or $events.Count -eq 0) {
-            Write-Host "  $($global:UI_GRN)  No failed logon events found.$($global:UI_R)"
+            Write-Host "  $($global:UI_Theme.Success)  No failed logon events found.$($global:UI_Theme.Reset)"
             return
         }
 
-        Write-Host "  $($global:UI_GRY)  Found $($global:UI_R)$($global:UI_YLW)$($events.Count)$($global:UI_R)$($global:UI_GRY) failed logon(s)$($global:UI_R)"
+        Write-Host "  $($global:UI_Theme.Muted)  Found $($global:UI_Theme.Reset)$($global:UI_Theme.Accent)$($events.Count)$($global:UI_Theme.Reset)$($global:UI_Theme.Muted) failed logon(s)$($global:UI_Theme.Reset)"
         Write-UiBlankLine
-        Write-Host "  $($global:UI_GRY)  Time                  Event ID   Source$($global:UI_R)"
-        Write-Host "  $($global:UI_GRY)  -------------------   --------   ------$($global:UI_R)"
+        Write-Host "  $($global:UI_Theme.Muted)  Time                  Event ID   Source$($global:UI_Theme.Reset)"
+        Write-Host "  $($global:UI_Theme.Muted)  -------------------   --------   ------$($global:UI_Theme.Reset)"
 
         foreach ($e in $events) {
             $time = $e.TimeCreated.ToString("yyyy-MM-dd HH:mm:ss")
-            Write-Host "  $($global:UI_RED)  $time   $($e.Id)        $($global:UI_R)$($global:UI_WHT)$($e.ProviderName)$($global:UI_R)"
+            Write-Host "  $($global:UI_Theme.Error)  $time   $($e.Id)        $($global:UI_Theme.Reset)$($global:UI_Theme.Text)$($e.ProviderName)$($global:UI_Theme.Reset)"
         }
 
         Write-UiBlankLine
-        Write-Host "  $($global:UI_GRY)  -- Details (last 3) --$($global:UI_R)"
+        Write-Host "  $($global:UI_Theme.Muted)  -- Details (last 3) --$($global:UI_Theme.Reset)"
         Write-UiBlankLine
 
         foreach ($e in ($events | Select-Object -Last 3)) {
             $msg = if ($e.Message) { $e.Message.Split("`n")[0..4] -join " " } else { "(no message)" }
             if ($msg.Length -gt 120) { $msg = $msg.Substring(0,117) + "..." }
-            Write-Host "  $($global:UI_RED)  $($e.TimeCreated.ToString('HH:mm:ss'))$($global:UI_R)  $($global:UI_WHT)$msg$($global:UI_R)"
+            Write-Host "  $($global:UI_Theme.Error)  $($e.TimeCreated.ToString('HH:mm:ss'))$($global:UI_Theme.Reset)  $($global:UI_Theme.Text)$msg$($global:UI_Theme.Reset)"
             Write-UiBlankLine
         }
     } catch {
         Write-CoreError "Failed: $($_.Exception.Message)"
-        Write-Host "  $($global:UI_YLW)  Try running as Administrator.$($global:UI_R)"
+        Write-Host "  $($global:UI_Theme.Warning)  Try running as Administrator.$($global:UI_Theme.Reset)"
     }
 }
 
@@ -251,26 +251,26 @@ function Show-RebootShutdownEvents {
         } -MaxEvents 30 -ErrorAction Stop
 
         if (-not $events -or $events.Count -eq 0) {
-            Write-Host "  $($global:UI_GRY)  No reboot/shutdown events found.$($global:UI_R)"
+            Write-Host "  $($global:UI_Theme.Muted)  No reboot/shutdown events found.$($global:UI_Theme.Reset)"
             return
         }
 
-        Write-Host "  $($global:UI_GRY)  Found $($global:UI_R)$($global:UI_YLW)$($events.Count)$($global:UI_R)$($global:UI_GRY) event(s)$($global:UI_R)"
+        Write-Host "  $($global:UI_Theme.Muted)  Found $($global:UI_Theme.Reset)$($global:UI_Theme.Accent)$($events.Count)$($global:UI_Theme.Reset)$($global:UI_Theme.Muted) event(s)$($global:UI_Theme.Reset)"
         Write-UiBlankLine
-        Write-Host "  $($global:UI_GRY)  Time                  ID     Type$($global:UI_R)"
-        Write-Host "  $($global:UI_GRY)  -------------------   ----   ----$($global:UI_R)"
+        Write-Host "  $($global:UI_Theme.Muted)  Time                  ID     Type$($global:UI_Theme.Reset)"
+        Write-Host "  $($global:UI_Theme.Muted)  -------------------   ----   ----$($global:UI_Theme.Reset)"
 
         foreach ($e in $events) {
             $time  = $e.TimeCreated.ToString("yyyy-MM-dd HH:mm:ss")
             $desc  = if ($idMap.ContainsKey($e.Id)) { $idMap[$e.Id] } else { "Event $($e.Id)" }
             $color = switch ($e.Id) {
-                6008    { $global:UI_RED }
-                41      { $global:UI_RED }
-                1074    { $global:UI_YLW }
-                default { $global:UI_GRN }
+                6008    { $global:UI_Theme.Error }
+                41      { $global:UI_Theme.Error }
+                1074    { $global:UI_Theme.Warning }
+                default { $global:UI_Theme.Info }
             }
 
-            Write-Host "  $($global:UI_GRY)  $time   $($global:UI_R)$color$($e.Id.ToString().PadRight(5))  $desc$($global:UI_R)"
+            Write-Host "  $($global:UI_Theme.Muted)  $time   $($global:UI_Theme.Reset)$color$($e.Id.ToString().PadRight(5))  $desc$($global:UI_Theme.Reset)"
         }
     } catch {
         Write-CoreError "Failed: $($_.Exception.Message)"
@@ -283,11 +283,11 @@ function Export-ErrorsCsv {
     $w = Get-UiBoxWidth -MaxWidth 52 -MinWidth 40
     Write-UiBoxTitle -Title "EXPORT ERRORS TO CSV" -Width $w
 
-    Write-Host "  $($global:UI_GRN)  1)$($global:UI_R)  System"
-    Write-Host "  $($global:UI_GRN)  2)$($global:UI_R)  Application"
-    Write-Host "  $($global:UI_GRN)  3)$($global:UI_R)  Both"
+    Write-Host "  $($global:UI_Theme.Accent)  1)$($global:UI_Theme.Reset)  System"
+    Write-Host "  $($global:UI_Theme.Accent)  2)$($global:UI_Theme.Reset)  Application"
+    Write-Host "  $($global:UI_Theme.Accent)  3)$($global:UI_Theme.Reset)  Both"
     Write-UiBlankLine
-    Write-Host -NoNewline "  $($global:UI_YLW)  Log to export (1/2/3): $($global:UI_R)"
+    Write-Host -NoNewline "  $($global:UI_Theme.Warning)  Log to export (1/2/3): $($global:UI_Theme.Reset)"
     $logChoice = (Read-Host).Trim()
 
     $logs = switch ($logChoice) {
@@ -295,14 +295,14 @@ function Export-ErrorsCsv {
         "2" { @("Application") }
         "3" { @("System","Application") }
         default {
-            Write-Host "  $($global:UI_RED)  Invalid.$($global:UI_R)"
+            Write-Host "  $($global:UI_Theme.Error)  Invalid.$($global:UI_Theme.Reset)"
             return
         }
     }
 
     $defaultFile = Join-Path $HOME "event_errors_$(Get-Date -Format 'yyyyMMdd_HHmmss').csv"
-    Write-Host "  $($global:UI_GRY)  Default: $defaultFile$($global:UI_R)"
-    Write-Host -NoNewline "  $($global:UI_YLW)  Output path (Enter for default): $($global:UI_R)"
+    Write-Host "  $($global:UI_Theme.Muted)  Default: $defaultFile$($global:UI_Theme.Reset)"
+    Write-Host -NoNewline "  $($global:UI_Theme.Warning)  Output path (Enter for default): $($global:UI_Theme.Reset)"
     $outFile = Read-Host
     if (-not $outFile) { $outFile = $defaultFile }
 
@@ -339,7 +339,7 @@ while ($true) {
 
         "Q" {
             Write-UiBlankLine
-            Write-Host "  $($global:UI_CYN)  Bye.$($global:UI_R)"
+            Write-Host "  $($global:UI_Theme.Accent)  Bye.$($global:UI_Theme.Reset)"
             Write-UiBlankLine
             return
         }
