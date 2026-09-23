@@ -47,6 +47,7 @@ myip() {
 # These paths refer to the deployed copies in the typezero home directory.
 alias arakiel='$HOME/bin/arakiel-tmux.sh'                  # tmux launcher
 alias tools='$HOME/scripts/tool-menu.sh'                    # unified tool menu
+alias agui='$HOME/.local/bin/arakiel-admin-gui'             # desktop admin dashboard
 alias pifw='sudo $HOME/scripts/admintools/pi-fw.sh'         # firewall manager
 alias tmuxaa='tmux attach -d -t arakiel'                    # attach/detach client
 
