@@ -25,7 +25,30 @@ fi
 
 while true; do
     for wallpaper in "${WALLPAPERS[@]}"; do
-        feh --no-fehbg --bg-fill "$wallpaper"
-        sleep "$INTERVAL"
+        applied=0
+
+        # i3 can launch us before the X root window is fully ready.
+        # Retry briefly instead of exiting or sleeping for the full interval.
+        for _ in {1..30}; do
+            if xset q >/dev/null 2>&1 &&
+               feh --no-fehbg --bg-fill "$wallpaper"; then
+                applied=1
+                break
+            fi
+
+            sleep 1
+        done
+
+        (( applied )) || exit 0
+
+        elapsed=0
+
+        while (( elapsed < INTERVAL )); do
+            sleep 1
+            ((elapsed++))
+
+            # Exit promptly when this X session disappears.
+            xset q >/dev/null 2>&1 || exit 0
+        done
     done
 done
