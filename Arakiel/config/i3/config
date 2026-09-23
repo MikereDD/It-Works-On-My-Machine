@@ -26,6 +26,7 @@ set $menu dmenu_run
 
 bindsym $mod+Return exec $term
 bindsym $mod+d      exec $menu
+bindsym $mod+Shift+a exec --no-startup-id ~/.local/bin/arakiel-admin-gui
 
 bindsym $mod+Shift+q kill
 bindsym $mod+Shift+r restart
