@@ -2,7 +2,7 @@
 # -----------------------------------------------------------------------------
 # file:     ~/bin/arakiel-tmux.sh
 # author:   Mike Redd
-# version:  2.2
+# version:  2.3
 # desc:     tmux launcher for the Arakiel workspace, Raguel, and Telegram bots
 #           Raziel is supervised by systemd; tmux displays its journal only.
 # -----------------------------------------------------------------------------
@@ -79,6 +79,7 @@ for cmd in \
     mkdir \
     touch \
     chmod \
+    find \
     ls \
     systemctl \
     journalctl \
@@ -120,14 +121,10 @@ touch \
     die "could not create bot log files"
 
 # Raw logs retain full diagnostic content, but keep them private to typezero.
-chmod 700 "$LOGS" "$LOGS/kokabiel" ||
+find "$LOGS" -type d -exec chmod 700 {} + ||
     die "could not secure bot log directories"
 
-chmod 600 \
-    "$LOGS/musicbot.log" \
-    "$LOGS/kokabiel/kokabiel.log" \
-    "$LOGS/gabriel.log" \
-    "$LOGS/forwardbot.log" ||
+find "$LOGS" -type f -exec chmod 600 {} + ||
     die "could not secure bot log files"
 
 # Create a generously sized detached session.
