@@ -2,7 +2,7 @@
 # -----------------------------------------------------------------------------
 # file:     ~/bin/arakiel-tmux.sh
 # author:   Mike Redd
-# version:  2.1
+# version:  2.2
 # desc:     tmux launcher for the Arakiel workspace, Raguel, and Telegram bots
 #           Raziel is supervised by systemd; tmux displays its journal only.
 # -----------------------------------------------------------------------------
@@ -18,6 +18,7 @@ WORKSPACE="$HOME/dev/Hermes-Workspace"
 VENV="$BASE/venv/bin/python"
 PYTHON="python3"
 LOGS="$BASE/logs"
+REDACTOR="$HOME/bin/arakiel-log-redact.sh"
 
 MUSICBOT="$BASE/Sandalphon/musicbot.py"
 
@@ -77,6 +78,7 @@ for cmd in \
     tee \
     mkdir \
     touch \
+    chmod \
     ls \
     systemctl \
     journalctl \
@@ -93,6 +95,7 @@ require_dir "$KOKABIEL_DIR"
 require_file "$WORKSPACE/AGENTS.md"
 
 require_exec "$VENV"
+require_exec "$REDACTOR"
 require_exec "$KOKABIEL_PYTHON"
 
 require_file "$MUSICBOT"
@@ -115,6 +118,17 @@ touch \
     "$LOGS/gabriel.log" \
     "$LOGS/forwardbot.log" ||
     die "could not create bot log files"
+
+# Raw logs retain full diagnostic content, but keep them private to typezero.
+chmod 700 "$LOGS" "$LOGS/kokabiel" ||
+    die "could not secure bot log directories"
+
+chmod 600 \
+    "$LOGS/musicbot.log" \
+    "$LOGS/kokabiel/kokabiel.log" \
+    "$LOGS/gabriel.log" \
+    "$LOGS/forwardbot.log" ||
+    die "could not secure bot log files"
 
 # Create a generously sized detached session.
 # Explicit dimensions prevent pane splits from failing while detached.
@@ -252,35 +266,35 @@ LOGS_PANE="${PANE_IDS[5]}"
 # Redact Telegram Bot API tokens from displayed URLs.
 tmux send-keys \
     -t "$RAZIEL_PANE" \
-    "journalctl -u raziel.service -n 100 -f -o cat | sed -E 's#(/bot)[0-9]+:[A-Za-z0-9_-]+#\\1<redacted>#g'" \
+    "journalctl -u raziel.service -n 100 -f -o cat | '$REDACTOR'" \
     C-m ||
     die "could not open Raziel systemd log"
 
 # Pane 2 → Sandalphon
 tmux send-keys \
     -t "$MUSIC_PANE" \
-    "cd '$BASE' && '$PYTHON' '$MUSICBOT' 2>&1 | tee -a '$LOGS/musicbot.log'" \
+    "cd '$BASE' && '$PYTHON' '$MUSICBOT' 2>&1 | tee -a '$LOGS/musicbot.log' | '$REDACTOR'" \
     C-m ||
     die "could not launch Sandalphon"
 
 # Pane 3 → Kokabiel
 tmux send-keys \
     -t "$KOKABIEL_PANE" \
-    "cd '$KOKABIEL_DIR' && '$KOKABIEL_PYTHON' '$KOKABIEL'" \
+    "cd '$KOKABIEL_DIR' && '$KOKABIEL_PYTHON' '$KOKABIEL' 2>&1 | '$REDACTOR'" \
     C-m ||
     die "could not launch Kokabiel"
 
 # Pane 4 → Gabriel
 tmux send-keys \
     -t "$GABRIEL_PANE" \
-    "cd '$BASE' && '$VENV' '$GABRIEL' 2>&1 | tee -a '$LOGS/gabriel.log'" \
+    "cd '$BASE' && '$VENV' '$GABRIEL' 2>&1 | tee -a '$LOGS/gabriel.log' | '$REDACTOR'" \
     C-m ||
     die "could not launch Gabriel"
 
 # Pane 5 → Selaphiel
 tmux send-keys \
     -t "$FORWARD_PANE" \
-    "cd '$BASE' && '$PYTHON' '$FORWARDBOT' 2>&1 | tee -a '$LOGS/forwardbot.log'" \
+    "cd '$BASE' && '$PYTHON' '$FORWARDBOT' 2>&1 | tee -a '$LOGS/forwardbot.log' | '$REDACTOR'" \
     C-m ||
     die "could not launch Selaphiel"
 
