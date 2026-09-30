@@ -18,9 +18,11 @@ ThemeEngine currently includes:
 
 - **Obsidian Silver**
 - **Catppuccin Mocha**
+- **Dusty's Pink AF Theme**
 - **Everforest Dark**
 - **Gruvbox**
 - **Kanagawa Paper**
+- **Nord**
 - **OneDark**
 
 Each theme is stored as:
@@ -136,9 +138,11 @@ ThemeEngine/
 ├── theme.conf.template
 ├── themes/
 │   ├── catppuccin-mocha/
+│   ├── dustys-pink-af/
 │   ├── everforest-dark/
 │   ├── gruvbox/
 │   ├── kanagawa-paper/
+│   ├── nord/
 │   ├── obsidian-silver/
 │   └── onedark/
 └── templates/

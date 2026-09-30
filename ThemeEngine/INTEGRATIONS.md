@@ -44,11 +44,15 @@ ThemeEngine/
 ├── themes/
 │   ├── catppuccin-mocha/
 │   │   └── theme.conf
+│   ├── dustys-pink-af/
+│   │   └── theme.conf
 │   ├── everforest-dark/
 │   │   └── theme.conf
 │   ├── gruvbox/
 │   │   └── theme.conf
 │   ├── kanagawa-paper/
+│   │   └── theme.conf
+│   ├── nord/
 │   │   └── theme.conf
 │   ├── obsidian-silver/
 │   │   └── theme.conf
