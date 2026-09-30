@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file:     i3blocks.conf
 # author:   Mike Redd
-# version:  1.9
+# version:  2.0
 # desc:     ThemeEngine-managed Arakiel telemetry bar
 # theme:    {{THEME_NAME}}
 #
@@ -31,14 +31,14 @@ label=<span rise="0">󰋊&#x2002;SD&#x2002;</span>
 command=~/.config/i3/scripts/disk /
 interval=30
 color={{TEXT}}
-background={{SURFACE}}
+background={{BG}}
 
 [disk-nvme]
 label=<span rise="0">󰋊&#x2002;NV&#x2002;</span>
 command=~/.config/i3/scripts/disk /mnt/nvme1
 interval=30
 color={{BRIGHT}}
-background={{SURFACE}}
+background={{BG}}
 separator=true
 
 # ── Network ─────────────────────────────────
@@ -48,14 +48,14 @@ label=<span rise="0">󰈀&#x2002;</span>
 command=~/.config/i3/scripts/iface end0
 interval=10
 color={{INFO}}
-background={{SURFACE}}
+background={{BG}}
 
 [net]
 label=<span rise="0">󰓅&#x2002;</span>
 command=~/.config/i3/scripts/bandwidth end0
 interval=2
 color={{ACCENT}}
-background={{SURFACE}}
+background={{BG}}
 separator=true
 
 # ── System ──────────────────────────────────
@@ -65,28 +65,28 @@ label=<span rise="0">&#x2002;</span>
 command=~/.config/i3/scripts/cpu_usage
 interval=2
 color={{ACCENT_BRIGHT}}
-background={{SURFACE}}
+background={{BG}}
 
 [load]
 label=<span rise="0">&#x2002;</span>
 command=~/.config/i3/scripts/load_average
 interval=5
 color={{MUTED}}
-background={{SURFACE}}
+background={{BG}}
 
 [temp]
 label=<span rise="0">&#x2002;</span>
 command=~/.config/i3/scripts/temp
 interval=5
 color={{WARNING}}
-background={{SURFACE}}
+background={{BG}}
 
 [updates]
 label=<span rise="0">󰏗&#x2002;</span>
 command=~/.config/i3/scripts/updates.sh
 interval=900
 color={{SECONDARY}}
-background={{SURFACE}}
+background={{BG}}
 separator=true
 
 # ── Session ─────────────────────────────────
@@ -96,11 +96,11 @@ label=<span rise="0">󰔟&#x2002;</span>
 command=~/.config/i3/scripts/uptime_short
 interval=60
 color={{MUTED}}
-background={{SURFACE}}
+background={{BG}}
 
 [time]
 label=<span rise="0">&#x2002;</span>
 command=date '+%a %b %d  %H:%M:%S'
 interval=1
 color={{BRIGHT}}
-background={{SURFACE_ALT}}
+background={{BG}}
