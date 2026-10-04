@@ -25,6 +25,7 @@ ThemeEngine currently includes:
 - **Molokai**
 - **Nord**
 - **Oceanic Next**
+- **PaperColor**
 - **OneDark**
 
 Each theme is stored as:

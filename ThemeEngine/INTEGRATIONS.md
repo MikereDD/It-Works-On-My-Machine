@@ -58,6 +58,8 @@ ThemeEngine/
 │   │   └── theme.conf
 │   ├── oceanic-next/
 │   │   └── theme.conf
+│   ├── papercolor/
+│   │   └── theme.conf
 │   ├── obsidian-silver/
 │   │   └── theme.conf
 │   └── onedark/
