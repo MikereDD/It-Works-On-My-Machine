@@ -24,6 +24,7 @@ ThemeEngine currently includes:
 - **Kanagawa Paper**
 - **Molokai**
 - **Nord**
+- **Oceanic Next**
 - **OneDark**
 
 Each theme is stored as:
@@ -145,6 +146,7 @@ ThemeEngine/
 │   ├── kanagawa-paper/
 │   ├── molokai/
 │   ├── nord/
+│   ├── oceanic-next/
 │   ├── obsidian-silver/
 │   └── onedark/
 └── templates/

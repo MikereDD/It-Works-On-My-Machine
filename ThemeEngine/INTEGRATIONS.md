@@ -56,6 +56,8 @@ ThemeEngine/
 │   │   └── theme.conf
 │   ├── nord/
 │   │   └── theme.conf
+│   ├── oceanic-next/
+│   │   └── theme.conf
 │   ├── obsidian-silver/
 │   │   └── theme.conf
 │   └── onedark/
