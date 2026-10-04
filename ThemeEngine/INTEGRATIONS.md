@@ -52,6 +52,8 @@ ThemeEngine/
 │   │   └── theme.conf
 │   ├── kanagawa-paper/
 │   │   └── theme.conf
+│   ├── molokai/
+│   │   └── theme.conf
 │   ├── nord/
 │   │   └── theme.conf
 │   ├── obsidian-silver/

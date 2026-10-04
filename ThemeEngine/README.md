@@ -22,6 +22,7 @@ ThemeEngine currently includes:
 - **Everforest Dark**
 - **Gruvbox**
 - **Kanagawa Paper**
+- **Molokai**
 - **Nord**
 - **OneDark**
 
@@ -142,6 +143,7 @@ ThemeEngine/
 │   ├── everforest-dark/
 │   ├── gruvbox/
 │   ├── kanagawa-paper/
+│   ├── molokai/
 │   ├── nord/
 │   ├── obsidian-silver/
 │   └── onedark/
