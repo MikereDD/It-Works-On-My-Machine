@@ -1,7 +1,7 @@
 #--------------------------------------------
 # file:     i3blocks.conf
 # author:   Mike Redd
-# version:  2.0
+# version:  2.2
 # desc:     ThemeEngine-managed Arakiel telemetry bar
 # theme:    {{THEME_NAME}}
 #
@@ -44,14 +44,14 @@ separator=true
 # ── Network ─────────────────────────────────
 
 [lan]
-label=<span rise="0">󰈀&#x2002;</span>
+label=<span rise="0" size="120%">󰈀</span><span>&#x2002;</span>
 command=~/.config/i3/scripts/iface end0
 interval=10
 color={{INFO}}
 background={{BG}}
 
 [net]
-label=<span rise="0">󰓅&#x2002;</span>
+label=<span rise="0" size="125%">󰓅</span><span>&#x2002;</span>
 command=~/.config/i3/scripts/bandwidth end0
 interval=2
 color={{ACCENT}}
@@ -61,14 +61,14 @@ separator=true
 # ── System ──────────────────────────────────
 
 [cpu]
-label=<span rise="0">&#x2002;</span>
+label=<span rise="0" size="125%"></span><span>&#x2002;</span>
 command=~/.config/i3/scripts/cpu_usage
 interval=2
 color={{ACCENT_BRIGHT}}
 background={{BG}}
 
 [load]
-label=<span rise="0">&#x2002;</span>
+label=<span rise="0" size="120%"></span><span>&#x2002;</span>
 command=~/.config/i3/scripts/load_average
 interval=5
 color={{MUTED}}
@@ -82,7 +82,7 @@ color={{WARNING}}
 background={{BG}}
 
 [updates]
-label=<span rise="0">󰏗&#x2002;</span>
+label=<span rise="0" size="125%">󰏗</span><span>&#x2002;</span>
 command=~/.config/i3/scripts/updates.sh
 interval=900
 color={{SECONDARY}}
@@ -99,7 +99,7 @@ color={{MUTED}}
 background={{BG}}
 
 [time]
-label=<span rise="0">&#x2002;</span>
+label=<span rise="0" size="125%"></span><span>&#x2002;</span>
 command=date '+%a %b %d  %H:%M:%S'
 interval=1
 color={{BRIGHT}}
