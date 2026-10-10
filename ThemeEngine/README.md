@@ -555,3 +555,56 @@ platform-specific:
 That separation keeps the subsystem understandable and reusable without requiring it to become a standalone project.
 
 If ThemeEngine ever graduates into its own repository, its theme definitions, templates, authoring contract, and architecture are already separated cleanly enough to make that transition practical.
+
+
+---
+## Windows 11 Native Appearance
+
+Netzach integrates Windows 11 native themes through
+`Netzach/PowerShell/ThemeEngine/WindowsAppearance.ps1`.
+
+### Accent policy
+
+The default Windows accent policy is **theme**. ThemeEngine renders the active
+`theme.conf` `ACCENT` into the generated Windows `.theme` file and sets
+`AutoColorization=0` to request manual, theme-defined accent selection. With
+Windows dark mode and taskbar/title-bar accent visibility enabled, Windows may
+render a darker variation of that color on Start and the taskbar. Exact RGB
+rendering across Windows surfaces is not guaranteed.
+
+To opt into wallpaper-derived Windows colors, create the plain text file
+`%LOCALAPPDATA%\Typezero\ThemeEngine\windows-accent-policy` containing exactly
+`automatic`, then reapply the theme. In that mode the generator sets
+`AutoColorization=1` and Windows owns the accent selection. Delete the policy
+file, or put `theme` in it, to return to the default.
+
+Application integrations (Windows Terminal, PowerShell, Vim, Lightline) always
+use the ThemeEngine semantic palette regardless of Windows accent policy.
+
+### Wallpapers and ownership
+
+DisplayFusion owns wallpapers, wallpaper rotation, and per-monitor layouts.
+ThemeEngine copies the active Windows theme's wallpaper reference without
+intentionally changing DisplayFusion configuration. Windows applying a theme
+can still refresh wallpaper settings; visually verify all monitors.
+
+### Diagnostics and limitations
+
+`themeengine doctor` reports the selected accent policy and the
+`AutoColorization` setting saved in Windows' active `.theme` file. The latter
+is **not** an authoritative live Windows Settings API. It also reports
+transparency, title-bar/taskbar accent visibility and DisplayFusion process
+presence. Process detection does not verify the wallpaper arrangement.
+
+Native theme activation is asynchronous, but the provider now waits up to 15
+seconds for Windows' active saved theme file to match the requested display
+name, accent policy, and configured RGB when the policy is `theme`. If the
+requested theme was already active, the provider reports that reapplication
+was not independently verified. This confirms saved theme selection, not
+pixel-level completion of all Windows visual refreshes.
+
+Current and previous theme state is written after native confirmation and
+application rendering succeed. This is not a fully atomic transaction:
+generated Vim/Lightline files or native personalization may change before a
+later failure. Windows may create numbered installed theme copies; ThemeEngine
+does not automatically delete them.

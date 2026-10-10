@@ -848,3 +848,62 @@ Generated outputs should remain disposable and reproducible.
 Applications should consume generated ThemeEngine state rather than independently inventing theme colors.
 
 That separation is what allows ThemeEngine to remain a subsystem today while still being structured cleanly enough to become a standalone project later if that ever becomes desirable.
+
+
+---
+## Windows Native Theme Integration
+
+### Renderer and provider
+
+- Renderer: `Netzach/PowerShell/ThemeEngine/ThemeEngine.ps1`
+- Provider: `Netzach/PowerShell/ThemeEngine/WindowsAppearance.ps1`
+- Generated theme: `%LOCALAPPDATA%\Typezero\ThemeEngine\windows\Typezero-<theme-id>.theme`
+- Optional policy file: `%LOCALAPPDATA%\Typezero\ThemeEngine\windows-accent-policy`
+
+### Accent policy contract
+
+The **default** policy is `theme`, requesting `AutoColorization=0` in the
+rendered `.theme` file. The colorization RGB comes from the active theme's
+`ACCENT`; the generator preserves the source theme's colorization alpha byte.
+Windows handles its own accent palette and may shade Start/taskbar colors.
+
+The optional `automatic` policy requests `AutoColorization=1`; Windows then
+chooses an accent independently of ThemeEngine, potentially from the wallpaper.
+Set the policy file to `automatic` or `theme` (or delete it for the default),
+then run `themeengine apply <theme>` or `themeengine reload`.
+
+### Activation and state
+
+ThemeEngine generates a `.theme` from the existing Windows theme structure,
+changing only selected fields while retaining the source wallpaper, cursors and
+sounds. It requests activation via Windows. Apply, reload and rollback use this
+provider as well as the Windows Terminal, PowerShell, Vim and Lightline renderers.
+
+Native activation is asynchronous. The provider waits up to 15 seconds for
+Windows' active saved theme to match the requested display name, accent policy,
+and configured RGB in `theme` policy. When the requested theme was already
+active, reapplication is not independently proven. These checks confirm saved
+theme selection, not every visual refresh or wallpaper on every monitor.
+
+ThemeEngine writes current/previous history only after native verification and
+application rendering, so a native activation error should leave history
+unchanged. The operation is not a fully atomic transaction: Vim/Lightline
+outputs can be generated before activation, and Windows personalization may
+change independently. Windows may create numbered installed copies. Never
+blindly remove an installed or active theme file.
+
+### Diagnostics
+
+`themeengine doctor` reports the requested accent policy plus a comparison
+against `AutoColorization` in the saved active `.theme` file (not a live
+Settings API), along with the native provider, Windows theme display name,
+transparency, title-bar/taskbar accent visibility, and DisplayFusion process.
+Unknown state must not be misreported as confirmed success.
+
+### Ownership and validation
+
+DisplayFusion owns wallpaper content, per-monitor layouts, and rotation.
+ThemeEngine preserves the source Windows wallpaper reference, but Windows may
+reapply personalization when a theme is activated. Inspect all monitors after
+switching themes. Run apply, reload, rollback and doctor regression tests and
+compare the Windows Start/taskbar appearance for contrasting themes.

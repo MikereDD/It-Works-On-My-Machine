@@ -317,14 +317,11 @@ function Set-Theme {
 
     $t = Read-ThemeFile $Id
 
-    if (-not $NoHistory -and (Test-Path -LiteralPath $CurrentFile)) {
-        $old = (Get-Content -LiteralPath $CurrentFile -Raw).Trim()
-        if ($old -and $old -ne $Id) {
-            Set-Content -LiteralPath $PreviousFile -Value $old -Encoding ascii
-        }
-    }
-
-    Write-CurrentTheme $t
+    # Defer current/previous state updates until native activation and
+    # application rendering succeed. A failed activation keeps history intact.
+    $old = if (Test-Path -LiteralPath $CurrentFile) {
+        (Get-Content -LiteralPath $CurrentFile -Raw).Trim()
+    } else { '' }
 
     # Vim receives a generated native colorscheme from the same semantic
     # palette used by the shell and Windows Terminal. Keep the output inside
@@ -340,7 +337,23 @@ function Set-Theme {
     $lightlineColors = Join-Path $HOME 'config\vim\autoload\lightline\colorscheme\typezero.vim'
     Write-ThemeTemplate -Source $lightlineTemplate -Destination $lightlineColors -Theme $t
 
+    # Native Windows appearance integration.
+    $windowsProvider = Join-Path $PSScriptRoot 'WindowsAppearance.ps1'
+
+    if (Test-Path -LiteralPath $windowsProvider) {
+        . $windowsProvider
+
+        Set-TypezeroWindowsNativeTheme `
+            -Id $t['THEME_ID'] `
+            -Name $t['THEME_NAME'] `
+            -Accent $t['ACCENT']
+    }
+
     Set-WindowsTerminalTheme $t
+    Write-CurrentTheme $t
+    if (-not $NoHistory -and $old -and $old -ne $Id) {
+        Set-Content -LiteralPath $PreviousFile -Value $old -Encoding ascii
+    }
     Set-Content -LiteralPath $CurrentFile -Value $Id -Encoding ascii
     Write-Host "Applied theme: $($t['THEME_NAME'])"
 }
@@ -442,6 +455,92 @@ switch ($Command) {
         Write-Host ("  current.ps1   " + $(if (Test-Path $CurrentPs1) { "PASS" } else { "MISSING" }))
         $terminalSettings = Get-WindowsTerminalSettingsPath
         Write-Host ("  terminal      " + $(if ($terminalSettings) { "PASS" } else { "NOT FOUND" }))
+        Write-Host ""
+        Write-Host "  Windows Appearance"
+
+        $providerPath = Join-Path $PSScriptRoot 'WindowsAppearance.ps1'
+        $providerExists = Test-Path -LiteralPath $providerPath
+
+        Write-Host ("  native provider    " + $(
+            if ($providerExists) { "PASS" } else { "MISSING" }
+        ))
+
+        # Expected policy is persisted as a plain text file; default is theme.
+        $policyPath = Join-Path $env:LOCALAPPDATA 'Typezero\ThemeEngine\windows-accent-policy'
+        $accentPolicy = 'theme'
+        if (Test-Path -LiteralPath $policyPath) {
+            $accentPolicy = (Get-Content -LiteralPath $policyPath -Raw).Trim().ToLowerInvariant()
+        }
+        $expectedAuto = if ($accentPolicy -eq 'automatic') { '1' } elseif ($accentPolicy -eq 'theme') { '0' } else { $null }
+        Write-Host ("  accent policy      " + $(if ($expectedAuto) { $accentPolicy } else { "INVALID ($accentPolicy)" }))
+        $activeTheme = $null
+        $accentMode = "UNKNOWN"
+        $windowsTheme = "UNKNOWN"
+
+        try {
+            $activeTheme = (Get-ItemProperty `
+                'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes' `
+                -ErrorAction Stop).CurrentTheme
+
+            if ($activeTheme -and (Test-Path -LiteralPath $activeTheme)) {
+                $themeContents = Get-Content -LiteralPath $activeTheme -Raw
+
+                if ($themeContents -match '(?m)^AutoColorization=1\s*$') {
+                    $accentMode = $(if ($expectedAuto -eq '1') { "PASS (Automatic, saved theme)" } else { "WARN (Automatic; policy expects theme)" })
+                }
+                elseif ($themeContents -match '(?m)^AutoColorization=0\s*$') {
+                    $accentMode = $(if ($expectedAuto -eq '0') { "PASS (Theme-defined, saved theme)" } else { "WARN (Manual; policy expects automatic)" })
+                }
+
+                if ($themeContents -match '(?m)^DisplayName=(.+)$') {
+                    $windowsTheme = $Matches[1].Trim()
+                }
+            }
+        }
+        catch {
+            $windowsTheme = "UNKNOWN"
+        }
+
+        Write-Host ("  accent mode        " + $accentMode)
+        Write-Host ("  windows theme      " + $windowsTheme)
+
+        $appearance = $null
+
+        try {
+            $personalize = Get-ItemProperty `
+                'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' `
+                -ErrorAction Stop
+
+            $dwm = Get-ItemProperty `
+                'HKCU:\Software\Microsoft\Windows\DWM' `
+                -ErrorAction Stop
+
+            $appearance = [pscustomobject]@{
+                Transparency = $personalize.EnableTransparency
+                Titlebar     = $dwm.ColorPrevalence
+                Taskbar      = $personalize.ColorPrevalence
+            }
+        }
+        catch {
+            $appearance = $null
+        }
+
+        if ($null -ne $appearance) {
+            Write-Host ("  transparency       " + $(if ($appearance.Transparency -eq 1) { "ON" } elseif ($appearance.Transparency -eq 0) { "OFF" } else { "UNKNOWN" }))
+            Write-Host ("  titlebar accent    " + $(if ($appearance.Titlebar -eq 1) { "ON" } elseif ($appearance.Titlebar -eq 0) { "OFF" } else { "UNKNOWN" }))
+            Write-Host ("  taskbar accent     " + $(if ($appearance.Taskbar -eq 1) { "ON" } elseif ($appearance.Taskbar -eq 0) { "OFF" } else { "UNKNOWN" }))
+        }
+        else {
+            Write-Host "  transparency       UNKNOWN"
+            Write-Host "  titlebar accent    UNKNOWN"
+            Write-Host "  taskbar accent     UNKNOWN"
+        }
+
+        $displayFusion = Get-Process -Name 'DisplayFusion' -ErrorAction SilentlyContinue
+
+        Write-Host ("  DisplayFusion      " + $(
+            if ($displayFusion) { "RUNNING" } else { "NOT DETECTED" }
+        ))
     }
 
     default {
