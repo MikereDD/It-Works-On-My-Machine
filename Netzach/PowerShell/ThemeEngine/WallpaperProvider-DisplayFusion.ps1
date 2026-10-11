@@ -1,6 +1,6 @@
 # Typezero ThemeEngine - DisplayFusion wallpaper provider
-# Version: 0.1-dev (discovery only)
-# This provider never writes to DisplayFusion settings or changes wallpapers.
+# Version: 0.1
+# Read-only discovery; guarded profile switching uses DisplayFusion commands with verified backups.
 
 function Get-TypezeroDisplayFusionInfo {
     [CmdletBinding()]

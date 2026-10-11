@@ -1,6 +1,6 @@
 # Typezero ThemeEngine - DisplayFusion theme/profile mapping v0.4
 # Opt-in; config lives under LOCALAPPDATA, never in the repository.
-# No wallpaper change occurs without an explicit -Execute and confirmation.
+# Manual switching requires -Execute and confirmation; enabled theme apply can switch automatically.
 function Get-TypezeroWallpaperMappingPath {
     Join-Path $env:LOCALAPPDATA 'Typezero\ThemeEngine\wallpaper-displayfusion.json'
 }
