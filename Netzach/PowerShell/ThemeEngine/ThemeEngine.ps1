@@ -453,7 +453,7 @@ switch ($Command) {
                     # prompts here only; guarded provider still creates a fresh
                     # backup, verifies its hash, and checks active profile ID.
                     $wallpaperResult = Invoke-TypezeroWallpaperThemeMapping -ThemeId $Theme -Execute -Confirm:$false -ErrorAction Stop
-                    if ($null -eq $wallpaperResult -or $wallpaperResult.Status -notin @('VERIFIED', 'NO CHANGE')) {
+                    if ($null -eq $wallpaperResult -or $wallpaperResult.Status -notin @('VERIFIED', 'VERIFIED - COMMAND TIMEOUT', 'NO CHANGE')) {
                         Write-Warning "DisplayFusion: wallpaper activation returned no verified success for theme '$Theme'."
                     } else {
                         Write-Host "DisplayFusion wallpaper: $($wallpaperResult.ProfileName) [$($wallpaperResult.Status)]"
