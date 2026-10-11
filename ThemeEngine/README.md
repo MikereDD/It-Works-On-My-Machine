@@ -367,6 +367,8 @@ help
 
 `wallpaper` is a Netzach-only command for managing DisplayFusion wallpaper profiles and theme mappings.
 
+See [Wallpaper Collections](WALLPAPERS.md) for the approved artwork, monitor layouts, and installation instructions.
+
 ---
 
 ## Generated Outputs
