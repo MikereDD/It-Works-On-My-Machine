@@ -917,6 +917,7 @@ compare the Windows Start/taskbar appearance for contrasting themes.
 ```text
 Netzach/PowerShell/ThemeEngine/WallpaperProvider-DisplayFusion.ps1
 Netzach/PowerShell/ThemeEngine/WallpaperMapping-DisplayFusion.ps1
+Netzach/PowerShell/ThemeEngine/WallpaperCLI-DisplayFusion.ps1
 ```
 
 **Installed alongside the renderer:**
@@ -925,6 +926,7 @@ Netzach/PowerShell/ThemeEngine/WallpaperMapping-DisplayFusion.ps1
 $HOME\PS\ThemeEngine\ThemeEngine.ps1
 $HOME\PS\ThemeEngine\WallpaperProvider-DisplayFusion.ps1
 $HOME\PS\ThemeEngine\WallpaperMapping-DisplayFusion.ps1
+$HOME\PS\ThemeEngine\WallpaperCLI-DisplayFusion.ps1
 ```
 
 **Local state and backups:**
@@ -960,6 +962,68 @@ Set-TypezeroWallpaperMappingEnabled -Enabled $true
 # After testing, restore disabled baseline:
 Set-TypezeroWallpaperMappingEnabled -Enabled $false
 ```
+
+
+### Stage 7 — Wallpaper Management CLI
+
+The Netzach renderer dispatches `themeengine wallpaper <subcommand>`
+to `WallpaperCLI-DisplayFusion.ps1`.
+
+The CLI reuses the existing DisplayFusion provider and mapping modules.
+It does not implement an independent wallpaper switching mechanism.
+
+Available commands:
+
+```powershell
+themeengine wallpaper status
+themeengine wallpaper profiles
+themeengine wallpaper mappings
+themeengine wallpaper map nord "ThemeEngine-Test"
+themeengine wallpaper unmap nord
+themeengine wallpaper enable
+themeengine wallpaper disable
+themeengine wallpaper test nord
+themeengine wallpaper backup
+themeengine wallpaper switch "Default Profile"
+```
+
+These are individual command examples, not a sequence to execute.
+In particular, `unmap nord` removes the existing Nord mapping.
+
+Status, profiles, mappings, and test are read-only operations.
+Map, unmap, enable, and disable modify the machine-local mapping JSON.
+Backup creates a private local DisplayFusion registry export.
+
+Manual profile switching requires confirmation. The existing provider
+creates and verifies a backup before switching, then verifies the
+active profile GUID after the operation.
+
+Automatic switching is disabled by default. When explicitly enabled,
+a mapped profile can activate after a successful `themeengine apply`.
+The CLI does not change the existing reload or rollback behavior.
+
+The main `themeengine doctor` command now also reports:
+
+- Wallpaper CLI module availability
+- Wallpaper integration enabled/disabled state
+- Number of mapped themes
+- Active DisplayFusion wallpaper profile
+
+### Stage 7 validation (Netzach)
+
+Validated with DisplayFusion 12.1.1 and PowerShell 7.6.6.
+
+Confirmed command help, profile discovery, mapping creation/removal,
+enable/disable, mapping dry runs, invalid-command rejection,
+backup creation, and manual switching between ThemeEngine-Test
+and Default Profile.
+
+The final test state was PaperColor as the current color theme,
+Default Profile active, Nord mapped to ThemeEngine-Test, and
+automatic wallpaper integration disabled.
+
+Active-profile GUID verification does not replace visual inspection
+of individual monitor wallpapers.
 
 This provider is Windows/DisplayFusion-specific; it does not change Arakiel rendering or the Windows accent policy. Windows native per-monitor wallpaper management remains future work.
 <!-- END TYPEZERO DISPLAYFUSION WALLPAPER PROVIDER -->
