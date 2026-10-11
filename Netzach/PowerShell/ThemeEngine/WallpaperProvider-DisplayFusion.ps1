@@ -186,11 +186,14 @@ function Invoke-TypezeroDisplayFusionProfileSwitch {
         throw 'DisplayFusion active profile changed during backup; no switch attempted.'
     }
     $process = Start-Process -FilePath $fresh.CommandPath -ArgumentList @('-WallpaperLoadProfile', ('"' + $target.Name + '"')) -PassThru -ErrorAction Stop
+    $commandTimedOut = $false
     try {
         if (-not $process.WaitForExit(15000)) {
-            throw 'DisplayFusion command did not exit within 15 seconds. Check DisplayFusion before retrying; switching state is unknown.'
+            # DisplayFusion can activate the wallpaper profile before its CLI exits.
+            # A timeout alone cannot establish whether activation succeeded.
+            $commandTimedOut = $true
         }
-        if ($process.ExitCode -ne 0) {
+        elseif ($process.ExitCode -ne 0) {
             throw "DisplayFusion command returned exit code $($process.ExitCode). Check state before retrying."
         }
     } finally {
@@ -203,15 +206,24 @@ function Invoke-TypezeroDisplayFusionProfileSwitch {
         Start-Sleep -Milliseconds 500
     }
     if (-not $observed) {
-        throw "Profile load was issued, but registry did not confirm '$($target.Name)' as active. Check DisplayFusion manually. Backup: $($backup.BackupDirectory). Previous profile: $($previous[0].Name)"
+        $reason = if ($commandTimedOut) {
+            'DisplayFusion command timed out, and profile activation was not verified.'
+        } else {
+            'DisplayFusion command completed, but profile activation was not verified.'
+        }
+        throw "$reason Check DisplayFusion manually before retrying. Backup: $($backup.BackupDirectory). Previous profile: $($previous[0].Name)"
     }
     [pscustomobject]@{
-        Status = 'VERIFIED'
+        Status = if ($commandTimedOut) { 'VERIFIED - COMMAND TIMEOUT' } else { 'VERIFIED' }
         ProfileName = $target.Name
         ProfileId = $target.Id
         PreviousProfileName = $previous[0].Name
         PreviousProfileId = $previous[0].Id
         BackupDirectory = $backup.BackupDirectory
-        Note = 'DisplayFusion active profile ID verified; visually inspect monitor wallpapers. To restore, invoke this function explicitly with the previous profile name.'
+        Note = if ($commandTimedOut) {
+            'Requested profile GUID verified after the 15-second command timeout. Command exit was not confirmed; inspect monitors and lingering processes. Restore with an explicit switch to the previous profile.'
+        } else {
+            'DisplayFusion active profile ID verified; visually inspect monitor wallpapers. To restore, invoke this function explicitly with the previous profile name.'
+        }
     }
 }
