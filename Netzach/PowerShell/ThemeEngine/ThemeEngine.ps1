@@ -5,15 +5,19 @@
 # desc:     Typezero ThemeEngine — Netzach PowerShell renderer
 #--------------------------------------------
 
+[CmdletBinding(PositionalBinding = $false)]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("bootstrap","list","current","preview","apply","reload","rollback","doctor","help")]
+    [ValidateSet("bootstrap","list","current","preview","apply","reload","rollback","wallpaper","doctor","help")]
     [string]$Command = "help",
 
     [Parameter(Position = 1)]
     [string]$Theme,
 
-    [string]$RepoRoot
+    [string]$RepoRoot,
+
+    [Parameter(ValueFromRemainingArguments = $true)]
+    [string[]]$WallpaperArgs
 )
 
 $ErrorActionPreference = "Stop"
@@ -483,6 +487,17 @@ switch ($Command) {
         Set-Theme $id
     }
 
+    # BEGIN TYPEZERO WALLPAPER CLI (Stage 7)
+    "wallpaper" {
+        $cliPath = Join-Path $PSScriptRoot 'WallpaperCLI-DisplayFusion.ps1'
+        if (-not (Test-Path -LiteralPath $cliPath -PathType Leaf)) {
+            throw "Wallpaper CLI module not installed: $cliPath"
+        }
+        . $cliPath
+        Invoke-TypezeroWallpaperCli -Action $Theme -ExtraArgs $WallpaperArgs -InstalledThemesRoot $ThemesRoot -ProviderDirectory $PSScriptRoot
+    }
+    # END TYPEZERO WALLPAPER CLI (Stage 7)
+
     "doctor" {
         Write-Host "ThemeEngine doctor"
         Write-Host ""
@@ -578,6 +593,37 @@ switch ($Command) {
         Write-Host ("  DisplayFusion      " + $(
             if ($displayFusion) { "RUNNING" } else { "NOT DETECTED" }
         ))
+		        Write-Host ""
+        Write-Host "  Wallpaper Integration"
+
+        $wpCli = Join-Path $PSScriptRoot 'WallpaperCLI-DisplayFusion.ps1'
+        $wpProvider = Join-Path $PSScriptRoot 'WallpaperProvider-DisplayFusion.ps1'
+        $wpMapping = Join-Path $PSScriptRoot 'WallpaperMapping-DisplayFusion.ps1'
+
+        Write-Host ("  CLI module          " + $(
+            if (Test-Path -LiteralPath $wpCli -PathType Leaf) { 'PASS' } else { 'MISSING' }
+        ))
+
+        if ((Test-Path -LiteralPath $wpProvider -PathType Leaf) -and
+            (Test-Path -LiteralPath $wpMapping -PathType Leaf)) {
+            try {
+                . $wpProvider
+                . $wpMapping
+
+                $wpConfig = Get-TypezeroWallpaperMappings
+                $wpActive = @(Get-TypezeroDisplayFusionProfiles | Where-Object Current)
+
+                Write-Host ("  integration         " + $(if ($wpConfig.Enabled) { 'ENABLED' } else { 'DISABLED' }))
+                Write-Host ("  mapped themes       " + $wpConfig.Profiles.Count)
+                Write-Host ("  active profile      " + $(if ($wpActive.Count -eq 1) { $wpActive[0].Name } else { 'UNKNOWN' }))
+            }
+            catch {
+                Write-Host "  wallpaper status    ERROR: $($_.Exception.Message)"
+            }
+        }
+        else {
+            Write-Host "  wallpaper provider  MISSING"
+        }
     }
 
     default {
@@ -592,6 +638,7 @@ usage:
   ThemeEngine.ps1 apply <theme>
   ThemeEngine.ps1 reload
   ThemeEngine.ps1 rollback
+  ThemeEngine.ps1 wallpaper <subcommand>
   ThemeEngine.ps1 doctor
 "@
     }

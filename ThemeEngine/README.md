@@ -353,6 +353,7 @@ preview
 apply
 reload
 rollback
+wallpaper
 doctor
 bootstrap
 help
@@ -363,6 +364,8 @@ help
 `reload` reapplies the currently selected theme without changing theme history.
 
 `rollback` returns to the previously active theme when previous-theme state exists.
+
+`wallpaper` is a Netzach-only command for managing DisplayFusion wallpaper profiles and theme mappings.
 
 ---
 
@@ -631,6 +634,33 @@ The local-only configuration file is:
 ```
 
 It stores an `Enabled` flag and theme-ID-to-DisplayFusion-profile-name mappings. It is machine-local configuration, **not** a portable palette definition. Create and save wallpaper profiles within DisplayFusion before mapping their names. Do not overwrite the existing Default Profile during testing.
+
+### Wallpaper CLI (Stage 7)
+
+The Netzach renderer includes an optional DisplayFusion wallpaper CLI.
+
+```powershell
+themeengine wallpaper status
+themeengine wallpaper profiles
+themeengine wallpaper mappings
+themeengine wallpaper map nord "ThemeEngine-Test"
+themeengine wallpaper test nord
+themeengine wallpaper enable
+themeengine wallpaper disable
+themeengine wallpaper unmap nord
+themeengine wallpaper backup
+themeengine wallpaper switch "Default Profile"
+```
+These commands are examples, not a sequence to execute.
+In particular, `unmap nord` removes the existing Nord mapping.
+
+Automatic wallpaper switching is disabled by default. Enabling
+integration allows mapped profiles to activate during a later
+`themeengine apply`.
+
+Manual switching requires confirmation and a verified backup.
+`themeengine doctor` reports integration status, mapping count,
+and the active DisplayFusion profile.
 
 ### PowerShell example (Netzach)
 
