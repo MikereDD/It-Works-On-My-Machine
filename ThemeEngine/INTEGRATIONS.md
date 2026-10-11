@@ -907,3 +907,59 @@ ThemeEngine preserves the source Windows wallpaper reference, but Windows may
 reapply personalization when a theme is activated. Inspect all monitors after
 switching themes. Run apply, reload, rollback and doctor regression tests and
 compare the Windows Start/taskbar appearance for contrasting themes.
+---
+
+<!-- BEGIN TYPEZERO DISPLAYFUSION WALLPAPER PROVIDER -->
+## Netzach: Optional DisplayFusion Wallpaper Provider
+
+**Repository modules:**
+
+```text
+Netzach/PowerShell/ThemeEngine/WallpaperProvider-DisplayFusion.ps1
+Netzach/PowerShell/ThemeEngine/WallpaperMapping-DisplayFusion.ps1
+```
+
+**Installed alongside the renderer:**
+
+```text
+$HOME\PS\ThemeEngine\ThemeEngine.ps1
+$HOME\PS\ThemeEngine\WallpaperProvider-DisplayFusion.ps1
+$HOME\PS\ThemeEngine\WallpaperMapping-DisplayFusion.ps1
+```
+
+**Local state and backups:**
+
+```text
+%LOCALAPPDATA%\Typezero\ThemeEngine\wallpaper-displayfusion.json
+%LOCALAPPDATA%\Typezero\ThemeEngine\backups\displayfusion\
+```
+
+The JSON mapping configuration contains `Enabled` (disabled by default) and `Profiles` (theme ID to saved DisplayFusion profile name). DisplayFusion profile names are user-created in DisplayFusion; ThemeEngine does not generate wallpaper images or invent profile definitions.
+
+### Apply flow and isolation
+
+Only the Netzach `apply` dispatcher invokes the optional wallpaper hook, **after** `Set-Theme` has completed its rendering, native Windows appearance application, Windows Terminal update, and current/previous theme history write. `reload` and `rollback` do not invoke this hook. An absent provider, disabled flag, already-active profile, or unmapped theme causes no wallpaper switch. An invalid mapped profile produces a warning; provider failures are caught and reported as warnings after successful colors are applied. Wallpaper restoration is independent of ThemeEngine's previous-theme history.
+
+When a mapped profile exists and integration is enabled, the hook invokes `Invoke-TypezeroWallpaperThemeMapping -Execute -Confirm:$false`. That function delegates to `Invoke-TypezeroDisplayFusionProfileSwitch -Execute -Confirm:$false` for the unattended apply path; the direct manual switch still prompts for confirmation. The provider requires DisplayFusion discovery, makes a fresh export of the wallpaper-profile registry subtree, computes/verifies its SHA-256, asks DisplayFusion's command utility to load the profile, and verifies the resulting current-profile GUID. The registry is not written directly for selection.
+
+**Validated on Netzach:** DisplayFusion 12.1.1 Steam edition, `Default Profile` and `ThemeEngine-Test`, matching Gold/Bronze/Silver wallpapers; confirmed switch, GUID readback, restore, disabled mode, unmapped mode, and invalid-profile warning. Visual monitor verification remains separate from GUID verification.
+
+### Useful commands
+
+```powershell
+. "$HOME\PS\ThemeEngine\WallpaperProvider-DisplayFusion.ps1"
+. "$HOME\PS\ThemeEngine\WallpaperMapping-DisplayFusion.ps1"
+
+Get-TypezeroDisplayFusionInfo | Format-List
+Get-TypezeroDisplayFusionProfiles | Format-Table -AutoSize
+Get-TypezeroDisplayFusionMonitorSummary | Format-Table -AutoSize
+Get-TypezeroWallpaperMappings | Format-List
+Test-TypezeroWallpaperThemeMapping -ThemeId 'nord' | Format-List
+Set-TypezeroWallpaperProfileMapping -ThemeId 'nord' -ProfileName 'ThemeEngine-Test'
+Set-TypezeroWallpaperMappingEnabled -Enabled $true
+# After testing, restore disabled baseline:
+Set-TypezeroWallpaperMappingEnabled -Enabled $false
+```
+
+This provider is Windows/DisplayFusion-specific; it does not change Arakiel rendering or the Windows accent policy. Windows native per-monitor wallpaper management remains future work.
+<!-- END TYPEZERO DISPLAYFUSION WALLPAPER PROVIDER -->

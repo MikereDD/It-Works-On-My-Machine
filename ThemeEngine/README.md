@@ -608,3 +608,60 @@ application rendering succeed. This is not a fully atomic transaction:
 generated Vim/Lightline files or native personalization may change before a
 later failure. Windows may create numbered installed theme copies; ThemeEngine
 does not automatically delete them.
+---
+
+<!-- BEGIN TYPEZERO DISPLAYFUSION WALLPAPER PROVIDER -->
+## Optional DisplayFusion Wallpaper Profiles (Netzach)
+
+ThemeEngine can optionally select an existing **DisplayFusion wallpaper profile** when `themeengine apply <theme-id>` succeeds. This does not make ThemeEngine responsible for wallpaper image files, slideshow scheduling, monitor geometry, or rendering: DisplayFusion continues to own those behaviors.
+
+The feature is **disabled by default**. Unmapped themes do not change the wallpaper. The wallpaper action is invoked only for `apply` (not `reload` or `rollback`) and only after the Windows/terminal/color theme application succeeds. A wallpaper error produces a warning without reverting a successful color-theme application. Wallpaper switching is not part of ThemeEngine's color rollback transaction.
+
+The provider and mapping modules live at:
+
+```text
+Netzach/PowerShell/ThemeEngine/WallpaperProvider-DisplayFusion.ps1
+Netzach/PowerShell/ThemeEngine/WallpaperMapping-DisplayFusion.ps1
+```
+
+The local-only configuration file is:
+
+```text
+%LOCALAPPDATA%\Typezero\ThemeEngine\wallpaper-displayfusion.json
+```
+
+It stores an `Enabled` flag and theme-ID-to-DisplayFusion-profile-name mappings. It is machine-local configuration, **not** a portable palette definition. Create and save wallpaper profiles within DisplayFusion before mapping their names. Do not overwrite the existing Default Profile during testing.
+
+### PowerShell example (Netzach)
+
+```powershell
+. "$HOME\PS\ThemeEngine\WallpaperProvider-DisplayFusion.ps1"
+. "$HOME\PS\ThemeEngine\WallpaperMapping-DisplayFusion.ps1"
+
+Get-TypezeroDisplayFusionProfiles | Format-Table -AutoSize
+Set-TypezeroWallpaperProfileMapping -ThemeId 'nord' -ProfileName 'ThemeEngine-Test'
+Test-TypezeroWallpaperThemeMapping -ThemeId 'nord' | Format-List
+
+# This enables automatic selection on later `themeengine apply` commands.
+Set-TypezeroWallpaperMappingEnabled -Enabled $true
+
+# Disable again without removing saved mappings.
+Set-TypezeroWallpaperMappingEnabled -Enabled $false
+```
+
+With integration enabled and a unique valid mapping, applying a theme activates its named saved profile using DisplayFusion's supported `DisplayFusionCommand.exe -WallpaperLoadProfile` action. The guarded provider backs up its wallpaper-profile registry subtree and checks the backup hash before switching, then verifies the active profile ID. Backups are stored under:
+
+```text
+%LOCALAPPDATA%\Typezero\ThemeEngine\backups\displayfusion\
+```
+
+To restore a previous wallpaper profile independently of theme color history:
+
+```powershell
+Invoke-TypezeroDisplayFusionProfileSwitch -ProfileName 'Default Profile' -Execute
+```
+
+The direct switch operation requests confirmation; review the profile and confirm intentionally. Registry profile data is **read-only** for discovery; do not modify DisplayFusion's private registry values to perform profile switching. The backup is recovery data, not a tested automated registry-restore procedure. Inspect the monitors after changes, especially when profiles have different monitor layouts.
+
+The initial Netzach validation used DisplayFusion 12.1.1 (Steam), a temporary `ThemeEngine-Test` profile with the same Gold/Bronze/Silver wallpaper assignments, and an explicit return to `Default Profile`. The native Windows per-monitor wallpaper provider is a separate future integration.
+<!-- END TYPEZERO DISPLAYFUSION WALLPAPER PROVIDER -->

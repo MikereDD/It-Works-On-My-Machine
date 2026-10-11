@@ -432,6 +432,43 @@ switch ($Command) {
     "apply" {
         if (-not $Theme) { throw "Usage: ThemeEngine.ps1 apply <theme>" }
         Set-Theme $Theme
+    # BEGIN TYPEZERO DISPLAYFUSION APPLY HOOK (Stage 5)
+    # The main color/theme apply has succeeded at this point. This optional
+    # wallpaper action cannot undo the successful appearance application.
+    try {
+        $wallpaperProvider = Join-Path $PSScriptRoot 'WallpaperProvider-DisplayFusion.ps1'
+        $wallpaperMapping = Join-Path $PSScriptRoot 'WallpaperMapping-DisplayFusion.ps1'
+        if ((Test-Path -LiteralPath $wallpaperProvider) -and
+            (Test-Path -LiteralPath $wallpaperMapping)) {
+            . $wallpaperProvider
+            . $wallpaperMapping
+            $wallpaperState = Test-TypezeroWallpaperThemeMapping -ThemeId $Theme
+            switch ($wallpaperState.Action) {
+                'ELIGIBLE FOR EXPLICIT SWITCH' {
+                    # Integration was expressly enabled in local config. Bypass
+                    # prompts here only; guarded provider still creates a fresh
+                    # backup, verifies its hash, and checks active profile ID.
+                    $wallpaperResult = Invoke-TypezeroWallpaperThemeMapping -ThemeId $Theme -Execute -Confirm:$false -ErrorAction Stop
+                    if ($null -eq $wallpaperResult -or $wallpaperResult.Status -notin @('VERIFIED', 'NO CHANGE')) {
+                        Write-Warning "DisplayFusion: wallpaper activation returned no verified success for theme '$Theme'."
+                    } else {
+                        Write-Host "DisplayFusion wallpaper: $($wallpaperResult.ProfileName) [$($wallpaperResult.Status)]"
+                    }
+                }
+                'INVALID PROFILE - no changes' {
+                    Write-Warning "DisplayFusion: mapped wallpaper profile for '$Theme' is missing or ambiguous; colors were applied."
+                }
+                default {
+                    # Disabled, unmapped, or already active: intentionally no-op.
+                }
+            }
+        } else {
+            # An absent optional provider is a no-op by design.
+        }
+    } catch {
+        Write-Warning "DisplayFusion wallpaper step failed after successful theme apply: $($_.Exception.Message)"
+    }
+    # END TYPEZERO DISPLAYFUSION APPLY HOOK (Stage 5)
     }
 
     "reload" {
