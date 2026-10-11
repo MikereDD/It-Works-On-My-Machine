@@ -187,11 +187,43 @@ function Set-TypezeroWindowsNativeTheme {
         }
     } catch { $alreadyActive = $false }
 
-    Start-Process -FilePath $destination -ErrorAction Stop
+    # Install the generated theme in Windows' normal per-user Themes directory.
+    # ShellExecute/Start-Process against an arbitrary workspace file is not
+    # reliable evidence of Windows activation on every Windows 11 build.
+    $userThemesDirectory = Join-Path $env:LOCALAPPDATA 'Microsoft\Windows\Themes'
+    New-Item -ItemType Directory -Path $userThemesDirectory -Force | Out-Null
+    $installedTheme = Join-Path $userThemesDirectory "Typezero-$Id.theme"
+
+    $copyRequired = $true
+    if (Test-Path -LiteralPath $installedTheme -PathType Leaf) {
+        $sourceHash = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash
+        $installedHash = (Get-FileHash -LiteralPath $installedTheme -Algorithm SHA256).Hash
+        $copyRequired = $sourceHash -ne $installedHash
+        if ($copyRequired) {
+            # This is a Typezero-owned filename. Still preserve its old contents.
+            $archive = Join-Path $env:LOCALAPPDATA 'Typezero\ThemeEngine\backups\windows-theme-activation'
+            New-Item -ItemType Directory -Path $archive -Force | Out-Null
+            $stamp = (Get-Date -Format 'yyyyMMdd-HHmmss-fffffff') + '-' +
+                ([guid]::NewGuid().ToString('N')).Substring(0, 8)
+            Copy-Item -LiteralPath $installedTheme -Destination (Join-Path $archive "Typezero-$Id-$stamp.theme") -ErrorAction Stop
+        }
+    }
+    if ($copyRequired) {
+        Copy-Item -LiteralPath $destination -Destination $installedTheme -Force -ErrorAction Stop
+        if ((Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash -ne
+            (Get-FileHash -LiteralPath $installedTheme -Algorithm SHA256).Hash) {
+            throw "Installed Windows theme copy did not match generated source: $installedTheme"
+        }
+    }
+
+    Write-Host "Windows theme staged: $installedTheme"
+    # Explicitly select the shell 'open' verb: this invokes Windows' registered
+    # theme handler, rather than assuming opening an arbitrary file succeeded.
+    Start-Process -FilePath $installedTheme -Verb Open -ErrorAction Stop
 
     $verified = $false
     $lastPath = $null
-    $deadline = [DateTime]::UtcNow.AddSeconds(15)
+    $deadline = [DateTime]::UtcNow.AddSeconds(30)
     do {
         Start-Sleep -Milliseconds 350
         try {
@@ -210,7 +242,7 @@ function Set-TypezeroWindowsNativeTheme {
     } while (-not $verified -and [DateTime]::UtcNow -lt $deadline)
 
     if (-not $verified) {
-        throw "Windows did not confirm theme '$Name' ($policy) within 15 seconds. Last theme path: $lastPath"
+        throw "Windows did not confirm theme '$Name' ($policy) within 30 seconds. Installed theme: $installedTheme. Last theme path: $lastPath. Windows may require selection in Settings > Personalization > Themes."
     }
     if ($alreadyActive) {
         Write-Host "Windows native theme confirmed: $Name (already selected; reapplication not independently verified)"
