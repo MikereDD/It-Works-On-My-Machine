@@ -764,7 +764,14 @@ usage:
   ThemeEngine.ps1 apply <theme>
   ThemeEngine.ps1 reload
   ThemeEngine.ps1 rollback
-  ThemeEngine.ps1 font <list|current|test theme-id>
+  ThemeEngine.ps1 font list
+  ThemeEngine.ps1 font current
+  ThemeEngine.ps1 font test <theme-id>
+  ThemeEngine.ps1 font plan <theme-id>
+  ThemeEngine.ps1 font preview <theme-id>
+  ThemeEngine.ps1 font status
+  ThemeEngine.ps1 font mappings
+  ThemeEngine.ps1 font map <theme-id> "<font family>"
   ThemeEngine.ps1 wallpaper <subcommand>
   ThemeEngine.ps1 doctor
 "@
