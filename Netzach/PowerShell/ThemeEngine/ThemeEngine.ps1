@@ -8,7 +8,7 @@
 [CmdletBinding(PositionalBinding = $false)]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("bootstrap","list","current","preview","apply","reload","rollback","wallpaper","doctor","help")]
+    [ValidateSet("bootstrap","list","current","preview","apply","reload","rollback","wallpaper","font","doctor","help")]
     [string]$Command = "help",
 
     [Parameter(Position = 1)]
@@ -207,6 +207,18 @@ function Set-WindowsTerminalTheme {
         }
     }
 
+    # Temporary compatibility guard for FontEngine v2.
+    # The legacy JSON serializer removes the font ownership marker.
+    $terminalBeforeHash = (
+        Get-FileHash -LiteralPath $settingsPath -Algorithm SHA256
+    ).Hash
+
+    $terminalText = [IO.File]::ReadAllText($settingsPath)
+
+    if ($terminalText.Contains('/* TYPEZERO_FONT_V2 */')) {
+        throw 'Legacy Terminal color writer disabled. A Typezero v2 font block is active.'
+    }
+
     $settings = Get-Content -LiteralPath $settingsPath -Raw |
         ConvertFrom-Json
 
@@ -309,6 +321,12 @@ function Set-WindowsTerminalTheme {
     # its data. ThemeEngine changes only the scheme collection described above
     # and the PowerShell profile's colorScheme association.
     $json = $settings | ConvertTo-Json -Depth 100
+    # Reject concurrent changes rather than overwriting newer settings.
+    if ((Get-FileHash -LiteralPath $settingsPath -Algorithm SHA256).Hash -ne
+        $terminalBeforeHash) {
+        throw 'Windows Terminal settings changed during color preparation.'
+    }
+
     Set-Content -LiteralPath $settingsPath -Value $json -Encoding utf8
 
     Write-Host "Windows Terminal: $schemeName"
@@ -487,6 +505,88 @@ switch ($Command) {
         Set-Theme $id
     }
 
+    "font" {
+        $fontProvider = Join-Path $PSScriptRoot 'FontProvider-WindowsTerminal.ps1'
+
+        if (-not (Test-Path -LiteralPath $fontProvider -PathType Leaf)) {
+            throw "Font provider missing: $fontProvider"
+        }
+
+        . $fontProvider
+
+        $mappingModule = Join-Path $PSScriptRoot 'FontMapping-WindowsTerminal.ps1'
+        if (-not (Test-Path -LiteralPath $mappingModule -PathType Leaf)) {
+            throw "Font mapping module missing: $mappingModule"
+        }
+        . $mappingModule
+
+        $action = if ($Theme) { $Theme.ToLowerInvariant() } else { 'help' }
+
+        switch ($action) {
+            'list' {
+                if ($WallpaperArgs) { throw 'Usage: themeengine font list' }
+                Get-TypezeroInstalledFontFamilies
+            }
+            'current' {
+                if ($WallpaperArgs) { throw 'Usage: themeengine font current' }
+                Get-TypezeroTerminalFontStatus
+            }
+            'test' {
+                if (-not $WallpaperArgs -or $WallpaperArgs.Count -ne 1) {
+                    throw 'Usage: themeengine font test <theme-id>'
+                }
+
+                Get-TypezeroThemeFontPlan `
+                    -InstalledThemesRoot $ThemesRoot `
+                    -ThemeId $WallpaperArgs[0]
+            }
+            'status' {
+                if ($WallpaperArgs) { throw 'Usage: themeengine font status' }
+                $config = Get-TypezeroWindowsFontMappings
+                $current = Get-TypezeroTerminalFontStatus
+
+                [pscustomobject]@{
+                    Provider           = 'Windows Terminal'
+                    IntegrationEnabled = $config.Enabled
+                    MappedThemeCount   = $config.Mappings.Count
+                    CurrentFont        = $current.Face
+                    CurrentSize        = $current.Size
+                    CurrentWeight      = $current.Weight
+                    HasOverride        = $current.HasOverride
+                    ConfigPath         = $config.Path
+                }
+            }
+            'mappings' {
+                if ($WallpaperArgs) { throw 'Usage: themeengine font mappings' }
+                $config = Get-TypezeroWindowsFontMappings
+                if ($config.Mappings.Count -eq 0) {
+                    'No font mappings configured.'
+                } else {
+                    foreach ($id in @($config.Mappings.Keys | Sort-Object)) {
+                        [pscustomobject]@{
+                            Theme               = $id
+                            Font                = $config.Mappings[$id]
+                            IntegrationEnabled  = $config.Enabled
+                        }
+                    }
+                }
+            }
+            'map' {
+                if (-not $WallpaperArgs -or $WallpaperArgs.Count -ne 2) {
+                    throw 'Usage: themeengine font map <theme-id> "<font family>"'
+                }
+
+                Set-TypezeroWindowsFontMapping `
+                    -ThemeId $WallpaperArgs[0] `
+                    -FontFamily $WallpaperArgs[1] `
+                    -ThemesRoot $ThemesRoot
+            }
+            default {
+                'Usage: themeengine font <list|current|test|status|mappings|map>'
+            }
+        }
+    }
+
     # BEGIN TYPEZERO WALLPAPER CLI (Stage 7)
     "wallpaper" {
         $cliPath = Join-Path $PSScriptRoot 'WallpaperCLI-DisplayFusion.ps1'
@@ -638,6 +738,7 @@ usage:
   ThemeEngine.ps1 apply <theme>
   ThemeEngine.ps1 reload
   ThemeEngine.ps1 rollback
+  ThemeEngine.ps1 font <list|current|test theme-id>
   ThemeEngine.ps1 wallpaper <subcommand>
   ThemeEngine.ps1 doctor
 "@
