@@ -172,6 +172,10 @@ function Invoke-TypezeroTerminalFontSwitch {
         return $plan
     }
 
+    if (-not $plan.IntegrationEnabled) {
+        throw 'Windows Terminal font integration is disabled. No activation attempted.'
+    }
+
     if (-not $plan.WouldChange) {
         return [pscustomobject]@{
             Status = 'NO CHANGE'

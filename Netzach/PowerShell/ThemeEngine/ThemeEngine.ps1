@@ -540,6 +540,32 @@ switch ($Command) {
                     -InstalledThemesRoot $ThemesRoot `
                     -ThemeId $WallpaperArgs[0]
             }
+            'plan' {
+                if (-not $WallpaperArgs -or $WallpaperArgs.Count -ne 1) {
+                    throw 'Usage: themeengine font plan <theme-id>'
+                }
+
+                Get-TypezeroTerminalFontSwitchPlan `
+                    -ThemeId $WallpaperArgs[0]
+            }
+            'preview' {
+                if (-not $WallpaperArgs -or $WallpaperArgs.Count -ne 1) {
+                    throw 'Usage: themeengine font preview <theme-id>'
+                }
+
+                $presentationModule = Join-Path $PSScriptRoot 'FontPresentation-WindowsTerminal.ps1'
+
+                if (-not (Test-Path -LiteralPath $presentationModule -PathType Leaf)) {
+                    throw "Font presentation module missing: $presentationModule"
+                }
+
+                . $presentationModule
+
+                $fontPlan = Get-TypezeroTerminalFontSwitchPlan `
+                    -ThemeId $WallpaperArgs[0]
+
+                Format-TypezeroTerminalFontPlan -Plan $fontPlan
+            }
             'status' {
                 if ($WallpaperArgs) { throw 'Usage: themeengine font status' }
                 $config = Get-TypezeroWindowsFontMappings
@@ -582,7 +608,7 @@ switch ($Command) {
                     -ThemesRoot $ThemesRoot
             }
             default {
-                'Usage: themeengine font <list|current|test|status|mappings|map>'
+                'Usage: themeengine font <list|current|test|plan|preview|status|mappings|map>'
             }
         }
     }
