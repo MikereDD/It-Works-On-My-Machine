@@ -418,9 +418,40 @@ switch ($Command) {
             (Get-Content -LiteralPath $CurrentFile -Raw).Trim()
         } else { "" }
 
-        Get-ChildItem -LiteralPath $ThemesRoot -Directory | ForEach-Object {
-            $prefix = if ($_.Name -eq $current) { "*" } else { " " }
-            Write-Host "$prefix $($_.Name)"
+        $presentationModule = Join-Path $PSScriptRoot 'ThemePresentation.ps1'
+
+        if (Test-Path -LiteralPath $presentationModule -PathType Leaf) {
+            . $presentationModule
+
+            $entries = @(
+                Get-ChildItem -LiteralPath $ThemesRoot -Directory |
+                    Sort-Object Name |
+                    ForEach-Object {
+                        [pscustomobject]@{
+                            Id = $_.Name
+                            Theme = Read-ThemeFile $_.Name
+                        }
+                    }
+            )
+
+            if ($entries.Count -eq 0) {
+                Write-Host 'No themes found.'
+            }
+            else {
+                Write-Host (
+                    Format-TypezeroThemeCatalog `
+                        -Entries $entries -CurrentId $current
+                )
+            }
+        }
+        else {
+            Write-Warning 'Visual catalog unavailable; using classic list.'
+
+            Get-ChildItem -LiteralPath $ThemesRoot -Directory |
+                ForEach-Object {
+                    $prefix = if ($_.Name -eq $current) { "*" } else { " " }
+                    Write-Host "$prefix $($_.Name)"
+                }
         }
     }
 
