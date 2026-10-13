@@ -434,21 +434,45 @@ switch ($Command) {
 
     "preview" {
         if (-not $Theme) {
-            if (-not (Test-Path -LiteralPath $CurrentFile)) { throw "No theme selected." }
+            if (-not (Test-Path -LiteralPath $CurrentFile)) {
+                throw "No theme selected."
+            }
+
             $Theme = (Get-Content -LiteralPath $CurrentFile -Raw).Trim()
         }
 
         $t = Read-ThemeFile $Theme
-        Write-Host ""
-        Write-Host "  $($t['THEME_NAME'])"
-        Write-Host ""
+        $presentationModule = Join-Path $PSScriptRoot 'ThemePresentation.ps1'
 
-        foreach ($role in @("ACCENT","ACCENT_BRIGHT","SELECTION","CURSOR","FOCUS","TEXT","MUTED","SUCCESS","WARNING","ERROR","SECONDARY","INFO")) {
-            $c = Convert-HexToAnsi $t[$role]
-            Write-Host "$c  $($role.PadRight(14)) $($t[$role])$([char]27)[0m"
+        if (Test-Path -LiteralPath $presentationModule -PathType Leaf) {
+            . $presentationModule
+
+            Write-Host (
+                Format-TypezeroThemePreview -Theme $t -Id $Theme
+            )
         }
+        else {
+            Write-Warning 'Grouped preview unavailable; using classic preview.'
 
-        Write-Host ""
+            Write-Host ""
+            Write-Host "  $($t['THEME_NAME'])"
+            Write-Host ""
+
+            foreach ($role in @(
+                "ACCENT", "ACCENT_BRIGHT", "SELECTION",
+                "CURSOR", "FOCUS", "TEXT", "MUTED",
+                "SUCCESS", "WARNING", "ERROR",
+                "SECONDARY", "INFO"
+            )) {
+                $c = Convert-HexToAnsi $t[$role]
+
+                Write-Host (
+                    "$c  $($role.PadRight(14)) $($t[$role])$([char]27)[0m"
+                )
+            }
+
+            Write-Host ""
+        }
     }
 
     "apply" {
