@@ -8,7 +8,7 @@
 [CmdletBinding(PositionalBinding = $false)]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("bootstrap","list","current","preview","apply","reload","rollback","wallpaper","font","doctor","help")]
+    [ValidateSet("bootstrap","list","current","status","preview","apply","reload","rollback","wallpaper","font","doctor","help")]
     [string]$Command = "help",
 
     [Parameter(Position = 1)]
@@ -463,6 +463,45 @@ switch ($Command) {
         }
     }
 
+    "status" {
+        if ($Theme -or $WallpaperArgs) {
+            throw 'Usage: ThemeEngine.ps1 status'
+        }
+
+        $presentationModule = Join-Path $PSScriptRoot 'ThemePresentation.ps1'
+
+        if (-not (Test-Path -LiteralPath $presentationModule -PathType Leaf)) {
+            throw 'Current-theme presentation module is missing.'
+        }
+
+        . $presentationModule
+
+        $selected = if (
+            Test-Path -LiteralPath $CurrentFile -PathType Leaf
+        ) {
+            (Get-Content -LiteralPath $CurrentFile -Raw).Trim()
+        } else {
+            ''
+        }
+
+        if ($selected -and
+            $selected -cnotmatch '^[A-Za-z0-9][A-Za-z0-9_-]*$') {
+            throw 'Invalid selected theme ID.'
+        }
+
+        if ($selected) {
+            $themeData = Read-ThemeFile $selected
+
+            Write-Host (
+                Format-TypezeroCurrentTheme `
+                    -Id $selected -Theme $themeData
+            )
+        }
+        else {
+            Write-Host (Format-TypezeroCurrentTheme)
+        }
+    }
+
     "preview" {
         if (-not $Theme) {
             if (-not (Test-Path -LiteralPath $CurrentFile)) {
@@ -815,6 +854,7 @@ usage:
   ThemeEngine.ps1 bootstrap -RepoRoot <repo-root>
   ThemeEngine.ps1 list
   ThemeEngine.ps1 current
+  ThemeEngine.ps1 status
   ThemeEngine.ps1 preview [theme]
   ThemeEngine.ps1 apply <theme>
   ThemeEngine.ps1 reload

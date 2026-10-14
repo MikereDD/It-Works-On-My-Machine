@@ -174,3 +174,89 @@ function Format-TypezeroThemeCatalog {
 
     return ($lines -join [Environment]::NewLine)
 }
+
+function Format-TypezeroCurrentTheme {
+    [CmdletBinding()]
+    param(
+        [string]$Id = '',
+        [System.Collections.IDictionary]$Theme = $null
+    )
+
+    $clean = {
+        param($Value)
+        return (([string]$Value) -replace
+            '[\x00-\x1F\x7F-\x9F]', '?').Trim()
+    }
+
+    $lines = [Collections.Generic.List[string]]::new()
+
+    $lines.Add('')
+    $lines.Add('TYPEZERO / CURRENT THEME')
+    $lines.Add('-----------------------------------------------')
+
+    if ([string]::IsNullOrWhiteSpace($Id)) {
+        if ($null -ne $Theme) {
+            throw 'Theme data supplied without selected ID.'
+        }
+
+        $lines.Add('Selected ID: none')
+        $lines.Add('No theme is currently selected.')
+        $lines.Add('Action: READ ONLY')
+        $lines.Add('')
+
+        return ($lines -join [Environment]::NewLine)
+    }
+
+    if ($null -eq $Theme) {
+        throw 'Selected theme data is missing.'
+    }
+
+    $safeId = & $clean $Id
+    $name = & $clean $Theme['THEME_NAME']
+
+    if (-not $name) {
+        $name = $safeId
+    }
+
+    $esc = [char]27
+
+    $swatches = @(
+        foreach ($role in @('BG', 'SURFACE', 'ACCENT', 'TEXT')) {
+            $hex = [string]$Theme[$role]
+
+            if ($hex -cnotmatch '^#[0-9A-Fa-f]{6}$') {
+                throw "Invalid current theme color: $safeId/$role"
+            }
+
+            $r = [Convert]::ToInt32($hex.Substring(1, 2), 16)
+            $g = [Convert]::ToInt32($hex.Substring(3, 2), 16)
+            $b = [Convert]::ToInt32($hex.Substring(5, 2), 16)
+
+            "${esc}[48;2;${r};${g};${b}m    ${esc}[0m"
+        }
+    )
+
+    $fontFamily = & $clean $Theme['FONT_FAMILY']
+    $fontStyle = & $clean $Theme['FONT_STYLE']
+
+    if (-not $fontFamily) { $fontFamily = 'unspecified' }
+    if (-not $fontStyle) { $fontStyle = 'unspecified' }
+
+    $lines.Add("Selected ID: $safeId")
+    $lines.Add("Theme name:  $name")
+    $lines.Add('')
+    $lines.Add('PALETTE')
+    $lines.Add(($swatches -join '  '))
+    $lines.Add('BG     SURFACE  ACCENT  TEXT')
+    $lines.Add('')
+    $lines.Add('THEME TYPOGRAPHY (DECLARED)')
+    $lines.Add("Family: $fontFamily")
+    $lines.Add("Style:  $fontStyle")
+    $lines.Add('')
+    $lines.Add('Selection and theme metadata only.')
+    $lines.Add('Terminal activation and font application not verified.')
+    $lines.Add('Action: READ ONLY')
+    $lines.Add('')
+
+    return ($lines -join [Environment]::NewLine)
+}
