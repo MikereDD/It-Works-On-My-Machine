@@ -260,3 +260,341 @@ function Format-TypezeroCurrentTheme {
 
     return ($lines -join [Environment]::NewLine)
 }
+
+function Format-TypezeroDoctor {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [object[]]$Sections
+    )
+
+    if ($Sections.Count -eq 0) {
+        throw 'Doctor report has no sections.'
+    }
+
+    $clean = {
+        param($Value)
+        return (([string]$Value) -replace
+            '[\x00-\x1F\x7F-\x9F]', '?').Trim()
+    }
+
+    $esc = [char]27
+    $reset = "${esc}[0m"
+
+    $colors = @{
+        PASS = "${esc}[92m"
+        WARN = "${esc}[93m"
+        FAIL = "${esc}[91m"
+        INFO = "${esc}[96m"
+    }
+
+    $lines = [Collections.Generic.List[string]]::new()
+
+    $lines.Add('')
+    $lines.Add('TYPEZERO / SYSTEM DOCTOR')
+    $lines.Add('-----------------------------------------------')
+    $lines.Add('')
+
+    foreach ($section in $Sections) {
+        if ($null -eq $section) {
+            throw 'Invalid doctor section.'
+        }
+
+        $heading = & $clean $section.Name
+
+        if ([string]::IsNullOrWhiteSpace($heading) -or
+            $null -eq $section.Items) {
+            throw 'Invalid doctor section.'
+        }
+
+        $items = @($section.Items)
+
+        if ($items.Count -eq 0) {
+            throw "Empty doctor section: $heading"
+        }
+
+        $lines.Add("[$heading]")
+
+        foreach ($item in $items) {
+            if ($null -eq $item) {
+                throw 'Invalid doctor check.'
+            }
+
+            $status = [string]$item.Status
+
+            if ($status -cnotin @('PASS', 'WARN', 'FAIL', 'INFO')) {
+                throw "Unsupported doctor status: $status"
+            }
+
+            $label = & $clean $item.Label
+            $value = & $clean $item.Value
+
+            if ([string]::IsNullOrWhiteSpace($label)) {
+                throw 'Doctor check label is missing.'
+            }
+
+            $lines.Add(
+                ('  {0}{1}{2}  {3,-24} {4}' -f
+                    $colors[$status],
+                    $status,
+                    $reset,
+                    $label,
+                    $value)
+            )
+        }
+
+        $lines.Add('')
+    }
+
+    $lines.Add('Presentation only; findings supplied by caller.')
+    $lines.Add('Action: READ ONLY')
+    $lines.Add('')
+
+    return ($lines -join [Environment]::NewLine)
+}
+
+function ConvertTo-TypezeroDoctorSections {
+    [CmdletBinding()]
+    param(
+        [AllowEmptyString()]
+        [AllowEmptyCollection()]
+        [string[]]$Lines
+    )
+
+    if ($null -eq $Lines -or $Lines.Count -eq 0) {
+        throw 'Doctor transcript is empty.'
+    }
+
+    # Pure adapter: no system probes or configuration writes.
+    $fields = [ordered]@{
+        'CORE' = @(
+            'themes', 'current', 'renderer',
+            'current.ps1', 'terminal'
+        )
+        'WINDOWS APPEARANCE' = @(
+            'native provider', 'accent policy',
+            'accent mode', 'windows theme',
+            'transparency', 'titlebar accent',
+            'taskbar accent', 'DisplayFusion'
+        )
+        'WALLPAPER / DISPLAYFUSION' = @(
+            'CLI module', 'integration', 'mapped themes',
+            'active profile', 'wallpaper status',
+            'wallpaper provider'
+        )
+    }
+
+    $sections = @(
+        foreach ($name in $fields.Keys) {
+            [pscustomobject]@{
+                Name = $name
+                Items = [Collections.Generic.List[object]]::new()
+            }
+        }
+    )
+
+    $sectionName = 'CORE'
+    $headerSeen = $false
+    $seen = @{}
+
+    foreach ($entry in $Lines) {
+        foreach ($raw in (([string]$entry) -split "\r\n|\n|\r")) {
+            $line = $raw.Trim()
+
+            if (-not $line) { continue }
+
+            if ($line -ceq 'ThemeEngine doctor') {
+                if ($headerSeen) {
+                    throw 'Duplicate doctor transcript header.'
+                }
+                $headerSeen = $true
+                $sectionName = 'CORE'
+                continue
+            }
+
+            if (-not $headerSeen) {
+                throw 'Doctor transcript header is missing.'
+            }
+
+            if ($line -ceq 'Windows Appearance') {
+                $sectionName = 'WINDOWS APPEARANCE'
+                continue
+            }
+
+            if ($line -ceq 'Wallpaper Integration') {
+                $sectionName = 'WALLPAPER / DISPLAYFUSION'
+                continue
+            }
+
+            $matched = $false
+
+            foreach ($label in $fields[$sectionName]) {
+                $pattern = '^' + [regex]::Escape($label) + '\s+(.+)$'
+
+                $hit = [regex]::Match(
+                    $line,
+                    $pattern,
+                    [Text.RegularExpressions.RegexOptions]::IgnoreCase
+                )
+
+                if (-not $hit.Success) { continue }
+
+                $value = $hit.Groups[1].Value.Trim()
+                $key = "$sectionName|$label"
+
+                if ($seen.ContainsKey($key)) {
+                    throw "Duplicate doctor finding: $key"
+                }
+
+                $seen[$key] = $true
+                $status = 'INFO'
+
+                if ($label -cin @('themes', 'current.ps1')) {
+                    if ($value -ceq 'PASS') {
+                        $status = 'PASS'
+                    }
+                    elseif ($value -ceq 'MISSING') {
+                        $status = 'FAIL'
+                    }
+                    else {
+                        $status = 'WARN'
+                    }
+                }
+                elseif ($label -cin @(
+                    'terminal', 'native provider',
+                    'CLI module', 'wallpaper provider'
+                )) {
+                    if ($value -ceq 'PASS') {
+                        $status = 'PASS'
+                    }
+                    elseif ($value -cin @('MISSING', 'NOT FOUND')) {
+                        $status = 'WARN'
+                    }
+                }
+                elseif ($label -ceq 'accent policy') {
+                    if ($value -match '^INVALID\b') {
+                        $status = 'WARN'
+                    }
+                }
+                elseif ($label -ceq 'accent mode') {
+                    if ($value -match '^PASS\b') {
+                        $status = 'PASS'
+                    }
+                    elseif ($value -match '^WARN\b') {
+                        $status = 'WARN'
+                    }
+                }
+                elseif ($label -ceq 'wallpaper status') {
+                    if ($value -match '^ERROR:') {
+                        $status = 'FAIL'
+                    }
+                    else {
+                        $status = 'WARN'
+                    }
+                }
+
+                $target = @($sections | Where-Object {
+                    $_.Name -ceq $sectionName
+                })
+
+                if ($target.Count -ne 1) {
+                    throw 'Doctor section inventory mismatch.'
+                }
+
+                $target[0].Items.Add([pscustomobject]@{
+                    Status = $status
+                    Label = $label
+                    Value = $value
+                })
+
+                $matched = $true
+                break
+            }
+
+            if (-not $matched) {
+                throw "Unrecognized doctor output: $line"
+            }
+        }
+    }
+
+    if (-not $headerSeen) {
+        throw 'Doctor transcript header is missing.'
+    }
+
+    foreach ($section in $sections) {
+        if ($section.Items.Count -eq 0) {
+            throw "Doctor section has no findings: $($section.Name)"
+        }
+    }
+
+    # Require every diagnostic emitted on all legacy paths.
+    # Use the adapter's existing seen map; no system probes.
+    $required = [ordered]@{
+        'CORE' = @(
+            'themes', 'current', 'renderer',
+            'current.ps1', 'terminal'
+        )
+        'WINDOWS APPEARANCE' = @(
+            'native provider', 'accent policy', 'accent mode',
+            'windows theme', 'transparency', 'titlebar accent',
+            'taskbar accent', 'DisplayFusion'
+        )
+        'WALLPAPER / DISPLAYFUSION' = @(
+            'CLI module'
+        )
+    }
+
+    foreach ($sectionNameRequired in $required.Keys) {
+        foreach ($labelRequired in $required[$sectionNameRequired]) {
+            $keyRequired = "$sectionNameRequired|$labelRequired"
+
+            if (-not $seen.ContainsKey($keyRequired)) {
+                throw "Missing doctor finding: $keyRequired"
+            }
+        }
+    }
+
+    # Legacy wallpaper logic has exactly three valid outcomes:
+    # success (three fields), missing provider, or provider error.
+    $wpSection = 'WALLPAPER / DISPLAYFUSION'
+
+    $successLabels = @(
+        'integration', 'mapped themes', 'active profile'
+    )
+
+    $successCount = 0
+
+    foreach ($labelRequired in $successLabels) {
+        if ($seen.ContainsKey("$wpSection|$labelRequired")) {
+            $successCount++
+        }
+    }
+
+    $providerMissing = $seen.ContainsKey(
+        "$wpSection|wallpaper provider"
+    )
+
+    $providerError = $seen.ContainsKey(
+        "$wpSection|wallpaper status"
+    )
+
+    if ($providerMissing -and $providerError) {
+        throw 'Ambiguous doctor wallpaper branch.'
+    }
+
+    $validSuccess = (
+        $successCount -eq 3 -and
+        -not $providerMissing -and
+        -not $providerError
+    )
+
+    $validAlternative = (
+        $successCount -eq 0 -and
+        ($providerMissing -xor $providerError)
+    )
+
+    if (-not ($validSuccess -or $validAlternative)) {
+        throw 'Incomplete or conflicting doctor wallpaper branch.'
+    }
+    return $sections
+}

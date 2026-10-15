@@ -8,7 +8,7 @@
 [CmdletBinding(PositionalBinding = $false)]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("bootstrap","list","current","status","preview","apply","reload","rollback","wallpaper","font","doctor","help")]
+    [ValidateSet("bootstrap","list","current","status","preview","apply","reload","rollback","wallpaper","font","doctor","doctor-view","help")]
     [string]$Command = "help",
 
     [Parameter(Position = 1)]
@@ -718,6 +718,48 @@ switch ($Command) {
     }
     # END TYPEZERO WALLPAPER CLI (Stage 7)
 
+    "doctor-view" {
+        # Preserve existing diagnostic logic and legacy output.
+        if (-not $PSCommandPath) {
+            throw 'ThemeEngine script path unavailable.'
+        }
+
+        . (Join-Path $PSScriptRoot 'ThemePresentation.ps1')
+
+        # Capture the legacy Doctor Information stream.
+        $records = @(& $PSCommandPath -Command 'doctor' 6>&1)
+
+        $lines = @(
+            foreach ($record in $records) {
+                if ($record -is [System.Management.Automation.InformationRecord]) {
+                    $data = $record.MessageData
+
+                    if ($null -ne $data -and
+                        $null -ne $data.PSObject.Properties['Message']) {
+                        [string]$data.Message
+                    }
+                    else {
+                        [string]$data
+                    }
+                }
+                elseif ($record -is [string]) {
+                    $record
+                }
+                else {
+                    throw (
+                        'Unexpected diagnostic record type: ' +
+                        $record.GetType().FullName
+                    )
+                }
+            }
+        )
+
+        $sections = @(
+            ConvertTo-TypezeroDoctorSections -Lines $lines
+        )
+
+        Write-Host (Format-TypezeroDoctor -Sections $sections)
+    }
     "doctor" {
         Write-Host "ThemeEngine doctor"
         Write-Host ""
@@ -869,6 +911,7 @@ usage:
   ThemeEngine.ps1 font map <theme-id> "<font family>"
   ThemeEngine.ps1 wallpaper <subcommand>
   ThemeEngine.ps1 doctor
+  ThemeEngine.ps1 doctor-view
 "@
     }
 }
