@@ -282,13 +282,17 @@ function Format-TypezeroDoctor {
     $reset = "${esc}[0m"
 
     $colors = @{
-        PASS = "${esc}[92m"
-        WARN = "${esc}[93m"
-        FAIL = "${esc}[91m"
-        INFO = "${esc}[96m"
+        PASS = "${esc}[38;2;142;192;124m"
+        WARN = "${esc}[38;2;250;189;47m"
+        FAIL = "${esc}[38;2;251;73;52m"
+        INFO = "${esc}[38;2;168;153;132m"
     }
 
     $lines = [Collections.Generic.List[string]]::new()
+
+    $total = 0
+    $warnings = 0
+    $failures = 0
 
     $lines.Add('')
     $lines.Add('TYPEZERO / SYSTEM DOCTOR')
@@ -332,6 +336,14 @@ function Format-TypezeroDoctor {
             if ([string]::IsNullOrWhiteSpace($label)) {
                 throw 'Doctor check label is missing.'
             }
+            $total++
+
+            if ($status -ceq 'WARN') {
+                $warnings++
+            }
+            elseif ($status -ceq 'FAIL') {
+                $failures++
+            }
 
             $lines.Add(
                 ('  {0}{1}{2}  {3,-24} {4}' -f
@@ -346,8 +358,12 @@ function Format-TypezeroDoctor {
         $lines.Add('')
     }
 
-    $lines.Add('Presentation only; findings supplied by caller.')
-    $lines.Add('Action: READ ONLY')
+    $warningWord = if ($warnings -eq 1) { 'warning' } else { 'warnings' }
+    $failureWord = if ($failures -eq 1) { 'failure' } else { 'failures' }
+
+    $lines.Add('TYPEZERO / SYSTEM HEALTH')
+    $lines.Add(('{0} checks | {1} {2} | {3} {4}' -f
+        $total, $warnings, $warningWord, $failures, $failureWord))
     $lines.Add('')
 
     return ($lines -join [Environment]::NewLine)
