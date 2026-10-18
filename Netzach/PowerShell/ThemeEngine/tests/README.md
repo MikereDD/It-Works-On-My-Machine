@@ -45,3 +45,15 @@ consistency, and blockers; it keeps both authorization flags false.
 See [TerminalCoordinatorLifecycle.md](../TerminalCoordinatorLifecycle.md) for
 contracts, NETZACH inspection usage, and the existing preflight LF hash pin.
 Validation outcomes belong in the report from the actual suite run.
+
+## Coordinator apply and restore rehearsal suites
+
+Milestone `57F.23.10.09.09.03` adds the separate fixture-only runner
+`Test-TypezeroCoordinatorFixtureRehearsal.ps1` and actual worker-termination
+runner `Test-TypezeroCoordinatorFixtureProcessCrash.ps1`. Each creates fresh
+synthetic private TEMP fixtures, retains evidence, accepts a new `-ReportPath`,
+and verifies source hashes. Run as the current Windows user with PowerShell
+7.3+ and local NTFS TEMP, outside the Codex filesystem sandbox.
+See [TerminalCoordinatorRehearsal.md](../TerminalCoordinatorRehearsal.md) for
+the API, dependency contracts, failure semantics, and NETZACH commands.
+Neither runner grants recovery or live activation authorization.
