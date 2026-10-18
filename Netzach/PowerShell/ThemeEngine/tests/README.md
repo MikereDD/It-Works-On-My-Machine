@@ -33,3 +33,15 @@ the private NETZACH evidence archive, not in this repository.
 
 RecoveryAuthorized=False
 LiveActivationAuthorized=False
+
+## Lifecycle assessment suite
+
+`Test-TypezeroCoordinatorFixtureLifecycle.ps1` covers milestone
+57F.23.10.09.09.02 with newly created, isolated synthetic fixtures. It accepts
+optional `-ReportPath` for a JSON report and retains fixtures without cleanup.
+Run on Windows with PowerShell 7.3 or later and local NTFS TEMP storage.
+The assessment reports journal observations, receipt validity, artifact
+consistency, and blockers; it keeps both authorization flags false.
+See [TerminalCoordinatorLifecycle.md](../TerminalCoordinatorLifecycle.md) for
+contracts, NETZACH inspection usage, and the existing preflight LF hash pin.
+Validation outcomes belong in the report from the actual suite run.
