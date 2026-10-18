@@ -786,6 +786,37 @@ switch ($Command) {
                     -FontFamily $WallpaperArgs[1] `
                     -ThemesRoot $ThemesRoot
             }
+            'map-v2' {
+                if (-not $WallpaperArgs -or $WallpaperArgs.Count -ne 4) {
+                    throw 'Usage: themeengine font map-v2 <theme-id> "<font family>" <size> <normal|semi-bold>'
+                }
+
+                $mappingV2 = Join-Path $PSScriptRoot 'FontMappingV2-WindowsTerminal.ps1'
+
+                if (-not (Test-Path -LiteralPath $mappingV2 -PathType Leaf)) {
+                    throw "Font V2 writer missing: $mappingV2"
+                }
+
+                . $mappingV2
+
+                $sizeValue = 0.0
+
+                if (-not [double]::TryParse(
+                    [string]$WallpaperArgs[2],
+                    [Globalization.NumberStyles]::Float,
+                    [Globalization.CultureInfo]::InvariantCulture,
+                    [ref]$sizeValue
+                )) {
+                    throw 'Invalid font size.'
+                }
+
+                Set-TypezeroWindowsFontMappingV2 `
+                    -ThemeId $WallpaperArgs[0] `
+                    -FontFamily $WallpaperArgs[1] `
+                    -Size $sizeValue `
+                    -Weight $WallpaperArgs[3] `
+                    -ThemesRoot $ThemesRoot
+            }
             'check-apply' {
                 if (-not $WallpaperArgs -or $WallpaperArgs.Count -ne 1) {
                     throw 'Usage: themeengine font check-apply <theme-id>'
