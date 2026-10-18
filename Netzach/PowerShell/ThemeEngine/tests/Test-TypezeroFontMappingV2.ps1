@@ -138,5 +138,87 @@ foreach ($case in $bad) {
     Write-Host "PASS [$i] $($case.Name)"
 }
 
-Write-Host 'PASS: 7/7 V2 regression checks.'
+Write-Host '=== EXCLUSIVE LOCK CONTENTION ==='
+
+$lockedHash = (Get-FileHash -LiteralPath $config -Algorithm SHA256).Hash
+$backupCount = @(Get-ChildItem -LiteralPath $configDir -Filter '*.bak' -File).Count
+$lockPath = "$config.lock"
+
+$heldLock = [IO.FileStream]::new(
+    $lockPath,
+    [IO.FileMode]::OpenOrCreate,
+    [IO.FileAccess]::ReadWrite,
+    [IO.FileShare]::None
+)
+
+try {
+    $rejected = $false
+
+    try {
+        Set-TypezeroWindowsFontMappingV2 `
+            -ThemeId gruvbox `
+            -FontFamily 'JetBrainsMono Nerd Font' `
+            -Size 12 `
+            -Weight normal `
+            -ThemesRoot $themes `
+            -ConfigPath $config `
+            -Confirm:$false | Out-Null
+    }
+    catch {
+        if ($_.Exception.Message -notlike '*locked by another writer*') {
+            throw
+        }
+
+        $rejected = $true
+    }
+
+    if (-not $rejected -or
+        (Get-FileHash -LiteralPath $config -Algorithm SHA256).Hash -cne $lockedHash -or
+        @(Get-ChildItem -LiteralPath $configDir -Filter '*.bak' -File).Count -ne $backupCount) {
+        throw 'FAIL: Contended configuration was modified.'
+    }
+}
+finally {
+    $heldLock.Dispose()
+}
+
+Write-Host 'PASS [8] Exclusive lock contention refused without changes'
+
+Write-Host '=== LOCK RELEASE ==='
+
+$released = Set-TypezeroWindowsFontMappingV2 `
+    -ThemeId gruvbox `
+    -FontFamily 'JetBrainsMono Nerd Font' `
+    -Size 12 `
+    -Weight normal `
+    -ThemesRoot $themes `
+    -ConfigPath $config `
+    -Confirm:$false
+
+if ($released.Mappings['gruvbox'].Family -cne 'JetBrainsMono Nerd Font') {
+    throw 'FAIL: Writer did not succeed after lock release.'
+}
+
+Write-Host 'PASS [9] Writer succeeds after lock release'
+
+Write-Host '=== EMPTY-ROOT WHATIF ==='
+
+$emptyRoot = Join-Path $root 'whatif-empty'
+$emptyConfig = Join-Path $emptyRoot 'font.json'
+
+Set-TypezeroWindowsFontMappingV2 `
+    -ThemeId gruvbox `
+    -FontFamily 'Cascadia Mono' `
+    -Size 12 `
+    -Weight normal `
+    -ThemesRoot $themes `
+    -ConfigPath $emptyConfig `
+    -WhatIf
+
+if (Test-Path -LiteralPath $emptyRoot) {
+    throw 'FAIL: WhatIf created filesystem entries.'
+}
+
+Write-Host 'PASS [10] WhatIf creates no lock, config, or directory'
+Write-Host 'PASS: 10/10 V2 regression checks.'
 Write-Host "Fixture evidence retained: $root"

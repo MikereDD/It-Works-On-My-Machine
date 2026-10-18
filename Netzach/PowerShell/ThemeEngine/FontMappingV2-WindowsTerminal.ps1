@@ -56,6 +56,33 @@ function Set-TypezeroWindowsFontMappingV2 {
         throw 'Font size supports at most two decimal places.'
     }
 
+    # Serialize mapping writes by holding an exclusive file handle.
+    # The lock protects cooperating ThemeEngine writers only.
+    $lock = $null
+
+    if (-not $WhatIfPreference) {
+        $lockPath = "$ConfigPath.lock"
+        $lockFolder = Split-Path -Parent $lockPath
+
+        if (-not (Test-Path -LiteralPath $lockFolder)) {
+            New-Item -ItemType Directory -Path $lockFolder -Force |
+                Out-Null
+        }
+
+        try {
+            $lock = [IO.FileStream]::new(
+                $lockPath,
+                [IO.FileMode]::OpenOrCreate,
+                [IO.FileAccess]::ReadWrite,
+                [IO.FileShare]::None
+            )
+        }
+        catch {
+            throw "Font configuration is locked by another writer: $lockPath"
+        }
+    }
+
+    try {
     $originalExists = Test-Path -LiteralPath $ConfigPath -PathType Leaf
     $originalHash = if ($originalExists) {
         (Get-FileHash -LiteralPath $ConfigPath -Algorithm SHA256).Hash
@@ -157,6 +184,12 @@ function Set-TypezeroWindowsFontMappingV2 {
     finally {
         if (Test-Path -LiteralPath $temp) {
             Remove-Item -LiteralPath $temp -Force
+        }
+    }
+    }
+    finally {
+        if ($null -ne $lock) {
+            $lock.Dispose()
         }
     }
 }
