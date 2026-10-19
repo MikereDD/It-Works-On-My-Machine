@@ -246,6 +246,7 @@ finally {
 # === FONT MAPPING V2 ADAPTER REGRESSION ===
 
 . (Join-Path $SourceDirectory 'FontMapping-WindowsTerminal.ps1')
+. (Join-Path $SourceDirectory 'TerminalTransactionV2Lock-WindowsTerminal.ps1')
 . (Join-Path $SourceDirectory 'FontMappingV2TransactionAdapter-WindowsTerminal.ps1')
 
 Write-Host "`n=== FONT MAPPING V2 ADAPTER ==="
@@ -307,6 +308,40 @@ $adapterMapping.Enabled = $true
     $utf8
 )
 
+Write-Host "`n=== ADAPTER EXCLUSIVE LOCK ==="
+
+$adapterLockPath = Join-Path $adapterFixture.Root '.typezero-terminal-v2.lock'
+$adapterLockedBaseline = Get-V2Hash $adapterFixture.Settings
+$adapterBackupRoot = (
+    Get-TypezeroOfflineTerminalTransactionPaths `
+        -TestRoot $adapterFixture.Root
+).BackupRoot
+
+$heldAdapterLock = [IO.FileStream]::new(
+    $adapterLockPath,
+    [IO.FileMode]::OpenOrCreate,
+    [IO.FileAccess]::ReadWrite,
+    [IO.FileShare]::None
+)
+
+try {
+    Assert-V2Blocked {
+        Invoke-TypezeroOfflineFontMappingV2Transaction `
+            -TestRoot $adapterFixture.Root `
+            -ConfigPath $adapterConfig `
+            -ThemeId gruvbox `
+            -Theme $adapterTheme `
+            -Execute -Confirm:$false
+    } 'lock is occupied' 'Adapter refuses occupied transaction lock'
+
+    Assert-V2 (
+        (Get-V2Hash $adapterFixture.Settings) -ceq $adapterLockedBaseline -and
+        -not (Test-Path -LiteralPath $adapterBackupRoot)
+    ) 'Lock contention creates no backup or settings changes'
+}
+finally {
+    $heldAdapterLock.Dispose()
+}
 $adapterApply = Invoke-TypezeroOfflineFontMappingV2Transaction `
     -TestRoot $adapterFixture.Root `
     -ConfigPath $adapterConfig `

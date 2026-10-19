@@ -154,7 +154,7 @@ function Invoke-TypezeroOfflineFontMappingV2Transaction {
     }
 
     if (-not $Execute) {
-        return Invoke-TypezeroOfflineTerminalCombinedTransactionV2 @arguments
+        return Invoke-TypezeroOfflineTerminalV2Locked @arguments
     }
 
     if (-not $PSCmdlet.ShouldProcess(
@@ -164,6 +164,6 @@ function Invoke-TypezeroOfflineFontMappingV2Transaction {
         return
     }
 
-    Invoke-TypezeroOfflineTerminalCombinedTransactionV2 `
+    Invoke-TypezeroOfflineTerminalV2Locked `
         @arguments -Execute -Confirm:$false
 }
