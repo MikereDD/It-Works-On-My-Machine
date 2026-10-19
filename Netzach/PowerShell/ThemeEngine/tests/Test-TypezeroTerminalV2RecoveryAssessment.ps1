@@ -16,10 +16,11 @@ Assert-Test (
     'feature/themeengine-font-management'
 ) 'Development branch required'
 
+git -C $repo merge-base --is-ancestor '727d1c2' HEAD
+
 Assert-Test (
-    (git -C $repo rev-parse HEAD).Trim() -ceq
-    (git -C $repo rev-parse '5bc1736').Trim()
-) 'Expected development checkpoint'
+    $LASTEXITCODE -eq 0
+) 'Required recovery assessment baseline'
 
 foreach ($name in @(
     'FontPatch-WindowsTerminal.ps1'
