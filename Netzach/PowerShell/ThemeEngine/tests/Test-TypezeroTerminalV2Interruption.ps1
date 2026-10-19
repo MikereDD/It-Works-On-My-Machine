@@ -125,10 +125,8 @@ if ($Mode -ceq 'Child') {
 $repo = (Resolve-Path (Join-Path $engine '..\..\..')).Path
 
 if ((git -C $repo branch --show-current).Trim() -cne
-    'feature/themeengine-font-management' -or
-    (git -C $repo rev-parse HEAD).Trim() -cne
-    (git -C $repo rev-parse '2f76705')) {
-    throw 'REFUSED: Unexpected development checkpoint.'
+    'feature/themeengine-font-management') {
+    throw 'REFUSED: Unexpected development branch.'
 }
 
 $transactionPath = Join-Path $engine 'TerminalTransactionV2-WindowsTerminal.ps1'
