@@ -702,6 +702,36 @@ switch ($Command) {
         $action = if ($Theme) { $Theme.ToLowerInvariant() } else { 'help' }
 
         switch ($action) {
+
+            'picker' {
+                if ($WallpaperArgs -and $WallpaperArgs.Count -gt 0) {
+                    throw 'Usage: themeengine font picker'
+                }
+
+                $pickerModule = Join-Path $PSScriptRoot `
+                    'FontPicker-WindowsTerminal.ps1'
+
+                if (-not (Test-Path -LiteralPath $pickerModule -PathType Leaf)) {
+                    throw "Font picker module missing: $pickerModule"
+                }
+
+                . $pickerModule
+
+                $selection = Invoke-TypezeroFontPicker `
+                    -EngineRoot $PSScriptRoot
+
+                if ($null -eq $selection) {
+                    throw 'Font picker returned no selection.'
+                }
+
+                if ($selection.PreviewOnly -ne $true -or
+                    $selection.SettingsChanged -ne $false) {
+                    throw 'Font picker violated preview-only requirements.'
+                }
+
+                return $selection
+            }
+
             'list' {
                 if ($WallpaperArgs) { throw 'Usage: themeengine font list' }
                 Get-TypezeroInstalledFontFamilies
