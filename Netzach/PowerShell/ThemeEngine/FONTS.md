@@ -17,6 +17,9 @@ ThemeEngine's existing color and theme management.
 | `font status` | Inspect integration status |
 | `font mappings` | Inspect configured mappings |
 | `font map <theme-id> "<font family>"` | Write a V1 mapping |
+| `font theme-preview` | Preview themes/fonts; explicitly apply a theme and optionally save a V2 preference |
+| `font check-apply <theme-id>` / `font check-restore` | Inspect an in-memory font candidate/restoration |
+| `font apply <theme-id> --fixture` / `font restore --fixture <test-root>` | Disposable fixture operations only |
 
 Run commands through ThemeEngine.ps1 in PowerShell 7.
 
@@ -43,24 +46,25 @@ V2 supports family, size, and weight. It remains
 experimental and requires a separate configuration
 path for its backend activation interface.
 
-The main CLI currently writes only V1 mappings.
+`font map` writes V1 mappings. The theme/font preview's optional preference
+checkbox saves V2 family, size, and weight while preserving `Enabled`. New
+preferences default to disabled. Saving a preference does not activate it.
 
 Theme metadata inspection and Terminal mapping
 inspection are separate operations.
 
 ## Activation
 
-The main font CLI does not expose activation
-or RESTORE commands.
+The main CLI refuses live font apply and RESTORE. Its `--fixture` commands
+target disposable test data. The theme/font selection workflow continues to
+use the existing public theme command and never invokes font activation or
+recovery. An active `TYPEZERO_FONT_V2` marker blocks theme selection before
+broader appearance writes, and the legacy Terminal color guard remains intact.
 
-Both activation backends require explicit Execute
-opt-in and use PowerShell ShouldProcess.
-
-Both reject execution when integration is disabled.
-Previewing remains available when it is disabled.
-
-These activation backends are experimental.
-They have not been approved for production switching.
+The historical V2 activation and RESTORE entry points now unconditionally
+refuse `-Execute`, including `-WhatIf`, before provider lookup or filesystem
+access. Their read-only previews remain available. Confirmation and an enabled
+mapping cannot authorize the old writer. V1 is unchanged.
 
 The existing Terminal color writer must preserve
 the TYPEZERO_FONT_V2 ownership-marker guard.
@@ -105,3 +109,9 @@ new plan and preview commands.
 
 Keep this feature experimental until its remaining
 safety limitations are resolved.
+
+## Guarded V2 development checkpoint
+
+See [FontActivationV2StagedPlan.md](FontActivationV2StagedPlan.md) for the audit,
+read-only readiness API, fixture replay reservation, validation, and release
+prerequisites. No production activation or recovery is enabled at this checkpoint.

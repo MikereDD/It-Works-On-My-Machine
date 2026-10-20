@@ -57,3 +57,24 @@ and verifies source hashes. Run as the current Windows user with PowerShell
 See [TerminalCoordinatorRehearsal.md](../TerminalCoordinatorRehearsal.md) for
 the API, dependency contracts, failure semantics, and NETZACH commands.
 Neither runner grants recovery or live activation authorization.
+
+## Selected V2 preference activation safety checkpoint
+
+`Test-TypezeroFontActivationReadinessV2.ps1` checks strict read-only snapshot
+validation, stale preference/settings refusal, ownership blockers, false
+authorization flags, and legacy V2 Execute refusal before provider lookup.
+It uses synthetic files and inert legacy provider stubs only.
+
+`Test-TypezeroFontMappingV2TransactionAdapter.ps1` additionally checks full
+configuration binding under the shared transaction lock and a retained config
+read handle. Changed Enabled, selected/unrelated mapping bytes, preview and
+WhatIf are covered while production settings remain unchanged.
+
+`Test-TypezeroTerminalV2RecoveryReplay.ps1` tests explicit fixture-store
+initialization and one-time authenticated grant reservations. It includes
+cross-process replay/races, occupied locks, stale grants, partial/corrupt
+tombstones, worker termination after CreateNew, and linked-path refusal.
+Reservations grant no recovery or live activation permission. Production
+deletion/rollback-resistant replay storage is still required.
+
+See [FontActivationV2StagedPlan.md](../FontActivationV2StagedPlan.md).

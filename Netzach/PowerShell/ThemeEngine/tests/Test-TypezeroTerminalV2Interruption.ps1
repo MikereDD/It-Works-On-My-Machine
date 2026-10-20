@@ -212,6 +212,7 @@ $replacementOld = @"
         `$false
     )
 "@
+$replacementOld = $replacementOld.Replace("`r`n", "`n")
 
 $replacementNew = $replacementOld +
     "`n    Invoke-TypezeroV2CrashCheckpoint -Name 'AFTER_FILE_REPLACE'"

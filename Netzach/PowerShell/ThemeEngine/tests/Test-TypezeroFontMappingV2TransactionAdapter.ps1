@@ -226,22 +226,6 @@ try {
         $thirdRestored.Status -ceq 'RESTORED') 'Latest transaction restores intermediate bytes'
 
     Write-Output "PASS: $script:checks V2 lifecycle checks."
-}
-finally {
-    if ($liveExists -ne [IO.File]::Exists($live) -or
-        ($liveExists -and (Get-V2Hash $live) -cne $liveHash)) {
-        throw 'REAL WINDOWS TERMINAL SETTINGS CHANGED!'
-    }
-    Write-Output 'PASS: Real Windows Terminal settings unchanged.'
-    foreach ($path in $sourcePaths) {
-        if ((Get-V2Hash $path) -cne $sourceHashes[$path]) {
-            throw "SOURCE CHANGED: $path"
-        }
-    }
-    Write-Output 'PASS: V1, V2, and replacement modules unchanged.'
-    Write-Output "Retained disposable fixtures: $($fixtures.Count)"
-    foreach ($root in $fixtures) { Write-Output "  $root" }
-}
 
 # === FONT MAPPING V2 ADAPTER REGRESSION ===
 
@@ -307,6 +291,25 @@ $adapterMapping.Enabled = $true
     (($adapterMapping | ConvertTo-Json -Depth 10) + "`n"),
     $utf8
 )
+
+function Get-AdapterFixtureSnapshot([string]$Root) {
+    (@(Get-ChildItem -LiteralPath $Root -Force -Recurse |
+        Sort-Object FullName | ForEach-Object {
+            if ($_.PSIsContainer) { 'D:' + $_.FullName }
+            else { 'F:' + $_.FullName + ':' + (Get-V2Hash $_.FullName) }
+        }) -join "`n")
+}
+
+$adapterReadOnlyBefore = Get-AdapterFixtureSnapshot $adapterFixture.Root
+$null = Invoke-TypezeroOfflineFontMappingV2Transaction `
+    -TestRoot $adapterFixture.Root -ConfigPath $adapterConfig `
+    -ThemeId gruvbox -Theme $adapterTheme
+$null = Invoke-TypezeroOfflineFontMappingV2Transaction `
+    -TestRoot $adapterFixture.Root -ConfigPath $adapterConfig `
+    -ThemeId gruvbox -Theme $adapterTheme -Execute -WhatIf
+Assert-V2 ((Get-AdapterFixtureSnapshot $adapterFixture.Root) -ceq
+    $adapterReadOnlyBefore) `
+    'Adapter preview and WhatIf create no lock, backup, file, or directory'
 
 Write-Host "`n=== ADAPTER EXCLUSIVE LOCK ==="
 
@@ -469,3 +472,177 @@ finally {
 
 Write-Host "`nPASS: Adapter refusal tests complete."
 Write-Host "`nPASS: Adapter lifecycle checks complete."
+
+Write-Host "`n=== ADAPTER STALE CONFIGURATION REFUSALS ==="
+
+# Mutate a synthetic mapping at the existing path-validation boundary,
+# after the initial snapshot and before acquisition of the fixed V2 lock.
+# This lock is nonblocking: an occupied lock is refused above rather than
+# waited on. No production API accepts an injected callback or executor.
+$script:adapterOriginalPlainPath = (
+    Get-Command Assert-TypezeroOfflineReplacePlainPath -CommandType Function
+).ScriptBlock
+try {
+    function Assert-TypezeroOfflineReplacePlainPath {
+        [CmdletBinding()]
+        param([Parameter(Mandatory)][string]$Path)
+        & $script:adapterOriginalPlainPath -Path $Path
+        if ($Path -ceq $script:adapterMutationLockPath -and
+            -not $script:adapterMutationApplied) {
+            [IO.File]::WriteAllText(
+                $script:adapterMutationConfig,
+                $script:adapterMutationText,
+                [Text.UTF8Encoding]::new($false)
+            )
+            $script:adapterMutationApplied = $true
+        }
+    }
+    foreach ($mutation in @('Enabled', 'SelectedMapping', 'MissingMapping', 'UnrelatedBytes')) {
+        $staleFixture = New-V2Fixture
+        $staleConfig = Join-Path $staleFixture.Root 'font-v2.json'
+        $staleMapping = [ordered]@{
+            Version = 2
+            Enabled = $true
+            ManualOverride = $null
+            Mappings = [ordered]@{
+                gruvbox = [ordered]@{
+                    family = 'JetBrainsMono Nerd Font'
+                    size = 12
+                    weight = 'normal'
+                }
+            }
+        }
+        $baselineText = ($staleMapping | ConvertTo-Json -Depth 10) + "`n"
+        [IO.File]::WriteAllText($staleConfig, $baselineText, $utf8)
+        switch ($mutation) {
+            'Enabled' { $staleMapping.Enabled = $false }
+            'SelectedMapping' { $staleMapping.Mappings.gruvbox.size = 16 }
+            'MissingMapping' { $staleMapping.Mappings.Remove('gruvbox') }
+        }
+        $script:adapterMutationText = if ($mutation -ceq 'UnrelatedBytes') {
+            $baselineText + "`n"
+        } else { ($staleMapping | ConvertTo-Json -Depth 10) + "`n" }
+        $script:adapterMutationConfig = $staleConfig
+        $script:adapterMutationLockPath = Join-Path $staleFixture.Root '.typezero-terminal-v2.lock'
+        $script:adapterMutationApplied = $false
+        $staleBackupRoot = (
+            Get-TypezeroOfflineTerminalTransactionPaths -TestRoot $staleFixture.Root
+        ).BackupRoot
+        Assert-V2Blocked {
+            Invoke-TypezeroOfflineFontMappingV2Transaction `
+                -TestRoot $staleFixture.Root -ConfigPath $staleConfig `
+                -ThemeId gruvbox -Theme $adapterTheme -Execute -Confirm:$false
+        } 'configuration changed during transaction preparation' `
+            "Adapter rejects $mutation change between snapshot and lock"
+        Assert-V2 ($script:adapterMutationApplied -and
+            (Get-V2Hash $staleFixture.Settings) -ceq $staleFixture.Baseline -and
+            [IO.File]::ReadAllText($staleConfig) -ceq $script:adapterMutationText -and
+            -not [IO.Directory]::Exists($staleBackupRoot) -and
+            @(Get-ChildItem -LiteralPath (Split-Path -Parent $staleFixture.Settings) `
+                -Filter '*.tmp' -Force -File).Count -eq 0) `
+            "$mutation refusal preserves settings and changed config; creates no backup or stage"
+        $probe = [IO.FileStream]::new(
+            $script:adapterMutationLockPath, [IO.FileMode]::Open,
+            [IO.FileAccess]::ReadWrite, [IO.FileShare]::None
+        )
+        $probe.Dispose()
+        Assert-V2 $true "$mutation refusal releases its transaction lock"
+    }
+}
+finally {
+    Set-Item -LiteralPath Function:\Assert-TypezeroOfflineReplacePlainPath `
+        -Value $script:adapterOriginalPlainPath
+}
+
+Write-Host "`nPASS: Adapter complete-configuration binding checks complete."
+
+Write-Host "`n=== ADAPTER HELD CONFIGURATION AND TRANSACTION LOCKS ==="
+$stableFixture = New-V2Fixture
+$script:adapterStableConfig = Join-Path $stableFixture.Root 'font-v2.json'
+$stableMapping = [ordered]@{
+    Version = 2
+    Enabled = $true
+    ManualOverride = $null
+    Mappings = [ordered]@{
+        gruvbox = [ordered]@{
+            family = 'JetBrainsMono Nerd Font'
+            size = 12
+            weight = 'normal'
+        }
+    }
+}
+[IO.File]::WriteAllText($script:adapterStableConfig,
+    (($stableMapping | ConvertTo-Json -Depth 10) + "`n"), $utf8)
+$script:adapterStableConfigHash = Get-V2Hash $script:adapterStableConfig
+$script:adapterStableLock = Join-Path $stableFixture.Root '.typezero-terminal-v2.lock'
+$script:adapterOriginalCombined = (
+    Get-Command Invoke-TypezeroOfflineTerminalCombinedTransactionV2 -CommandType Function
+).ScriptBlock
+try {
+    # Observe the existing transaction call boundary without adding a
+    # callback or injectable execution path to the adapter itself.
+    function Invoke-TypezeroOfflineTerminalCombinedTransactionV2 {
+        [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
+        param(
+            [Parameter(Mandatory)][string]$TestRoot,
+            [Parameter(Mandatory)][System.Collections.IDictionary]$Theme,
+            [Parameter(Mandatory)][string]$FontFace,
+            [Parameter(Mandatory)][double]$FontSize,
+            [Parameter(Mandatory)][string]$FontWeight,
+            [switch]$Execute
+        )
+        foreach ($protectedPath in @($script:adapterStableConfig, $script:adapterStableLock)) {
+            $probe = $null
+            $denied = $false
+            try {
+                $probe = [IO.FileStream]::new(
+                    $protectedPath, [IO.FileMode]::Open,
+                    [IO.FileAccess]::ReadWrite, [IO.FileShare]::ReadWrite
+                )
+            }
+            catch [IO.IOException] { $denied = $true }
+            finally { if ($null -ne $probe) { $probe.Dispose() } }
+            Assert-V2 $denied "Adapter holds $([IO.Path]::GetFileName($protectedPath)) stable through transaction execution" | Write-Host
+        }
+        & $script:adapterOriginalCombined @PSBoundParameters
+    }
+    $stableApply = Invoke-TypezeroOfflineFontMappingV2Transaction `
+        -TestRoot $stableFixture.Root -ConfigPath $script:adapterStableConfig `
+        -ThemeId gruvbox -Theme $adapterTheme -Execute -Confirm:$false
+    Assert-V2 ($stableApply.Status -ceq 'VERIFIED' -and
+        (Get-V2Hash $script:adapterStableConfig) -ceq $script:adapterStableConfigHash -and
+        (Get-V2Hash (Join-Path $stableApply.BackupDirectory 'settings-pre-replace.json')) -ceq
+            $stableFixture.Baseline) `
+        'Stable adapter execution verifies candidate and exact original backup'
+    foreach ($protectedPath in @($script:adapterStableConfig, $script:adapterStableLock)) {
+        $probe = [IO.FileStream]::new(
+            $protectedPath, [IO.FileMode]::Open,
+            [IO.FileAccess]::ReadWrite, [IO.FileShare]::None
+        )
+        $probe.Dispose()
+    }
+    Assert-V2 $true 'Successful adapter execution releases configuration and transaction handles'
+}
+finally {
+    Set-Item -LiteralPath Function:\Invoke-TypezeroOfflineTerminalCombinedTransactionV2 `
+        -Value $script:adapterOriginalCombined
+}
+
+Write-Host "`nPASS: $script:checks total lifecycle and adapter checks."
+}
+finally {
+    # Guard the complete suite, including adapter checks and refusal cases.
+    if ($liveExists -ne [IO.File]::Exists($live) -or
+        ($liveExists -and (Get-V2Hash $live) -cne $liveHash)) {
+        throw 'REAL WINDOWS TERMINAL SETTINGS CHANGED!'
+    }
+    Write-Output 'PASS: Real Windows Terminal settings unchanged.'
+    foreach ($path in $sourcePaths) {
+        if ((Get-V2Hash $path) -cne $sourceHashes[$path]) {
+            throw "SOURCE CHANGED: $path"
+        }
+    }
+    Write-Output 'PASS: V1, V2, and replacement modules unchanged.'
+    Write-Output "Retained disposable fixtures: $($fixtures.Count)"
+    foreach ($root in $fixtures) { Write-Output "  $root" }
+}
