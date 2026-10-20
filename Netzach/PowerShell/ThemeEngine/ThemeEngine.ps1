@@ -702,6 +702,35 @@ switch ($Command) {
         $action = if ($Theme) { $Theme.ToLowerInvariant() } else { 'help' }
 
         switch ($action) {
+            'theme-preview' {
+                if ($WallpaperArgs -and $WallpaperArgs.Count -gt 0) {
+                    throw 'Usage: themeengine font theme-preview'
+                }
+                $previewModule = Join-Path $PSScriptRoot 'ThemeFontPreview-WindowsTerminal.ps1'
+                if (-not (Test-Path -LiteralPath $previewModule -PathType Leaf)) {
+                    throw "Theme/font preview module missing: $previewModule"
+                }
+                . $previewModule
+                $result = Show-TypezeroThemeFontPreview -ThemesRoot $ThemesRoot
+                if ($null -ne $result) {
+                    if ($result.PreviewOnly -ne $true -or $result.SettingsChanged -ne $false) {
+                        throw 'Preview-only invariant violated.'
+                    }
+                    $selectionModule = Join-Path $PSScriptRoot 'ThemeFontSelection-WindowsTerminal.ps1'
+                    if (-not (Test-Path -LiteralPath $selectionModule -PathType Leaf)) {
+                        throw "Theme/font selection workflow missing: $selectionModule"
+                    }
+                    . $selectionModule
+                    $activation = Invoke-TypezeroThemeFontSelection -Selection $result `
+                        -EngineRoot $PSScriptRoot -ThemesRoot $ThemesRoot
+                    if ($activation.Status -in @('Blocked','ThemeFailed','ThemeAppliedPreferenceFailed')) {
+                        Write-Warning $activation.Message
+                    } else {
+                        Write-Host $activation.Message
+                    }
+                    return $activation
+                }
+            }
 
             'picker' {
                 if ($WallpaperArgs -and $WallpaperArgs.Count -gt 0) {
