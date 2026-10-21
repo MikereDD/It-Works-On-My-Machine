@@ -44,12 +44,12 @@ if ($Mode -cne 'Parent') {
                 } | ConvertTo-Json -Compress), $utf8)
                 while ($true) { Start-Sleep -Milliseconds 50 }
             }
-            $body = (Get-Command Write-TypezeroOfflineTerminalV2NewFile).ScriptBlock.ToString()
-            $anchor = '$stream.Write($Bytes, 0, $Bytes.Length)'
+            $body = (Get-Command Reserve-TypezeroOfflineTerminalV2RecoveryGrant).ScriptBlock.ToString()
+            $anchor = '$reservationStream.Write($reservationBytes, 0, $reservationBytes.Length)'
             Assert-Test ($body.Split($anchor).Count -eq 2) 'Unique CreateNew write checkpoint'
-            $instrumented = $body.Replace($anchor, ('Invoke-ReplayTestCheckpoint -Path $Path' + "`n        " + $anchor))
-            Assert-Test ($instrumented.Replace(('Invoke-ReplayTestCheckpoint -Path $Path' + "`n        " + $anchor), $anchor) -ceq $body) 'Reversible checkpoint'
-            Set-Item -Path Function:\Write-TypezeroOfflineTerminalV2NewFile `
+            $instrumented = $body.Replace($anchor, ('Invoke-ReplayTestCheckpoint -Path $reservationPath' + "`n        " + $anchor))
+            Assert-Test ($instrumented.Replace(('Invoke-ReplayTestCheckpoint -Path $reservationPath' + "`n        " + $anchor), $anchor) -ceq $body) 'Reversible checkpoint'
+            Set-Item -Path Function:\Reserve-TypezeroOfflineTerminalV2RecoveryGrant `
                 -Value ([scriptblock]::Create($instrumented))
         }
         $result = Reserve-TypezeroOfflineTerminalV2RecoveryGrant `
@@ -202,6 +202,125 @@ function Close-ReplayChild {
     $Process.Dispose()
 }
 
+# Deterministic expiry tests rewrite functions only in this test process. The
+# shipped functions have no clock parameter, environment override, or callback.
+# Both ordinary grant reviews still authenticate the exact signed GrantJson and
+# actual fixture evidence; only their in-memory UtcNow expressions are replaced.
+function Get-ReplayExpiryTestNow {
+    param([ValidateSet('Review','Reservation')][string]$Stage)
+    if ($Stage -ceq 'Review') { $script:ExpiryReviewCount++ }
+    else {
+        $script:ExpiryFinalCheckCount++
+        if ($script:ExpiryScenario -ceq 'ExactlyAtExpiry') {
+            $script:ExpiryClock = $script:ExpiryInstant
+        }
+    }
+    $script:ExpiryClock
+}
+function Invoke-ReplayExpiryEvidenceCheckpoint {
+    if ($script:ExpiryReviewCount -ne 2) { return }
+    $held = $null
+    $occupied = $false
+    try {
+        $held = [IO.FileStream]::new((Join-Path $root '.typezero-terminal-v2.lock'),
+            [IO.FileMode]::Open, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+    }
+    catch [IO.IOException] { $occupied = $true }
+    finally { if ($null -ne $held) { $held.Dispose() } }
+    Assert-Test $occupied 'Expiry checkpoint executes under the fixed exclusive V2 lock'
+    $script:ExpiryLockedReviewCount++
+    if ($script:ExpiryScenario -ceq 'DuringLockedReview') {
+        $script:ExpiryClock = $script:ExpiryInstant.AddTicks(1)
+    }
+}
+function ConvertTo-ReplayExpiryReservationJson {
+    [CmdletBinding()]
+    param([Parameter(ValueFromPipeline = $true)]$InputObject)
+    process {
+        $json = ConvertTo-Json -InputObject $InputObject -Compress
+        $script:ExpirySerializationCount++
+        if ($script:ExpiryScenario -ceq 'DuringSerialization') {
+            $script:ExpiryClock = $script:ExpiryInstant.AddTicks(1)
+        }
+        $json
+    }
+}
+function Invoke-ReplayExpiryCase {
+    param([ValidateSet('DuringLockedReview','DuringSerialization',
+        'ExactlyAtExpiry','OneTickBeforeExpiry')][string]$Scenario)
+
+    $reviewCommand = Get-Command Get-TypezeroOfflineTerminalV2GrantReview
+    $reserveCommand = Get-Command Reserve-TypezeroOfflineTerminalV2RecoveryGrant
+    $reviewOriginal = $reviewCommand.ScriptBlock
+    $reserveOriginal = $reserveCommand.ScriptBlock
+    $reviewBody = $reviewOriginal.ToString()
+    $reserveBody = $reserveOriginal.ToString()
+    $reviewClockAnchor = '$now = [datetime]::UtcNow'
+    $reviewClockReplacement = '$now = Get-ReplayExpiryTestNow -Stage Review'
+    $evidenceAnchor = '$assessment = Get-TypezeroOfflineTerminalV2RecoveryAssessment'
+    $evidenceReplacement = "Invoke-ReplayExpiryEvidenceCheckpoint`n        " + $evidenceAnchor
+    $finalClockAnchor = 'if ([datetime]::UtcNow -ge $expires) {'
+    $finalClockReplacement = 'if ((Get-ReplayExpiryTestNow -Stage Reservation) -ge $expires) {'
+    $serializationAnchor = '$tombstone | ConvertTo-Json -Compress'
+    $serializationReplacement = '$tombstone | ConvertTo-ReplayExpiryReservationJson'
+    foreach ($anchor in @($reviewClockAnchor, $evidenceAnchor)) {
+        Assert-Test ($reviewBody.Split($anchor).Count -eq 2) "Unique review instrumentation anchor: $anchor"
+    }
+    foreach ($anchor in @($finalClockAnchor, $serializationAnchor)) {
+        Assert-Test ($reserveBody.Split($anchor).Count -eq 2) "Unique reservation instrumentation anchor: $anchor"
+    }
+    $reviewInstrumented = $reviewBody.Replace($reviewClockAnchor, $reviewClockReplacement).
+        Replace($evidenceAnchor, $evidenceReplacement)
+    $reserveInstrumented = $reserveBody.Replace($finalClockAnchor, $finalClockReplacement).
+        Replace($serializationAnchor, $serializationReplacement)
+    Assert-Test ($reviewInstrumented.Replace($reviewClockReplacement, $reviewClockAnchor).
+        Replace($evidenceReplacement, $evidenceAnchor) -ceq $reviewBody) 'Review instrumentation reverses exactly'
+    Assert-Test ($reserveInstrumented.Replace($finalClockReplacement, $finalClockAnchor).
+        Replace($serializationReplacement, $serializationAnchor) -ceq $reserveBody) 'Reservation instrumentation reverses exactly'
+
+    $fixedIssued = [datetime]::new(2040, 1, 2, 3, 4, 5, [DateTimeKind]::Utc)
+    $script:ExpiryInstant = $fixedIssued.AddMinutes(5)
+    $script:ExpiryClock = $script:ExpiryInstant.AddTicks(-1)
+    $script:ExpiryScenario = $Scenario
+    $script:ExpiryReviewCount = 0
+    $script:ExpiryFinalCheckCount = 0
+    $script:ExpiryLockedReviewCount = 0
+    $script:ExpirySerializationCount = 0
+    $testGrant = New-TestGrant @{
+        IssuedUtc = $fixedIssued.ToString($dateFormat, $culture)
+        ExpiresUtc = $script:ExpiryInstant.ToString($dateFormat, $culture)
+    }
+    $before = Get-Snapshot
+    $reservationPath = Join-Path $replay.Store ($testGrant.Id + '.reserved')
+    Set-Item -Path Function:\Get-TypezeroOfflineTerminalV2GrantReview `
+        -Value ([scriptblock]::Create($reviewInstrumented))
+    Set-Item -Path Function:\Reserve-TypezeroOfflineTerminalV2RecoveryGrant `
+        -Value ([scriptblock]::Create($reserveInstrumented))
+    try {
+        $result = Reserve-Grant $testGrant -Execute
+        Assert-Unauthorized $result
+        Assert-Test ($script:ExpiryReviewCount -eq 2 -and
+            $script:ExpiryLockedReviewCount -eq 1 -and
+            $script:ExpiryFinalCheckCount -eq 1 -and
+            $script:ExpirySerializationCount -eq 1) 'Both authenticated reviews and serialization precede the final time check'
+        if ($Scenario -ceq 'OneTickBeforeExpiry') {
+            Assert-Test ($result.Decision -ceq 'RESERVED_FIXTURE_ONLY' -and
+                $result.GrantReserved -and [IO.File]::Exists($reservationPath)) 'Unexpired grant reserves at one tick before expiry'
+        }
+        else {
+            Assert-Test ($result.Decision -ceq 'GRANT_EXPIRED_OR_INVALID_TIME' -and
+                -not $result.GrantReserved -and $result.ReadOnly -and
+                -not [IO.File]::Exists($reservationPath) -and
+                (Get-Snapshot) -ceq $before) 'Expired grant leaves its ID unreserved and the entire fixture unchanged'
+        }
+    }
+    finally {
+        Set-Item -Path Function:\Get-TypezeroOfflineTerminalV2GrantReview -Value $reviewOriginal
+        Set-Item -Path Function:\Reserve-TypezeroOfflineTerminalV2RecoveryGrant -Value $reserveOriginal
+    }
+    Pass "Deterministic expiry boundary: $Scenario"
+}
+
 try {
     $previewRoot = Join-Path ([IO.Path]::GetTempPath()) ('typezero-terminal-txn-' + [guid]::NewGuid().ToString('N'))
     [IO.Directory]::CreateDirectory($previewRoot) | Out-Null
@@ -351,6 +470,15 @@ try {
         Set-Item -Path Function:\Open-TypezeroOfflineTerminalV2ReplayLock -Value $script:OriginalReplayLock
         [IO.File]::WriteAllBytes($paths.Settings, $settingsBytes)
     }
+
+    foreach ($scenario in @('DuringLockedReview','DuringSerialization',
+        'ExactlyAtExpiry','OneTickBeforeExpiry')) {
+        Invoke-ReplayExpiryCase -Scenario $scenario
+    }
+    $timeParameters = @((Get-Command Reserve-TypezeroOfflineTerminalV2RecoveryGrant).
+        Parameters.Keys | Where-Object { $_ -match 'Clock|Now|Time|Expires|Callback' })
+    Assert-Test ($timeParameters.Count -eq 0) 'Production reservation exposes no clock or callback bypass'
+    Pass 'Expiry instrumentation is test-only; production has no clock bypass'
 
     foreach ($bytes in @([byte[]]::new(0), $utf8.GetBytes('{broken'))) {
         $partial = New-TestGrant

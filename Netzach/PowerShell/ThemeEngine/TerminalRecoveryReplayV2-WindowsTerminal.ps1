@@ -195,14 +195,48 @@ function Reserve-TypezeroOfflineTerminalV2RecoveryGrant {
                                 )
                             )
                         }
-                        # CreateNew + Flush(true); any surviving partial write
-                        # blocks this ID forever. No cleanup, retry, or recovery.
-                        Write-TypezeroOfflineTerminalV2NewFile `
-                            -Path $reservationPath `
-                            -Bytes ($utf8.GetBytes(($tombstone | ConvertTo-Json -Compress)))
-                        $reserved = $true
-                        $decision = 'RESERVED_FIXTURE_ONLY'
-                        $reason = 'Grant ID reserved for cooperating fixture processes; no recovery authorized.'
+                        [byte[]]$reservationBytes = $utf8.GetBytes(($tombstone | ConvertTo-Json -Compress))
+                        # The locked review authenticates this exact immutable
+                        # GrantJson, but its time check precedes evidence review.
+                        # Re-read only its expiry, and finish serialization before
+                        # the final UTC check. Missing/malformed expiry fails closed.
+                        $grantDocument = $null
+                        $expires = [datetime]::MinValue
+                        try {
+                            $grantDocument = [Text.Json.JsonDocument]::Parse($GrantJson)
+                            $expires = [datetime]::ParseExact(
+                                $grantDocument.RootElement.GetProperty('ExpiresUtc').GetString(),
+                                "yyyy-MM-ddTHH:mm:ss.fffffff'Z'",
+                                [Globalization.CultureInfo]::InvariantCulture,
+                                ([Globalization.DateTimeStyles]::AssumeUniversal -bor
+                                 [Globalization.DateTimeStyles]::AdjustToUniversal)
+                            )
+                        }
+                        catch { $expires = [datetime]::MinValue }
+                        finally {
+                            if ($null -ne $grantDocument) { $grantDocument.Dispose() }
+                        }
+                        Assert-TypezeroOfflineReplacePlainPath -Path $reservationPath
+                        if ([datetime]::UtcNow -ge $expires) {
+                            $decision = 'GRANT_EXPIRED_OR_INVALID_TIME'
+                            $reason = 'Grant expired before fixture reservation or its expiration is invalid; ID remains unreserved.'
+                        }
+                        else {
+                            # CreateNew + Flush(true); any surviving partial write
+                            # blocks this ID forever. No cleanup, retry, or recovery.
+                            $reservationStream = [IO.FileStream]::new(
+                                $reservationPath, [IO.FileMode]::CreateNew,
+                                [IO.FileAccess]::Write, [IO.FileShare]::None
+                            )
+                            try {
+                                $reservationStream.Write($reservationBytes, 0, $reservationBytes.Length)
+                                $reservationStream.Flush($true)
+                            }
+                            finally { $reservationStream.Dispose() }
+                            $reserved = $true
+                            $decision = 'RESERVED_FIXTURE_ONLY'
+                            $reason = 'Grant ID reserved for cooperating fixture processes; no recovery authorized.'
+                        }
                     }
                 }
             }
