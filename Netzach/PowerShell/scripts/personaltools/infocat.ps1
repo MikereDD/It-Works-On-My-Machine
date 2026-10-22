@@ -2143,10 +2143,10 @@ function Get-InfoCatTerminalWidth {
 function Get-InfoCatLayout {
     param([ValidateRange(24, 1000)][int]$TerminalWidth)
     $artColumn = 52
-    $labelColumn = 16
+    $labelColumn = 17
     $stacked = $TerminalWidth -lt ($artColumn + $labelColumn + 22)
     $width = if ($stacked) {
-        [Math]::Max(8, $TerminalWidth - $labelColumn - 1)
+        [Math]::Max(7, $TerminalWidth - $labelColumn - 1)
     } else {
         [Math]::Max(8, $TerminalWidth - $artColumn - $labelColumn - 1)
     }
@@ -2160,7 +2160,7 @@ function Get-InfoCatLayout {
 function Split-InfoCatText {
     param(
         [AllowEmptyString()][string]$Text,
-        [ValidateRange(8, 1000)][int]$Width
+        [ValidateRange(7, 1000)][int]$Width
     )
     $result = [System.Collections.Generic.List[string]]::new()
     $remaining = $Text
@@ -2206,16 +2206,16 @@ function Write-InfoCatDetail {
         'Blank' { Write-Host '' }
         'User' { Write-Host "${Cyan}$($Detail.Value)$Reset" }
         'Continuation' {
-            Write-Host "${LabelColor}$(' ' * 14)  ${Blue}$($Detail.Value)$Reset"
+            Write-Host "${LabelColor}$(' ' * 15)  ${Blue}$($Detail.Value)$Reset"
         }
         default {
-            $label = ([string]$Detail.Label).PadRight(14)
+            $label = ([string]$Detail.Label).PadRight(15)
             Write-Host "${LabelColor}$label${White}» ${Blue}$($Detail.Value)$Reset"
         }
     }
 }
 
-# Two spaces + 50 columns of cat art; labels use 14 columns plus '» '.
+# Two spaces + 50 columns of cat art; labels use 15 columns plus '» '.
 $terminalWidth = Get-InfoCatTerminalWidth
 $layout = Get-InfoCatLayout -TerminalWidth $terminalWidth
 $rows = @(Expand-InfoCatRows -Rows $details -ValueWidth $layout.ValueWidth)
