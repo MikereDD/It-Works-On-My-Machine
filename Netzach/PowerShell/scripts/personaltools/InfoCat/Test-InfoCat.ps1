@@ -188,13 +188,13 @@ $layoutFn = @($ast.FindAll({
 }, $true)) | Select-Object -First 1
 if (-not $layoutFn) { throw 'Missing layout AST.' }
 . ([scriptblock]::Create($layoutFn.Extent.Text))
-foreach ($width in @(24, 30, 44, 45, 65, 87, 88, 120, 180)) {
+foreach ($width in @(24, 30, 44, 45, 65, 87, 88, 89, 90, 91, 120, 180)) {
     $layout = Get-InfoCatLayout -TerminalWidth $width
-    if ($layout.Stacked -ne ($width -lt 90) -or
+    if ($layout.Stacked -ne ($width -lt 91) -or
         $layout.ShowArt -ne ($width -ge 45)) {
         throw "Unexpected layout mode at $width columns."
     }
-    $prefix = if ($layout.Stacked) { 16 } else { 68 }
+    $prefix = if ($layout.Stacked) { 17 } else { 69 }
     if (($prefix + $layout.ValueWidth) -gt $width) {
         throw "Detail text exceeds $width terminal columns."
     }
@@ -226,9 +226,9 @@ foreach ($case in $machineCases) {
 }
 if ($updated -notmatch "Label\s*=\s*'Windows Accent'" -or
     $updated -match "Label\s*=\s*'Accent'" -or
-    $updated -notmatch 'PadRight\(14\)' -or
-    $updated -notmatch '\$labelColumn\s*=\s*16') {
-    throw 'Windows accent differentiation / fourteen-column label geometry invalid.'
+    $updated -notmatch 'PadRight\(15\)' -or
+    $updated -notmatch '\$labelColumn\s*=\s*17') {
+    throw 'Windows accent differentiation / fifteen-column label geometry invalid.'
 }
 Write-Host 'PASS: Machine-name deduplication and Windows Accent label geometry.' -ForegroundColor Green
 
