@@ -14,6 +14,24 @@ New-Module -Name TypezeroDurableFixtureV2 -ScriptBlock {
         '000003.replaced.json','000004.complete.json')
     $zero = '0' * 64
     $markerText = 'TYPEZERO-V2-DURABLE-FIXTURE-1'
+    # v1.1: writer and reader share inclusive encoded-byte limits.
+    $settingsLimit = 16777216
+    $receiptLimit = 65536
+    $recordLimit = 32768
+    $grantLimit = 16384
+    $reservationLimit = 32768
+
+    function Assert-Size([byte[]]$Bytes, [int]$Limit, [string]$Kind) {
+        if ($null -eq $Bytes -or $Bytes.Length -gt $Limit) {
+            throw ('REFUSED: Durable ' + $Kind + ' exceeds its byte size limit (' + $Limit + ').')
+        }
+    }
+    function Encode-Bounded([string]$Text, [int]$Limit, [string]$Kind) {
+        if ($utf8.GetByteCount($Text) -gt $Limit) {
+            throw ('REFUSED: Durable ' + $Kind + ' exceeds its byte size limit (' + $Limit + ').')
+        }
+        return ,$utf8.GetBytes($Text)
+    }
 
     function Assert-Key([byte[]]$Key) {
         if ($null -eq $Key -or $Key.Length -ne 32) {
@@ -27,8 +45,19 @@ New-Module -Name TypezeroDurableFixtureV2 -ScriptBlock {
         Assert-TypezeroOfflineReplacePlainPath -Path $Path
         if (-not [IO.File]::Exists($Path)) { throw 'Required durable evidence is missing.' }
         Assert-TypezeroOfflineReplaceSingleLink -Path $Path
-        if ([IO.FileInfo]::new($Path).Length -gt $Limit) { throw 'Durable evidence exceeds its size limit.' }
-        return ,[IO.File]::ReadAllBytes($Path)
+        $stream = [IO.File]::Open($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
+        try {
+            if ($stream.Length -gt $Limit) { throw 'REFUSED: Durable evidence exceeds its byte size limit.' }
+            $bytes = [byte[]]::new([int]$stream.Length)
+            $offset=0
+            while ($offset -lt $bytes.Length) {
+                $read=$stream.Read($bytes,$offset,$bytes.Length-$offset)
+                if ($read -eq 0) { throw 'Required durable evidence ended during its bounded read.' }
+                $offset+=$read
+            }
+            return ,$bytes
+        }
+        finally { $stream.Dispose() }
     }
     function Read-Object([byte[]]$Bytes, [string[]]$Names, [string[]]$Integers) {
         $doc = [Text.Json.JsonDocument]::Parse($utf8.GetString($Bytes))
@@ -113,7 +142,7 @@ New-Module -Name TypezeroDurableFixtureV2 -ScriptBlock {
         }
         $previous = $zero; $first = $null; $last = $null
         for ($i = 0; $i -lt $entries.Count; $i++) {
-            $bytes = Read-Bytes (Join-Path $journal $fileNames[$i]) 32768
+            $bytes = Read-Bytes (Join-Path $journal $fileNames[$i]) $recordLimit
             $record = Read-Object $bytes $recordNames @('Version','Sequence')
             # The final record has no successor digest to protect its encoding.
             # Require the exact writer representation as well as its signed fields.
@@ -170,7 +199,7 @@ New-Module -Name TypezeroDurableFixtureV2 -ScriptBlock {
         foreach ($entry in $entries) {
             if ($entry.PSIsContainer -or $entry.Name -cnotin $expected) { throw 'Unexpected transaction evidence.' }
         }
-        $receiptBytes = Read-Bytes (Join-Path $folder 'receipt.json') 65536
+        $receiptBytes = Read-Bytes (Join-Path $folder 'receipt.json') $receiptLimit
         $backupBytes = Read-Bytes (Join-Path $folder 'settings-pre-replace.json')
         $sealBytes = Read-Bytes (Join-Path $folder 'evidence.seal') 32
         if ((Hash-Bytes $receiptBytes) -cne $r.ReceiptSha256 -or (Hash-Bytes $backupBytes) -cne $r.BeforeSha256 -or
@@ -196,10 +225,10 @@ New-Module -Name TypezeroDurableFixtureV2 -ScriptBlock {
             $receipt = Read-Object $receiptBytes @('Version','Kind','Operation','SettingsPath','BeforeSha256','AfterSha256','StageFileName','BackupFileName','ParentTransactionFolderName') @('Version')
             if ($receipt.Version -ne 2 -or $receipt.Kind -cne 'TypezeroOfflineCombinedV2' -or
                 $receipt.ParentTransactionFolderName -cne [IO.Path]::GetFileName($r.ParentBackupDirectory)) { throw 'Invalid restore receipt.' }
-            $grantBytes = Read-Bytes (Join-Path $folder 'grant.json') 16384
+            $grantBytes = Read-Bytes (Join-Path $folder 'grant.json') $grantLimit
             $authBytes = Read-Bytes (Join-Path $folder 'authorization.mac') 32
             $replay = Get-TypezeroOfflineTerminalV2ReplayContext -TestRoot $Paths.Root
-            $reservationBytes = Read-Bytes (Join-Path $replay.Store ($r.GrantId + '.reserved')) 32768
+            $reservationBytes = Read-Bytes (Join-Path $replay.Store ($r.GrantId + '.reserved')) $reservationLimit
             if ((Hash-Bytes $grantBytes) -cne $r.GrantSha256 -or (Hash-Bytes $authBytes) -cne $r.AuthorizationMacSha256 -or
                 $authBytes.Length -ne 32 -or (Hash-Bytes $reservationBytes) -cne $r.ReservationSha256) { throw 'Restore authority or reservation evidence changed.' }
             $reservation = Read-Object $reservationBytes @('Version','Kind','GrantId','TestRoot','BackupDirectory','GrantSha256') @('Version')
@@ -245,43 +274,309 @@ New-Module -Name TypezeroDurableFixtureV2 -ScriptBlock {
         }
         return $states
     }
-    function New-Intent($Paths, [string]$Operation, [string]$Before, [string]$After, [string]$Stage, [byte[]]$Receipt,
+    function Prepare-Intent($Paths, [string]$Operation, [string]$Before, [string]$After, [string]$Stage, [byte[]]$Receipt,
         [byte[]]$Key, [string]$Parent='', [string]$GrantId='', [string]$GrantHash='', [string]$AuthHash='', [string]$ReservationHash='', [string]$SourceHash='') {
+        Assert-Size $Receipt $receiptLimit 'receipt'
         $name = (Get-Date -Format 'yyyyMMdd-HHmmss-fffffff') + '-' + [guid]::NewGuid().ToString('N')
         $folder = Join-Path $Paths.BackupRoot $name
-        $store = Get-Store $Paths -Create
-        $journal = Join-Path $store $name
-        Assert-TypezeroOfflineReplacePlainPath -Path $journal
-        [IO.Directory]::CreateDirectory($journal) | Out-Null
-        $r = [ordered]@{ Version=2; Sequence=1; Phase='INTENT'; PreviousSha256=$zero;
+        $journal = Join-Path (Get-Store $Paths) $name
+        foreach ($target in @($folder,$journal)) {
+            Assert-TypezeroOfflineReplacePlainPath -Path $target
+            if ([IO.File]::Exists($target) -or [IO.Directory]::Exists($target)) { throw 'REFUSED: Durable transaction identity collision.' }
+        }
+        $identity = [ordered]@{ Version=2; Sequence=1; Phase='INTENT'; PreviousSha256=$zero;
             Kind='TypezeroFixtureDurableTransactionV2'; FixtureRoot=$Paths.Root; BackupDirectory=$folder;
             Operation=$Operation; ParentBackupDirectory=$Parent; GrantId=$GrantId; GrantSha256=$GrantHash;
             AuthorizationMacSha256=$AuthHash; ReservationSha256=$ReservationHash; SourceChainSha256=$SourceHash;
             SettingsPath=$Paths.Settings; BeforeSha256=$Before; AfterSha256=$After; StageFileName=$Stage;
             BackupFileName='settings-pre-replace.json'; ReceiptSha256=(Hash-Bytes $Receipt); HmacSha256='' }
-        $r.HmacSha256 = [Convert]::ToHexString((Get-Mac $r $Key))
-        $bytes = $utf8.GetBytes(($r | ConvertTo-Json -Compress))
-        Write-TypezeroOfflineTerminalV2NewFile -Path (Join-Path $journal $fileNames[0]) -Bytes $bytes
-        [pscustomobject]@{ Record=$r; Digest=(Hash-Bytes $bytes); Journal=$journal; Folder=$folder }
+        $prepared = [Collections.Generic.List[object]]::new()
+        $previous = $zero
+        for ($i=0; $i -lt 4; $i++) {
+            $r = [ordered]@{}
+            foreach ($field in $recordNames) { $r[$field] = $identity[$field] }
+            $r.Sequence=$i+1; $r.Phase=$phases[$i]; $r.PreviousSha256=$previous
+            $r.HmacSha256=[Convert]::ToHexString((Get-Mac $r $Key))
+            $bytes=Encode-Bounded ($r | ConvertTo-Json -Compress) $recordLimit 'phase record'
+            $previous=Hash-Bytes $bytes
+            $prepared.Add([pscustomobject]@{Record=$r;Bytes=$bytes;Digest=$previous})
+        }
+        # All four actual chained records exist in memory before any durable write.
+        [pscustomobject]@{Record=$prepared[0].Record;Digest=$prepared[0].Digest;
+            Journal=$journal;Folder=$folder;Prepared=$prepared.ToArray();Written=0}
+    }
+    function New-Intent($Paths, $State) {
+        if ($State.Written -ne 0) { throw 'Invalid private intent transition.' }
+        $null=Get-Store $Paths -Create
+        Assert-TypezeroOfflineReplacePlainPath -Path $State.Journal
+        if ([IO.File]::Exists($State.Journal) -or [IO.Directory]::Exists($State.Journal) -or
+            [IO.File]::Exists($State.Folder) -or [IO.Directory]::Exists($State.Folder)) { throw 'REFUSED: Durable transaction identity collision.' }
+        [IO.Directory]::CreateDirectory($State.Journal) | Out-Null
+        Write-TypezeroOfflineTerminalV2NewFile -Path (Join-Path $State.Journal $fileNames[0]) -Bytes $State.Prepared[0].Bytes
+        $State.Written=1
+        $State
     }
     function Advance($State, [int]$Sequence, [byte[]]$Key) {
-        # Private primitive: no exported transition function or caller callback.
-        if ($Sequence -ne ($State.Record.Sequence + 1) -or $Sequence -lt 2 -or $Sequence -gt 4) { throw 'Invalid private phase transition.' }
-        $r = $State.Record; $r.Sequence=$Sequence; $r.Phase=$phases[$Sequence-1]; $r.PreviousSha256=$State.Digest
-        $r.HmacSha256=[Convert]::ToHexString((Get-Mac $r $Key))
-        $bytes=$utf8.GetBytes(($r | ConvertTo-Json -Compress))
-        Write-TypezeroOfflineTerminalV2NewFile -Path (Join-Path $State.Journal $fileNames[$Sequence-1]) -Bytes $bytes
-        $State.Digest=Hash-Bytes $bytes
+        # Private transitions persist only their preflighted exact canonical bytes.
+        if ($Sequence -ne ($State.Written + 1) -or $Sequence -lt 2 -or $Sequence -gt 4) { throw 'Invalid private phase transition.' }
+        $next=$State.Prepared[$Sequence-1]
+        if ($next.Record.PreviousSha256 -cne $State.Digest -or
+            -not [Security.Cryptography.CryptographicOperations]::FixedTimeEquals(
+                [Convert]::FromHexString($next.Record.HmacSha256),(Get-Mac $next.Record $Key))) { throw 'Prepared phase authentication failed.' }
+        Write-TypezeroOfflineTerminalV2NewFile -Path (Join-Path $State.Journal $fileNames[$Sequence-1]) -Bytes $next.Bytes
+        $State.Record=$next.Record; $State.Digest=$next.Digest; $State.Written=$Sequence
+    }
+    # v1.1 private deadline-aware copy; the pinned legacy primitive is unchanged.
+    function Invoke-DeadlineReplace {
+        [CmdletBinding(
+            SupportsShouldProcess = $true,
+            ConfirmImpact = 'High'
+        )]
+        param(
+            [Parameter(Mandatory)]
+            [string]$TestRoot,
+
+            [Parameter(Mandatory)]
+            [string]$StagePath,
+
+            [Parameter(Mandatory)]
+            [string]$BackupPath,
+
+            [Parameter(Mandatory)]
+            [ValidatePattern('\A[a-fA-F0-9]{64}\z')]
+            [string]$ExpectedBeforeSha256,
+
+            [Parameter(Mandatory)]
+            [ValidatePattern('\A[a-fA-F0-9]{64}\z')]
+            [string]$ExpectedStageSha256,
+
+            [Parameter(Mandatory)][datetime]$ExpiresUtc,
+
+            [switch]$Execute
+        )
+
+        if ($ExpiresUtc.Kind -ne [DateTimeKind]::Utc) { throw 'REFUSED: A UTC grant deadline is required.' }
+
+        # Offline-only: require a specially named direct child of TEMP.
+        $root = [IO.Path]::GetFullPath($TestRoot).TrimEnd('\', '/')
+        $temp = [IO.Path]::GetFullPath(
+            [IO.Path]::GetTempPath()
+        ).TrimEnd('\', '/')
+
+        if (-not [string]::Equals(
+            [IO.Path]::GetDirectoryName($root),
+            $temp,
+            [StringComparison]::OrdinalIgnoreCase
+        ) -or
+            [IO.Path]::GetFileName($root) -cnotmatch
+            '\Atypezero-terminal-txn-[a-f0-9]{32}\z') {
+            throw 'Replacement requires a direct disposable TEMP fixture.'
+        }
+
+        $settings = [IO.Path]::GetFullPath(
+            (Join-Path $root (
+                'Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe' +
+                '\LocalState\settings.json'
+            ))
+        )
+
+        $settingsDir = [IO.Path]::GetDirectoryName($settings)
+        $stage = [IO.Path]::GetFullPath($StagePath)
+        $backup = [IO.Path]::GetFullPath($BackupPath)
+
+        # Stage must be an owned candidate in the settings directory.
+        if (-not [string]::Equals(
+            [IO.Path]::GetDirectoryName($stage),
+            $settingsDir,
+            [StringComparison]::OrdinalIgnoreCase
+        ) -or
+            [IO.Path]::GetFileName($stage) -cnotmatch
+            '\A\.typezero-combined-(?:restore-)?[a-f0-9]{32}\.tmp\z') {
+            throw 'Unexpected replacement staging path.'
+        }
+
+        # Backup must be in one exact transaction backup folder.
+        $backupBase = [IO.Path]::GetFullPath(
+            (Join-Path $root (
+                'Typezero\ThemeEngine\backups\terminal-combined'
+            ))
+        )
+
+        $backupDir = [IO.Path]::GetDirectoryName($backup)
+
+        if ([IO.Path]::GetFileName($backup) -cne
+            'settings-pre-replace.json' -or
+            -not [string]::Equals(
+                [IO.Path]::GetDirectoryName($backupDir),
+                $backupBase,
+                [StringComparison]::OrdinalIgnoreCase
+            ) -or
+            [IO.Path]::GetFileName($backupDir) -cnotmatch
+            '\A[0-9]{8}-[0-9]{6}-[0-9]{7}-[a-f0-9]{32}\z') {
+            throw 'Unexpected replacement backup path.'
+        }
+
+        foreach ($path in @(
+            $root, $settings, $stage, $backupDir, $backup
+        )) {
+            Assert-TypezeroOfflineReplacePlainPath -Path $path
+        }
+
+        if (-not [IO.Directory]::Exists($backupDir)) {
+            throw 'Transaction backup directory must already exist.'
+        }
+
+        if (-not [IO.File]::Exists($settings) -or
+            -not [IO.File]::Exists($stage)) {
+            throw 'Settings or stage file is missing.'
+        }
+
+        if ([IO.File]::Exists($backup) -or
+            [IO.Directory]::Exists($backup)) {
+            throw 'Replacement backup collision. Refusing overwrite.'
+        }
+
+        Assert-TypezeroOfflineReplaceSingleLink -Path $settings
+        Assert-TypezeroOfflineReplaceSingleLink -Path $stage
+
+        $beforeHash = (
+            Get-FileHash -LiteralPath $settings -Algorithm SHA256
+        ).Hash
+
+        $stageHash = (
+            Get-FileHash -LiteralPath $stage -Algorithm SHA256
+        ).Hash
+
+        if ($beforeHash -ine $ExpectedBeforeSha256) {
+            throw 'Settings checksum differs from expected original.'
+        }
+
+        if ($stageHash -ine $ExpectedStageSha256) {
+            throw 'Staging checksum differs from expected candidate.'
+        }
+
+        if (-not $Execute) {
+            return [pscustomobject]@{
+                Status             = 'PREVIEW'
+                WouldReplace       = $true
+                SettingsPath       = $settings
+                StagePath          = $stage
+                BackupPath         = $backup
+                BeforeSha256       = $beforeHash
+                CandidateSha256    = $stageHash
+                ReadOnly           = $true
+            }
+        }
+
+        if (-not $PSCmdlet.ShouldProcess(
+            $settings,
+            'Replace disposable Terminal settings with preserved backup'
+        )) {
+            return
+        }
+
+        # Repeat checks immediately before replacement.
+        # These reduce exposure but are not an atomic compare-and-swap.
+        foreach ($path in @($settings, $stage, $backup)) {
+            Assert-TypezeroOfflineReplacePlainPath -Path $path
+        }
+
+        if ([IO.File]::Exists($backup) -or
+            [IO.Directory]::Exists($backup)) {
+            throw 'Backup collision immediately before replacement.'
+        }
+
+        Assert-TypezeroOfflineReplaceSingleLink -Path $settings
+        Assert-TypezeroOfflineReplaceSingleLink -Path $stage
+
+        if ((Get-FileHash -LiteralPath $settings -Algorithm SHA256).Hash -ine
+            $ExpectedBeforeSha256) {
+            throw 'Settings changed immediately before replacement.'
+        }
+
+        if ((Get-FileHash -LiteralPath $stage -Algorithm SHA256).Hash -ine
+            $ExpectedStageSha256) {
+            throw 'Stage changed immediately before replacement.'
+        }
+
+        # No automatic rollback or deletion on failure.
+        # Preserve evidence for inspection.
+        # DURABLE-CHECKPOINT: RESTORE_BEFORE_NATIVE_CALL
+        if ([datetime]::UtcNow -ge $ExpiresUtc) { throw 'REFUSED: Grant expired at native replacement boundary; preserve all evidence.' }
+        [IO.File]::Replace(
+            $stage,
+            $settings,
+            $backup,
+            $false
+        )
+
+        # DURABLE-CHECKPOINT: RESTORE_AFTER_NATIVE_UNVERIFIED
+        $actualSettings = (
+            Get-FileHash -LiteralPath $settings -Algorithm SHA256
+        ).Hash
+
+        $actualBackup = (
+            Get-FileHash -LiteralPath $backup -Algorithm SHA256
+        ).Hash
+
+        if ($actualSettings -ine $ExpectedStageSha256 -or
+            $actualBackup -ine $ExpectedBeforeSha256) {
+            throw (
+                'Replacement verification failed. Preserve files for ' +
+                "manual inspection. Backup: $backup"
+            )
+        }
+
+        [pscustomobject]@{
+            Status          = 'VERIFIED'
+            SettingsPath    = $settings
+            BackupPath      = $backup
+            BeforeSha256    = $actualBackup
+            AfterSha256     = $actualSettings
+            BackupVerified  = $true
+            TestRoot        = $root
+        }
     }
     function Prepare-Candidate($Paths, $Theme, [string]$Face, [double]$Size, [string]$Weight) {
         $beforeBytes = Read-Bytes $Paths.Settings
         if ($beforeBytes.Length -ge 3 -and $beforeBytes[0] -eq 239 -and $beforeBytes[1] -eq 187 -and $beforeBytes[2] -eq 191) { throw 'UTF-8 BOM requires separate handling.' }
         $original=$utf8.GetString($beforeBytes)
         $candidate=New-TypezeroTerminalCombinedJsonCandidate -JsonText $original -Theme $Theme -FontFace $Face -FontSize $Size -FontWeight $Weight
-        $afterBytes=$utf8.GetBytes($candidate)
+        $afterBytes=Encode-Bounded $candidate $settingsLimit 'candidate settings'
         $before=Hash-Bytes $beforeBytes; $after=Hash-Bytes $afterBytes
         if ((Get-TypezeroOfflineTerminalV2Sha256 -Path $Paths.Settings) -cne $before) { throw 'Fixture changed during candidate preparation.' }
         [pscustomobject]@{ Before=$before; After=$after; Bytes=$afterBytes; Changed=($before -cne $after) }
+    }
+    function Prepare-Apply($Paths, $Theme, [string]$Face, [double]$Size, [string]$Weight, [byte[]]$Key) {
+        $candidate=Prepare-Candidate $Paths $Theme $Face $Size $Weight
+        if (-not $candidate.Changed) { return [pscustomobject]@{Candidate=$candidate;State=$null;Receipt=$null} }
+        $stageName='.typezero-combined-' + [guid]::NewGuid().ToString('N') + '.tmp'
+        $receipt=[ordered]@{Version=2;Kind='TypezeroOfflineCombinedV2';Operation='APPLY';SettingsPath=$Paths.Settings;
+            BeforeSha256=$candidate.Before;AfterSha256=$candidate.After;StageFileName=$stageName;BackupFileName='settings-pre-replace.json';
+            Font=$Face;Size=$Size;Weight=$Weight}
+        $receiptBytes=Encode-Bounded ($receipt | ConvertTo-Json -Depth 8) $receiptLimit 'receipt'
+        $state=Prepare-Intent $Paths 'APPLY' $candidate.Before $candidate.After $stageName $receiptBytes $Key
+        [pscustomobject]@{Candidate=$candidate;State=$state;Receipt=$receiptBytes}
+    }
+    function Prepare-Restore($Paths, [string]$Folder, $Source, $Review, [string]$GrantJson, [byte[]]$AuthorizationMac, [byte[]]$Key) {
+        $grantBytes=Encode-Bounded $GrantJson $grantLimit 'grant'
+        if ($null -eq $AuthorizationMac -or $AuthorizationMac.Length -ne 32) { throw 'REFUSED: A 32-byte authorization MAC is required.' }
+        $null=Read-Bytes $Paths.Settings $settingsLimit
+        $sourceBytes=Read-Bytes (Join-Path $Folder 'settings-pre-replace.json') $settingsLimit
+        if ((Hash-Bytes $sourceBytes) -cne $Source.Record.BeforeSha256) { throw 'REFUSED: Restore source bytes changed during preflight.' }
+        $reservation=[ordered]@{Version=2;Kind='TypezeroFixtureRecoveryReservationV2';GrantId=$Review.GrantId;
+            TestRoot=$Paths.Root;BackupDirectory=$Folder;GrantSha256=(Hash-Bytes $grantBytes)}
+        $reservationBytes=Encode-Bounded ($reservation | ConvertTo-Json -Compress) $reservationLimit 'reservation'
+        $stageName='.typezero-combined-restore-' + [guid]::NewGuid().ToString('N') + '.tmp'
+        $receipt=[ordered]@{Version=2;Kind='TypezeroOfflineCombinedV2';Operation='RESTORE';SettingsPath=$Paths.Settings;
+            BeforeSha256=$Source.Record.AfterSha256;AfterSha256=$Source.Record.BeforeSha256;StageFileName=$stageName;
+            BackupFileName='settings-pre-replace.json';ParentTransactionFolderName=[IO.Path]::GetFileName($Folder)}
+        $receiptBytes=Encode-Bounded ($receipt | ConvertTo-Json -Depth 8) $receiptLimit 'receipt'
+        $state=Prepare-Intent $Paths 'RESTORE' $Source.Record.AfterSha256 $Source.Record.BeforeSha256 $stageName $receiptBytes $Key $Folder $Review.GrantId (Hash-Bytes $grantBytes) (Hash-Bytes $AuthorizationMac) (Hash-Bytes $reservationBytes) $Source.Digest
+        $grantDoc=[Text.Json.JsonDocument]::Parse($GrantJson)
+        try { $expires=[datetime]::ParseExact($grantDoc.RootElement.GetProperty('ExpiresUtc').GetString(),"yyyy-MM-ddTHH:mm:ss.fffffff'Z'",[Globalization.CultureInfo]::InvariantCulture,([Globalization.DateTimeStyles]::AssumeUniversal -bor [Globalization.DateTimeStyles]::AdjustToUniversal)) }
+        finally { $grantDoc.Dispose() }
+        [pscustomobject]@{State=$state;Receipt=$receiptBytes;Grant=$grantBytes;Reservation=$reservationBytes;SourceBytes=$sourceBytes;ExpiresUtc=$expires}
     }
     function Get-TypezeroOfflineTerminalV2DurableAssessment {
         [CmdletBinding()]
@@ -323,7 +618,8 @@ New-Module -Name TypezeroDurableFixtureV2 -ScriptBlock {
         Assert-Key $IndependentKey
         $paths=Get-TypezeroOfflineTerminalV2Paths -TestRoot $TestRoot
         $null=Assert-Quiescent $paths $IndependentKey
-        $candidate=Prepare-Candidate $paths $Theme $FontFace $FontSize $FontWeight
+        $plan=Prepare-Apply $paths $Theme $FontFace $FontSize $FontWeight $IndependentKey
+        $candidate=$plan.Candidate
         if (-not $Execute) { return [pscustomobject]@{Status='PREVIEW';ReadOnly=$true;FixtureOnly=$true;WouldChange=$candidate.Changed;RecoveryAuthorized=$false;LiveActivationAuthorized=$false} }
         if (-not $candidate.Changed) { return [pscustomobject]@{Status='NO_CHANGE';ReadOnly=$true;FixtureOnly=$true} }
         if (-not $PSCmdlet.ShouldProcess($paths.Settings,'Apply authenticated durable transaction to disposable fixture')) { return }
@@ -331,15 +627,12 @@ New-Module -Name TypezeroDurableFixtureV2 -ScriptBlock {
         try {
             $paths=Get-TypezeroOfflineTerminalV2Paths -TestRoot $paths.Root
             $null=Assert-Quiescent $paths $IndependentKey
-            $candidate=Prepare-Candidate $paths $Theme $FontFace $FontSize $FontWeight
+            $plan=Prepare-Apply $paths $Theme $FontFace $FontSize $FontWeight $IndependentKey
+            $candidate=$plan.Candidate
             if (-not $candidate.Changed) { return [pscustomobject]@{Status='NO_CHANGE';ReadOnly=$true;FixtureOnly=$true} }
-            $stageName='.typezero-combined-' + [guid]::NewGuid().ToString('N') + '.tmp'
-            $receipt=[ordered]@{Version=2;Kind='TypezeroOfflineCombinedV2';Operation='APPLY';SettingsPath=$paths.Settings;
-                BeforeSha256=$candidate.Before;AfterSha256=$candidate.After;StageFileName=$stageName;BackupFileName='settings-pre-replace.json';
-                Font=$FontFace;Size=$FontSize;Weight=$FontWeight}
-            $receiptBytes=$utf8.GetBytes(($receipt | ConvertTo-Json -Depth 8))
+            $stageName=$plan.State.Record.StageFileName; $receiptBytes=$plan.Receipt
             # DURABLE-CHECKPOINT: APPLY_BEFORE_INTENT
-            $state=New-Intent $paths 'APPLY' $candidate.Before $candidate.After $stageName $receiptBytes $IndependentKey
+            $state=New-Intent $paths $plan.State
             # DURABLE-CHECKPOINT: APPLY_AFTER_INTENT
             [IO.Directory]::CreateDirectory($state.Folder) | Out-Null
             $stage=Join-Path ([IO.Path]::GetDirectoryName($paths.Settings)) $stageName
@@ -373,18 +666,21 @@ New-Module -Name TypezeroDurableFixtureV2 -ScriptBlock {
         param([Parameter(Mandatory)][string]$TestRoot,[Parameter(Mandatory)][string]$BackupDirectory,
             [Parameter(Mandatory)][string]$GrantJson,[byte[]]$AuthorizationMac,[byte[]]$ApprovalKey,[byte[]]$EvidenceKey,[switch]$Execute)
         Assert-Key $EvidenceKey
+        $null=Encode-Bounded $GrantJson $grantLimit 'grant'
         $paths=Get-TypezeroOfflineTerminalV2Paths -TestRoot $TestRoot
         $folder=Assert-TypezeroOfflineTerminalV2Folder -Paths $paths -BackupDirectory $BackupDirectory
         $states=@(Assert-Quiescent $paths $EvidenceKey)
         if (@($states | Where-Object {$_.Record.Operation -ceq 'RESTORE' -and $_.Record.ParentBackupDirectory -ceq $folder}).Count -gt 0) { throw 'REFUSED: This source already has a permanent durable restore claim.' }
         $source=Read-Journal $paths $folder $EvidenceKey
         if (-not $source.Complete -or $source.Record.Operation -cne 'APPLY') { throw 'REFUSED: Completed authenticated durable APPLY is required.' }
+        $null=Read-Bytes $paths.Settings $settingsLimit
         $reviewArgs=@{TestRoot=$paths.Root;BackupDirectory=$folder;GrantJson=$GrantJson;AuthorizationMac=$AuthorizationMac;ApprovalKey=$ApprovalKey;EvidenceKey=$EvidenceKey}
         $review=Get-TypezeroOfflineTerminalV2GrantReview @reviewArgs
         if (-not $review.ValidForReview) { throw ('REFUSED: ' + $review.Decision + ': ' + $review.Reason) }
         $replay=Get-TypezeroOfflineTerminalV2ReplayContext -TestRoot $paths.Root
         $reservationPath=Join-Path $replay.Store ($review.GrantId + '.reserved')
         if ([IO.File]::Exists($reservationPath) -or [IO.Directory]::Exists($reservationPath)) { throw 'REFUSED: Recovery grant ID is already occupied.' }
+        $plan=Prepare-Restore $paths $folder $source $review $GrantJson $AuthorizationMac $EvidenceKey
         if (-not $Execute) { return [pscustomobject]@{Status='PREVIEW';ReadOnly=$true;FixtureOnly=$true;GrantConsumed=$false;RecoveryAuthorized=$false;LiveActivationAuthorized=$false} }
         if (-not $PSCmdlet.ShouldProcess($paths.Settings,'Reserve grant and restore authenticated durable disposable fixture')) { return }
         $lock=Open-TypezeroOfflineTerminalV2ReplayLock -TestRoot $paths.Root
@@ -400,21 +696,12 @@ New-Module -Name TypezeroDurableFixtureV2 -ScriptBlock {
             $reservationPath=Join-Path $replay.Store ($review.GrantId + '.reserved')
             Assert-TypezeroOfflineReplacePlainPath -Path $reservationPath
             if ([IO.File]::Exists($reservationPath) -or [IO.Directory]::Exists($reservationPath)) { throw 'REFUSED: Grant replay.' }
-            $grantBytes=$utf8.GetBytes($GrantJson)
-            $reservation=[ordered]@{Version=2;Kind='TypezeroFixtureRecoveryReservationV2';GrantId=$review.GrantId;
-                TestRoot=$paths.Root;BackupDirectory=$folder;GrantSha256=(Hash-Bytes $grantBytes)}
-            $reservationBytes=$utf8.GetBytes(($reservation | ConvertTo-Json -Compress))
-            $stageName='.typezero-combined-restore-' + [guid]::NewGuid().ToString('N') + '.tmp'
-            $receipt=[ordered]@{Version=2;Kind='TypezeroOfflineCombinedV2';Operation='RESTORE';SettingsPath=$paths.Settings;
-                BeforeSha256=$source.Record.AfterSha256;AfterSha256=$source.Record.BeforeSha256;StageFileName=$stageName;
-                BackupFileName='settings-pre-replace.json';ParentTransactionFolderName=[IO.Path]::GetFileName($folder)}
-            $receiptBytes=$utf8.GetBytes(($receipt | ConvertTo-Json -Depth 8))
+            $plan=Prepare-Restore $paths $folder $source $review $GrantJson $AuthorizationMac $EvidenceKey
+            $grantBytes=$plan.Grant; $reservationBytes=$plan.Reservation; $receiptBytes=$plan.Receipt
+            $stageName=$plan.State.Record.StageFileName; $expires=$plan.ExpiresUtc
             # DURABLE-CHECKPOINT: RESTORE_BEFORE_INTENT
-            $state=New-Intent $paths 'RESTORE' $source.Record.AfterSha256 $source.Record.BeforeSha256 $stageName $receiptBytes $EvidenceKey $folder $review.GrantId (Hash-Bytes $grantBytes) (Hash-Bytes $AuthorizationMac) (Hash-Bytes $reservationBytes) $source.Digest
+            $state=New-Intent $paths $plan.State
             # DURABLE-CHECKPOINT: RESTORE_AFTER_SOURCE_CLAIM
-            $grantDoc=[Text.Json.JsonDocument]::Parse($GrantJson)
-            try { $expires=[datetime]::ParseExact($grantDoc.RootElement.GetProperty('ExpiresUtc').GetString(),"yyyy-MM-ddTHH:mm:ss.fffffff'Z'",[Globalization.CultureInfo]::InvariantCulture,([Globalization.DateTimeStyles]::AssumeUniversal -bor [Globalization.DateTimeStyles]::AdjustToUniversal)) }
-            finally { $grantDoc.Dispose() }
             # Finish all serialization before the final reservation expiry check.
             # DURABLE-CHECKPOINT: RESTORE_BEFORE_RESERVATION
             if ([datetime]::UtcNow -ge $expires) { throw 'REFUSED: Grant expired before durable reservation; intent remains uncertain.' }
@@ -428,7 +715,7 @@ New-Module -Name TypezeroDurableFixtureV2 -ScriptBlock {
             # DURABLE-CHECKPOINT: RESTORE_AFTER_RESERVATION
             [IO.Directory]::CreateDirectory($state.Folder) | Out-Null
             $stage=Join-Path ([IO.Path]::GetDirectoryName($paths.Settings)) $stageName
-            Write-TypezeroOfflineTerminalV2NewFile -Path $stage -Bytes (Read-Bytes (Join-Path $folder 'settings-pre-replace.json'))
+            Write-TypezeroOfflineTerminalV2NewFile -Path $stage -Bytes $plan.SourceBytes
             # DURABLE-CHECKPOINT: RESTORE_AFTER_STAGE
             Write-TypezeroOfflineTerminalV2NewFile -Path (Join-Path $state.Folder 'receipt.json') -Bytes $receiptBytes
             Write-TypezeroOfflineTerminalV2NewFile -Path (Join-Path $state.Folder 'grant.json') -Bytes $grantBytes
@@ -437,7 +724,7 @@ New-Module -Name TypezeroDurableFixtureV2 -ScriptBlock {
             # DURABLE-CHECKPOINT: RESTORE_AFTER_PREPARED
             Assert-Snapshot $paths $source $EvidenceKey
             if ([datetime]::UtcNow -ge $expires) { throw 'REFUSED: Grant expired before replacement; preserve reserved intent and evidence.' }
-            $replace=Invoke-TypezeroOfflineTerminalVerifiedReplace -TestRoot $paths.Root -StagePath $stage -BackupPath (Join-Path $state.Folder 'settings-pre-replace.json') -ExpectedBeforeSha256 $source.Record.AfterSha256 -ExpectedStageSha256 $source.Record.BeforeSha256 -Execute -Confirm:$false
+            $replace=Invoke-DeadlineReplace -TestRoot $paths.Root -StagePath $stage -BackupPath (Join-Path $state.Folder 'settings-pre-replace.json') -ExpectedBeforeSha256 $source.Record.AfterSha256 -ExpectedStageSha256 $source.Record.BeforeSha256 -ExpiresUtc $expires -Execute -Confirm:$false
             # DURABLE-CHECKPOINT: RESTORE_AFTER_REPLACE_VERIFICATION
             if ($replace.Status -cne 'VERIFIED' -or -not $replace.BackupVerified) { throw 'Restore replacement could not be verified; all evidence preserved.' }
             Advance $state 3 $EvidenceKey

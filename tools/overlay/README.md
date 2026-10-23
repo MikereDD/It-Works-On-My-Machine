@@ -15,15 +15,18 @@ every intended source path explicitly; the builder does not infer a diff.
 ```powershell
 python tools/overlay/build_overlay.py `
     --repository C:\Review\It-Works-On-My-Machine `
-    --base 35ad8fd38b247dd36ce0f8621fe2a102861bacdd `
-    --version v2-durable-fixture-1.0.0 `
+    --base 88fd5525bdfe821d65b9a053d51ed1354f7fd1da `
+    --version v2-durable-hardening-1.1.1 `
     --include Netzach/PowerShell/ThemeEngine/TerminalTransactionV2Durable-WindowsTerminal.ps1 `
     --include Netzach/PowerShell/ThemeEngine/DurableTransactionV2.md `
-    --include Netzach/PowerShell/ThemeEngine/TransactionEvidenceV2Audit.md `
+    --include Netzach/PowerShell/ThemeEngine/DurableHardeningV11.md `
     --include Netzach/PowerShell/ThemeEngine/tests/Test-TypezeroTerminalV2Durable.ps1 `
+    --include Netzach/PowerShell/ThemeEngine/tests/README.md `
     --include tools/overlay/build_overlay.py `
     --include tools/overlay/Install-Overlay.ps1 `
     --include tools/overlay/Test-Overlay.ps1 `
+    --include tools/overlay/Test-BaselineProfile.py `
+    --include tools/overlay/Test-PinnedOverlay.ps1 `
     --include tools/overlay/README.md `
     --output-dir C:\Review\outputs
 ```
@@ -38,12 +41,25 @@ inspection.
 `overlay.json` binds the version, full baseline commit, installer bytes, each
 payload's SHA-256/length, existing files' expected baseline SHA-256, and the four
 pinned safety modules. A null baseline hash means a new file that must not
-already exist. Baseline hashes use Git's checkout filters, including the
-repository's line-ending rules. The four pinned modules cannot be payloads and
+already exist. Schema 2 requires `BaselineByteProfile=TypezeroPinnedCheckoutLF-v1`.
+Baseline hashes use attributes from the pinned commit, with `core.autocrlf=false`
+and `core.eol=lf`; explicit repository `eol=crlf` rules still apply. Global and
+system attributes are disabled. Nonempty `info/attributes` and custom filter,
+ident, or working-tree encoding attributes are refused. Ambient configuration
+and modified working attributes cannot silently change expected baseline bytes.
+The four pinned modules cannot be payloads and
 must retain their exact baseline checkout bytes.
 
-Only `.ps1`, `.py`, and `.md` under `Netzach/PowerShell/ThemeEngine/` and
-`tools/overlay/` are accepted. Settings, fonts, binaries, `.git`, absolute paths,
+The builder and installer apply the same filename policy: exact-case prefixes
+`Netzach/PowerShell/ThemeEngine/` and `tools/overlay/`, ASCII letters/digits plus
+`._-` in path segments, `/` separators, and lowercase `.ps1`, `.py`, or `.md`
+extensions. Spaces, non-ASCII names, uppercase extensions, empty segments, `.`,
+`..`, trailing dots, and Windows device names are refused. Case-colliding paths
+and file/directory prefix collisions are also refused.
+
+Both sides limit a package to 1-1000 files, 4 MiB per payload or baseline backup,
+64 MiB total payload, and a 1 MiB manifest. The builder checks these before
+creating an output archive. Settings, fonts, binaries, `.git`, absolute paths,
 traversal, alternate data streams, Windows device names, case-colliding paths,
 links, and hard-linked source files are excluded.
 
@@ -53,8 +69,8 @@ Obtain the expected ZIP SHA-256 through a trusted channel, independently of the
 download. Compare it before extraction or running any packaged code:
 
 ```powershell
-Get-FileHash -LiteralPath C:\Review\typezero-v2-durable-fixture-1.0.0-overlay.zip -Algorithm SHA256
-Expand-Archive -LiteralPath C:\Review\typezero-v2-durable-fixture-1.0.0-overlay.zip `
+Get-FileHash -LiteralPath C:\Review\typezero-v2-durable-hardening-1.1.1-overlay.zip -Algorithm SHA256
+Expand-Archive -LiteralPath C:\Review\typezero-v2-durable-hardening-1.1.1-overlay.zip `
     -DestinationPath C:\Review\extracted-overlay
 & C:\Review\extracted-overlay\Install-Overlay.ps1 `
     -TargetRoot C:\Review\It-Works-On-My-Machine
@@ -70,9 +86,18 @@ Use a disposable, exact-baseline checkout for initial review. It defaults to a
 read-only dry-run and verifies the repository root/HEAD, clean tracked files,
 every touched baseline/new-file expectation, pinned files, installer hash,
 payload hashes/lengths, strict manifest schema, and ordinary file identities.
+Manifest rows are materialized into validated scalar records; null means an
+absent new file and never an empty hash. A baseline failure reports every
+mismatching row, the resolved target root and file, and expected/observed hashes.
+Compare the reported target with the directory independently audited. In
+particular, a stale `$stage` variable can point to an older staging checkout.
 An existing untracked file at any new payload path is a collision and is refused.
 Directory junctions, symlinks, reparse ancestors, and hard-linked files are
 refused. All payload bytes are validated before execution.
+All verification Git calls use `--no-optional-locks`, including both status
+checks, so dry-run and `-Execute -WhatIf` preserve `.git/index` and other Git
+metadata even when unchanged tracked files have new timestamps. Read-only
+previews create no lock or backup directory.
 
 ## Execute and roll back
 
@@ -124,15 +149,31 @@ metadata durability, and noncooperating filesystem races are outside its claim.
 
 ## Disposable verification
 
+The v1.1.1 baseline regression also checks differing checkout defaults, frozen
+committed attributes, custom-conversion refusal, and the original nine manifest
+entries. Supply the retained original v1.1 manifest for that historical audit.
+The full-artifact regression uses a private Git repository with a read-only
+alternate object store and fresh detached linked worktrees. Its source repository
+is only read. An optional `-OriginalArchive` reproduces both original failures.
+
 ```powershell
 & tools/overlay/Test-Overlay.ps1 `
     -WorkRoot C:\Review\overlay-fixtures `
     -ReportPath C:\Review\overlay-verification.json
+
+& tools/overlay/Test-PinnedOverlay.ps1 `
+    -Repository C:\Review\It-Works-On-My-Machine `
+    -Archive C:\Review\typezero-v2-durable-hardening-1.1.1-overlay.zip `
+    -WorkRoot C:\Review\pinned-fixtures `
+    -ReportPath C:\Review\pinned-verification.json
 ```
 
 The test creates unique local repositories and retained evidence below the
 specified work root. It checks reproducible ZIPs, output overwrite refusal,
-traversal, default dry-run, `WhatIf`, explicit install, exact rollback and replay,
+builder/installer filename-policy parity (including spaces, uppercase extensions,
+Unicode, device names, and traversal), package size limits, default dry-run,
+`WhatIf`, complete `.git` byte/timestamp preservation for both install and rollback
+previews, explicit install, exact rollback and replay,
 collision/dirty/HEAD guards, payload/manifest/backup tampering, hard links,
 junctions, cooperative concurrency, and a real child-process termination after
 a deterministic partial install. The optional installer interruption barrier is
@@ -144,3 +185,12 @@ and file-replacement checks can require an ordinary current-user process outside
 an app filesystem sandbox; they require no administrator elevation. Retain a
 failed run and inspect the reported fixture path before retrying. Keep fixture
 paths short enough for Windows path-length limits.
+
+The normal suite is strict: inability to create a link fixture fails the run.
+In an app sandbox that denies native hard-link or junction creation, the explicit
+test-only `-RecordUnavailableLinkTests` option may continue after that creation
+step reports Access Denied. It never skips an installer validation failure or
+another filesystem error. Its report records the unavailable checks and reasons,
+sets `Completed=false`, and uses `Status=PassedWithUnavailableChecks`; this is
+qualified verification, not a full pass. Rerun without that option on ordinary
+Windows before treating the NTFS link guards as verified for this checkpoint.

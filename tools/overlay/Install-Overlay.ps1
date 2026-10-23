@@ -96,12 +96,14 @@ function Read-StrictJson([byte[]]$Bytes) {
 }
 function Assert-Keys($Object, [string[]]$Names) {
     if ($Object -isnot [Collections.IDictionary] -or $Object.Count -ne $Names.Count) { throw 'Unexpected JSON contract.' }
+    foreach ($key in $Object.Keys) { if ($key -isnot [string] -or $key -cnotin $Names) { throw "Unknown or incorrectly cased JSON property: $key" } }
     foreach ($name in $Names) { if (-not $Object.Contains($name)) { throw "Missing JSON property: $name" } }
 }
 function Assert-Hash($Value) {
     if ($Value -isnot [string] -or $Value -cnotmatch '\A[A-F0-9]{64}\z') { throw 'Invalid SHA-256 value.' }
 }
 function Assert-Relative([string]$Path) {
+    # Keep this grammar identical to build_overlay.py:safe_path; tests compare both.
     if ($Path -cnotmatch '\A(?:Netzach/PowerShell/ThemeEngine/|tools/overlay/)[A-Za-z0-9._/-]+\.(?:ps1|py|md)\z' -or
         $Path.Contains('//')) { throw "Forbidden overlay path: $Path" }
     foreach ($part in $Path.Split('/')) {
@@ -121,8 +123,39 @@ function Get-LiveHash([string]$Path) {
     if ([IO.File]::Exists($Path)) { return Get-Hash (Get-SafeBytes $Path) }
     return $null
 }
+function Test-ExactHash($Actual, $Expected) {
+    # Null represents an absent new file, never an empty string or a collection.
+    if ($null -eq $Expected) { return ($null -eq $Actual) }
+    if ($Expected -isnot [string] -or ($null -ne $Actual -and $Actual -isnot [string])) {
+        throw 'Hash comparison requires scalar strings or an absent-file null.'
+    }
+    return [StringComparer]::Ordinal.Equals($Actual, $Expected)
+}
+function Assert-TargetRows([string]$Root, [object[]]$Rows, [string]$Context, [switch]$AllowAfter) {
+    $mismatches = [Collections.Generic.List[object]]::new()
+    for ($index=0; $index -lt $Rows.Count; $index++) {
+        $row = $Rows[$index]
+        $resolved = Join-Safe $Root $row.Path
+        $actual = Get-LiveHash $resolved
+        $matches = Test-ExactHash $actual $row.BeforeSha256
+        if ($AllowAfter -and -not $matches) { $matches = Test-ExactHash $actual $row.AfterSha256 }
+        if (-not $matches) {
+            $mismatches.Add([pscustomobject][ordered]@{RowIndex=$index;Path=$row.Path;ResolvedTarget=$resolved;
+                ExpectedBeforeSha256=$row.BeforeSha256;ObservedSha256=$actual;
+                AllowedAfterSha256=if($AllowAfter){$row.AfterSha256}else{$null};
+                ExpectedType=if($null -eq $row.BeforeSha256){'null'}else{$row.BeforeSha256.GetType().FullName};
+                ObservedType=if($null -eq $actual){'null'}else{$actual.GetType().FullName}})
+        }
+    }
+    if ($mismatches.Count) {
+        $diagnostic=[ordered]@{Context=$Context;TargetRoot=$Root;PowerShell=$PSVersionTable.PSVersion.ToString();
+            Mismatches=@($mismatches.ToArray())}
+        throw ('REFUSED: Target baseline mismatch; no hash normalization or alternate baseline is allowed. ' + ($diagnostic|ConvertTo-Json -Depth 6 -Compress))
+    }
+}
 function Invoke-Git([string[]]$Arguments) {
-    $result = & git -C $script:root @Arguments 2>&1
+    # Even a read-only status can refresh .git/index unless optional locks are disabled.
+    $result = & git --no-optional-locks -C $script:root @Arguments 2>&1
     if ($LASTEXITCODE -ne 0) { throw "Git verification failed: $result" }
     return ($result -join "`n").Trim()
 }
@@ -142,8 +175,11 @@ Assert-OrdinaryPath $package
 $manifestBytes = Get-SafeBytes (Join-Path $package 'overlay.json') 1048576
 $manifestHash = Get-Hash $manifestBytes
 $manifest = Read-StrictJson $manifestBytes
-Assert-Keys $manifest @('SchemaVersion','Kind','Version','BaselineCommit','FixtureOnlyRuntime','LiveFontActivation','InstallerSha256','ProtectedFiles','Files')
-if ($manifest.SchemaVersion -ne 1 -or $manifest.Kind -cne 'TypezeroGuardedSourceOverlay' -or
+Assert-Keys $manifest @('SchemaVersion','Kind','Version','BaselineCommit','BaselineByteProfile','FixtureOnlyRuntime','LiveFontActivation','InstallerSha256','ProtectedFiles','Files')
+if (($manifest['SchemaVersion'] -isnot [long] -and $manifest['SchemaVersion'] -isnot [int]) -or
+    $manifest['SchemaVersion'] -ne 2 -or $manifest['Kind'] -isnot [string] -or $manifest['Kind'] -cne 'TypezeroGuardedSourceOverlay' -or
+    $manifest['BaselineByteProfile'] -isnot [string] -or $manifest['BaselineByteProfile'] -cne 'TypezeroPinnedCheckoutLF-v1' -or
+    $manifest['Version'] -isnot [string] -or $manifest['BaselineCommit'] -isnot [string] -or
     $manifest.Version -cnotmatch '\A[A-Za-z0-9][A-Za-z0-9._-]{0,79}\z' -or
     $manifest.BaselineCommit -cnotmatch '\A[a-f0-9]{40}\z' -or
     $manifest.FixtureOnlyRuntime -isnot [bool] -or $manifest.FixtureOnlyRuntime -ne $true -or
@@ -155,12 +191,21 @@ $pinned = @('Netzach/PowerShell/ThemeEngine/TypezeroIntegrationPreflight.ps1',
     'Netzach/PowerShell/ThemeEngine/TerminalReplace-WindowsTerminal.ps1',
     'Netzach/PowerShell/ThemeEngine/TerminalEvidenceSealV2-WindowsTerminal.ps1')
 $seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
-$rows = @($manifest.Files)
-if ($rows.Count -lt 1 -or $rows.Count -gt 1000) { throw 'Invalid overlay file count.' }
+if ($manifest['Files'] -isnot [array] -or $manifest['ProtectedFiles'] -isnot [array]) { throw 'Manifest file lists must be arrays.' }
+if ($manifest['Files'].Count -lt 1 -or $manifest['Files'].Count -gt 1000) { throw 'Invalid overlay file count.' }
+$validatedRows = [Collections.Generic.List[object]]::new()
 $payload = @{}
 $total = 0L
-foreach ($row in $rows) {
-    Assert-Keys $row @('Path','BeforeSha256','AfterSha256','Length')
+foreach ($data in $manifest['Files']) {
+    Assert-Keys $data @('Path','BeforeSha256','AfterSha256','Length')
+    if ($data['Path'] -isnot [string]) { throw 'Overlay Path must be a string.' }
+    if ($data['Length'] -isnot [long] -and $data['Length'] -isnot [int]) { throw 'Invalid payload length type.' }
+    if ($null -ne $data['BeforeSha256']) { Assert-Hash $data['BeforeSha256'] }
+    Assert-Hash $data['AfterSha256']
+    # Copy validated indexer values into private scalar records. No dictionary property lookup participates in comparisons.
+    $row = [pscustomobject][ordered]@{Path=[string]$data['Path'];BeforeSha256=$data['BeforeSha256'];
+        AfterSha256=[string]$data['AfterSha256'];Length=[long]$data['Length']}
+    $validatedRows.Add($row)
     Assert-Relative $row.Path
     if (-not $seen.Add($row.Path) -or $row.Path -iin $pinned) { throw 'Duplicate or pinned overlay path.' }
     if ($null -ne $row.BeforeSha256) { Assert-Hash $row.BeforeSha256 }
@@ -173,6 +218,7 @@ foreach ($row in $rows) {
     $total += $bytes.Length
     $null = Join-Safe $root $row.Path
 }
+$rows = @($validatedRows.ToArray())
 if ($total -gt 67108864) { throw 'Overlay is too large.' }
 foreach ($path in $seen) {
     foreach ($other in $seen) {
@@ -199,9 +245,7 @@ $backup = $null
 if ($Action -eq 'Install') {
     if ($BackupDirectory) { throw 'BackupDirectory is generated for Install; supply it only for Rollback.' }
     if (Invoke-Git @('status','--porcelain','--untracked-files=no')) { throw 'Install requires a clean tracked baseline worktree.' }
-    foreach ($row in $rows) {
-        if ((Get-LiveHash (Join-Safe $root $row.Path)) -cne $row.BeforeSha256) { throw "Baseline/new-file collision: $($row.Path)" }
-    }
+    Assert-TargetRows $root $rows 'Install preflight'
 } else {
     if (-not $BackupDirectory) { throw 'Rollback requires the exact BackupDirectory reported by Install.' }
     $backup = [IO.Path]::GetFullPath($BackupDirectory).TrimEnd('\')
@@ -218,9 +262,8 @@ if ($Action -eq 'Install') {
         $row = $rows[$i]
         if ($null -ne $row.BeforeSha256 -and
             (Get-Hash (Get-SafeBytes (Join-Path $backup ('{0:D4}.bin' -f $i)))) -cne $row.BeforeSha256) { throw 'Backup bytes changed.' }
-        $live = Get-LiveHash (Join-Safe $root $row.Path)
-        if ($live -cne $row.BeforeSha256 -and $live -cne $row.AfterSha256) { throw "Rollback conflict; preserving all files: $($row.Path)" }
     }
+    Assert-TargetRows $root $rows 'Rollback preflight' -AllowAfter
 }
 if ($FixturePauseAfterWrite -ge 0) {
     if ($Action -ne 'Install' -or (Invoke-Git @('remote')) -or
@@ -229,7 +272,7 @@ if ($FixturePauseAfterWrite -ge 0) {
     }
 }
 $summary = [ordered]@{ Action=$Action; Mode='DryRun'; Version=$manifest.Version; BaselineCommit=$manifest.BaselineCommit;
-    ManifestSha256=$manifestHash; TargetRoot=$root; FileCount=$rows.Count; BackupDirectory=$backup }
+    BaselineByteProfile=$manifest['BaselineByteProfile'];ManifestSha256=$manifestHash; TargetRoot=$root; FileCount=$rows.Count; BackupDirectory=$backup }
 if (-not $Execute) { [pscustomobject]$summary; return }
 if (-not $PSCmdlet.ShouldProcess($root, "$Action verified source overlay $($manifest.Version)")) { [pscustomobject]$summary; return }
 
@@ -244,9 +287,7 @@ try {
     }
     if ($Action -eq 'Install') {
         if (Invoke-Git @('status','--porcelain','--untracked-files=no')) { throw 'Tracked baseline changed before write.' }
-        foreach ($row in $rows) {
-            if ((Get-LiveHash (Join-Safe $root $row.Path)) -cne $row.BeforeSha256) { throw 'Baseline changed before write.' }
-        }
+        Assert-TargetRows $root $rows 'Locked install preflight'
         $null = [IO.Directory]::CreateDirectory($backupRoot)
         Assert-OrdinaryPath $backupRoot
         $backup = Join-Path $backupRoot ($manifest.Version + '-' + [guid]::NewGuid().ToString('N'))
@@ -272,7 +313,7 @@ try {
             Assert-OrdinaryPath $parent
             $pending = $target + '.typezero-overlay-' + [guid]::NewGuid().ToString('N') + '.pending'
             Write-NewDurable $pending $payload[$row.Path]
-            if ((Get-LiveHash $target) -cne $row.BeforeSha256) { throw 'Concurrent target edit refused; staging/backup retained.' }
+            if (-not (Test-ExactHash (Get-LiveHash $target) $row.BeforeSha256)) { throw ('Concurrent target edit refused; staging/backup retained. Target: ' + $target) }
             [IO.File]::Move($pending,$target,$true)
             if ((Get-LiveHash $target) -cne $row.AfterSha256) { throw 'Post-write verification failed; backup retained.' }
             Write-Event $backup 'Installed' ($i+1)
@@ -288,22 +329,21 @@ try {
             $row = $rows[$i]
             if ($null -ne $row.BeforeSha256 -and
                 (Get-Hash (Get-SafeBytes (Join-Path $backup ('{0:D4}.bin' -f $i)))) -cne $row.BeforeSha256) { throw 'Backup changed before rollback.' }
-            $live = Get-LiveHash (Join-Safe $root $row.Path)
-            if ($live -cne $row.BeforeSha256 -and $live -cne $row.AfterSha256) { throw 'Concurrent rollback conflict; no automatic overwrite.' }
         }
+        Assert-TargetRows $root $rows 'Locked rollback preflight' -AllowAfter
         for ($i=0; $i -lt $rows.Count; $i++) {
             $row = $rows[$i]
             $target = Join-Safe $root $row.Path
             $live = Get-LiveHash $target
-            if ($live -ceq $row.BeforeSha256) { continue }
-            if ($live -cne $row.AfterSha256) { throw 'Target changed during rollback; remaining evidence retained.' }
+            if (Test-ExactHash $live $row.BeforeSha256) { continue }
+            if (-not (Test-ExactHash $live $row.AfterSha256)) { throw 'Target changed during rollback; remaining evidence retained.' }
             if ($null -eq $row.BeforeSha256) { [IO.File]::Delete($target) }
             else {
                 $bytes = Get-SafeBytes (Join-Path $backup ('{0:D4}.bin' -f $i))
                 if ((Get-Hash $bytes) -cne $row.BeforeSha256) { throw 'Backup changed during rollback.' }
                 $pending = $target + '.typezero-rollback-' + [guid]::NewGuid().ToString('N') + '.pending'
                 Write-NewDurable $pending $bytes
-                if ((Get-LiveHash $target) -cne $row.AfterSha256) { throw 'Rollback target changed before replacement.' }
+                if (-not (Test-ExactHash (Get-LiveHash $target) $row.AfterSha256)) { throw 'Rollback target changed before replacement.' }
                 [IO.File]::Move($pending,$target,$true)
             }
             if ((Get-LiveHash $target) -cne $row.BeforeSha256) { throw 'Rollback post-write verification failed.' }

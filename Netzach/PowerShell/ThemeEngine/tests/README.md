@@ -78,3 +78,16 @@ Reservations grant no recovery or live activation permission. Production
 deletion/rollback-resistant replay storage is still required.
 
 See [FontActivationV2StagedPlan.md](../FontActivationV2StagedPlan.md).
+
+## Durable fixture hardening v1.1
+
+`Test-TypezeroTerminalV2Durable.ps1` runs only synthetic disposable TEMP fixtures.
+It covers complete UTF-8 size preflight, strict authenticated phases, independent
+recovery grants, replay/source ownership, completed RESTORE tampering, concurrent
+different grant IDs, exact crash assessments, real process termination during
+partial journal writes, and expiry immediately before the native RESTORE call.
+Run in a fresh PowerShell process on permitted local NTFS fixture storage and
+supply a new `-ReportPath`. Retain its raw console log and JSON report. Only
+`Completed=true` establishes a complete passing run; failed/blocked attempts
+remain evidence and must not be relabeled. Source changes and production writes
+are outside the test's authority. See [DurableHardeningV11.md](../DurableHardeningV11.md).
