@@ -1,5 +1,6 @@
 # Typezero FontEngine v2
-# Explicit activation only; automatic integration is not enabled.
+# Legacy planning interface only; live activation and restore are disabled.
+# The legacy writer below is retained for inspection, never authorization.
 # Requires FontProvider, FontMapping, and FontPatch to be loaded.
 
 function Invoke-TypezeroTerminalFontSwitchV2 {
@@ -9,6 +10,12 @@ function Invoke-TypezeroTerminalFontSwitchV2 {
         [Parameter(Mandatory)][string]$ConfigPath,
         [switch]$Execute
     )
+
+    # Refuse before planning, provider lookup, ShouldProcess, or filesystem I/O.
+    # Enabled mappings and confirmation cannot authorize this legacy writer.
+    if ($Execute) {
+        throw 'LIVE V2 FONT ACTIVATION DISABLED: guarded recovery, durable replay protection, and live transaction authorization are incomplete.'
+    }
 
     $plan = Get-TypezeroTerminalFontSwitchPlan `
         -ThemeId $ThemeId -ConfigPath $ConfigPath
@@ -155,6 +162,10 @@ function Restore-TypezeroTerminalFontSwitchV2 {
         [Parameter(Mandatory)][string]$BackupDirectory,
         [switch]$Execute
     )
+
+    if ($Execute) {
+        throw 'LIVE V2 FONT RESTORE DISABLED: an unauthenticated legacy receipt cannot authorize recovery.'
+    }
 
     $root = [IO.Path]::GetFullPath(
         (Join-Path $env:LOCALAPPDATA `

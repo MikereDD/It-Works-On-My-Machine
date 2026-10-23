@@ -292,6 +292,34 @@ function Invoke-TypezeroTerminalFontSwitch {
     }
 }
 
+function Assert-TypezeroLegacyFontRestoreOwnership {
+    param(
+        [Parameter(Mandatory)][byte[]]$Bytes,
+        [Parameter(Mandatory)][string]$Source
+    )
+
+    # A V1 receipt is editable and is not proof of V2 ownership. Reserve the
+    # entire token, including orphaned/malformed markers, rather than trusting
+    # only the well-formed V2 comment or receipt checksums. Scan the captured
+    # bytes in the encodings accepted by the legacy reader (including BOMs).
+    $token = 'TYPEZERO_FONT_V2'
+    $byteText = [Text.Encoding]::Latin1.GetString($Bytes)
+    foreach ($encoding in @(
+        [Text.UTF8Encoding]::new($false, $true),
+        [Text.UnicodeEncoding]::new($false, $true, $true),
+        [Text.UnicodeEncoding]::new($true, $true, $true),
+        [Text.UTF32Encoding]::new($false, $true, $true),
+        [Text.UTF32Encoding]::new($true, $true, $true)
+    )) {
+        # Only ASCII letters occur in the reserved token. Looking for its
+        # encoded form also recognizes a BOM-less UTF-16/32 legacy backup.
+        $pattern = [Text.Encoding]::Latin1.GetString($encoding.GetBytes($token))
+        if ($byteText.IndexOf($pattern, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
+            throw "V1 restore blocked: $Source contains reserved TYPEZERO_FONT_V2 ownership. Use authorized V2 recovery review."
+        }
+    }
+}
+
 function Restore-TypezeroTerminalFontSwitch {
     [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
     param(
@@ -510,13 +538,23 @@ public static class TypezeroFontRestoreSnapshot55H26
         throw 'Invalid font-switch receipt.'
     }
 
+    Assert-TypezeroLegacyFontRestoreOwnership -Bytes $backupSnapshot.Bytes `
+        -Source 'backup snapshot'
+
     if ($backupSnapshot.Sha256 -ne $receipt.BeforeSha256) {
         throw 'Original backup checksum mismatch.'
     }
 
     $doc = Get-TypezeroFontDocument
 
-    if ($doc.Hash -ne $receipt.AfterSha256) {
+    $settingsSnapshot = [TypezeroFontRestoreSnapshot55H26]::Capture(
+        $doc.Path, 33554432
+    )
+    Assert-TypezeroLegacyFontRestoreOwnership -Bytes $settingsSnapshot.Bytes `
+        -Source 'current Terminal settings'
+
+    if ($doc.Hash -ne $receipt.AfterSha256 -or
+        $settingsSnapshot.Sha256 -ne $receipt.AfterSha256) {
         throw 'Terminal settings changed since activation. Review before restoring.'
     }
 
@@ -558,8 +596,16 @@ public static class TypezeroFontRestoreSnapshot55H26
     }
 
     try {
-        if ((Get-FileHash -LiteralPath $doc.Path -Algorithm SHA256).Hash -ne
-            $receipt.AfterSha256) {
+        # Repeat the ownership check after interactive review and immediately
+        # before replacement. Receipt hash edits cannot authorize V2 bytes.
+        $finalSettingsSnapshot = [TypezeroFontRestoreSnapshot55H26]::Capture(
+            $doc.Path, 33554432
+        )
+        Assert-TypezeroLegacyFontRestoreOwnership -Bytes $backupSnapshot.Bytes `
+            -Source 'backup snapshot'
+        Assert-TypezeroLegacyFontRestoreOwnership -Bytes $finalSettingsSnapshot.Bytes `
+            -Source 'current Terminal settings'
+        if ($finalSettingsSnapshot.Sha256 -ne $receipt.AfterSha256) {
             throw 'Terminal settings changed before restore.'
         }
 

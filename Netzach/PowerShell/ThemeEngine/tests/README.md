@@ -57,3 +57,37 @@ and verifies source hashes. Run as the current Windows user with PowerShell
 See [TerminalCoordinatorRehearsal.md](../TerminalCoordinatorRehearsal.md) for
 the API, dependency contracts, failure semantics, and NETZACH commands.
 Neither runner grants recovery or live activation authorization.
+
+## Selected V2 preference activation safety checkpoint
+
+`Test-TypezeroFontActivationReadinessV2.ps1` checks strict read-only snapshot
+validation, stale preference/settings refusal, ownership blockers, false
+authorization flags, and legacy V2 Execute refusal before provider lookup.
+It uses synthetic files and inert legacy provider stubs only.
+
+`Test-TypezeroFontMappingV2TransactionAdapter.ps1` additionally checks full
+configuration binding under the shared transaction lock and a retained config
+read handle. Changed Enabled, selected/unrelated mapping bytes, preview and
+WhatIf are covered while production settings remain unchanged.
+
+`Test-TypezeroTerminalV2RecoveryReplay.ps1` tests explicit fixture-store
+initialization and one-time authenticated grant reservations. It includes
+cross-process replay/races, occupied locks, stale grants, partial/corrupt
+tombstones, worker termination after CreateNew, and linked-path refusal.
+Reservations grant no recovery or live activation permission. Production
+deletion/rollback-resistant replay storage is still required.
+
+See [FontActivationV2StagedPlan.md](../FontActivationV2StagedPlan.md).
+
+## Durable fixture hardening v1.1
+
+`Test-TypezeroTerminalV2Durable.ps1` runs only synthetic disposable TEMP fixtures.
+It covers complete UTF-8 size preflight, strict authenticated phases, independent
+recovery grants, replay/source ownership, completed RESTORE tampering, concurrent
+different grant IDs, exact crash assessments, real process termination during
+partial journal writes, and expiry immediately before the native RESTORE call.
+Run in a fresh PowerShell process on permitted local NTFS fixture storage and
+supply a new `-ReportPath`. Retain its raw console log and JSON report. Only
+`Completed=true` establishes a complete passing run; failed/blocked attempts
+remain evidence and must not be relabeled. Source changes and production writes
+are outside the test's authority. See [DurableHardeningV11.md](../DurableHardeningV11.md).

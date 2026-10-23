@@ -118,7 +118,19 @@ function Invoke-TypezeroOfflineFontMappingV2Transaction {
     $fixture = Assert-TypezeroFontV2AdapterFixture `
         -TestRoot $TestRoot -ConfigPath $ConfigPath
 
-    $config = Get-TypezeroWindowsFontMappings -Path $fixture.ConfigPath
+    # Pin the complete configuration, not just the selected mapping. Hold a
+    # read handle without write/delete sharing while hashing and parsing it.
+    $configHandle = [IO.FileStream]::new(
+        $fixture.ConfigPath, [IO.FileMode]::Open,
+        [IO.FileAccess]::Read, [IO.FileShare]::Read
+    )
+    try {
+        $configSha256 = [Convert]::ToHexString(
+            [Security.Cryptography.SHA256]::HashData($configHandle)
+        )
+        $config = Get-TypezeroWindowsFontMappings -Path $fixture.ConfigPath
+    }
+    finally { $configHandle.Dispose() }
 
     if ($config.Version -ne 2) {
         throw 'REFUSED: Font mapping must be V2.'
@@ -164,6 +176,56 @@ function Invoke-TypezeroOfflineFontMappingV2Transaction {
         return
     }
 
-    Invoke-TypezeroOfflineTerminalV2Locked `
-        @arguments -Execute -Confirm:$false
+    # Own the same fixed lock used by all cooperating V2 fixture writers.
+    # Calling the locked wrapper here would nest its exclusive lock, while
+    # reading the mapping before that wrapper leaves a stale-input window.
+    $lockPath = Join-Path $fixture.TestRoot '.typezero-terminal-v2.lock'
+    Assert-TypezeroOfflineReplacePlainPath -Path $lockPath
+    $lock = $null
+    try {
+        $lock = [IO.FileStream]::new(
+            $lockPath, [IO.FileMode]::OpenOrCreate,
+            [IO.FileAccess]::ReadWrite, [IO.FileShare]::None
+        )
+    }
+    catch [IO.IOException] {
+        throw 'REFUSED: Disposable transaction lock is occupied.'
+    }
+
+    $configHandle = $null
+    try {
+        # Resolve all fixture fences again under the transaction lock, then
+        # keep configuration bytes stable through candidate creation/write.
+        $lockedFixture = Assert-TypezeroFontV2AdapterFixture `
+            -TestRoot $fixture.TestRoot -ConfigPath $fixture.ConfigPath
+        $configHandle = [IO.FileStream]::new(
+            $lockedFixture.ConfigPath, [IO.FileMode]::Open,
+            [IO.FileAccess]::Read, [IO.FileShare]::Read
+        )
+        $lockedSha256 = [Convert]::ToHexString(
+            [Security.Cryptography.SHA256]::HashData($configHandle)
+        )
+        if ($lockedSha256 -cne $configSha256) {
+            throw 'REFUSED: Font mapping configuration changed during transaction preparation.'
+        }
+        $lockedConfig = Get-TypezeroWindowsFontMappings `
+            -Path $lockedFixture.ConfigPath
+        if ($lockedConfig.Version -ne 2 -or
+            $null -ne $lockedConfig.ManualOverride -or
+            -not $lockedConfig.Enabled -or
+            -not $lockedConfig.Mappings.Contains($ThemeId)) {
+            throw 'REFUSED: Font configuration is no longer eligible for execution.'
+        }
+        $lockedMapping = $lockedConfig.Mappings[$ThemeId]
+        $arguments.FontFace = [string]$lockedMapping.Family
+        $arguments.FontSize = [double]$lockedMapping.Size
+        $arguments.FontWeight = [string]$lockedMapping.Weight
+
+        Invoke-TypezeroOfflineTerminalCombinedTransactionV2 `
+            @arguments -Execute -Confirm:$false
+    }
+    finally {
+        if ($null -ne $configHandle) { $configHandle.Dispose() }
+        if ($null -ne $lock) { $lock.Dispose() }
+    }
 }

@@ -82,6 +82,13 @@ vimrc            text eol=lf
 *.cmd            text eol=crlf
 *.cue            text eol=crlf
 
+# These safety modules are verified against canonical LF byte hashes.
+# Keep checkout bytes identical to the pinned Git blobs on Windows too.
+Netzach/PowerShell/ThemeEngine/TypezeroIntegrationPreflight.ps1 text eol=lf
+Netzach/PowerShell/ThemeEngine/TerminalTransactionV2-WindowsTerminal.ps1 text eol=lf
+Netzach/PowerShell/ThemeEngine/TerminalReplace-WindowsTerminal.ps1 text eol=lf
+Netzach/PowerShell/ThemeEngine/TerminalEvidenceSealV2-WindowsTerminal.ps1 text eol=lf
+
 # ----------------------------------------------------------------------
 # Binary files — never perform line-ending conversion
 # ----------------------------------------------------------------------
