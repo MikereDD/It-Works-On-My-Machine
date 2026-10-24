@@ -1,19 +1,65 @@
 # Typezero ThemeEngine - Theme + Font visual comparison
-# v1.3.0, based on v1.2.2. Preview and selection are read-only.
-# The caller handles explicitly approved theme apply and optional preference save.
+# Preview and selection are read-only. The caller executes explicit actions.
+. (Join-Path $PSScriptRoot 'FontWeights-WindowsTerminal.ps1')
+. (Join-Path $PSScriptRoot 'AppearanceSelection-WindowsTerminal.ps1')
+
 function Show-TypezeroThemeFontPreview {
     [CmdletBinding()]
     param(
         [string]$ThemesRoot = (Join-Path $env:LOCALAPPDATA 'Typezero\ThemeEngine\themes'),
         [string]$InitialFont = 'JetBrainsMono Nerd Font',
         [ValidateRange(6,36)][double]$InitialSize = 12,
-        [ValidateSet('normal','semi-bold')][string]$InitialWeight = 'normal'
+        [string]$InitialWeight = 'normal',
+        [string]$PresetsPath = (Join-Path $env:LOCALAPPDATA 'Typezero\ThemeEngine\custom-presets.json'),
+        # Test hook: receives the initialized window and controls without showing it.
+        [scriptblock]$OnLoaded
     )
+    Assert-TypezeroTerminalFontWeight -Weight $InitialWeight
     if ([Threading.Thread]::CurrentThread.ApartmentState -ne 'STA') {
         throw 'Theme/font preview requires PowerShell running in STA mode (pwsh -STA).'
     }
     if (-not (Test-Path -LiteralPath $ThemesRoot -PathType Container)) {
         throw "Installed ThemeEngine themes not found: $ThemesRoot"
+    }
+    $mappingModule = Join-Path $PSScriptRoot 'FontMapping-WindowsTerminal.ps1'
+    if (-not (Test-Path -LiteralPath $mappingModule -PathType Leaf)) { throw 'Font mapping reader missing.' }
+    . $mappingModule
+    $fontConfig = Get-TypezeroWindowsFontMappings -Path (
+        Join-Path (Split-Path -Parent $ThemesRoot) 'font-windows-terminal.json'
+    )
+    $controlModule = Join-Path $PSScriptRoot 'TerminalFontControl-WindowsTerminal.ps1'
+    $presets = @()
+    $presetLoadError = ''
+    if (Test-Path -LiteralPath $controlModule -PathType Leaf) {
+        . $controlModule
+        try { $presets = @(Get-TypezeroAppearancePresets -Path $PresetsPath) }
+        catch { $presetLoadError = "Saved presets could not be loaded: $($_.Exception.Message)" }
+    }
+    $providerModule = Join-Path $PSScriptRoot 'FontProvider-WindowsTerminal.ps1'
+    if (Test-Path -LiteralPath $providerModule -PathType Leaf) {
+        . $providerModule
+        try {
+            $currentFont = Get-TypezeroTerminalFontStatus
+            if (-not $PSBoundParameters.ContainsKey('InitialFont') -and $currentFont.Face) {
+                $InitialFont = [string]$currentFont.Face
+            }
+            $currentSize = [double]$currentFont.Size
+            if (-not $PSBoundParameters.ContainsKey('InitialSize') -and
+                -not [double]::IsNaN($currentSize) -and -not [double]::IsInfinity($currentSize) -and
+                $currentSize -ge 6 -and $currentSize -le 36) { $InitialSize = $currentSize }
+            if (-not $PSBoundParameters.ContainsKey('InitialWeight')) {
+                $currentWeight = [string]$currentFont.Weight
+                foreach ($name in (Get-TypezeroTerminalFontWeights).Keys) {
+                    if ($currentWeight -ceq [string](Get-TypezeroTerminalFontWeights)[$name]) {
+                        $currentWeight = $name
+                        break
+                    }
+                }
+                if ($currentWeight -cin @((Get-TypezeroTerminalFontWeights).Keys)) {
+                    $InitialWeight = $currentWeight
+                }
+            }
+        } catch { } # The visual preview also works without readable Terminal settings.
     }
     Add-Type -AssemblyName PresentationFramework
     Add-Type -AssemblyName PresentationCore
@@ -56,7 +102,7 @@ function Show-TypezeroThemeFontPreview {
     }
 
     $xaml = @'
-<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="Typezero | Theme + Font Preview" Width="1100" Height="790" MinWidth="750" MinHeight="520" WindowStartupLocation="CenterScreen" Background="#111111">
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="Typezero | Theme + Font Preview" Width="1100" Height="790" MinWidth="750" MinHeight="700" WindowStartupLocation="CenterScreen" Background="#111111">
   <Window.Resources>
     <SolidColorBrush x:Key="TzControlBg" Color="#242424" />
     <SolidColorBrush x:Key="TzPopupBg" Color="#202020" />
@@ -184,18 +230,30 @@ function Show-TypezeroThemeFontPreview {
     <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,12">
       <StackPanel Margin="0,0,14,10"><TextBlock Text="THEME" Foreground="{DynamicResource TzMuted}" Margin="0,0,0,4"/><ComboBox Name="ThemeBox" Width="215" Height="35" /></StackPanel>
       <StackPanel Margin="0,0,14,10"><TextBlock Text="FONT" Foreground="{DynamicResource TzMuted}" Margin="0,0,0,4"/><ComboBox Name="FontBox" Width="360" Height="35" IsEditable="False" IsTextSearchEnabled="True" /></StackPanel>
-      <StackPanel Margin="0,0,14,10"><TextBlock Text="SIZE (PT)" Foreground="{DynamicResource TzMuted}" Margin="0,0,0,4"/><ComboBox Name="SizeBox" Width="95" Height="35" IsEditable="False" /></StackPanel>
+      <StackPanel Margin="0,0,14,10"><TextBlock Text="SIZE (PT)" Foreground="{DynamicResource TzMuted}" Margin="0,0,0,4"/><ComboBox Name="SizeBox" Width="95" Height="35" IsEditable="True" IsTextSearchEnabled="False" TextSearch.TextPath="Tag" /></StackPanel>
       <StackPanel Margin="0,0,0,10"><TextBlock Text="WEIGHT" Foreground="{DynamicResource TzMuted}" Margin="0,0,0,4"/><ComboBox Name="WeightBox" Width="145" Height="35" /></StackPanel>
     </WrapPanel>
+    <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,12">
+      <StackPanel Margin="0,0,14,10"><TextBlock Text="LOAD CUSTOM PRESET" Foreground="{DynamicResource TzMuted}" Margin="0,0,0,4"/><ComboBox Name="PresetBox" Width="310" Height="35" /></StackPanel>
+      <StackPanel Margin="0,0,0,10"><TextBlock Text="SAVE NAME (lowercase letters, numbers, hyphens)" Foreground="{DynamicResource TzMuted}" Margin="0,0,0,4"/><TextBox Name="PresetNameBox" Width="400" Height="35" Padding="10,5" FontSize="14" Background="{DynamicResource TzControlBg}" Foreground="{DynamicResource TzText}" BorderBrush="{DynamicResource TzBorder}" /></StackPanel>
+    </WrapPanel>
     <StackPanel DockPanel.Dock="Bottom" Margin="0,12,0,0">
-      <TextBlock Text="Use Selection applies the theme. Live Terminal font activation remains disabled." TextWrapping="Wrap" Foreground="{DynamicResource TzMuted}" Margin="0,0,0,8" />
-      <CheckBox Name="SaveFontPreferenceBox" IsChecked="False" Content="Save selected font, size and weight as a V2 preference for this theme" Foreground="{DynamicResource TzText}" Margin="0,0,0,6" />
-      <TextBlock Text="Saving does not activate the font. Existing V1 mappings migrate to V2 using 12 pt / normal." TextWrapping="Wrap" Foreground="{DynamicResource TzMuted}" Margin="0,0,0,8" />
+      <TextBlock Text="Preview changes only this window. Apply Shell changes Terminal colors; Apply Font changes typography; Apply Desktop changes Windows and configured wallpaper. Combined buttons use only their named components. Apply All also updates Vim and other full-theme integrations. Save Preset stores choices without activation." TextWrapping="Wrap" Foreground="{DynamicResource TzMuted}" Margin="0,0,0,8" />
+      <TextBlock Text="Custom presets are stored separately. Base themes and saved theme font mappings are unchanged by these actions." TextWrapping="Wrap" Foreground="{DynamicResource TzMuted}" Margin="0,0,0,8" />
+      <CheckBox Name="ReplacePresetBox" Content="Replace an existing custom preset with this name" Foreground="{DynamicResource TzText}" Margin="0,0,0,4" />
+      <TextBlock Name="SaveHintLabel" Text="Enter a custom preset name to save the visible choices." TextWrapping="Wrap" Foreground="{DynamicResource TzMuted}" Margin="0,0,0,8" />
       <TextBlock Name="StatusLabel" Text="Preview only - no changes yet" TextWrapping="Wrap" Foreground="{DynamicResource TzMuted}" Margin="0,0,0,12" />
-      <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-        <Button Name="CancelButton" Content="Cancel" Width="120" Height="38" Margin="0,0,10,0" />
-        <Button Name="UseButton" Content="Use Selection" Width="150" Height="38" BorderBrush="{DynamicResource TzAccent}" />
-      </StackPanel>
+      <WrapPanel HorizontalAlignment="Right">
+        <Button Name="CancelButton" Content="Cancel" Width="100" Height="38" Margin="0,0,10,4" />
+        <Button Name="PreviewButton" Content="Preview" Width="115" Height="38" Margin="0,0,10,4" />
+        <Button Name="ApplyShellButton" Content="Apply Shell" Width="125" Height="38" Margin="0,0,10,4" />
+        <Button Name="ApplyDesktopButton" Content="Apply Desktop" Width="140" Height="38" Margin="0,0,10,4" />
+        <Button Name="ApplyShellFontButton" Content="Apply Shell+Font" Width="155" Height="38" Margin="0,0,10,4" />
+        <Button Name="ApplyDesktopShellButton" Content="Apply Desktop+Shell" Width="180" Height="38" Margin="0,0,10,4" />
+        <Button Name="ApplyFontButton" Content="Apply Font" Width="130" Height="38" Margin="0,0,10,4" />
+        <Button Name="UseButton" Content="Apply All" Width="120" Height="38" Margin="0,0,10,4" BorderBrush="{DynamicResource TzAccent}" />
+        <Button Name="SavePresetButton" Content="Save Preset" Width="135" Height="38" Margin="0,0,0,4" />
+      </WrapPanel>
     </StackPanel>
     <Border Name="PreviewBorder" Background="#1D2021" Padding="18">
       <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
@@ -223,7 +281,17 @@ function Show-TypezeroThemeFontPreview {
     $sizeBox = $window.FindName('SizeBox')
     $weightBox = $window.FindName('WeightBox')
     $status = $window.FindName('StatusLabel')
-    $saveFontPreference = $window.FindName('SaveFontPreferenceBox')
+    $presetBox = $window.FindName('PresetBox')
+    $presetNameBox = $window.FindName('PresetNameBox')
+    $previewButton = $window.FindName('PreviewButton')
+    $applyFont = $window.FindName('ApplyFontButton')
+    $applyShell = $window.FindName('ApplyShellButton')
+    $applyDesktop = $window.FindName('ApplyDesktopButton')
+    $applyShellFont = $window.FindName('ApplyShellFontButton')
+    $applyDesktopShell = $window.FindName('ApplyDesktopShellButton')
+    $savePreset = $window.FindName('SavePresetButton')
+    $replacePreset = $window.FindName('ReplacePresetBox')
+    $saveHint = $window.FindName('SaveHintLabel')
     $use = $window.FindName('UseButton')
     $cancel = $window.FindName('CancelButton')
     $border = $window.FindName('PreviewBorder')
@@ -257,7 +325,7 @@ NUMERIC ALIGNMENT
 10.00    200.50   999.99
 '@
     # Visual ComboBoxItem entries hold their unchanged machine values in Tag.
-    # All choices remain UI-only until Use Selection is explicitly clicked.
+    # Choices remain UI-only; action buttons return intent to the shared caller.
     $newEntry = {
         param([string]$Value,[string]$Label,[string]$Example,[string]$Face,[double]$Points,[string]$Emphasis)
         $item = [Windows.Controls.ComboBoxItem]::new()
@@ -274,7 +342,7 @@ NUMERIC ALIGNMENT
             $sample.Text = $Example
             $sample.FontSize = $Points
             if ($Face) { $sample.FontFamily = [Windows.Media.FontFamily]::new($Face) }
-            if ($Emphasis -eq 'semi-bold') { $sample.FontWeight = [Windows.FontWeights]::SemiBold }
+            if ($Emphasis) { $sample.FontWeight = ConvertTo-TypezeroWpfFontWeight -Weight $Emphasis }
             $sample.Margin = [Windows.Thickness]::new(0,4,0,1)
             $layout.Children.Add($sample) | Out-Null
         }
@@ -307,7 +375,7 @@ NUMERIC ALIGNMENT
         $sizeText = [string]$n
         [void]$sizeBox.Items.Add((& $newEntry $sizeText "$sizeText pt" 'Aa Bb 0123' $initialDisplay ([double]$n * 96.0 / 72.0) 'normal'))
     }
-    foreach ($w in @('normal','semi-bold')) {
+    foreach ($w in @((Get-TypezeroTerminalFontWeights).Keys)) {
         [void]$weightBox.Items.Add((& $newEntry $w $w 'Aa Bb 0123' $initialDisplay 18 $w))
     }
     $activeFile = Join-Path (Split-Path -Parent $ThemesRoot) 'current-theme'
@@ -316,11 +384,38 @@ NUMERIC ALIGNMENT
         foreach ($entry in $box.Items) { if ([string]$entry.Tag -ceq $value) { return $entry } }
         return $null
     }
+    $getSizeChoice = { param([double]$points)
+        $value = $points.ToString([Globalization.CultureInfo]::InvariantCulture)
+        $entry = & $getChoice $sizeBox $value
+        if ($null -eq $entry) {
+            $entry = & $newEntry $value "$value pt" 'Aa Bb 0123' $initialDisplay ($points * 96.0 / 72.0) 'normal'
+            [void]$sizeBox.Items.Add($entry)
+        }
+        return $entry
+    }.GetNewClosure()
     $themeBox.SelectedItem = & $getChoice $themeBox $(if ($themes.Contains($active)) { $active } else { [string]@($themes.Keys)[0] })
     $fontBox.SelectedItem = & $getChoice $fontBox $initialDisplay
-    $sizeBox.SelectedItem = & $getChoice $sizeBox ($InitialSize.ToString([Globalization.CultureInfo]::InvariantCulture))
+    $sizeBox.SelectedItem = & $getSizeChoice $InitialSize
     $weightBox.SelectedItem = & $getChoice $weightBox $InitialWeight
     $window.Tag = $null
+    $previewState = @{ ExpectedSha256 = $null; ChoiceValid = $false }
+    [void]$presetBox.Items.Add((& $newEntry '' '(choose a saved preset)' '' '' 14 ''))
+    foreach ($saved in $presets) {
+        [void]$presetBox.Items.Add((& $newEntry ([string]$saved.Name) ([string]$saved.Name) '' '' 14 ''))
+    }
+    $presetBox.SelectedIndex = 0
+    $updateSave = {
+        $name = [string]$presetNameBox.Text
+        $validName = $name -cmatch '\A[a-z0-9][a-z0-9-]{0,63}\z'
+        $exists = @($presets | Where-Object { $_.Name -ceq $name }).Count -gt 0
+        $savePreset.IsEnabled = $previewState.ChoiceValid -and $validName -and
+            (-not $exists -or $replacePreset.IsChecked -eq $true)
+        $saveHint.Text = if ($exists -and $replacePreset.IsChecked -ne $true) {
+            "Preset '$name' exists. Choose a new name or check Replace."
+        } elseif ($exists) { "Save will replace custom preset '$name' without activating it." }
+        elseif (-not $validName) { 'Enter 1-64 lowercase letters, numbers or hyphens; start with a letter or number.' }
+        else { "Save will create custom preset '$name' without activating it." }
+    }.GetNewClosure()
 
     $brush = { param([string]$hex,[string]$fallback)
         if ($hex -notmatch '^#[a-fA-F0-9]{6}$') { $hex = $fallback }
@@ -330,13 +425,29 @@ NUMERIC ALIGNMENT
         $id = if ($themeBox.SelectedItem) { [string]$themeBox.SelectedItem.Tag } else { '' }
         $face = if ($fontBox.SelectedItem) { [string]$fontBox.SelectedItem.Tag } else { '' }
         $weight = if ($weightBox.SelectedItem) { [string]$weightBox.SelectedItem.Tag } else { '' }
+        $applyDesktop.IsEnabled = $themes.Contains($id)
+        $applyShell.IsEnabled = $false
+        $applyDesktopShell.IsEnabled = $false
+        $applyShellFont.IsEnabled = $false
+        $previewState.ExpectedSha256 = $null
+        if ($themes.Contains($id)) {
+            try {
+                $previewState.ExpectedSha256 = Get-TypezeroAppearanceSettingsSnapshot
+                $applyShell.IsEnabled = $true
+                $applyDesktopShell.IsEnabled = $true
+            } catch { }
+        }
         $size = 0.0
-        $valid = [double]::TryParse($(if ($sizeBox.SelectedItem) { [string]$sizeBox.SelectedItem.Tag } else { '' }),[Globalization.NumberStyles]::Float,[Globalization.CultureInfo]::InvariantCulture,[ref]$size)
+         $valid = [double]::TryParse([string]$sizeBox.Text,[Globalization.NumberStyles]::Float,[Globalization.CultureInfo]::InvariantCulture,[ref]$size)
         if (-not $themes.Contains($id) -or -not $fontNames.Contains($face) -or -not $valid -or
-            [double]::IsNaN($size) -or [double]::IsInfinity($size) -or $size -lt 6 -or $size -gt 36 -or
-            $weight -cnotin @('normal','semi-bold')) {
+            [double]::IsNaN($size) -or [double]::IsInfinity($size) -or $size -lt 6 -or $size -gt 36 -or $size -ne [math]::Round($size,2) -or
+            $weight -cnotin @((Get-TypezeroTerminalFontWeights).Keys)) {
             $use.IsEnabled = $false
-            $status.Text = 'Select an installed font, valid theme, size (6-36), and weight.'
+            $applyFont.IsEnabled = $false
+            $savePreset.IsEnabled = $false
+            $previewState.ChoiceValid = $false
+            & $updateSave
+            $status.Text = 'Select an installed font, valid theme, size (6-36), and weight for font operations. Shell and Desktop ignore excluded font choices.'
             return
         }
         $palette = $themes[$id]
@@ -379,7 +490,7 @@ NUMERIC ALIGNMENT
             $sample = [Windows.Controls.StackPanel]$entry.Content
             if ($sample.Children.Count -gt 1) {
                 $sample.Children[1].FontFamily = [Windows.Media.FontFamily]::new($face)
-                $sample.Children[1].FontWeight = if ($weight -eq 'semi-bold') { [Windows.FontWeights]::SemiBold } else { [Windows.FontWeights]::Normal }
+                $sample.Children[1].FontWeight = ConvertTo-TypezeroWpfFontWeight -Weight $weight
             }
         }
         foreach ($entry in $weightBox.Items) {
@@ -388,48 +499,135 @@ NUMERIC ALIGNMENT
         }
         $preview.FontFamily = [Windows.Media.FontFamily]::new($face)
         $preview.FontSize = $size * 96.0 / 72.0
-        $preview.FontWeight = if ($weight -eq 'semi-bold') { [Windows.FontWeights]::SemiBold } else { [Windows.FontWeights]::Normal }
+        $preview.FontWeight = ConvertTo-TypezeroWpfFontWeight -Weight $weight
         $success.Foreground = & $brush (& $get 'SUCCESS' '#7dbb69') '#7dbb69'
         $warning.Foreground = & $brush (& $get 'WARNING' '#e5b454') '#e5b454'
         $errorText.Foreground = & $brush (& $get 'ERROR' '#e05f65') '#e05f65'
         $info.Foreground = & $brush (& $get 'INFO' '#81b3db') '#81b3db'
         $status.Text = "Preview: $id | $face | $size pt | $weight  (no files changed)"
-        $use.IsEnabled = $true
+        $applyFont.IsEnabled = $false
+        $use.IsEnabled = $false
+        try {
+            . $controlModule
+            $machineFamily = if ($face -ceq 'JetBrainsMono NF') { 'JetBrainsMono Nerd Font' } else { $face }
+            $fontPlan = Get-TypezeroTerminalFontPreview -Family $machineFamily -Size $size -Weight $weight
+            if ([string]$fontPlan.ExpectedSha256 -notmatch '\A[0-9a-fA-F]{64}\z') {
+                throw 'Terminal preview did not return a settings snapshot.'
+            }
+            $previewState.ExpectedSha256 = [string]$fontPlan.ExpectedSha256
+            $applyFont.IsEnabled = $true
+            $applyShellFont.IsEnabled = $true
+            $use.IsEnabled = $true
+        } catch {
+            $status.Text += "`nFont apply unavailable: $($_.Exception.Message) Visual preview, Desktop and Save Preset remain available."
+        }
+        $previewState.ChoiceValid = $true
+        & $updateSave
+        if ($presetLoadError) { $status.Text += "`n$presetLoadError" }
     }.GetNewClosure()
-    $themeBox.Add_SelectionChanged({ & $refresh }.GetNewClosure())
+    $loadSavedFont = {
+        $id = if ($themeBox.SelectedItem) { [string]$themeBox.SelectedItem.Tag } else { '' }
+        $family = $initialDisplay
+        $points = $InitialSize
+        $emphasis = $InitialWeight
+        if ($fontConfig.Mappings.ContainsKey($id)) {
+            $mapped = $fontConfig.Mappings[$id]
+            if ($fontConfig.Version -eq 1) { $family = [string]$mapped }
+            else {
+                $family = [string]$mapped.Family
+                $points = [double]$mapped.Size
+                $emphasis = [string]$mapped.Weight
+            }
+            if ($family -ceq 'JetBrainsMono Nerd Font') { $family = 'JetBrainsMono NF' }
+        }
+        $fontBox.SelectedItem = & $getChoice $fontBox $family
+        $sizeBox.SelectedItem = & $getSizeChoice $points
+        $weightBox.SelectedItem = & $getChoice $weightBox $emphasis
+        & $refresh
+    }.GetNewClosure()
+    $themeBox.Add_SelectionChanged({ & $loadSavedFont }.GetNewClosure())
     $fontBox.Add_SelectionChanged({ & $refresh }.GetNewClosure())
     $sizeBox.Add_SelectionChanged({ & $refresh }.GetNewClosure())
     $weightBox.Add_SelectionChanged({ & $refresh }.GetNewClosure())
-    $cancel.Add_Click({ $window.Tag = $null; $window.Close() }.GetNewClosure())
-    $use.Add_Click({
+    $sizeBox.AddHandler([Windows.Controls.Primitives.TextBoxBase]::TextChangedEvent,
+        [Windows.RoutedEventHandler]{ & $refresh }.GetNewClosure())
+    $presetNameBox.Add_TextChanged({
+        $replacePreset.IsChecked = $false
+        & $updateSave
+    }.GetNewClosure())
+    $replacePreset.Add_Checked({ & $updateSave }.GetNewClosure())
+    $replacePreset.Add_Unchecked({ & $updateSave }.GetNewClosure())
+    $presetBox.Add_SelectionChanged({
+        if (-not $presetBox.SelectedItem -or -not $presetBox.SelectedItem.Tag) { return }
+        $name = [string]$presetBox.SelectedItem.Tag
+        $saved = @($presets | Where-Object { $_.Name -ceq $name })
+        if ($saved.Count -ne 1) { return }
+        $saved = $saved[0]
+        # Theme selection can load its saved font. Set the preset tuple afterwards.
+        $themeBox.SelectedItem = & $getChoice $themeBox ([string]$saved.Theme)
+        $family = if ([string]$saved.Family -ceq 'JetBrainsMono Nerd Font') { 'JetBrainsMono NF' } else { [string]$saved.Family }
+        $fontBox.SelectedItem = & $getChoice $fontBox $family
+        $sizeBox.SelectedItem = & $getSizeChoice ([double]$saved.Size)
+        $weightBox.SelectedItem = & $getChoice $weightBox ([string]$saved.Weight)
+        $presetNameBox.Text = [string]$saved.Name
         & $refresh
-        if (-not $use.IsEnabled) { return }
-        $face = if ($fontBox.SelectedItem) { [string]$fontBox.SelectedItem.Tag } else { '' }
-        $selectedFamily = if ($face -ceq 'JetBrainsMono NF' -and $InitialFont -ceq 'JetBrainsMono Nerd Font') { 'JetBrainsMono Nerd Font' } else { $face }
-        $savePreference = $saveFontPreference.IsChecked -eq $true
-        $themeId = [string]$themeBox.SelectedItem.Tag
-        $fontAction = if ($savePreference) {
-            "Save V2 font preference: $selectedFamily, $($sizeBox.SelectedItem.Tag) pt, $($weightBox.SelectedItem.Tag). Existing V1 mappings migrate using 12 pt / normal."
-        } else { 'Do not save a font preference.' }
-        $approval = [Windows.MessageBox]::Show($window,
-            "Apply theme '$themeId' through ThemeEngine? This changes theme colors and appearance, and may switch an already-enabled wallpaper mapping.`n`n$fontAction`n`nLive Terminal font activation remains disabled.",
-            'Apply selected theme', [Windows.MessageBoxButton]::YesNo,
-            [Windows.MessageBoxImage]::Question, [Windows.MessageBoxResult]::No)
-        if ($approval -ne [Windows.MessageBoxResult]::Yes) { return }
+    }.GetNewClosure())
+    $cancel.Add_Click({ $window.Tag = $null; $window.Close() }.GetNewClosure())
+    $previewButton.Add_Click({ & $refresh }.GetNewClosure())
+    $finish = {
+        param([string]$Action)
+        $ready = switch ($Action) {
+            'ApplyFont' { $applyFont.IsEnabled }
+            'ApplyTheme' { $use.IsEnabled }
+            'ApplyAll' { $use.IsEnabled }
+            'ApplyShell' { $applyShell.IsEnabled }
+            'ApplyDesktop' { $applyDesktop.IsEnabled }
+            'ApplyShellFont' { $applyShellFont.IsEnabled }
+            'ApplyDesktopShell' { $applyDesktopShell.IsEnabled }
+            'SavePreset' { $savePreset.IsEnabled }
+            default { $false }
+        }
+        if (-not $ready) { return }
+        # Use the last displayed preview snapshot. Do not recapture on Apply.
+        $face = [string]$fontBox.SelectedItem.Tag
+        $includesFont = $Action -in @('ApplyFont','ApplyShellFont','ApplyAll','ApplyTheme','SavePreset')
+        $chosenSize = if ($includesFont) { [double]::Parse([string]$sizeBox.Text,[Globalization.CultureInfo]::InvariantCulture) } else { [double]0 }
         $window.Tag = [pscustomobject]@{
             Accepted = $true
-            ThemeApplyConsent = $true
-            SaveFontPreferenceConsent = [bool]$savePreference
+            Action = $Action
             Theme = [string]$themeBox.SelectedItem.Tag
-            Family = $selectedFamily
-            Size = [double]::Parse($(if ($sizeBox.SelectedItem) { [string]$sizeBox.SelectedItem.Tag } else { '' }),[Globalization.CultureInfo]::InvariantCulture)
+            Family = $(if ($face -ceq 'JetBrainsMono NF') { 'JetBrainsMono Nerd Font' } else { $face })
+            Size = $chosenSize
             Weight = [string]$weightBox.SelectedItem.Tag
+            PresetName = [string]$presetNameBox.Text
+            ReplacePreset = ($replacePreset.IsChecked -eq $true)
+            ExpectedSha256 = $previewState.ExpectedSha256
             PreviewOnly = $true
             SettingsChanged = $false
         }
         $window.Close()
-    }.GetNewClosure())
-    & $refresh
-    $null = $window.ShowDialog()
+    }.GetNewClosure()
+    $applyFont.Add_Click({ & $finish 'ApplyFont' }.GetNewClosure())
+    $use.Add_Click({ & $finish 'ApplyTheme' }.GetNewClosure())
+    $applyShell.Add_Click({ & $finish 'ApplyShell' }.GetNewClosure())
+    $applyDesktop.Add_Click({ & $finish 'ApplyDesktop' }.GetNewClosure())
+    $applyShellFont.Add_Click({ & $finish 'ApplyShellFont' }.GetNewClosure())
+    $applyDesktopShell.Add_Click({ & $finish 'ApplyDesktopShell' }.GetNewClosure())
+    $savePreset.Add_Click({ & $finish 'SavePreset' }.GetNewClosure())
+    & $loadSavedFont
+    if ($OnLoaded) {
+        $controls = @{
+            ThemeBox = $themeBox; FontBox = $fontBox; SizeBox = $sizeBox; WeightBox = $weightBox
+            PresetBox = $presetBox; PresetNameBox = $presetNameBox; StatusLabel = $status
+            PreviewButton = $previewButton; ApplyFontButton = $applyFont; UseButton = $use; ApplyAllButton = $use
+            ApplyShellButton = $applyShell; ApplyDesktopButton = $applyDesktop
+            ApplyShellFontButton = $applyShellFont; ApplyDesktopShellButton = $applyDesktopShell
+            SavePresetButton = $savePreset; ReplacePresetBox = $replacePreset; SaveHintLabel = $saveHint; CancelButton = $cancel
+        }
+        try { $null = & $OnLoaded $window $controls }
+        finally { $window.Close() }
+    } else {
+        $null = $window.ShowDialog()
+    }
     return $window.Tag
 }

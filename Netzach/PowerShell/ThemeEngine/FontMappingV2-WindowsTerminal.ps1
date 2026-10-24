@@ -1,6 +1,8 @@
 # Typezero ThemeEngine - Windows Terminal Font Mapping V2
 # Mapping configuration only. Never modifies Terminal settings.
 
+. (Join-Path $PSScriptRoot 'FontWeights-WindowsTerminal.ps1')
+
 function Set-TypezeroWindowsFontMappingV2 {
     [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
     param(
@@ -17,7 +19,6 @@ function Set-TypezeroWindowsFontMappingV2 {
         [double]$Size,
 
         [Parameter(Mandatory)]
-        [ValidateSet('normal', 'semi-bold')]
         [string]$Weight,
 
         [Parameter(Mandatory)]
@@ -28,10 +29,11 @@ function Set-TypezeroWindowsFontMappingV2 {
 
         [double]$MigrationSize = 12,
 
-        [ValidateSet('normal', 'semi-bold')]
         [string]$MigrationWeight = 'normal'
     )
 
+    Assert-TypezeroTerminalFontWeight -Weight $Weight
+    Assert-TypezeroTerminalFontWeight -Weight $MigrationWeight
     if (-not (Test-Path -LiteralPath `
         (Join-Path $ThemesRoot "$ThemeId\theme.conf") -PathType Leaf)) {
         throw "Theme does not exist: $ThemeId"

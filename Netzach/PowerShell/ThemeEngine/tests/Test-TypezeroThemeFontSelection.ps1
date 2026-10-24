@@ -77,10 +77,12 @@ function New-SelectionFixture {
 param([Parameter(Mandatory)][string]$Command,
       [Parameter(Mandatory)][string]$Theme)
 $ErrorActionPreference = 'Stop'
+$fontConfig = Get-TypezeroWindowsFontMappings
 $entry = [ordered]@{
     Command = $Command
     Theme = $Theme
     BoundKeys = @($PSBoundParameters.Keys | Sort-Object)
+    MappingAtApply = $fontConfig.Mappings[$Theme]
 }
 Add-Content -LiteralPath (Join-Path $PSScriptRoot 'apply-log.jsonl') -Value (
     $entry | ConvertTo-Json -Compress
@@ -89,15 +91,35 @@ Add-Content -LiteralPath (Join-Path $PSScriptRoot 'apply-log.jsonl') -Value (
 if (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'throw-on-apply')) {
     throw 'Simulated failure after one appearance effect.'
 }
+if ($fontConfig.Mappings.ContainsKey($Theme) -and
+    -not (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'wrong-font-readback'))) {
+    $mapped = $fontConfig.Mappings[$Theme]
+    $font = if ($fontConfig.Version -eq 1) {
+        [ordered]@{ Family = [string]$mapped; Size = 11; Weight = 'normal' }
+    } else { $mapped }
+    [IO.File]::WriteAllText((Join-Path $PSScriptRoot 'applied-font.json'), ($font | ConvertTo-Json))
+}
+if (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'partial-on-apply')) {
+    [pscustomobject]@{Status='Partial';Complete=$false;Changed=$true;AppearanceMayHaveChanged=$true;Targets=@(
+        [pscustomobject]@{Target='Desktop';Status='Failed';Message='Fixture native activation failed'}
+        [pscustomobject]@{Target='Font';Status='Applied';Message='Fixture font readback verified'}
+    )}
+}
 '@
     Write-FixtureText (Join-Path $fakeEngine 'ThemeEngine.ps1') $fakeEngineText
     Write-FixtureText (Join-Path $fakeEngine 'FontProvider-WindowsTerminal.ps1') @'
 function Get-TypezeroInstalledFontFamilies { @('Fixture Font', 'Cascadia Mono') }
 function Get-TypezeroTerminalFontStatus {
-    [pscustomobject]@{ Face = 'Fixture Current Font'; SettingsPath = 'fixture-only' }
+    $path = Join-Path $PSScriptRoot 'applied-font.json'
+    if (Test-Path -LiteralPath $path) {
+        $font = [IO.File]::ReadAllText($path) | ConvertFrom-Json
+        [pscustomobject]@{ Face = $font.Family; Size = $font.Size; Weight = $font.Weight; SettingsPath = 'fixture-only' }
+    } else {
+        [pscustomobject]@{ Face = 'Fixture Current Font'; Size = 11; Weight = 'normal'; SettingsPath = 'fixture-only' }
+    }
 }
 '@
-    foreach ($name in @('FontMapping-WindowsTerminal.ps1','FontMappingV2-WindowsTerminal.ps1')) {
+    foreach ($name in @('FontMapping-WindowsTerminal.ps1','FontMappingV2-WindowsTerminal.ps1','FontWeights-WindowsTerminal.ps1')) {
         Copy-Item -LiteralPath (Join-Path $engineSource $name) -Destination $fakeEngine
     }
     $fixture = [pscustomobject]@{
@@ -147,6 +169,11 @@ function Assert-NoActivation {
     Assert-True ($Result.FontActivated -is [bool] -and -not $Result.FontActivated) 'Result claims live font activation.'
 }
 
+function Assert-Activation {
+    param($Result)
+    Assert-True ($Result.FontActivated -is [bool] -and $Result.FontActivated) $Result.Message
+}
+
 function Write-V1Config {
     param($Fixture, [bool]$Enabled)
     Write-FixtureText $Fixture.ConfigPath (([ordered]@{
@@ -162,6 +189,7 @@ try {
     New-Item -ItemType Directory -Path $env:TEMP -Force | Out-Null
     # Dot-source only the side-effect-free selection helper, never the real engine.
     . $source
+    . (Join-Path $engineSource 'FontMapping-WindowsTerminal.ps1')
 
     Invoke-Regression 'Null/cancelled selections and refused theme consent make no changes' {
         foreach ($selection in @($null, (New-Selection @{ Accepted = $false }),
@@ -215,7 +243,7 @@ try {
             $result.ThemeMayHaveChanged -and -not $result.FontPreferenceSaved) 'Theme-only outcome is inaccurate.'
         Assert-True (-not (Test-Path -LiteralPath $fixture.ConfigPath) -and
             -not (Test-Path -LiteralPath "$($fixture.ConfigPath).lock")) 'Theme-only use created font configuration.'
-        Assert-True ($result.Message -match 'Live Terminal font activation remains disabled') 'Theme-only message omits the font limitation.'
+        Assert-True ($result.Message -match 'No saved font') 'Theme-only message claims an unsaved font change.'
         Assert-NoActivation $result
     }
 
@@ -227,10 +255,10 @@ try {
         Assert-OneApply $fixture
         Assert-True ((Get-FileHash -LiteralPath $fixture.ConfigPath -Algorithm SHA256).Hash -ceq $before) 'Unchecked preference option changed existing mapping.'
         Assert-True (@(Get-ChildItem -LiteralPath (Split-Path -Parent $fixture.ConfigPath) -Filter '*.bak' -File).Count -eq 0) 'Theme-only use backed up/changed configuration.'
-        Assert-NoActivation $result
+        Assert-Activation $result
     }
 
-    Invoke-Regression 'Explicit preference consent creates verified V2 defaults without live activation' {
+    Invoke-Regression 'Explicit preference consent saves before apply and verifies the selected tuple' {
         $fixture = New-SelectionFixture
         $result = Invoke-FixtureSelection $fixture (New-Selection @{ SaveFontPreferenceConsent = $true })
         Assert-OneApply $fixture
@@ -241,8 +269,11 @@ try {
         Assert-True ($config.Version -eq 2 -and $config.Enabled -is [bool] -and -not $config.Enabled -and
             $null -eq $config.ManualOverride -and $config.Mappings.gruvbox.family -ceq 'Fixture Font' -and
             $config.Mappings.gruvbox.size -eq 14.25 -and $config.Mappings.gruvbox.weight -ceq 'semi-bold') 'Created V2 mapping differs from selected preference.'
-        Assert-True ($result.Message -match 'does not activate the font') 'Saved mapping message implies live activation.'
-        Assert-NoActivation $result
+        $log = Get-Content -LiteralPath $fixture.LogPath -Raw | ConvertFrom-Json
+        Assert-True ($log.MappingAtApply.Family -ceq 'Fixture Font' -and $log.MappingAtApply.Size -eq 14.25 -and
+            $log.MappingAtApply.Weight -ceq 'semi-bold') 'Public apply did not see the newly saved tuple.'
+        Assert-True ($result.Message -match 'font verified') 'Saved mapping lacks actual font verification.'
+        Assert-Activation $result
     }
 
     Invoke-Regression 'V1 migration preserves both Enabled values, other mappings, and exact original backups' {
@@ -261,7 +292,7 @@ try {
             $backups = @(Get-ChildItem -LiteralPath (Split-Path -Parent $fixture.ConfigPath) -Filter '*.bak' -File)
             Assert-True ($backups.Count -eq 1 -and
                 (Get-FileHash -LiteralPath $backups[0].FullName -Algorithm SHA256).Hash -ceq $before) 'Migration did not preserve an exact original backup.'
-            Assert-NoActivation $result
+            Assert-Activation $result
         }
     }
 
@@ -279,10 +310,10 @@ try {
         $backups = @(Get-ChildItem -LiteralPath (Split-Path -Parent $fixture.ConfigPath) -Filter '*.bak' -File)
         Assert-True ($backups.Count -eq 1 -and
             (Get-FileHash -LiteralPath $backups[0].FullName -Algorithm SHA256).Hash -ceq $before) 'V2 update backup differs from the original.'
-        Assert-NoActivation $result
+        Assert-Activation $result
     }
 
-    Invoke-Regression 'Theme failure reports possible partial appearance change and skips mapping' {
+    Invoke-Regression 'Theme failure reports possible partial appearance and retains the already saved mapping' {
         $fixture = New-SelectionFixture
         Write-V1Config $fixture $false
         $before = (Get-FileHash -LiteralPath $fixture.ConfigPath -Algorithm SHA256).Hash
@@ -290,22 +321,36 @@ try {
         $result = Invoke-FixtureSelection $fixture (New-Selection @{ SaveFontPreferenceConsent = $true })
         Assert-OneApply $fixture
         Assert-True ($result.Status -ceq 'ThemeFailed' -and -not $result.ThemeApplied -and
-            $result.ThemeMayHaveChanged -and -not $result.FontPreferenceSaved -and
-            $result.Message -match 'may be partial' -and $result.Message -match 'Font preference was not saved') 'Partial theme failure was reported as success or as unchanged.'
-        Assert-True ((Get-FileHash -LiteralPath $fixture.ConfigPath -Algorithm SHA256).Hash -ceq $before -and
-            -not (Test-Path -LiteralPath "$($fixture.ConfigPath).lock")) 'Theme failure still attempted preference save.'
+            $result.ThemeMayHaveChanged -and $result.FontPreferenceSaved -and
+            $result.Message -match 'may be partial' -and $result.Message -match 'font preference was saved') 'Partial theme failure was reported as success or as unchanged.'
+        Assert-True ((Get-FileHash -LiteralPath $fixture.ConfigPath -Algorithm SHA256).Hash -cne $before -and
+            (Get-TypezeroWindowsFontMappings -Path $fixture.ConfigPath).Mappings.gruvbox.Family -ceq 'Fixture Font') 'The mapping was not saved before theme application.'
         Assert-NoActivation $result
     }
 
-    Invoke-Regression 'Preference failure preserves successful theme result and exact damaged configuration' {
+    Invoke-Regression 'Structured partial apply preserves successful targets without claiming full application' {
+        foreach ($save in @($false,$true)) {
+            $fixture = New-SelectionFixture
+            Write-V1Config $fixture $false
+            Write-FixtureText (Join-Path $fixture.EngineRoot 'partial-on-apply') 'partial result'
+            $result = Invoke-FixtureSelection $fixture (New-Selection @{SaveFontPreferenceConsent=$save})
+            Assert-OneApply $fixture
+            Assert-True ($result.Status -ceq 'Partial' -and -not $result.ThemeApplied -and
+                $result.ThemeMayHaveChanged -and $result.FontActivated -and
+                $result.FontPreferenceSaved -eq $save -and $result.Targets.Count -eq 2 -and
+                $result.Message -match 'Desktop: Failed' -and $result.Message -match 'full theme was not recorded') 'Partial result was concealed or lost successful targets.'
+        }
+    }
+
+    Invoke-Regression 'Preference failure prevents apply and preserves exact damaged configuration' {
         $fixture = New-SelectionFixture
         Write-FixtureText $fixture.ConfigPath '{ invalid json; preserve for investigation'
         $before = (Get-FileHash -LiteralPath $fixture.ConfigPath -Algorithm SHA256).Hash
         $result = Invoke-FixtureSelection $fixture (New-Selection @{ SaveFontPreferenceConsent = $true })
-        Assert-OneApply $fixture
-        Assert-True ($result.Status -ceq 'ThemeAppliedPreferenceFailed' -and $result.ThemeApplied -and
-            $result.ThemeMayHaveChanged -and -not $result.FontPreferenceSaved -and
-            $result.Message -match 'applied, but font preference save failed') 'Preference failure concealed successful theme application.'
+        Assert-True (-not (Test-Path -LiteralPath $fixture.LogPath)) 'Invalid preference still invoked theme application.'
+        Assert-True ($result.Status -ceq 'PreferenceFailed' -and -not $result.ThemeApplied -and
+            -not $result.ThemeMayHaveChanged -and -not $result.FontPreferenceSaved -and
+            $result.Message -match 'theme was not applied') 'Preference failure incorrectly reports theme application.'
         Assert-True ((Get-FileHash -LiteralPath $fixture.ConfigPath -Algorithm SHA256).Hash -ceq $before) 'Preference failure replaced damaged configuration.'
         Assert-NoActivation $result
     }
@@ -315,27 +360,47 @@ try {
         $result = Invoke-FixtureSelection $fixture (New-Selection @{
             SaveFontPreferenceConsent = $true; Family = 'Unknown Fixture Font'
         })
-        Assert-OneApply $fixture
-        Assert-True ($result.Status -ceq 'ThemeAppliedPreferenceFailed' -and $result.ThemeApplied -and
+        Assert-True (-not (Test-Path -LiteralPath $fixture.LogPath)) 'Provider rejection still invoked theme application.'
+        Assert-True ($result.Status -ceq 'PreferenceFailed' -and -not $result.ThemeApplied -and
             -not $result.FontPreferenceSaved -and -not (Test-Path -LiteralPath $fixture.ConfigPath)) 'Unrecognized font was saved.'
         Assert-NoActivation $result
     }
 
-    Invoke-Regression 'Active V2 ownership blocks apply and mapping, preserves all bytes, and attempts no recovery' {
+    Invoke-Regression 'Existing font ownership comment does not block public apply or attempt recovery' {
         foreach ($save in @($false, $true)) {
             $fixture = New-SelectionFixture
             Write-V1Config $fixture $false
             Write-FixtureText $fixture.TerminalPath "{`n /* TYPEZERO_FONT_V2 */`n `"unrelated`": [1,2,3]`n}`n"
             $fixture.TerminalHash = (Get-FileHash -LiteralPath $fixture.TerminalPath -Algorithm SHA256).Hash
-            $before = Get-FixtureSnapshot $fixture
             $result = Invoke-FixtureSelection $fixture (New-Selection @{ SaveFontPreferenceConsent = $save })
-            Assert-True ($result.Status -ceq 'Blocked' -and -not $result.ThemeApplied -and
-                -not $result.ThemeMayHaveChanged -and -not $result.FontPreferenceSaved -and
-                $result.Message -match 'separately authorized recovery' -and
-                $result.Message -match 'No recovery was attempted') 'V2 ownership block is inaccurate or hides recovery.'
-            Assert-NoActivation $result
-            Assert-NoEffects $fixture $before
+            Assert-OneApply $fixture
+            Assert-True ($result.ThemeApplied -and $result.FontPreferenceSaved -eq $save) 'A preserved font comment blocked the public apply path.'
+            Assert-Activation $result
         }
+    }
+
+    Invoke-Regression 'Two saved themes select distinct full font tuples without rewriting their mappings' {
+        $fixture = New-SelectionFixture
+        Write-FixtureText $fixture.ConfigPath '{"Version":2,"Enabled":false,"ManualOverride":null,"Mappings":{"gruvbox":{"family":"Fixture Font","size":14.25,"weight":"semi-bold"},"nord":{"family":"Cascadia Mono","size":18,"weight":"normal"}}}'
+        $before = (Get-FileHash -LiteralPath $fixture.ConfigPath -Algorithm SHA256).Hash
+        foreach ($id in @('gruvbox','nord')) {
+            $result = Invoke-FixtureSelection $fixture (New-Selection @{ Theme = $id })
+            Assert-Activation $result
+            $mapped = (Get-TypezeroWindowsFontMappings -Path $fixture.ConfigPath).Mappings[$id]
+            $actual = Get-Content -LiteralPath (Join-Path $fixture.EngineRoot 'applied-font.json') -Raw | ConvertFrom-Json
+            Assert-True ($actual.Family -ceq $mapped.Family -and $actual.Size -eq $mapped.Size -and
+                $actual.Weight -ceq $mapped.Weight) 'The selected theme did not resolve its complete saved tuple.'
+        }
+        Assert-True ((Get-FileHash -LiteralPath $fixture.ConfigPath -Algorithm SHA256).Hash -ceq $before) 'Unchecked preference save rewrote mappings.'
+    }
+
+    Invoke-Regression 'Failed font readback reports the limitation without claiming activation' {
+        $fixture = New-SelectionFixture
+        Write-FixtureText (Join-Path $fixture.EngineRoot 'wrong-font-readback') 'fixture readback mismatch'
+        $result = Invoke-FixtureSelection $fixture (New-Selection @{ SaveFontPreferenceConsent = $true })
+        Assert-OneApply $fixture
+        Assert-True ($result.Status -ceq 'ThemeAppliedFontUnverified' -and $result.ThemeApplied -and
+            $result.FontPreferenceSaved -and -not $result.FontActivated) 'Wrong font readback was reported as activation.'
     }
 
     Invoke-Regression 'Malformed font sizes, IDs, weights, and preview flags fail before every write' {
@@ -380,9 +445,14 @@ try {
                 -ThemesRoot $otherRoot -ConfigPath $fixture.ConfigPath -Confirm:$false
         } 'A custom validation tree was accepted even though public apply would read another installation.'
         Assert-NoEffects $fixture $before
+        Assert-Throws {
+            Invoke-TypezeroThemeFontSelection -Selection (New-Selection) -EngineRoot $fixture.EngineRoot `
+                -ThemesRoot $fixture.ThemesRoot -ConfigPath (Join-Path $fixture.Root 'other-fonts.json') -Confirm:$false
+        } 'A custom configuration was accepted even though public apply reads another path.'
+        Assert-NoEffects $fixture $before
     }
 
-    Invoke-Regression 'Source parses and the WPF checkbox/confirmation preserve explicit opt-in' {
+    Invoke-Regression 'Source parses and the WPF preview loads saved typography before explicit application' {
         foreach ($file in @($source, (Join-Path $engineSource 'ThemeFontPreview-WindowsTerminal.ps1'),
             (Join-Path $engineSource 'ThemeEngine.ps1'))) {
             $parseTokens = $null
@@ -394,18 +464,21 @@ try {
         $match = [regex]::Match($ui, '(?s)\$xaml\s*=\s*@''\r?\n(?<xml>.*?)\r?\n''@')
         Assert-True $match.Success 'Preview XAML could not be located without executing the preview.'
         $xml = [xml]$match.Groups['xml'].Value
-        $checkBox = $xml.SelectSingleNode('//*[@Name="SaveFontPreferenceBox"]')
-        Assert-True ($null -ne $checkBox -and $checkBox.GetAttribute('IsChecked') -ceq 'False') 'Saving font preferences is selected by default.'
-        Assert-True ($ui -match '\[Windows\.MessageBoxButton\]::YesNo\s*,\s*\[Windows\.MessageBoxImage\]::Question\s*,\s*\[Windows\.MessageBoxResult\]::No' -and
-            $ui -match 'if\s*\(\$approval\s+-ne\s+\[Windows\.MessageBoxResult\]::Yes\)\s*\{\s*return\s*\}') 'Theme confirmation does not require explicit Yes with No as the default.'
-        Assert-True ($ui -match 'Saving does not activate the font' -and
+        Assert-True ($null -eq $xml.SelectSingleNode('//*[@Name="SaveFontPreferenceBox"]')) 'Preview still couples saving a mapping with applying a theme.'
+        foreach ($label in @('Preview','Apply Font','Save Preset')) {
+            Assert-True ($null -ne $xml.SelectSingleNode("//*[local-name()='Button' and @Content='$label']")) "Explicit action button missing: $label"
+        }
+        Assert-True ($ui -notmatch 'Live Terminal font activation remains disabled' -and
+            $ui -match 'Get-TypezeroWindowsFontMappings' -and
+            $ui -match '\$themeBox\.Add_SelectionChanged\(\{ & \$loadSavedFont \}' -and
+            $ui -match '\$points = \[double\]\$mapped.Size' -and
             $ui -match 'PreviewOnly\s*=\s*\$true' -and $ui -match 'SettingsChanged\s*=\s*\$false') 'Preview omits read-only/effect boundaries.'
         if ([Threading.Thread]::CurrentThread.ApartmentState -eq 'STA') {
             Add-Type -AssemblyName PresentationFramework
             $window = [Windows.Markup.XamlReader]::Parse($match.Groups['xml'].Value)
             try {
-                Assert-True (-not $window.FindName('SaveFontPreferenceBox').IsChecked) 'Loaded WPF checkbox is checked.'
-                Assert-True ($null -ne $window.FindName('UseButton')) 'Loaded WPF has no Use Selection button.'
+                Assert-True ($null -ne $window.Content) 'Loaded WPF has no preview content.'
+                Assert-True ($null -eq $window.FindName('SaveFontPreferenceBox')) 'Loaded WPF still combines saving and activation.'
             }
             finally { $window.Close() }
         } else {
@@ -413,19 +486,73 @@ try {
         }
     }
 
-    Invoke-Regression 'Existing live apply/restore and legacy V2 ownership safeguards remain present' {
+    Invoke-Regression 'Selection uses public apply without a second font writer or recovery operation' {
         $realEngine = [IO.File]::ReadAllText((Join-Path $engineSource 'ThemeEngine.ps1'))
         Assert-True ($realEngine -match '(?s)if\s*\(\$WallpaperArgs\.Count\s+-ne\s+2\s+-or\s+\$WallpaperArgs\[1\]\s+-cne\s+''--fixture''\)\s*\{\s*throw\s+''LIVE FONT APPLY DISABLED\.') 'Live font apply guard was removed or weakened.'
         Assert-True ($realEngine -match '(?s)if\s*\(\$WallpaperArgs\.Count\s+-ne\s+2\s+-or\s+\$WallpaperArgs\[0\]\s+-cne\s+''--fixture''\)\s*\{\s*throw\s+''LIVE FONT RESTORE DISABLED\.') 'Live font restore guard was removed or weakened.'
-        Assert-True ($realEngine -match '(?s)if\s*\(\$terminalText\.Contains\(''/\* TYPEZERO_FONT_V2 \*/''\)\)\s*\{\s*throw\s+''Legacy Terminal color writer disabled') 'Existing legacy color ownership guard was changed.'
         $tokens = $null
         $errors = $null
         $ast = [Management.Automation.Language.Parser]::ParseFile($source, [ref]$tokens, [ref]$errors)
         $commands = @($ast.FindAll({ param($node) $node -is [Management.Automation.Language.CommandAst] }, $true))
         foreach ($command in $commands) {
             $name = $command.GetCommandName()
-            Assert-True ($name -notmatch '(?i)(Restore|Recover|Activat|FontSwitch|Integration)') "Selection invokes an activation/recovery command: $name"
+            Assert-True ($name -notmatch '(?i)(Restore|Recover|Activat|FontSwitch|Integration|Candidate|SettingsChange)') "Selection invokes a second writer/recovery command: $name"
         }
+    }
+
+    Invoke-Regression 'WPF theme changes load each saved tuple, including fractional size, without displaying or writing' {
+        if ([Threading.Thread]::CurrentThread.ApartmentState -ne 'STA') {
+            throw 'Run this offline preview test with pwsh -STA.'
+        }
+        $fixture = New-SelectionFixture
+        Add-Type -AssemblyName PresentationFramework
+        $families = @([Windows.Media.Fonts]::SystemFontFamilies | ForEach-Object { [string]$_.Source } | Sort-Object -Unique | Select-Object -First 2)
+        Assert-True ($families.Count -eq 2) 'Two installed fonts are needed for the preview fixture.'
+        $mapping = [ordered]@{
+            Version = 2; Enabled = $false; ManualOverride = $null
+            Mappings = [ordered]@{
+                gruvbox = [ordered]@{ family = $families[0]; size = 14.25; weight = 'semi-bold' }
+                nord = [ordered]@{ family = $families[1]; size = 18; weight = 'normal' }
+            }
+        }
+        Write-FixtureText $fixture.ConfigPath ($mapping | ConvertTo-Json -Depth 10)
+        $previewSource = [IO.File]::ReadAllText((Join-Path $engineSource 'ThemeFontPreview-WindowsTerminal.ps1'))
+        # Replace only the modal display in a disposable copy. All real preview
+        # setup and theme selection handlers run; the window is never shown.
+        $observe = @'
+    $observed = [Collections.Generic.List[object]]::new()
+    foreach ($themeId in @('gruvbox','nord')) {
+        $themeBox.SelectedItem = & $getChoice $themeBox $themeId
+        $observed.Add([pscustomobject]@{
+            Theme = [string]$themeBox.SelectedItem.Tag
+            Family = [string]$fontBox.SelectedItem.Tag
+            Size = [string]$sizeBox.SelectedItem.Tag
+            Weight = [string]$weightBox.SelectedItem.Tag
+            CanUse = ($null -ne $fontBox.SelectedItem -and $null -ne $sizeBox.SelectedItem -and $null -ne $weightBox.SelectedItem)
+        })
+    }
+    $window.Tag = $observed.ToArray()
+    $window.Close()
+'@
+        Assert-True ($previewSource.Contains('    $null = $window.ShowDialog()')) 'Modal display hook not found.'
+        $previewSource = $previewSource.Replace('    $null = $window.ShowDialog()', $observe)
+        $previewPath = Join-Path $fixture.EngineRoot 'ThemeFontPreview-WindowsTerminal.ps1'
+        Write-FixtureText $previewPath $previewSource
+        foreach ($dependency in @('AppearanceSelection-WindowsTerminal.ps1','TerminalFontControl-WindowsTerminal.ps1','TerminalSettings-WindowsTerminal.ps1','FontProvider-WindowsTerminal.ps1','FontWeights-WindowsTerminal.ps1')) {
+            Copy-Item -LiteralPath (Join-Path $engineSource $dependency) -Destination (Join-Path $fixture.EngineRoot $dependency)
+        }
+        $before = Get-FixtureSnapshot $fixture
+        . $previewPath
+        $observed = @(Show-TypezeroThemeFontPreview -ThemesRoot $fixture.ThemesRoot)
+        Assert-True ($observed.Count -eq 2) 'Expected two preview theme observations.'
+        for ($i = 0; $i -lt 2; $i++) {
+            $id = @('gruvbox','nord')[$i]
+            $expected = $mapping.Mappings[$id]
+            Assert-True ($observed[$i].Theme -ceq $id -and $observed[$i].Family -ceq $expected.family -and
+                [double]$observed[$i].Size -eq $expected.size -and $observed[$i].Weight -ceq $expected.weight -and
+                $observed[$i].CanUse) 'The WPF preview did not load the selected theme font tuple.'
+        }
+        Assert-NoEffects $fixture $before
     }
 
     Invoke-Regression 'Every Terminal fixture remains byte-identical after all workflow tests' {

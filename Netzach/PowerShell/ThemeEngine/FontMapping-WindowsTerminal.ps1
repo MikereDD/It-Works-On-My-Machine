@@ -1,6 +1,8 @@
 # Typezero ThemeEngine - Windows Terminal Font Mapping
 # v0.1: local opt-in configuration; no Terminal settings writes.
 
+. (Join-Path $PSScriptRoot 'FontWeights-WindowsTerminal.ps1')
+
 function Get-TypezeroWindowsFontMappings {
     [CmdletBinding()]
     param(
@@ -79,7 +81,7 @@ function Get-TypezeroWindowsFontMappings {
                 throw "Invalid font size: $id"
             }
 
-            if ($weight -cnotin @('normal', 'semi-bold')) {
+            if ($weight -cnotin @((Get-TypezeroTerminalFontWeights).Keys)) {
                 throw "Unsupported font weight: $id"
             }
 
