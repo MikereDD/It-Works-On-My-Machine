@@ -101,6 +101,7 @@ $PSProfileDir = Split-Path $corePath -Parent
 $AdminPath    = Join-Path $ScriptsRoot "admintools"
 $PersonalPath = Join-Path $ScriptsRoot "personaltools"
 $GamesPath    = Join-Path $ScriptsRoot "games"
+$ThemeEnginePath = Join-Path $PSRoot "ThemeEngine\ThemeEngine.ps1"
 
 # ── Tool Definitions ──────────────────────────────────────────
 $AdminTools = @(
@@ -118,6 +119,8 @@ $AdminTools = @(
 )
 
 $PersonalTools = @(
+    [PSCustomObject]@{ Name="ThemeEngine (Menu)";         File=$ThemeEnginePath; Args=@("configure") }
+    [PSCustomObject]@{ Name="ThemeEngine (GUI)";          File=$ThemeEnginePath; Args=@("font", "theme-preview"); Gui=$true }
     [PSCustomObject]@{ Name="SpeedtestMenu";              File="speedtest-menu.ps1" }
     [PSCustomObject]@{ Name="WeatherFetch";               File="weatherfetch-menu.ps1" }
     [PSCustomObject]@{ Name="MediaForge (GUI)";           File="MediaForge\mediaforge-gui.ps1";            AltFiles=@("MediaForge\media-encoder-gui.ps1", "mediaforge-gui.ps1", "media-encoder-gui.ps1"); Gui=$true }
@@ -223,6 +226,7 @@ function Write-ToolGroup {
             $script:ToolMap["$($Index.Value)"] = [PSCustomObject]@{
                 Path = $info.Path
                 Gui  = (Test-ToolIsGui -Tool $tool -Path $info.Path)
+                Args = if ($tool.PSObject.Properties["Args"]) { @($tool.Args) } else { @() }
             }
         }
         $Index.Value++
@@ -247,7 +251,8 @@ function Start-ToolScript {
     param(
         [Parameter(Mandatory)]
         [string]$ScriptPath,
-        [switch]$IsGui
+        [switch]$IsGui,
+        [string[]]$Arguments = @()
     )
 
     if (-not (Test-Path -LiteralPath $ScriptPath)) {
@@ -276,6 +281,9 @@ function Start-ToolScript {
             }
 
             $argLine = "-NoProfile -ExecutionPolicy Bypass -STA -File `"$ScriptPath`""
+            foreach ($argument in $Arguments) {
+                $argLine += ' "' + $argument + '"'
+            }
             Start-Process -FilePath $hostExe -ArgumentList $argLine -WorkingDirectory $work
 
             Write-Host ("  {0}Launched:{1} {2}  {3}via {4} -STA; menu stays open{5}" -f `
@@ -297,7 +305,8 @@ function Start-ToolScript {
         $ps = "$ScriptsRoot"  -replace "'", "''"
         $sp = "$ScriptPath"   -replace "'", "''"
         $wd = "$(Split-Path $ScriptPath -Parent)" -replace "'", "''"
-        $bootstrap = "`$PSProfileDir = '$pp'; `$PSScriptsDir = '$ps'; Push-Location '$wd'; try { & '$sp' } finally { Pop-Location }"
+        $argTokens = ($Arguments | ForEach-Object { "'" + $_.Replace("'", "''") + "'" }) -join " "
+        $bootstrap = "`$PSProfileDir = '$pp'; `$PSScriptsDir = '$ps'; Push-Location '$wd'; try { & '$sp' $argTokens } finally { Pop-Location }"
 
         & $pwshCmd.Source -NoProfile -ExecutionPolicy Bypass -Command $bootstrap
     } catch {
@@ -321,7 +330,7 @@ while ($true) {
 
     if ($script:ToolMap.ContainsKey($choice)) {
         $entry = $script:ToolMap[$choice]
-        Start-ToolScript -ScriptPath $entry.Path -IsGui:$entry.Gui
+        Start-ToolScript -ScriptPath $entry.Path -IsGui:$entry.Gui -Arguments $entry.Args
         continue
     }
 
