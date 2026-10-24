@@ -8,7 +8,7 @@
 [CmdletBinding(PositionalBinding = $false)]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("bootstrap","list","current","status","preview","apply","apply-shell","apply-font","apply-desktop","apply-shell-font","apply-desktop-shell","apply-all","reload","rollback","wallpaper","font","configure","rehearse","doctor","doctor-view","help")]
+    [ValidateSet("bootstrap","list","current","status","preview","apply","apply-shell","apply-font","apply-desktop","apply-shell-font","apply-desktop-shell","apply-all","reload","rollback","wallpaper","font","configure","doctor","doctor-view","help")]
     [string]$Command = "help",
 
     [Parameter(Position = 1)]
@@ -22,10 +22,6 @@ param(
     # Optional snapshot from font preview, used to reject intervening edits.
     [string]$ExpectedSettingsSha256,
 
-    # Explicit fixture-only rehearsal. These arguments are invalid for live commands.
-    [string]$FixtureRoot,
-    [string]$FixtureExpectedSha256,
-    [switch]$PreviewMappedFont,
 
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]]$WallpaperArgs
@@ -45,12 +41,6 @@ if ($ExpectedSettingsSha256 -and $ExpectedSettingsSha256 -cnotmatch '\A[A-Fa-f0-
     throw 'ExpectedSettingsSha256 must be a SHA-256 snapshot.'
 }
 
-if ($Command -cne 'rehearse' -and (
-    $PSBoundParameters.ContainsKey('FixtureRoot') -or
-    $PSBoundParameters.ContainsKey('FixtureExpectedSha256') -or
-    $PSBoundParameters.ContainsKey('PreviewMappedFont'))) {
-    throw 'Fixture arguments are allowed only with -Command rehearse.'
-}
 
 $EngineRoot   = Join-Path $env:LOCALAPPDATA "Typezero\ThemeEngine"
 $ThemesRoot   = Join-Path $EngineRoot "themes"
@@ -374,70 +364,9 @@ function Set-Theme {
         [System.Collections.IDictionary]$TerminalFont,
         [ValidateSet('Shell','Font','Desktop','ShellFont','DesktopShell','All')][string]$Operation = 'All',
         [string]$ExpectedSettingsSha256,
-        [switch]$NoHistory,
-        [string]$FixtureRoot,
-        [string]$FixtureExpectedSha256,
-        [switch]$PreviewMappedFont,
-        [psobject]$FixtureFontConfig
+        [switch]$NoHistory
     )
 
-    # Fixture dispatcher MUST return before Vim, native Windows appearance,
-    # Windows Terminal, generated current.ps1, history, or wallpaper hooks.
-    # Default live Set-Theme behavior below this gate remains unchanged.
-    if ($PSBoundParameters.ContainsKey('FixtureRoot') -or
-        $PSBoundParameters.ContainsKey('FixtureExpectedSha256') -or
-        $PSBoundParameters.ContainsKey('PreviewMappedFont') -or
-        $PSBoundParameters.ContainsKey('FixtureFontConfig')) {
-        if (-not $FixtureRoot -or
-            $FixtureExpectedSha256 -cnotmatch '\A[A-Fa-f0-9]{64}\z' -or
-            $NoHistory -or
-            $Id -cnotmatch '\A[a-z0-9][a-z0-9-]*\z') {
-            throw 'Invalid guarded theme rehearsal arguments.'
-        }
-
-        # Validate the destination before loading anything that could write.
-        $fontWriter = Join-Path $PSScriptRoot 'FontWriter-WindowsTerminal.ps1'
-        if (-not (Test-Path -LiteralPath $fontWriter -PathType Leaf)) {
-            throw 'Rehearsal recovery writer missing.'
-        }
-        . $fontWriter
-        $safeRoot = Assert-TypezeroFontRecoveryRoot -TestRoot $FixtureRoot
-
-        foreach ($module in @(
-            'TerminalColorCompat-WindowsTerminal.ps1',
-            'TerminalUnified-WindowsTerminal.ps1',
-            'TerminalThemeBridge-WindowsTerminal.ps1',
-            'TerminalThemeFixture-WindowsTerminal.ps1'
-        )) {
-            $path = Join-Path $PSScriptRoot $module
-            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
-                throw "Rehearsal module missing: $module"
-            }
-            . $path
-        }
-
-        if ($null -eq $FixtureFontConfig) {
-            $mappingPath = Join-Path $PSScriptRoot 'FontMapping-WindowsTerminal.ps1'
-            if (-not (Test-Path -LiteralPath $mappingPath -PathType Leaf)) {
-                throw 'Rehearsal font mapping reader missing.'
-            }
-            . $mappingPath
-            $config = Get-TypezeroWindowsFontMappings
-        }
-        else {
-            # Injectable only from an in-process fixture test of Set-Theme;
-            # the public CLI never accepts a synthetic mapping object.
-            $config = $FixtureFontConfig
-        }
-
-        $fixtureTheme = Read-ThemeFile $Id
-        return Invoke-TypezeroFixtureThemeSwitch `
-            -TestRoot $safeRoot `
-            -ExpectedSha256 $FixtureExpectedSha256 `
-            -Theme $fixtureTheme `
-            -FontConfig $config `
-            -PreviewMappedFont:$PreviewMappedFont
-    }
 
     if ($null -ne $TerminalFont -and $Operation -cnotin @('Font','ShellFont','All')) {
         throw 'This operation preserves the Terminal font; a font override is not allowed.'
@@ -776,16 +705,6 @@ switch ($Command) {
         }
     }
 
-    'rehearse' {
-        if (-not $Theme -or -not $FixtureRoot -or
-            -not $FixtureExpectedSha256 -or
-            $null -ne $WallpaperArgs -and $WallpaperArgs.Count -gt 0) {
-            throw 'Usage: ThemeEngine.ps1 rehearse <theme-id> -FixtureRoot <private-temp-root> -FixtureExpectedSha256 <64-hex>'
-        }
-        Set-Theme -Id $Theme -FixtureRoot $FixtureRoot `
-            -FixtureExpectedSha256 $FixtureExpectedSha256 `
-            -PreviewMappedFont:$PreviewMappedFont
-    }
 
     { $_ -in @('apply','apply-shell','apply-font','apply-desktop','apply-shell-font','apply-desktop-shell','apply-all') } {
         if (-not $Theme -or $WallpaperArgs) { throw "Usage: ThemeEngine.ps1 $Command <theme> [-TerminalFont <tuple>]" }
@@ -1150,165 +1069,8 @@ switch ($Command) {
                     }
                 }
             }
-            'apply' {
-                if ($WallpaperArgs.Count -ne 2 -or
-                    $WallpaperArgs[1] -cne '--fixture') {
-                    throw 'LIVE FONT APPLY DISABLED. Usage: themeengine font apply <theme-id> --fixture'
-                }
-
-                $id = [string]$WallpaperArgs[0]
-
-                if ($id -cnotmatch '^[a-z0-9][a-z0-9-]*$') {
-                    throw 'Invalid theme ID.'
-                }
-
-                $writer = Join-Path $PSScriptRoot 'FontWriter-WindowsTerminal.ps1'
-                . $writer
-
-                $config = Get-TypezeroWindowsFontMappings
-
-                if (-not $config.Mappings.ContainsKey($id)) {
-                    throw "No font mapping for theme: $id"
-                }
-
-                $entry = $config.Mappings[$id]
-                $current = Get-TypezeroTerminalFontStatus
-
-                if ($config.Version -eq 1) {
-                    $family = [string]$entry
-                    $size = [double]$current.Size
-                    $weight = [string]$current.Weight
-                }
-                elseif ($config.Version -eq 2) {
-                    $family = [string]$entry.Family
-                    $size = [double]$entry.Size
-                    $weight = [string]$entry.Weight
-                }
-                else {
-                    throw 'Unsupported mapping version.'
-                }
-
-                $fixtureText = @(
-                    '{'
-                    '  // Typezero fixture only'
-                    '  "profiles": {'
-                    '    "defaults": {"font": {"face": "Fixture Default", "size": 12, "weight": "normal"}},'
-                    '    "list": ['
-                    '      {'
-                    '        "guid": "{574e775e-4f2a-5b96-ac1e-a2962a402336}",'
-                    '        "name": "PowerShell 7",'
-                    '        "colorScheme": "Typezero Fixture"'
-                    '      }'
-                    '    ]'
-                    '  }'
-                    '}'
-                ) -join "`r`n"
-
-                $fixtureText += "`r`n"
-
-                $utf8 = [Text.UTF8Encoding]::new($false, $true)
-                $bytes = $utf8.GetBytes($fixtureText)
-
-                $root = New-TypezeroFontRecoveryFixture -Bytes $bytes
-                $beforeHash = Get-TypezeroFontRecoveryHash $bytes
-
-                $transaction = Invoke-TypezeroFontDurableFixtureChange `
-                    -TestRoot $root `
-                    -ExpectedSha256 $beforeHash `
-                    -Mode Apply `
-                    -Family $family `
-                    -Size $size `
-                    -Weight $weight
-
-                $target = Join-Path $root 'settings.json'
-                $afterBytes = Get-TypezeroFontRecoveryBytes $target
-                $afterHash = Get-TypezeroFontRecoveryHash $afterBytes
-
-                if (-not $transaction.Verified -or
-                    -not $transaction.FixtureOnly -or
-                    $afterHash -cne $transaction.AfterHash) {
-                    throw 'Fixture apply verification failed.'
-                }
-
-                [pscustomobject]@{
-                    Action        = 'FIXTURE APPLY'
-                    Theme         = $id
-                    Family        = $family
-                    Size          = $size
-                    Weight        = $weight
-                    FixtureRoot   = $root
-                    TransactionId = $transaction.TransactionId
-                    BeforeHash    = $beforeHash
-                    AfterHash     = $afterHash
-                    Verified      = $true
-                    FixtureOnly   = $true
-                }
-            }
-            'restore' {
-                if ($WallpaperArgs.Count -ne 2 -or
-                    $WallpaperArgs[0] -cne '--fixture') {
-                    throw 'LIVE FONT RESTORE DISABLED. Usage: themeengine font restore --fixture <test-root>'
-                }
-
-                $writer = Join-Path $PSScriptRoot 'FontWriter-WindowsTerminal.ps1'
-                . $writer
-
-                $root = Assert-TypezeroFontRecoveryRoot `
-                    -TestRoot ([string]$WallpaperArgs[1])
-
-                $target = Join-Path $root 'settings.json'
-                $beforeBytes = Get-TypezeroFontRecoveryBytes $target
-                $beforeHash = Get-TypezeroFontRecoveryHash $beforeBytes
-
-                $utf8 = [Text.UTF8Encoding]::new($false, $true)
-
-                $bom = (
-                    $beforeBytes.Length -ge 3 -and
-                    $beforeBytes[0] -eq 239 -and
-                    $beforeBytes[1] -eq 187 -and
-                    $beforeBytes[2] -eq 191
-                )
-
-                $offset = if ($bom) { 3 } else { 0 }
-
-                $text = $utf8.GetString(
-                    $beforeBytes, $offset,
-                    $beforeBytes.Length - $offset
-                )
-
-                $snapshot = Get-TypezeroFontProfileTextSnapshot -Text $text
-
-                if (-not $snapshot.HasFont -or
-                    -not $text.Contains('/* TYPEZERO_FONT_V2 */')) {
-                    throw 'Managed fixture font override missing.'
-                }
-
-                $transaction = Invoke-TypezeroFontDurableFixtureChange `
-                    -TestRoot $root `
-                    -ExpectedSha256 $beforeHash `
-                    -Mode Restore
-
-                $afterBytes = Get-TypezeroFontRecoveryBytes $target
-                $afterHash = Get-TypezeroFontRecoveryHash $afterBytes
-
-                if (-not $transaction.Verified -or
-                    -not $transaction.FixtureOnly -or
-                    $afterHash -cne $transaction.AfterHash) {
-                    throw 'Fixture restore verification failed.'
-                }
-
-                [pscustomobject]@{
-                    Action        = 'FIXTURE RESTORE'
-                    FixtureRoot   = $root
-                    TransactionId = $transaction.TransactionId
-                    BeforeHash    = $beforeHash
-                    AfterHash     = $afterHash
-                    Verified      = $true
-                    FixtureOnly   = $true
-                }
-            }
             default {
-                'Usage: themeengine font <list|current|test|plan|preview|status|mappings|map|check-apply|check-restore|apply|restore> (apply/restore require fixtures)'
+                'Usage: themeengine font <list|current|test|plan|preview|status|mappings|map|check-apply|check-restore>'
             }
         }
     }

@@ -488,8 +488,8 @@ try {
 
     Invoke-Regression 'Selection uses public apply without a second font writer or recovery operation' {
         $realEngine = [IO.File]::ReadAllText((Join-Path $engineSource 'ThemeEngine.ps1'))
-        Assert-True ($realEngine -match '(?s)if\s*\(\$WallpaperArgs\.Count\s+-ne\s+2\s+-or\s+\$WallpaperArgs\[1\]\s+-cne\s+''--fixture''\)\s*\{\s*throw\s+''LIVE FONT APPLY DISABLED\.') 'Live font apply guard was removed or weakened.'
-        Assert-True ($realEngine -match '(?s)if\s*\(\$WallpaperArgs\.Count\s+-ne\s+2\s+-or\s+\$WallpaperArgs\[0\]\s+-cne\s+''--fixture''\)\s*\{\s*throw\s+''LIVE FONT RESTORE DISABLED\.') 'Live font restore guard was removed or weakened.'
+        Assert-True ($realEngine -notmatch 'LIVE FONT APPLY DISABLED|LIVE FONT RESTORE DISABLED') 'Obsolete fixture-only font commands remain.'
+        Assert-True ($realEngine -notmatch 'Invoke-TypezeroFontDurableFixtureChange|Invoke-TypezeroFixtureThemeSwitch') 'Legacy recovery dispatcher remains.'
         $tokens = $null
         $errors = $null
         $ast = [Management.Automation.Language.Parser]::ParseFile($source, [ref]$tokens, [ref]$errors)
