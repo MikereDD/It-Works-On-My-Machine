@@ -1,4 +1,4 @@
-#Requires -Version 7.0
+﻿#Requires -Version 7.0
 <#
 .SYNOPSIS
     Display a compact Windows system-information panel beside the infocat ASCII art.
@@ -87,6 +87,8 @@
 [CmdletBinding()]
 param(
     [switch]$NoColor,
+    [ValidateSet('Cat', 'Windows', 'RpiArch')]
+    [string]$Logo = 'Cat',
     [switch]$Compact,
     [switch]$Timing,
     [Alias('Theme')][string]$Palette = 'Auto',
@@ -2061,6 +2063,155 @@ $catArt = @'
                       :Nl
 '@ -split "`r?`n"
 
+
+
+# Windows V5 artwork; original cat data remains untouched.
+$selectedArt = $catArt
+$windowsLogoColors = @()
+
+if ($Logo -eq 'Windows') {
+    $canvasWidth = 43
+    $canvasHeight = 25
+    $paneWidth = 17
+    $paneHeight = 7
+    $gapX = 1
+    $gapY = 1
+
+    $logoWidth = 2 * $paneWidth + $gapX
+    $logoHeight = 2 * $paneHeight + $gapY
+
+    $startX = [int][Math]::Floor(($canvasWidth - $logoWidth) / 2)
+    $startY = [int][Math]::Floor(($canvasHeight - $logoHeight) / 2)
+
+    $windowsRows = [System.Collections.Generic.List[string]]::new()
+    $windowsColors = [System.Collections.Generic.List[string]]::new()
+
+    for ($y = 0; $y -lt $canvasHeight; $y++) {
+        $chars = [char[]](' ' * $canvasWidth)
+
+        $isTop = $y -ge $startY -and $y -lt ($startY + $paneHeight)
+        $isBottom = $y -ge ($startY + $paneHeight + $gapY) -and
+                    $y -lt ($startY + $logoHeight)
+
+        if ($isTop -or $isBottom) {
+            for ($x = 0; $x -lt $canvasWidth; $x++) {
+                $isLeft = $x -ge $startX -and
+                          $x -lt ($startX + $paneWidth)
+
+                $isRight = $x -ge ($startX + $paneWidth + $gapX) -and
+                           $x -lt ($startX + $logoWidth)
+
+                if ($isLeft -or $isRight) {
+                    $localX = if ($isLeft) {
+                        $x - $startX
+                    } else {
+                        $x - ($startX + $paneWidth + $gapX)
+                    }
+
+                    $localY = if ($isTop) {
+                        $y - $startY
+                    } else {
+                        $y - ($startY + $paneHeight + $gapY)
+                    }
+
+                    $chars[$x] = if ((($localX + $localY) % 6) -eq 0) {
+                        '#'
+                    } else {
+                        '+'
+                    }
+                }
+            }
+        }
+
+        $windowsRows.Add((-join $chars))
+
+        $color = ''
+        if (-not $NoColor -and $Host.UI.SupportsVirtualTerminal) {
+            if ($isTop) {
+                $color = "$([char]27)[38;2;0;120;215m"
+            }
+            elseif ($isBottom) {
+                $color = "$([char]27)[38;2;50;170;255m"
+            }
+        }
+
+        $windowsColors.Add($color)
+    }
+
+    $selectedArt = $windowsRows.ToArray()
+    $windowsLogoColors = $windowsColors.ToArray()
+}
+# InfoCat RpiArch integration — approved ARAKIEL artwork.
+$rpiArtPath = Join-Path $PSScriptRoot 'InfoCat\art\rpi-arch.json'
+$rpiColors = @()
+
+if ($Logo -eq 'RpiArch') {
+    if (-not (Test-Path -LiteralPath $rpiArtPath)) {
+        throw "Missing approved artwork: $rpiArtPath"
+    }
+
+    $rpiData = Get-Content -LiteralPath $rpiArtPath -Raw |
+        ConvertFrom-Json
+
+    if ($rpiData.width -ne 43 -or $rpiData.height -ne 25 -or
+        $rpiData.rows.Count -ne 25 -or
+        $rpiData.colors.Count -ne 25) {
+        throw 'RpiArch artwork dimensions invalid.'
+    }
+
+    foreach ($index in 0..24) {
+        if ($rpiData.rows[$index].Length -ne 43 -or
+            $rpiData.colors[$index].Count -ne 43) {
+            throw "Invalid RpiArch row $index"
+        }
+    }
+
+    $selectedArt = @($rpiData.rows)
+    $rpiColors = @($rpiData.colors)
+}
+
+function Format-InfoCatRpiRow {
+    param(
+        [int]$Index,
+        [int]$Width = 50
+    )
+
+    $plain = ([string]$selectedArt[$Index]).PadRight($Width)
+
+    if ($NoColor -or -not $Host.UI.SupportsVirtualTerminal) {
+        return $plain
+    }
+
+    $result = [System.Text.StringBuilder]::new()
+    $active = ''
+    $escapeReset = "$([char]27)[0m"
+
+    for ($x = 0; $x -lt $plain.Length; $x++) {
+        $next = if ($x -lt 43) {
+            [string]$rpiColors[$Index][$x]
+        } else {
+            ''
+        }
+
+        if ($next -ne $active) {
+            if ($active) {
+                [void]$result.Append($escapeReset)
+            }
+            if ($next) {
+                [void]$result.Append($next)
+            }
+            $active = $next
+        }
+
+        [void]$result.Append($plain[$x])
+    }
+
+    if ($active) {
+        [void]$result.Append($escapeReset)
+    }
+
+    return $result.ToString()
+}
 if ($Compact) {
     $details = @(
         [pscustomobject]@{ Label = '';        Value = 'the cat';                Kind = 'Title' }
@@ -2201,7 +2352,15 @@ function Write-InfoCatDetail {
     if ($null -eq $Detail) { Write-Host ''; return }
     switch ($Detail.Kind) {
         { $_ -in 'Title', 'Footer' } {
-            Write-Host "${White}the ${Blue}cat${Reset}"
+            if ($Logo -eq 'Cat') {
+                Write-Host "${White}the ${Blue}cat${Reset}"
+            }
+            elseif ($Logo -eq 'Windows') {
+                Write-Host "${Blue}NETZACH${Reset}"
+            }
+            else {
+                Write-Host "${Blue}Raspberry + Arch${Reset}"
+            }
         }
         'Blank' { Write-Host '' }
         'User' { Write-Host "${Cyan}$($Detail.Value)$Reset" }
@@ -2222,12 +2381,12 @@ $rows = @(Expand-InfoCatRows -Rows $details -ValueWidth $layout.ValueWidth)
 
 # In side-by-side Compact view, keep the footer below the *whole* original cat
 # rather than halfway down its tail. Full and stacked layouts are unchanged.
-if ($Compact -and -not $layout.Stacked -and $rows.Count -le $catArt.Count -and
+if ($Compact -and -not $layout.Stacked -and $rows.Count -le $selectedArt.Count -and
     $rows.Count -gt 0 -and $rows[-1].Kind -eq 'Footer') {
     $footer = $rows[-1]
     $padded = [System.Collections.Generic.List[object]]::new()
     for ($i = 0; $i -lt ($rows.Count - 1); $i++) { $padded.Add($rows[$i]) }
-    while ($padded.Count -le $catArt.Count) {
+    while ($padded.Count -le $selectedArt.Count) {
         $padded.Add([pscustomobject]@{ Label = ''; Value = ''; Kind = 'Blank' })
     }
     $padded.Add($footer)
@@ -2241,23 +2400,51 @@ if ($layout.Stacked) {
     # On narrow widths, show the intact art above the data when it fits.
     # Below 45 columns, replace only the rendering with a short wordmark;
     # the original cat artwork data remains untouched.
-    if ($layout.ShowArt) {
-        for ($i = 0; $i -lt $catArt.Count; $i++) {
+    if ($layout.ShowArt -and ($Logo -ne 'RpiArch' -or $terminalWidth -ge 52)) {
+        for ($i = 0; $i -lt $selectedArt.Count; $i++) {
             $artColor = if ($i -ge 15) { $Gray } else { $White }
-            Write-Host "${artColor}  $($catArt[$i])$Reset"
+            $logoColor = if ($Logo -eq 'Windows') { $windowsLogoColors[$i] } else { $artColor }
+            if ($Logo -eq 'RpiArch') {
+                $painted = Format-InfoCatRpiRow -Index $i -Width 50
+                Write-Host "  $painted$Reset"
+            }
+            else {
+                Write-Host "${logoColor}  $($selectedArt[$i])$Reset"
+            }
         }
     }
-    else { Write-Host "${White}the ${Blue}cat$Reset" }
+    else {
+        if ($Logo -eq 'Cat') {
+            Write-Host "${White}the ${Blue}cat$Reset"
+        }
+        elseif ($Logo -eq 'Windows') {
+            Write-Host "${Blue}NETZACH$Reset"
+        }
+        else {
+            Write-Host "${Blue}Raspberry + Arch$Reset"
+        }
+    }
     Write-Host ''
     foreach ($detail in $rows) { Write-InfoCatDetail -Detail $detail }
 }
 else {
-    $lineCount = [Math]::Max($catArt.Count, $rows.Count)
+    $lineCount = [Math]::Max($selectedArt.Count, $rows.Count)
     for ($i = 0; $i -lt $lineCount; $i++) {
-        $art = if ($i -lt $catArt.Count) { $catArt[$i] } else { '' }
+        $art = if ($i -lt $selectedArt.Count) { $selectedArt[$i] } else { '' }
         $detail = if ($i -lt $rows.Count) { $rows[$i] } else { $null }
         $artColor = if ($i -ge 15) { $Gray } else { $White }
-        Write-Host -NoNewline "$artColor  $($art.PadRight(50))$Reset"
+        $logoColor = if ($Logo -eq 'Windows' -and $i -lt $windowsLogoColors.Count) {
+            $windowsLogoColors[$i]
+        } else {
+            $artColor
+        }
+        if ($Logo -eq 'RpiArch' -and $i -lt $selectedArt.Count) {
+            $painted = Format-InfoCatRpiRow -Index $i -Width 50
+            Write-Host -NoNewline "  $painted$Reset"
+        }
+        else {
+            Write-Host -NoNewline "${logoColor}  $($art.PadRight(50))$Reset"
+        }
         Write-InfoCatDetail -Detail $detail
     }
 }
