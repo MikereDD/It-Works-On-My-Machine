@@ -23,7 +23,7 @@ function global:themeengine {
 
     & $global:ThemeEngineScript @args
 
-    if ($args.Count -gt 0 -and $args[0] -in @("apply","reload","rollback")) {
+    if ($args.Count -gt 0 -and $args[0] -in @("apply","apply-all","reload","rollback")) {
         Import-TypezeroTheme
 
         if (Get-Command Update-TypezeroUiTheme -ErrorAction SilentlyContinue) {

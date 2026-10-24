@@ -8,7 +8,7 @@
 [CmdletBinding(PositionalBinding = $false)]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("bootstrap","list","current","preview","apply","reload","rollback","wallpaper","doctor","help")]
+    [ValidateSet("bootstrap","list","current","status","preview","apply","apply-shell","apply-font","apply-desktop","apply-shell-font","apply-desktop-shell","apply-all","reload","rollback","wallpaper","font","configure","doctor","doctor-view","help")]
     [string]$Command = "help",
 
     [Parameter(Position = 1)]
@@ -16,11 +16,31 @@ param(
 
     [string]$RepoRoot,
 
+    # An explicit, unsaved Terminal font for this apply only.
+    [System.Collections.IDictionary]$TerminalFont,
+
+    # Optional snapshot from font preview, used to reject intervening edits.
+    [string]$ExpectedSettingsSha256,
+
+
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]]$WallpaperArgs
 )
 
 $ErrorActionPreference = "Stop"
+
+if ($PSBoundParameters.ContainsKey('TerminalFont') -and $Command -cnotin @('apply','apply-font','apply-shell-font','apply-all')) {
+    throw 'TerminalFont is allowed only with apply, apply-font, apply-shell-font, or apply-all.'
+}
+if ($PSBoundParameters.ContainsKey('ExpectedSettingsSha256') -and
+    $Command -cnotin @('apply','apply-shell','apply-font','apply-shell-font','apply-desktop-shell','apply-all') -and
+    ($Command -cne 'font' -or $Theme -cnotin @('apply-font','apply-theme','apply-preset'))) {
+    throw 'ExpectedSettingsSha256 is allowed only with an operation that requests Terminal settings.'
+}
+if ($ExpectedSettingsSha256 -and $ExpectedSettingsSha256 -cnotmatch '\A[A-Fa-f0-9]{64}\z') {
+    throw 'ExpectedSettingsSha256 must be a SHA-256 snapshot.'
+}
+
 
 $EngineRoot   = Join-Path $env:LOCALAPPDATA "Typezero\ThemeEngine"
 $ThemesRoot   = Join-Path $EngineRoot "themes"
@@ -29,7 +49,10 @@ $CurrentFile  = Join-Path $EngineRoot "current-theme"
 $PreviousFile = Join-Path $EngineRoot "previous-theme"
 $CurrentPs1   = Join-Path $EngineRoot "current.ps1"
 
-New-Item -ItemType Directory -Force -Path $EngineRoot | Out-Null
+# Read-only commands, including font Preview, must not create configuration.
+if ($Command -in @('bootstrap','apply','reload','rollback')) {
+    New-Item -ItemType Directory -Force -Path $EngineRoot | Out-Null
+}
 
 function Read-ThemeFile {
     param([Parameter(Mandatory)][string]$Id)
@@ -159,7 +182,7 @@ function Write-CurrentTheme {
 function Get-WindowsTerminalSettingsPath {
     # Windows Terminal's packaged settings location. ThemeEngine deliberately
     # manages only the named Typezero scheme and the PowerShell profile's
-    # colorScheme property; unrelated Terminal settings remain untouched.
+    # colorScheme and saved font; unrelated Terminal settings remain untouched.
     $packagePath = Join-Path $env:LOCALAPPDATA `
         "Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json"
 
@@ -171,11 +194,16 @@ function Get-WindowsTerminalSettingsPath {
 }
 
 function Set-WindowsTerminalTheme {
-    param([Parameter(Mandatory)][System.Collections.IDictionary]$T)
+    param([Parameter(Mandatory)][System.Collections.IDictionary]$T,
+        [System.Collections.IDictionary]$TerminalFont,
+        [ValidateSet('Shell','Font','ShellFont','All')][string]$Operation = 'All',
+        [string]$ExpectedSettingsSha256,
+        [switch]$PassThru)
 
     $settingsPath = Get-WindowsTerminalSettingsPath
     if (-not $settingsPath) {
-        return
+        if ($PassThru) { throw 'Windows Terminal settings were not found; no Terminal changes applied.' }
+        return $false
     }
 
     # A complete ANSI palette is required before ThemeEngine touches Terminal.
@@ -201,21 +229,16 @@ function Set-WindowsTerminalTheme {
     )
 
     foreach ($key in $ansiKeys) {
-        if (-not $T.Contains($key) -or -not $T[$key]) {
+        if ($Operation -cne 'Font' -and (-not $T.Contains($key) -or $T[$key] -cnotmatch '\A#[A-Fa-f0-9]{6}\z')) {
+            if ($PassThru) { throw "Theme has no complete Terminal palette ($key)." }
             Write-Host "Windows Terminal: skipped (theme has no complete ANSI palette)"
-            return
+            return $false
         }
     }
-
-    $settings = Get-Content -LiteralPath $settingsPath -Raw |
-        ConvertFrom-Json
-
-    # Preserve the user's original file before ThemeEngine's first write.
-    # This is intentionally a stable backup rather than a rotating snapshot:
-    # it represents the pre-ThemeEngine Windows Terminal configuration.
-    $backupPath = "$settingsPath.typezero-backup"
-    if (-not (Test-Path -LiteralPath $backupPath)) {
-        Copy-Item -LiteralPath $settingsPath -Destination $backupPath
+    if ($Operation -cne 'Font') {
+        foreach ($key in @('BG','TEXT','CURSOR','SELECTION')) {
+            if ($T[$key] -cnotmatch '\A#[A-Fa-f0-9]{6}\z') { throw "Invalid Terminal palette role: $key" }
+        }
     }
 
     $schemeName = "Typezero $($T['THEME_NAME'])"
@@ -244,20 +267,6 @@ function Set-WindowsTerminalTheme {
         brightWhite         = $T["ANSI_BRIGHT_WHITE"]
     }
 
-    # Replace only ThemeEngine's scheme for this theme. Other custom schemes
-    # remain untouched.
-    $otherSchemes = @(
-        $settings.schemes |
-            Where-Object { $_.name -ne $schemeName }
-    )
-
-    $settings.schemes = @($otherSchemes) + @([pscustomobject]$scheme)
-
-    # Keep Windows Terminal's application chrome visually aligned with the
-    # active Typezero palette. The active tab follows the terminal pane while
-    # the surrounding tab row uses the theme background. This deliberately
-    # leaves profile-specific wallpaper, opacity, typography, and other user
-    # preferences untouched.
     $terminalThemeName = "Typezero ThemeEngine"
 
     $terminalTheme = [ordered]@{
@@ -276,93 +285,262 @@ function Set-WindowsTerminalTheme {
         }
     }
 
-    $existingThemes = @(
-        $settings.themes |
-            Where-Object { $_.name -ne $terminalThemeName }
-    )
-
-    $settings.themes = @($existingThemes) + @([pscustomobject]$terminalTheme)
-    if ($settings.PSObject.Properties["theme"]) {
-        $settings.theme = $terminalThemeName
-    } else {
-        $settings | Add-Member -NotePropertyName theme -NotePropertyValue $terminalThemeName
+    . (Join-Path $PSScriptRoot 'FontMapping-WindowsTerminal.ps1')
+    . (Join-Path $PSScriptRoot 'TerminalSettings-WindowsTerminal.ps1')
+    $font = $null
+    $id = [string]$T['THEME_ID']
+    if ($Operation -ceq 'Shell') {
+        # Do not even read saved font mappings for a colors-only request.
     }
-
-    # Target PowerShell 7 by its stable Windows Terminal profile GUID rather
-    # than relying solely on a display name that the user may rename.
-    $powerShellGuid = "{574e775e-4f2a-5b96-ac1e-a2962a402336}"
-    $profile = $settings.profiles.list |
-        Where-Object { $_.guid -eq $powerShellGuid } |
-        Select-Object -First 1
-
-    if (-not $profile) {
-        throw "Windows Terminal PowerShell profile not found: $powerShellGuid"
+    elseif ($null -ne $TerminalFont) {
+        $font = $TerminalFont
     }
-
-    if ($profile.PSObject.Properties["colorScheme"]) {
-        $profile.colorScheme = $schemeName
-    } else {
-        $profile | Add-Member -NotePropertyName colorScheme -NotePropertyValue $schemeName
+    else {
+        $config = Get-TypezeroWindowsFontMappings
+        if ($config.Mappings.ContainsKey($id)) {
+            $saved = $config.Mappings[$id]
+            # Explicit theme apply uses that theme's saved preference. The legacy
+            # Enabled flag gates old fixture planners, not this requested operation.
+            $font = if ($config.Version -eq 2) {
+                [ordered]@{ face=[string]$saved.Family; size=[double]$saved.Size; weight=[string]$saved.Weight }
+            } else {
+                # Old mappings contain only a family; retain the user's size/weight.
+                [ordered]@{ face=[string]$saved }
+            }
+        }
     }
-
-    # ConvertFrom/To-Json necessarily reformats settings.json, but preserves
-    # its data. ThemeEngine changes only the scheme collection described above
-    # and the PowerShell profile's colorScheme association.
-    $json = $settings | ConvertTo-Json -Depth 100
-    Set-Content -LiteralPath $settingsPath -Value $json -Encoding utf8
-
-    Write-Host "Windows Terminal: $schemeName"
+    # Status comparison and replacement share one snapshot, including direct
+    # commands with no preview hash. An intervening edit is rejected by writer.
+    $beforeBytes = [IO.File]::ReadAllBytes($settingsPath)
+    $beforeHash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($beforeBytes))
+    if ($ExpectedSettingsSha256 -and $beforeHash -ine $ExpectedSettingsSha256) {
+        throw 'Terminal settings changed since the expected snapshot.'
+    }
+    $offset = if ($beforeBytes.Length -ge 3 -and $beforeBytes[0] -eq 239 -and $beforeBytes[1] -eq 187 -and $beforeBytes[2] -eq 191) {3} else {0}
+    $beforeText = [Text.UTF8Encoding]::new($false,$true).GetString($beforeBytes,$offset,$beforeBytes.Length-$offset)
+    $fontChanged = $null -ne $font -and (New-TypezeroTerminalFontText -Text $beforeText -Font $font) -cne $beforeText
+    $shellChanged = $false
+    if ($Operation -cne 'Font') {
+        $chrome = if ($Operation -ceq 'All') { $terminalTheme } else { $null }
+        $shellChanged = (New-TypezeroTerminalThemeText -Text $beforeText -Scheme $scheme -TerminalTheme $chrome -Font $null) -cne $beforeText
+    }
+    if ($Operation -ceq 'Font') {
+        $update = if ($null -ne $font) {
+            Set-TypezeroWindowsTerminalFont -Path $settingsPath -Font $font -ExpectedSha256 $beforeHash
+        } else {
+            # An unmapped font is an explicit no-op, but invalid/ambiguous
+            # settings are still a failure of the requested Terminal target.
+            $null = Get-TypezeroJsoncTree $beforeText
+            $settings = ConvertFrom-Json -InputObject $beforeText -AsHashtable
+            $profiles = @($settings.profiles.list | Where-Object { $_.guid -ieq '{574e775e-4f2a-5b96-ac1e-a2962a402336}' })
+            if ($profiles.Count -ne 1 -or ($profiles[0].Contains('font') -and $profiles[0].font -isnot [System.Collections.IDictionary])) {
+                throw 'Expected exactly one valid PowerShell 7 Terminal profile.'
+            }
+            if ((Get-FileHash -LiteralPath $settingsPath -Algorithm SHA256).Hash -ine $beforeHash) { throw 'Terminal settings changed during no-op assessment.' }
+            [pscustomobject]@{Changed=$false;BackupPath=$null;Path=$settingsPath}
+        }
+    }
+    else {
+        # Scoped shell operations own only schemes/profile colors. The original
+        # full apply continues to own Terminal tab/window chrome as before.
+        $chrome = if ($Operation -ceq 'All') { $terminalTheme } else { $null }
+        $update = Set-TypezeroWindowsTerminalAppearance -Path $settingsPath `
+            -Scheme $scheme -TerminalTheme $chrome -Font $font -ExpectedSha256 $beforeHash
+        Write-Host "Windows Terminal: $schemeName"
+    }
+    if ($null -ne $font) { Write-Host ("Windows Terminal font: " + ($font | ConvertTo-Json -Compress)) }
+    if ($update.Changed) { Write-Host "Windows Terminal backup: $($update.BackupPath)" }
+    if ($PassThru) {
+        $update | Add-Member -NotePropertyName FontSkipped -NotePropertyValue ($null -eq $font) -Force
+        $update | Add-Member -NotePropertyName FontChanged -NotePropertyValue ([bool]$fontChanged) -Force
+        $update | Add-Member -NotePropertyName ShellChanged -NotePropertyValue ([bool]$shellChanged) -Force
+        return $update
+    }
+    return $true
 }
 function Set-Theme {
     param(
         [Parameter(Mandatory)][string]$Id,
+        [System.Collections.IDictionary]$TerminalFont,
+        [ValidateSet('Shell','Font','Desktop','ShellFont','DesktopShell','All')][string]$Operation = 'All',
+        [string]$ExpectedSettingsSha256,
         [switch]$NoHistory
     )
 
+
+    if ($null -ne $TerminalFont -and $Operation -cnotin @('Font','ShellFont','All')) {
+        throw 'This operation preserves the Terminal font; a font override is not allowed.'
+    }
+    if ($null -ne $TerminalFont) {
+        if ($TerminalFont.Count -ne 3 -or @($TerminalFont.Keys | Where-Object { $_ -cnotin @('face','size','weight') }).Count) {
+            throw 'A one-use Terminal font requires exactly face, size, and weight.'
+        }
+        . (Join-Path $PSScriptRoot 'TerminalFontControl-WindowsTerminal.ps1')
+        $choice = Assert-TypezeroTerminalFontChoice -Family $TerminalFont['face'] `
+            -Size $TerminalFont['size'] -Weight $TerminalFont['weight']
+        $TerminalFont = [ordered]@{face=$choice.Family;size=$choice.Size;weight=$choice.Weight}
+    }
+    if ($Id -cnotmatch '\A[a-z0-9][a-z0-9-]*\z') { throw 'Invalid theme ID.' }
     $t = Read-ThemeFile $Id
-
-    # Defer current/previous state updates until native activation and
-    # application rendering succeed. A failed activation keeps history intact.
-    $old = if (Test-Path -LiteralPath $CurrentFile) {
-        (Get-Content -LiteralPath $CurrentFile -Raw).Trim()
-    } else { '' }
-
-    # Vim receives a generated native colorscheme from the same semantic
-    # palette used by the shell and Windows Terminal. Keep the output inside
-    # Netzach's established Vim config tree rather than a second runtime.
-    $vimTemplate = Join-Path $TemplatesRoot 'shared\vim-colors.vim.tpl'
-    $vimColors = Join-Path $HOME 'config\vim\colors\typezero.vim'
-    Write-ThemeTemplate -Source $vimTemplate -Destination $vimColors -Theme $t
-
-    # Lightline uses its own colorscheme API rather than Vim highlight groups.
-    # Generate its palette beside the native Vim theme so both surfaces follow
-    # the same ThemeEngine semantic roles and switch together.
-    $lightlineTemplate = Join-Path $TemplatesRoot 'shared\vim-lightline.vim.tpl'
-    $lightlineColors = Join-Path $HOME 'config\vim\autoload\lightline\colorscheme\typezero.vim'
-    Write-ThemeTemplate -Source $lightlineTemplate -Destination $lightlineColors -Theme $t
-
-    # Native Windows appearance integration.
-    $windowsProvider = Join-Path $PSScriptRoot 'WindowsAppearance.ps1'
-
-    if (Test-Path -LiteralPath $windowsProvider) {
-        . $windowsProvider
-
-        Set-TypezeroWindowsNativeTheme `
-            -Id $t['THEME_ID'] `
-            -Name $t['THEME_NAME'] `
-            -Accent $t['ACCENT']
+    $hasShell = $Operation -cin @('Shell','ShellFont','DesktopShell','All')
+    $hasFont = $Operation -cin @('Font','ShellFont','All')
+    $hasDesktop = $Operation -cin @('Desktop','DesktopShell','All')
+    if ($ExpectedSettingsSha256) {
+        if (-not ($hasShell -or $hasFont) -or $ExpectedSettingsSha256 -cnotmatch '\A[A-Fa-f0-9]{64}\z') {
+            throw 'A valid Terminal snapshot requires an operation that includes Terminal.'
+        }
+        $settings = Get-WindowsTerminalSettingsPath
+        if (-not $settings -or (Get-FileHash -LiteralPath $settings -Algorithm SHA256).Hash -ine $ExpectedSettingsSha256) {
+            throw 'Terminal settings changed since Preview; preview these choices again. No targets were applied.'
+        }
     }
-
-    Set-WindowsTerminalTheme $t
-    Write-CurrentTheme $t
-    if (-not $NoHistory -and $old -and $old -ne $Id) {
-        Set-Content -LiteralPath $PreviousFile -Value $old -Encoding ascii
+    $targets = [Collections.Generic.List[object]]::new()
+    function Add-ApplyTarget {
+        param([string]$Target,[string]$Status,[bool]$Changed,[string]$Message,[string]$BackupPath)
+        $targets.Add([pscustomobject]@{Target=$Target;Status=$Status;Changed=$Changed;Message=$Message;BackupPath=$BackupPath})
     }
-    Set-Content -LiteralPath $CurrentFile -Value $Id -Encoding ascii
-    Write-Host "Applied theme: $($t['THEME_NAME'])"
+    # Each requested target is independent. A native activation timeout cannot
+    # prevent Terminal or an enabled DisplayFusion mapping from being attempted.
+    if ($hasDesktop) {
+        try {
+            $provider = Join-Path $PSScriptRoot 'WindowsAppearance.ps1'
+            if (-not (Test-Path -LiteralPath $provider -PathType Leaf)) { throw 'Native Windows appearance provider is missing.' }
+            . $provider
+            $null = Set-TypezeroWindowsNativeTheme -Id $t['THEME_ID'] -Name $t['THEME_NAME'] -Accent $t['ACCENT']
+            Add-ApplyTarget Desktop Applied $true 'Native Windows theme activation confirmed.'
+        }
+        catch { Add-ApplyTarget Desktop Failed $false $_.Exception.Message }
+        try {
+            $mapping = Join-Path $PSScriptRoot 'WallpaperMapping-DisplayFusion.ps1'
+            if (-not (Test-Path -LiteralPath $mapping -PathType Leaf)) {
+                $configured = Join-Path $env:LOCALAPPDATA 'Typezero\ThemeEngine\wallpaper-displayfusion.json'
+                if (Test-Path -LiteralPath $configured) { throw 'Wallpaper mapping provider is missing; configured wallpaper could not be assessed.' }
+                Add-ApplyTarget Wallpaper Skipped $false 'No DisplayFusion mapping is configured.'
+            }
+            else {
+                . $mapping
+                $config = Get-TypezeroWallpaperMappings
+                if (-not $config.Enabled -or -not $config.Profiles.ContainsKey($Id)) {
+                    Add-ApplyTarget Wallpaper Skipped $false 'DisplayFusion mapping is disabled or this theme is unmapped.'
+                }
+                else {
+                    $provider = Join-Path $PSScriptRoot 'WallpaperProvider-DisplayFusion.ps1'
+                    if (-not (Test-Path -LiteralPath $provider -PathType Leaf)) { throw 'Configured DisplayFusion wallpaper provider is missing.' }
+                    . $provider
+                    $state = Test-TypezeroWallpaperThemeMapping -ThemeId $Id
+                    switch ($state.Action) {
+                        'ALREADY ACTIVE - no changes' { Add-ApplyTarget Wallpaper NoChange $false 'Configured DisplayFusion profile is already active.' }
+                        'ELIGIBLE FOR EXPLICIT SWITCH' {
+                            $wallpaper = Invoke-TypezeroWallpaperThemeMapping -ThemeId $Id -Execute -Confirm:$false -ErrorAction Stop
+                            if ($null -eq $wallpaper -or $wallpaper.Status -notin @('VERIFIED','VERIFIED - COMMAND TIMEOUT','NO CHANGE')) {
+                                throw 'DisplayFusion wallpaper activation did not return verified success.'
+                            }
+                            $changed = $wallpaper.Status -cne 'NO CHANGE'
+                            Add-ApplyTarget Wallpaper $(if ($changed) {'Applied'} else {'NoChange'}) $changed "DisplayFusion profile: $($wallpaper.ProfileName) [$($wallpaper.Status)]" $wallpaper.BackupPath
+                        }
+                        default { throw "Configured DisplayFusion wallpaper could not be applied: $($state.Action)" }
+                    }
+                }
+            }
+        }
+        catch { Add-ApplyTarget Wallpaper Failed $false $_.Exception.Message }
+    }
+    if ($hasShell -or $hasFont) {
+        try {
+            $terminalOperation = if ($Operation -ceq 'All') {'All'} elseif ($hasShell -and $hasFont) {'ShellFont'} elseif ($hasShell) {'Shell'} else {'Font'}
+            $terminal = Set-WindowsTerminalTheme $t -TerminalFont $TerminalFont -Operation $terminalOperation `
+                -ExpectedSettingsSha256 $ExpectedSettingsSha256 -PassThru
+            if ($hasShell) {
+                Add-ApplyTarget Shell $(if ($terminal.ShellChanged) {'Applied'} else {'NoChange'}) ([bool]$terminal.ShellChanged) 'Windows Terminal scheme/colors verified.' $terminal.BackupPath
+            }
+            if ($hasFont) {
+                $fontStatus = if ($terminal.FontSkipped) {'Skipped'} elseif ($terminal.FontChanged) {'Applied'} else {'NoChange'}
+                $fontMessage = if ($terminal.FontSkipped) {'No saved font mapping or explicit font; existing font preserved.'} else {'Requested Terminal font fields verified.'}
+                Add-ApplyTarget Font $fontStatus ([bool]$terminal.FontChanged) $fontMessage $terminal.BackupPath
+            }
+        }
+        catch {
+            # Scheme and font share one verified settings replacement, so a
+            # failed combined write cannot be reported as two successful steps.
+            if ($hasShell) { Add-ApplyTarget Shell Failed $false $_.Exception.Message }
+            if ($hasFont) { Add-ApplyTarget Font Failed $false $_.Exception.Message }
+        }
+    }
+    if ($Operation -ceq 'All') {
+        foreach ($consumer in @(
+            @{Target='Vim';Template='shared\vim-colors.vim.tpl';Destination='config\vim\colors\typezero.vim'},
+            @{Target='Lightline';Template='shared\vim-lightline.vim.tpl';Destination='config\vim\autoload\lightline\colorscheme\typezero.vim'}
+        )) {
+            try {
+                $destination = Join-Path $HOME $consumer.Destination
+                $before = if (Test-Path -LiteralPath $destination -PathType Leaf) {(Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash} else {''}
+                Write-ThemeTemplate -Source (Join-Path $TemplatesRoot $consumer.Template) -Destination $destination -Theme $t
+                $after = if (Test-Path -LiteralPath $destination -PathType Leaf) {(Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash} else {''}
+                $changed = $before -cne $after
+                Add-ApplyTarget $consumer.Target $(if ($changed) {'Applied'} else {'NoChange'}) $changed 'Generated integration completed.'
+            }
+            catch { Add-ApplyTarget $consumer.Target Failed $false $_.Exception.Message }
+        }
+        # Full-theme history describes a complete full apply. Scoped and partial
+        # operations never overwrite it or the generated PowerShell palette.
+        if (@($targets | Where-Object Status -ceq 'Failed').Count -eq 0) {
+            $metadataBefore = @()
+            try {
+                foreach ($metadataPath in @($CurrentPs1,$PreviousFile,$CurrentFile) | Where-Object { $_ }) {
+                    $exists = Test-Path -LiteralPath $metadataPath -PathType Leaf
+                    $metadataBytes = [byte[]]@()
+                    if ($exists) { $metadataBytes = [IO.File]::ReadAllBytes($metadataPath) }
+                    $metadataBefore += [pscustomobject]@{Path=$metadataPath;Exists=$exists;Bytes=$metadataBytes}
+                }
+                $old = if (Test-Path -LiteralPath $CurrentFile) {(Get-Content -LiteralPath $CurrentFile -Raw).Trim()} else {''}
+                Write-CurrentTheme $t
+                if (-not $NoHistory -and $old -and $old -cne $Id) {
+                    Set-Content -LiteralPath $PreviousFile -Value $old -Encoding ascii
+                }
+                Set-Content -LiteralPath $CurrentFile -Value $Id -Encoding ascii
+                $metadataChanged = $false
+                foreach ($snapshot in $metadataBefore) {
+                    $exists = Test-Path -LiteralPath $snapshot.Path -PathType Leaf
+                    if ($exists -ne $snapshot.Exists -or ($exists -and
+                        [Convert]::ToBase64String([IO.File]::ReadAllBytes($snapshot.Path)) -cne
+                        [Convert]::ToBase64String([byte[]]$snapshot.Bytes))) {
+                        $metadataChanged = $true
+                    }
+                }
+                Add-ApplyTarget CurrentTheme $(if ($metadataChanged) {'Applied'} else {'NoChange'}) $metadataChanged 'Complete theme history and PowerShell palette recorded.'
+            }
+            catch {
+                $metadataError = $_.Exception.Message
+                foreach ($snapshot in $metadataBefore) {
+                    try {
+                        if ($snapshot.Exists) { [IO.File]::WriteAllBytes($snapshot.Path,[byte[]]$snapshot.Bytes) }
+                        elseif (Test-Path -LiteralPath $snapshot.Path -PathType Leaf) { Remove-Item -LiteralPath $snapshot.Path -Force }
+                    }
+                    catch { $metadataError += " Metadata restore failed for '$($snapshot.Path)': $($_.Exception.Message)" }
+                }
+                Add-ApplyTarget CurrentTheme Failed $false $metadataError
+            }
+        }
+        else { Add-ApplyTarget CurrentTheme Skipped $false 'Full-theme history preserved because one or more requested targets failed.' }
+    }
+    $failed = @($targets | Where-Object Status -ceq 'Failed').Count
+    $succeeded = @($targets | Where-Object Status -cin @('Applied','NoChange')).Count
+    $changed = @($targets | Where-Object Changed).Count -gt 0
+    $status = if ($failed) {if ($succeeded) {'Partial'} else {'Failed'}} elseif ($changed) {'Applied'} else {'NoChange'}
+    foreach ($target in $targets) { Write-Host ("{0}: {1} - {2}" -f $target.Target,$target.Status,$target.Message) }
+    if ($failed) { Write-Warning "$status theme operation '$Operation' for '$Id'; requested targets are incomplete." }
+    elseif ($Operation -ceq 'All') { Write-Host "Applied theme: $($t['THEME_NAME'])" }
+    [pscustomobject]@{Status=$status;Operation=$Operation;Theme=$Id;Complete=($failed -eq 0);Changed=$changed;
+        AppearanceMayHaveChanged=($changed -or $failed -gt 0);Targets=@($targets.ToArray())}
 }
 
+
 switch ($Command) {
+    "configure" {
+        if ($Theme -or $WallpaperArgs) { throw 'Usage: themeengine configure' }
+        . (Join-Path $PSScriptRoot 'Configure-WindowsTerminal.ps1')
+        return Invoke-TypezeroThemeConfigure -EngineRoot $PSScriptRoot -ThemesRoot $ThemesRoot
+    }
     "bootstrap" {
         if (-not $RepoRoot) { $RepoRoot = (Get-Location).Path }
         $themeSource = Join-Path $RepoRoot "ThemeEngine\themes"
@@ -400,9 +578,40 @@ switch ($Command) {
             (Get-Content -LiteralPath $CurrentFile -Raw).Trim()
         } else { "" }
 
-        Get-ChildItem -LiteralPath $ThemesRoot -Directory | ForEach-Object {
-            $prefix = if ($_.Name -eq $current) { "*" } else { " " }
-            Write-Host "$prefix $($_.Name)"
+        $presentationModule = Join-Path $PSScriptRoot 'ThemePresentation.ps1'
+
+        if (Test-Path -LiteralPath $presentationModule -PathType Leaf) {
+            . $presentationModule
+
+            $entries = @(
+                Get-ChildItem -LiteralPath $ThemesRoot -Directory |
+                    Sort-Object Name |
+                    ForEach-Object {
+                        [pscustomobject]@{
+                            Id = $_.Name
+                            Theme = Read-ThemeFile $_.Name
+                        }
+                    }
+            )
+
+            if ($entries.Count -eq 0) {
+                Write-Host 'No themes found.'
+            }
+            else {
+                Write-Host (
+                    Format-TypezeroThemeCatalog `
+                        -Entries $entries -CurrentId $current
+                )
+            }
+        }
+        else {
+            Write-Warning 'Visual catalog unavailable; using classic list.'
+
+            Get-ChildItem -LiteralPath $ThemesRoot -Directory |
+                ForEach-Object {
+                    $prefix = if ($_.Name -eq $current) { "*" } else { " " }
+                    Write-Host "$prefix $($_.Name)"
+                }
         }
     }
 
@@ -414,67 +623,101 @@ switch ($Command) {
         }
     }
 
+    "status" {
+        if ($Theme -or $WallpaperArgs) {
+            throw 'Usage: ThemeEngine.ps1 status'
+        }
+
+        $presentationModule = Join-Path $PSScriptRoot 'ThemePresentation.ps1'
+
+        if (-not (Test-Path -LiteralPath $presentationModule -PathType Leaf)) {
+            throw 'Current-theme presentation module is missing.'
+        }
+
+        . $presentationModule
+
+        $selected = if (
+            Test-Path -LiteralPath $CurrentFile -PathType Leaf
+        ) {
+            (Get-Content -LiteralPath $CurrentFile -Raw).Trim()
+        } else {
+            ''
+        }
+
+        if ($selected -and
+            $selected -cnotmatch '^[A-Za-z0-9][A-Za-z0-9_-]*$') {
+            throw 'Invalid selected theme ID.'
+        }
+
+        if ($selected) {
+            $themeData = Read-ThemeFile $selected
+
+            Write-Host (
+                Format-TypezeroCurrentTheme `
+                    -Id $selected -Theme $themeData
+            )
+        }
+        else {
+            Write-Host (Format-TypezeroCurrentTheme)
+        }
+    }
+
     "preview" {
         if (-not $Theme) {
-            if (-not (Test-Path -LiteralPath $CurrentFile)) { throw "No theme selected." }
+            if (-not (Test-Path -LiteralPath $CurrentFile)) {
+                throw "No theme selected."
+            }
+
             $Theme = (Get-Content -LiteralPath $CurrentFile -Raw).Trim()
         }
 
         $t = Read-ThemeFile $Theme
-        Write-Host ""
-        Write-Host "  $($t['THEME_NAME'])"
-        Write-Host ""
+        $presentationModule = Join-Path $PSScriptRoot 'ThemePresentation.ps1'
 
-        foreach ($role in @("ACCENT","ACCENT_BRIGHT","SELECTION","CURSOR","FOCUS","TEXT","MUTED","SUCCESS","WARNING","ERROR","SECONDARY","INFO")) {
-            $c = Convert-HexToAnsi $t[$role]
-            Write-Host "$c  $($role.PadRight(14)) $($t[$role])$([char]27)[0m"
+        if (Test-Path -LiteralPath $presentationModule -PathType Leaf) {
+            . $presentationModule
+
+            Write-Host (
+                Format-TypezeroThemePreview -Theme $t -Id $Theme
+            )
         }
+        else {
+            Write-Warning 'Grouped preview unavailable; using classic preview.'
 
-        Write-Host ""
-    }
+            Write-Host ""
+            Write-Host "  $($t['THEME_NAME'])"
+            Write-Host ""
 
-    "apply" {
-        if (-not $Theme) { throw "Usage: ThemeEngine.ps1 apply <theme>" }
-        Set-Theme $Theme
-    # BEGIN TYPEZERO DISPLAYFUSION APPLY HOOK (Stage 5)
-    # The main color/theme apply has succeeded at this point. This optional
-    # wallpaper action cannot undo the successful appearance application.
-    try {
-        $wallpaperProvider = Join-Path $PSScriptRoot 'WallpaperProvider-DisplayFusion.ps1'
-        $wallpaperMapping = Join-Path $PSScriptRoot 'WallpaperMapping-DisplayFusion.ps1'
-        if ((Test-Path -LiteralPath $wallpaperProvider) -and
-            (Test-Path -LiteralPath $wallpaperMapping)) {
-            . $wallpaperProvider
-            . $wallpaperMapping
-            $wallpaperState = Test-TypezeroWallpaperThemeMapping -ThemeId $Theme
-            switch ($wallpaperState.Action) {
-                'ELIGIBLE FOR EXPLICIT SWITCH' {
-                    # Integration was expressly enabled in local config. Bypass
-                    # prompts here only; guarded provider still creates a fresh
-                    # backup, verifies its hash, and checks active profile ID.
-                    $wallpaperResult = Invoke-TypezeroWallpaperThemeMapping -ThemeId $Theme -Execute -Confirm:$false -ErrorAction Stop
-                    if ($null -eq $wallpaperResult -or $wallpaperResult.Status -notin @('VERIFIED', 'VERIFIED - COMMAND TIMEOUT', 'NO CHANGE')) {
-                        Write-Warning "DisplayFusion: wallpaper activation returned no verified success for theme '$Theme'."
-                    } else {
-                        Write-Host "DisplayFusion wallpaper: $($wallpaperResult.ProfileName) [$($wallpaperResult.Status)]"
-                    }
-                }
-                'INVALID PROFILE - no changes' {
-                    Write-Warning "DisplayFusion: mapped wallpaper profile for '$Theme' is missing or ambiguous; colors were applied."
-                }
-                default {
-                    # Disabled, unmapped, or already active: intentionally no-op.
-                }
+            foreach ($role in @(
+                "ACCENT", "ACCENT_BRIGHT", "SELECTION",
+                "CURSOR", "FOCUS", "TEXT", "MUTED",
+                "SUCCESS", "WARNING", "ERROR",
+                "SECONDARY", "INFO"
+            )) {
+                $c = Convert-HexToAnsi $t[$role]
+
+                Write-Host (
+                    "$c  $($role.PadRight(14)) $($t[$role])$([char]27)[0m"
+                )
             }
-        } else {
-            # An absent optional provider is a no-op by design.
+
+            Write-Host ""
         }
-    } catch {
-        Write-Warning "DisplayFusion wallpaper step failed after successful theme apply: $($_.Exception.Message)"
-    }
-    # END TYPEZERO DISPLAYFUSION APPLY HOOK (Stage 5)
     }
 
+
+    { $_ -in @('apply','apply-shell','apply-font','apply-desktop','apply-shell-font','apply-desktop-shell','apply-all') } {
+        if (-not $Theme -or $WallpaperArgs) { throw "Usage: ThemeEngine.ps1 $Command <theme> [-TerminalFont <tuple>]" }
+        $operation = switch ($Command) {
+            'apply-shell' {'Shell'}
+            'apply-font' {'Font'}
+            'apply-desktop' {'Desktop'}
+            'apply-shell-font' {'ShellFont'}
+            'apply-desktop-shell' {'DesktopShell'}
+            default {'All'}
+        }
+        Set-Theme -Id $Theme -Operation $operation -TerminalFont $TerminalFont -ExpectedSettingsSha256 $ExpectedSettingsSha256
+    }
     "reload" {
         if (-not (Test-Path -LiteralPath $CurrentFile)) { throw "No current theme." }
         $id = (Get-Content -LiteralPath $CurrentFile -Raw).Trim()
@@ -485,6 +728,351 @@ switch ($Command) {
         if (-not (Test-Path -LiteralPath $PreviousFile)) { throw "No previous theme." }
         $id = (Get-Content -LiteralPath $PreviousFile -Raw).Trim()
         Set-Theme $id
+    }
+
+    "font" {
+        $fontProvider = Join-Path $PSScriptRoot 'FontProvider-WindowsTerminal.ps1'
+
+        if (-not (Test-Path -LiteralPath $fontProvider -PathType Leaf)) {
+            throw "Font provider missing: $fontProvider"
+        }
+
+        . $fontProvider
+
+        $mappingModule = Join-Path $PSScriptRoot 'FontMapping-WindowsTerminal.ps1'
+        if (-not (Test-Path -LiteralPath $mappingModule -PathType Leaf)) {
+            throw "Font mapping module missing: $mappingModule"
+        }
+        . $mappingModule
+
+        $action = if ($Theme) { $Theme.ToLowerInvariant() } else { 'help' }
+
+        if ($action -ceq 'configure') {
+            if ($WallpaperArgs) { throw 'Usage: themeengine font configure' }
+            . (Join-Path $PSScriptRoot 'Configure-WindowsTerminal.ps1')
+            return Invoke-TypezeroThemeConfigure -EngineRoot $PSScriptRoot -ThemesRoot $ThemesRoot
+        }
+
+        if ($action -in @('preview-font','apply-font','preview-theme','apply-theme','save-preset','presets','load-preset','preview-preset','apply-preset')) {
+            . (Join-Path $PSScriptRoot 'AppearanceSelection-WindowsTerminal.ps1')
+            return Invoke-TypezeroFontCommand -Action $action -Arguments $WallpaperArgs `
+                -EngineRoot $PSScriptRoot -ThemesRoot $ThemesRoot -ExpectedSha256 $ExpectedSettingsSha256
+        }
+
+        switch ($action) {
+            'theme-preview' {
+                if ($WallpaperArgs -and $WallpaperArgs.Count -gt 0) {
+                    throw 'Usage: themeengine font theme-preview'
+                }
+                $previewModule = Join-Path $PSScriptRoot 'ThemeFontPreview-WindowsTerminal.ps1'
+                if (-not (Test-Path -LiteralPath $previewModule -PathType Leaf)) {
+                    throw "Theme/font preview module missing: $previewModule"
+                }
+                . $previewModule
+                $result = Show-TypezeroThemeFontPreview -ThemesRoot $ThemesRoot
+                if ($null -ne $result) {
+                    if ($result.PreviewOnly -ne $true -or $result.SettingsChanged -ne $false) {
+                        throw 'Preview-only invariant violated.'
+                    }
+                    $selectionModule = Join-Path $PSScriptRoot 'AppearanceSelection-WindowsTerminal.ps1'
+                    if (-not (Test-Path -LiteralPath $selectionModule -PathType Leaf)) {
+                        throw "Theme/font selection workflow missing: $selectionModule"
+                    }
+                    . $selectionModule
+                    $activation = Invoke-TypezeroAppearanceSelection -Selection $result `
+                        -EngineRoot $PSScriptRoot -ThemesRoot $ThemesRoot
+                    if ($activation.Status -in @('PreferenceFailed','PreferenceNotSaved','ThemeFailed','ThemeAppliedFontUnverified')) {
+                        Write-Warning $activation.Message
+                    } else {
+                        Write-Host $activation.Message
+                    }
+                    return $activation
+                }
+            }
+
+            'picker' {
+                if ($WallpaperArgs -and $WallpaperArgs.Count -gt 0) {
+                    throw 'Usage: themeengine font picker'
+                }
+
+                $pickerModule = Join-Path $PSScriptRoot `
+                    'FontPicker-WindowsTerminal.ps1'
+
+                if (-not (Test-Path -LiteralPath $pickerModule -PathType Leaf)) {
+                    throw "Font picker module missing: $pickerModule"
+                }
+
+                . $pickerModule
+
+                $selection = Invoke-TypezeroFontPicker `
+                    -EngineRoot $PSScriptRoot
+
+                if ($null -eq $selection) {
+                    throw 'Font picker returned no selection.'
+                }
+
+                if ($selection.PreviewOnly -ne $true -or
+                    $selection.SettingsChanged -ne $false) {
+                    throw 'Font picker violated preview-only requirements.'
+                }
+
+                return $selection
+            }
+
+            'list' {
+                if ($WallpaperArgs) { throw 'Usage: themeengine font list' }
+                Get-TypezeroInstalledFontFamilies
+            }
+            'current' {
+                if ($WallpaperArgs) { throw 'Usage: themeengine font current' }
+                Get-TypezeroTerminalFontStatus
+            }
+            'test' {
+                if (-not $WallpaperArgs -or $WallpaperArgs.Count -ne 1) {
+                    throw 'Usage: themeengine font test <theme-id>'
+                }
+
+                Get-TypezeroThemeFontPlan `
+                    -InstalledThemesRoot $ThemesRoot `
+                    -ThemeId $WallpaperArgs[0]
+            }
+            'plan' {
+                if (-not $WallpaperArgs -or $WallpaperArgs.Count -ne 1) {
+                    throw 'Usage: themeengine font plan <theme-id>'
+                }
+
+                Get-TypezeroTerminalFontSwitchPlan `
+                    -ThemeId $WallpaperArgs[0]
+            }
+            'preview' {
+                if (-not $WallpaperArgs -or $WallpaperArgs.Count -ne 1) {
+                    throw 'Usage: themeengine font preview <theme-id>'
+                }
+
+                $presentationModule = Join-Path $PSScriptRoot 'FontPresentation-WindowsTerminal.ps1'
+
+                if (-not (Test-Path -LiteralPath $presentationModule -PathType Leaf)) {
+                    throw "Font presentation module missing: $presentationModule"
+                }
+
+                . $presentationModule
+
+                $fontPlan = Get-TypezeroTerminalFontSwitchPlan `
+                    -ThemeId $WallpaperArgs[0]
+
+                Format-TypezeroTerminalFontPlan -Plan $fontPlan
+            }
+            'status' {
+                if ($WallpaperArgs) { throw 'Usage: themeengine font status' }
+                $config = Get-TypezeroWindowsFontMappings
+                $current = Get-TypezeroTerminalFontStatus
+
+                [pscustomobject]@{
+                    Provider           = 'Windows Terminal'
+                    IntegrationEnabled = $config.Enabled
+                    MappedThemeCount   = $config.Mappings.Count
+                    CurrentFont        = $current.Face
+                    CurrentSize        = $current.Size
+                    CurrentWeight      = $current.Weight
+                    HasOverride        = $current.HasOverride
+                    ConfigPath         = $config.Path
+                }
+            }
+            'mappings' {
+                if ($WallpaperArgs) { throw 'Usage: themeengine font mappings' }
+                $config = Get-TypezeroWindowsFontMappings
+                if ($config.Mappings.Count -eq 0) {
+                    'No font mappings configured.'
+                } else {
+                    foreach ($id in @($config.Mappings.Keys | Sort-Object)) {
+                        [pscustomobject]@{
+                            Theme               = $id
+                            Font                = $config.Mappings[$id]
+                            IntegrationEnabled  = $config.Enabled
+                        }
+                    }
+                }
+            }
+            'map' {
+                if (-not $WallpaperArgs -or $WallpaperArgs.Count -ne 2) {
+                    throw 'Usage: themeengine font map <theme-id> "<font family>"'
+                }
+
+                Set-TypezeroWindowsFontMapping `
+                    -ThemeId $WallpaperArgs[0] `
+                    -FontFamily $WallpaperArgs[1] `
+                    -ThemesRoot $ThemesRoot
+            }
+            'map-v2' {
+                if (-not $WallpaperArgs -or $WallpaperArgs.Count -ne 4) {
+                    throw 'Usage: themeengine font map-v2 <theme-id> "<font family>" <size> <weight>'
+                }
+
+                $mappingV2 = Join-Path $PSScriptRoot 'FontMappingV2-WindowsTerminal.ps1'
+
+                if (-not (Test-Path -LiteralPath $mappingV2 -PathType Leaf)) {
+                    throw "Font V2 writer missing: $mappingV2"
+                }
+
+                . $mappingV2
+
+                $sizeValue = 0.0
+
+                if (-not [double]::TryParse(
+                    [string]$WallpaperArgs[2],
+                    [Globalization.NumberStyles]::Float,
+                    [Globalization.CultureInfo]::InvariantCulture,
+                    [ref]$sizeValue
+                )) {
+                    throw 'Invalid font size.'
+                }
+
+                Set-TypezeroWindowsFontMappingV2 `
+                    -ThemeId $WallpaperArgs[0] `
+                    -FontFamily $WallpaperArgs[1] `
+                    -Size $sizeValue `
+                    -Weight $WallpaperArgs[3] `
+                    -ThemesRoot $ThemesRoot
+            }
+            'check-apply' {
+                if (-not $WallpaperArgs -or $WallpaperArgs.Count -ne 1) {
+                    throw 'Usage: themeengine font check-apply <theme-id>'
+                }
+
+                $id = [string]$WallpaperArgs[0]
+
+                if ($id -cnotmatch '^[a-z0-9][a-z0-9-]*$') {
+                    throw 'Invalid theme ID.'
+                }
+
+                $writer = Join-Path $PSScriptRoot 'FontWriter-WindowsTerminal.ps1'
+
+                if (-not (Test-Path -LiteralPath $writer -PathType Leaf)) {
+                    throw "Font writer missing: $writer"
+                }
+
+                . $writer
+
+                $config = Get-TypezeroWindowsFontMappings
+
+                if (-not $config.Mappings.ContainsKey($id)) {
+                    throw "No font mapping for theme: $id"
+                }
+
+                $entry = $config.Mappings[$id]
+                $current = Get-TypezeroTerminalFontStatus
+
+                if ($config.Version -eq 1) {
+                    $family = [string]$entry
+                    $size = [double]$current.Size
+                    $weight = [string]$current.Weight
+                }
+                elseif ($config.Version -eq 2) {
+                    $family = [string]$entry.Family
+                    $size = [double]$entry.Size
+                    $weight = [string]$entry.Weight
+                }
+                else {
+                    throw 'Unsupported font mapping version.'
+                }
+
+                $settings = Join-Path $env:LOCALAPPDATA (
+                    'Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe' +
+                    '\LocalState\settings.json'
+                )
+
+                $utf8 = [Text.UTF8Encoding]::new($false, $true)
+                $text = [IO.File]::ReadAllText($settings, $utf8)
+
+                $candidate = New-TypezeroMappedFontOverrideText `
+                    -Text $text `
+                    -Family $family `
+                    -Size $size `
+                    -Weight $weight
+
+                $snapshot = Get-TypezeroFontProfileTextSnapshot `
+                    -Text $candidate
+
+                $restored = Restore-TypezeroMappedFontOverrideText `
+                    -Text $candidate
+
+                if ($restored -cne $text -or
+                    $snapshot.Face -cne $family -or
+                    $snapshot.Size -ne $size -or
+                    $snapshot.Weight -cne $weight) {
+                    throw 'Font apply dry-run verification failed.'
+                }
+
+                [pscustomobject]@{
+                    Action             = 'CHECK APPLY'
+                    Theme              = $id
+                    Family             = $family
+                    Size               = $size
+                    Weight             = $weight
+                    MappingVersion     = $config.Version
+                    IntegrationEnabled = $config.Enabled
+                    PreviewOnly        = $true
+                    Verified           = $true
+                    SettingsChanged    = $false
+                }
+            }
+            'check-restore' {
+                if ($WallpaperArgs) {
+                    throw 'Usage: themeengine font check-restore'
+                }
+
+                $writer = Join-Path $PSScriptRoot 'FontWriter-WindowsTerminal.ps1'
+
+                if (-not (Test-Path -LiteralPath $writer -PathType Leaf)) {
+                    throw "Font writer missing: $writer"
+                }
+
+                . $writer
+
+                $settings = Join-Path $env:LOCALAPPDATA (
+                    'Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe' +
+                    '\LocalState\settings.json'
+                )
+
+                $utf8 = [Text.UTF8Encoding]::new($false, $true)
+                $text = [IO.File]::ReadAllText($settings, $utf8)
+
+                $marker = '/* TYPEZERO_FONT_V2 */'
+
+                if (-not $text.Contains($marker)) {
+                    [pscustomobject]@{
+                        Action          = 'CHECK RESTORE'
+                        Restorable      = $false
+                        Reason          = 'No managed font override is active.'
+                        PreviewOnly     = $true
+                        SettingsChanged = $false
+                    }
+                }
+                else {
+                    $restored = Restore-TypezeroMappedFontOverrideText `
+                        -Text $text
+
+                    $snapshot = Get-TypezeroFontProfileTextSnapshot `
+                        -Text $restored
+
+                    if ($snapshot.HasFont -or
+                        $restored.Contains($marker)) {
+                        throw 'Font restore dry-run verification failed.'
+                    }
+
+                    [pscustomobject]@{
+                        Action          = 'CHECK RESTORE'
+                        Restorable      = $true
+                        Verified        = $true
+                        PreviewOnly     = $true
+                        SettingsChanged = $false
+                    }
+                }
+            }
+            default {
+                'Usage: themeengine font <list|current|test|plan|preview|status|mappings|map|check-apply|check-restore>'
+            }
+        }
     }
 
     # BEGIN TYPEZERO WALLPAPER CLI (Stage 7)
@@ -498,6 +1086,48 @@ switch ($Command) {
     }
     # END TYPEZERO WALLPAPER CLI (Stage 7)
 
+    "doctor-view" {
+        # Preserve existing diagnostic logic and legacy output.
+        if (-not $PSCommandPath) {
+            throw 'ThemeEngine script path unavailable.'
+        }
+
+        . (Join-Path $PSScriptRoot 'ThemePresentation.ps1')
+
+        # Capture the legacy Doctor Information stream.
+        $records = @(& $PSCommandPath -Command 'doctor' 6>&1)
+
+        $lines = @(
+            foreach ($record in $records) {
+                if ($record -is [System.Management.Automation.InformationRecord]) {
+                    $data = $record.MessageData
+
+                    if ($null -ne $data -and
+                        $null -ne $data.PSObject.Properties['Message']) {
+                        [string]$data.Message
+                    }
+                    else {
+                        [string]$data
+                    }
+                }
+                elseif ($record -is [string]) {
+                    $record
+                }
+                else {
+                    throw (
+                        'Unexpected diagnostic record type: ' +
+                        $record.GetType().FullName
+                    )
+                }
+            }
+        )
+
+        $sections = @(
+            ConvertTo-TypezeroDoctorSections -Lines $lines
+        )
+
+        Write-Host (Format-TypezeroDoctor -Sections $sections)
+    }
     "doctor" {
         Write-Host "ThemeEngine doctor"
         Write-Host ""
@@ -634,12 +1264,46 @@ usage:
   ThemeEngine.ps1 bootstrap -RepoRoot <repo-root>
   ThemeEngine.ps1 list
   ThemeEngine.ps1 current
+  ThemeEngine.ps1 status
+  ThemeEngine.ps1 configure
+  ThemeEngine.ps1 font configure
   ThemeEngine.ps1 preview [theme]
-  ThemeEngine.ps1 apply <theme>
+  ThemeEngine.ps1 apply <theme>                  # full apply (alias of apply-all)
+  ThemeEngine.ps1 apply-shell <theme>            # Terminal scheme/colors only
+  ThemeEngine.ps1 apply-font <theme>             # saved font only
+  ThemeEngine.ps1 apply-desktop <theme>          # native Windows + configured wallpaper
+  ThemeEngine.ps1 apply-shell-font <theme>       # Terminal colors + saved/chosen font
+  ThemeEngine.ps1 apply-desktop-shell <theme>    # desktop + Terminal colors, preserve font
+  ThemeEngine.ps1 apply-all <theme>              # all existing integrations
+  # Font/ShellFont/All may take -TerminalFont @{face='Consolas';size=14;weight='normal'}.
+  # Scoped operations preserve full-theme history; results include per-target status.
   ThemeEngine.ps1 reload
   ThemeEngine.ps1 rollback
+  ThemeEngine.ps1 font list
+  ThemeEngine.ps1 font current
+  ThemeEngine.ps1 font test <theme-id>
+  ThemeEngine.ps1 font plan <theme-id>
+  ThemeEngine.ps1 font preview <theme-id>
+  ThemeEngine.ps1 font status
+  ThemeEngine.ps1 font mappings
+  ThemeEngine.ps1 font map <theme-id> "<font family>"
+  ThemeEngine.ps1 font map-v2 <theme-id> "<font family>" <size> <weight>
+  ThemeEngine.ps1 font theme-preview
+  ThemeEngine.ps1 font preview-font "<family>" <size> <weight>
+  ThemeEngine.ps1 font apply-font "<family>" <size> <weight>
+  ThemeEngine.ps1 font preview-theme <theme> "<family>" <size> <weight>
+  ThemeEngine.ps1 font apply-theme <theme> "<family>" <size> <weight>
+  ThemeEngine.ps1 font save-preset <name> <theme> "<family>" <size> <weight> [--replace]
+  ThemeEngine.ps1 font presets
+  ThemeEngine.ps1 font load-preset <name>
+  ThemeEngine.ps1 font preview-preset <name>
+  ThemeEngine.ps1 font apply-preset <name>
   ThemeEngine.ps1 wallpaper <subcommand>
   ThemeEngine.ps1 doctor
+  ThemeEngine.ps1 doctor-view
+
+Weights: thin, extra-light, light, semi-light, normal, medium, semi-bold,
+         bold, extra-bold, black, extra-black (font rendering depends on installed faces).
 "@
     }
 }
