@@ -42,7 +42,7 @@ function up {
 # Quick jump to your scripts folder  --  usage: scripts
 function scripts {
     if (-not $global:PSScriptsDir) {
-        Write-Host "  PSScriptsDir not set" -ForegroundColor Yellow
+        Write-Host "  $($global:UI_Theme.Warning)PSScriptsDir not set$($global:UI_Theme.Reset)"
         return
     }
     Set-Location $global:PSScriptsDir
@@ -52,7 +52,7 @@ function scripts {
 # Quick jump to your profile.d folder  --  usage: profiledir
 function profiledir {
     if (-not $global:PSProfileDir) {
-        Write-Host "  PSProfileDir not set" -ForegroundColor Yellow
+        Write-Host "  $($global:UI_Theme.Warning)PSProfileDir not set$($global:UI_Theme.Reset)"
         return
     }
     Set-Location $global:PSProfileDir
@@ -74,7 +74,7 @@ function Show-Tree {
         if ($depth -le $MaxDepth) {
             $indent = "  " * $depth
             if ($_.PSIsContainer) {
-                Write-Host "$indent$($_.Name)\" -ForegroundColor Cyan
+                Write-Host "$($global:UI_Theme.Accent)$indent$($_.Name)\$($global:UI_Theme.Reset)"
             } else {
                 $size = if ($_.Length -ge 1MB) {
                     " [{0:N1}MB]" -f ($_.Length / 1MB)
@@ -83,7 +83,7 @@ function Show-Tree {
                 } else {
                     " [{0}B]" -f $_.Length
                 }
-                Write-Host "$indent$($_.Name)$size" -ForegroundColor Gray
+                Write-Host "$($global:UI_Theme.Muted)$indent$($_.Name)$size$($global:UI_Theme.Reset)"
             }
         }
     }
@@ -98,9 +98,9 @@ function Get-MyIP {
     foreach ($nic in $nics) {
         $ipv4 = $nic.IPAddress | Where-Object { $_ -match '^\d+\.\d+\.\d+\.\d+$' } | Select-Object -First 1
         if ($ipv4) {
-            Write-Host "  $($nic.Description)" -ForegroundColor Cyan
-            Write-Host "    IPv4 : $ipv4" -ForegroundColor Green
-            Write-Host "    MAC  : $($nic.MACAddress)" -ForegroundColor Gray
+            Write-Host "  $($global:UI_Theme.Accent)$($nic.Description)$($global:UI_Theme.Reset)"
+            Write-Host "    $($global:UI_Theme.Success)IPv4 : $ipv4$($global:UI_Theme.Reset)"
+            Write-Host "    $($global:UI_Theme.Muted)MAC  : $($nic.MACAddress)$($global:UI_Theme.Reset)"
         }
     }
 }
@@ -112,13 +112,13 @@ function Get-Uptime {
     $os = Get-CimInstance Win32_OperatingSystem
     $uptime = (Get-Date) - $os.LastBootUpTime
 
-    Write-Host (
-        "  Uptime: {0}d {1}h {2}m  (last boot: {3})" -f
+    $message = "  Uptime: {0}d {1}h {2}m  (last boot: {3})" -f
         $uptime.Days,
         $uptime.Hours,
         $uptime.Minutes,
         $os.LastBootUpTime.ToString("yyyy-MM-dd HH:mm")
-    ) -ForegroundColor Green
+
+    Write-Host "$($global:UI_Theme.Success)$message$($global:UI_Theme.Reset)"
 }
 Set-Alias -Name uptime -Value Get-Uptime
 
@@ -141,16 +141,16 @@ function Get-DiskSummary {
         $bar    = "#" * $filled + "-" * $empty
 
         $barColor = if ($pct -ge 90) {
-            "Red"
+            $global:UI_Theme.Error
         } elseif ($pct -ge 70) {
-            "Yellow"
+            $global:UI_Theme.Warning
         } else {
-            "Green"
+            $global:UI_Theme.Success
         }
 
-        Write-Host -NoNewline "  $($_.Name):  " -ForegroundColor White
-        Write-Host -NoNewline "[$bar] " -ForegroundColor $barColor
-        Write-Host ("{0}%  {1}GB used / {2}GB free / {3}GB total" -f $pct, $used, $free, $total) -ForegroundColor Gray
+        Write-Host -NoNewline "  $($global:UI_Theme.Text)$($_.Name):$($global:UI_Theme.Reset)  "
+        Write-Host -NoNewline "${barColor}[$bar]$($global:UI_Theme.Reset) "
+        Write-Host "$($global:UI_Theme.Muted)$("{0}%  {1}GB used / {2}GB free / {3}GB total" -f $pct, $used, $free, $total)$($global:UI_Theme.Reset)"
     }
 }
 Set-Alias -Name diskuse -Value Get-DiskSummary

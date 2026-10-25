@@ -1,15 +1,42 @@
-#--------------------------------------------
+﻿#--------------------------------------------
 # file:     admin-menu-gui.ps1
 # author:   Mike Redd
-# version:  1.0.0
+# version:  1.2.1
 # created:  2026-06-19
-# updated:  2026-06-19
+# updated:  2026-09-13
 # desc:     Unified Admin Tools dashboard (WinForms front-end for the
 #           SystemInfo / Power / Updates / Network / Disk / Events /
 #           Services / Watch / Processes / Logs console menus).
 #           Standalone: does NOT depend on ui.ps1 / core.ps1.
 #           Requires Windows PowerShell 5.1 in -STA (WinForms).
 #--------------------------------------------
+
+# ── Host bootstrap ─────────────────────────────────────────────
+# This dashboard targets Windows PowerShell 5.1 in STA mode. The normal Typezer∅
+# Tool Menu runs under PowerShell 7, so a direct/menu launch must hand the GUI
+# off to the host it was designed and tested against.
+#
+# -NoProfile keeps the child GUI isolated from the caller's profile.
+# -ExecutionPolicy Bypass applies only to this child process; it does not alter
+# the machine or user execution policy.
+$needsWindowsPowerShell = ($PSVersionTable.PSEdition -ne "Desktop")
+$needsSta = ([Threading.Thread]::CurrentThread.ApartmentState -ne "STA")
+
+if ($needsWindowsPowerShell -or $needsSta) {
+    $windowsPowerShell = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
+
+    if (-not (Test-Path -LiteralPath $windowsPowerShell)) {
+        throw "Windows PowerShell 5.1 was not found at: $windowsPowerShell"
+    }
+
+    if (-not $PSCommandPath) {
+        throw "Cannot relaunch Admin Tools because the current script path is unavailable."
+    }
+
+    $arguments = "-NoProfile -ExecutionPolicy Bypass -STA -File `"$PSCommandPath`""
+    Start-Process -FilePath $windowsPowerShell -ArgumentList $arguments -WorkingDirectory $PSScriptRoot
+    return
+}
 
 # ── WinForms bootstrap ────────────────────────────────────────
 Add-Type -AssemblyName System.Windows.Forms
@@ -32,23 +59,238 @@ public static class ProcUtil {
 }
 "@ -ErrorAction SilentlyContinue
 
-# ── Theme ─────────────────────────────────────────────────────
-$T = @{
-    Bg     = [System.Drawing.Color]::FromArgb(13,17,23)
-    Panel  = [System.Drawing.Color]::FromArgb(22,27,34)
-    Panel2 = [System.Drawing.Color]::FromArgb(28,33,40)
-    Text   = [System.Drawing.Color]::FromArgb(201,209,217)
-    Gray   = [System.Drawing.Color]::FromArgb(139,148,158)
-    Green  = [System.Drawing.Color]::FromArgb(63,185,80)
-    Cyan   = [System.Drawing.Color]::FromArgb(57,197,207)
-    Yellow = [System.Drawing.Color]::FromArgb(210,153,34)
-    Red    = [System.Drawing.Color]::FromArgb(248,81,73)
-    Mag    = [System.Drawing.Color]::FromArgb(188,140,255)
-    Sel    = [System.Drawing.Color]::FromArgb(33,40,48)
+# ── ThemeEngine / Windows theme ────────────────────────────────
+# Admin Tools remains standalone, but consumes the active Typezero ThemeEngine
+# palette when available. If ThemeEngine state is unavailable or invalid, the
+# dashboard falls back to its original Windows-dark palette.
+
+function Convert-HexToDrawingColor {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Hex
+    )
+
+    $h = $Hex.Trim().TrimStart('#')
+
+    if ($h.Length -ne 6) {
+        throw "Invalid RGB color: $Hex"
+    }
+
+    return [System.Drawing.Color]::FromArgb(
+        [Convert]::ToInt32($h.Substring(0, 2), 16),
+        [Convert]::ToInt32($h.Substring(2, 2), 16),
+        [Convert]::ToInt32($h.Substring(4, 2), 16)
+    )
 }
-$MonoFont = New-Object System.Drawing.Font("Consolas",9.5)
-$MonoBig  = New-Object System.Drawing.Font("Consolas",11,[System.Drawing.FontStyle]::Bold)
+
+function Read-AdminToolsTheme {
+    try {
+        $engineRoot  = Join-Path $env:LOCALAPPDATA "Typezero\ThemeEngine"
+        $currentFile = Join-Path $engineRoot "current-theme"
+
+        if (-not (Test-Path -LiteralPath $currentFile)) {
+            return $null
+        }
+
+        $themeId = (Get-Content -LiteralPath $currentFile -Raw).Trim()
+
+        if (-not $themeId) {
+            return $null
+        }
+
+        $themeFile = Join-Path `
+            (Join-Path (Join-Path $engineRoot "themes") $themeId) `
+            "theme.conf"
+
+        if (-not (Test-Path -LiteralPath $themeFile)) {
+            return $null
+        }
+
+        $theme = @{}
+
+        foreach ($raw in Get-Content -LiteralPath $themeFile) {
+            $line = $raw.Trim()
+
+            if (
+                -not $line -or
+                $line.StartsWith("#") -or
+                -not $line.Contains("=")
+            ) {
+                continue
+            }
+
+            $idx = $line.IndexOf("=")
+            $key = $line.Substring(0, $idx).Trim()
+            $val = $line.Substring($idx + 1).Trim()
+
+            if (
+                ($val.StartsWith('"') -and $val.EndsWith('"')) -or
+                ($val.StartsWith("'") -and $val.EndsWith("'"))
+            ) {
+                $val = $val.Substring(1, $val.Length - 2)
+            }
+
+            $theme[$key] = $val
+        }
+
+        return $theme
+    }
+    catch {
+        return $null
+    }
+}
+
+$WinAccent     = [System.Drawing.SystemColors]::Highlight
+$WinAccentText = [System.Drawing.SystemColors]::HighlightText
+
+$Theme = Read-AdminToolsTheme
+
+if ($Theme) {
+    $T = @{
+        Bg         = Convert-HexToDrawingColor $Theme["BG"]
+        Surface    = Convert-HexToDrawingColor $Theme["SURFACE"]
+        Panel      = Convert-HexToDrawingColor $Theme["SURFACE_ALT"]
+        Panel2     = Convert-HexToDrawingColor $Theme["FOCUSED_BG"]
+        Border     = Convert-HexToDrawingColor $Theme["BORDER"]
+        Text       = Convert-HexToDrawingColor $Theme["TEXT"]
+        Gray       = Convert-HexToDrawingColor $Theme["MUTED"]
+        Accent     = Convert-HexToDrawingColor $Theme["ACCENT"]
+        AccentText = Convert-HexToDrawingColor $Theme["BG"]
+        Green      = Convert-HexToDrawingColor $Theme["SUCCESS"]
+        Cyan       = Convert-HexToDrawingColor $Theme["INFO"]
+        Yellow     = Convert-HexToDrawingColor $Theme["WARNING"]
+        Red        = Convert-HexToDrawingColor $Theme["ERROR"]
+        Mag        = Convert-HexToDrawingColor $Theme["SECONDARY"]
+        Sel        = Convert-HexToDrawingColor $Theme["SURFACE_ALT"]
+    }
+}
+else {
+    $T = @{
+        Bg         = [System.Drawing.Color]::FromArgb(32,32,32)
+        Surface    = [System.Drawing.Color]::FromArgb(37,37,37)
+        Panel      = [System.Drawing.Color]::FromArgb(43,43,43)
+        Panel2     = [System.Drawing.Color]::FromArgb(48,48,48)
+        Border     = [System.Drawing.Color]::FromArgb(62,62,62)
+        Text       = [System.Drawing.Color]::FromArgb(243,243,243)
+        Gray       = [System.Drawing.Color]::FromArgb(174,174,174)
+        Accent     = $WinAccent
+        AccentText = $WinAccentText
+        Green      = [System.Drawing.Color]::FromArgb(108,203,95)
+        Cyan       = $WinAccent
+        Yellow     = [System.Drawing.Color]::FromArgb(255,185,0)
+        Red        = [System.Drawing.Color]::FromArgb(255,99,99)
+        Mag        = [System.Drawing.Color]::FromArgb(196,154,255)
+        Sel        = [System.Drawing.Color]::FromArgb(55,55,55)
+    }
+}
+$MonoFont = New-Object System.Drawing.Font("Cascadia Mono",9.5)
+if (-not $MonoFont.Name) {
+    $MonoFont = New-Object System.Drawing.Font("Consolas",9.5)
+}
+$MonoBig  = New-Object System.Drawing.Font("Segoe UI Semibold",10.5)
 $UiFont   = New-Object System.Drawing.Font("Segoe UI",9)
+
+# Apply the native Windows dark title-bar treatment when supported.
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+
+public static class WindowTheme {
+    [DllImport("dwmapi.dll")]
+    public static extern int DwmSetWindowAttribute(
+        IntPtr hwnd,
+        int dwAttribute,
+        ref int pvAttribute,
+        int cbAttribute);
+}
+
+public static class TaskbarIdentity {
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+    public static extern int SetCurrentProcessExplicitAppUserModelID(
+        string AppID);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr SendMessage(
+        IntPtr hWnd,
+        uint Msg,
+        IntPtr wParam,
+        IntPtr lParam);
+}
+"@ -ErrorAction SilentlyContinue
+
+function Enable-WindowsDarkTitleBar {
+    param([Parameter(Mandatory)]$Form)
+
+    try {
+        $enabled = 1
+        # DWMWA_USE_IMMERSIVE_DARK_MODE = 20 on current Windows 10/11 builds.
+        [void][WindowTheme]::DwmSetWindowAttribute(
+            $Form.Handle,
+            20,
+            [ref]$enabled,
+            4
+        )
+    }
+    catch {
+        # Cosmetic only. The app must remain usable if DWM rejects the hint.
+    }
+}
+
+function Set-AdminToolsTaskbarIdentity {
+    param(
+        [Parameter(Mandatory)]$Form,
+        [Parameter(Mandatory)][string]$IconPath
+    )
+
+    try {
+        # PowerShell is the host process, so Windows can otherwise group the
+        # window under the generic PowerShell taskbar identity/icon. Give this
+        # dashboard its own explicit application identity.
+        [void][TaskbarIdentity]::SetCurrentProcessExplicitAppUserModelID(
+            "Typezero.AdminTools"
+        )
+    }
+    catch {
+        # App identity is cosmetic; never block startup if the shell rejects it.
+    }
+
+    if (-not (Test-Path -LiteralPath $IconPath)) {
+        return
+    }
+
+    try {
+        $icon = New-Object System.Drawing.Icon($IconPath)
+        $Form.Icon = $icon
+
+        # Explicitly set both small and large window icons. This keeps the same
+        # Admin Tools artwork in the title bar, Alt+Tab, and taskbar even though
+        # the executable hosting the form is powershell.exe.
+        $WM_SETICON = 0x0080
+        $ICON_SMALL = [IntPtr]0
+        $ICON_BIG   = [IntPtr]1
+
+        [void][TaskbarIdentity]::SendMessage(
+            $Form.Handle,
+            $WM_SETICON,
+            $ICON_SMALL,
+            $icon.Handle
+        )
+
+        [void][TaskbarIdentity]::SendMessage(
+            $Form.Handle,
+            $WM_SETICON,
+            $ICON_BIG,
+            $icon.Handle
+        )
+
+        # Keep the icon alive for the lifetime of the form.
+        $script:AdminToolsWindowIcon = $icon
+    }
+    catch {
+        # Icon failure is cosmetic; keep the dashboard usable.
+    }
+}
+
 
 # ── Admin check ───────────────────────────────────────────────
 $IsAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltinRole]::Administrator)
@@ -61,20 +303,336 @@ function Format-Bytes($bytes) {
     return "$bytes B"
 }
 
+# ── Navigation/action icon helpers ─────────────────────────────
+# Admin Tools renders its navigation icons at runtime from Windows' built-in
+# Segoe MDL2 Assets font. Keeping the icons generated in-process avoids another
+# asset folder full of tiny PNGs and lets them follow the same semantic colors
+# as the rest of the dashboard.
+$script:AdminToolsIconCache = New-Object System.Collections.ArrayList
+
+function Get-AdminToolsGlyph {
+    param([Parameter(Mandatory)][string]$Name)
+
+    # These are Windows shell-style MDL2 glyphs. Where an action does not need a
+    # bespoke pictogram, it intentionally falls back to a simple command tile.
+    $map = @{
+        # Primary sections.
+        "SystemInfo"       = [char]0xE950
+        "Power"            = [char]0xE7E8
+        "Updates"          = [char]0xE72C
+        "Network"          = [char]0xE968
+        "Disk"             = [char]0xEDA2
+        "Events"           = [char]0xE8A5
+        "Services"         = [char]0xE713
+        "Watch"            = [char]0xE7F4
+        "Processes"        = [char]0xE9D9
+        "Logs"             = [char]0xE8A5
+        "About"            = [char]0xE946
+
+        # Common actions/options.
+        "Full Report"      = [char]0xE8A5
+        "System Overview"  = [char]0xE950
+        "Processor"        = [char]0xE950
+        "Memory"           = [char]0xE964
+        "Storage"          = [char]0xEDA2
+        "Display (GPU)"    = [char]0xE7F4
+        "Battery"          = [char]0xE850
+        "Performance"      = [char]0xE9D9
+        "Health Check"     = [char]0xE930
+        "Network Info"     = [char]0xE968
+        "Wi-Fi Details"    = [char]0xE701
+        "Ping Host"        = [char]0xE721
+        "Test Port"        = [char]0xE721
+        "DNS Lookup"       = [char]0xE721
+        "Traceroute"       = [char]0xE8F1
+        "Public IP"        = [char]0xE968
+        "Active TCP"       = [char]0xE968
+        "Listening Ports"  = [char]0xE968
+        "Drive Usage"      = [char]0xEDA2
+        "Largest Folders"  = [char]0xE8B7
+        "Largest Files"    = [char]0xE8A5
+        "Clean User Temp"  = [char]0xE74D
+        "Clean Win Temp"   = [char]0xE74D
+        "Empty Recycle Bin"= [char]0xE74D
+        "Export CSV"       = [char]0xE74E
+        "System Errors"    = [char]0xE783
+        "App Errors"       = [char]0xE783
+        "Warnings"         = [char]0xE7BA
+        "PowerShell Errors"= [char]0xE783
+        "Failed Logons"    = [char]0xE72E
+        "Reboot/Shutdown"  = [char]0xE7E8
+        "Running"          = [char]0xE768
+        "Stopped"          = [char]0xE71A
+        "All"              = [char]0xE8A9
+        "Start"            = [char]0xE768
+        "Stop"             = [char]0xE71A
+        "Restart"          = [char]0xE72C
+        "Set Startup"      = [char]0xE713
+        "Top CPU"          = [char]0xE9D9
+        "Top Memory"       = [char]0xE964
+        "Search"           = [char]0xE721
+        "By Port"          = [char]0xE721
+        "Details"          = [char]0xE946
+        "Kill"             = [char]0xE74D
+        "Suspend"          = [char]0xE769
+        "Resume"           = [char]0xE768
+        "Browse"           = [char]0xE8B7
+        "Last 25"          = [char]0xE8A5
+        "Last 100"         = [char]0xE8A5
+        "Full Log"         = [char]0xE8A5
+        "Log Info"         = [char]0xE946
+        "Clear Log"        = [char]0xE74D
+        "Test Entries"     = [char]0xE8A5
+        "Sleep"            = [char]0xE708
+        "Hibernate"        = [char]0xE708
+        "Lock Screen"      = [char]0xE72E
+        "Log Off"          = [char]0xE8AC
+        "Shutdown"         = [char]0xE7E8
+        "Restart in..."    = [char]0xE72C
+        "Shutdown in..."   = [char]0xE7E8
+        "Cancel scheduled" = [char]0xE711
+        "Scan & List"      = [char]0xE72C
+        "Update History"   = [char]0xE81C
+        "Install All"      = [char]0xE896
+        "Security Only"    = [char]0xEA18
+        "Reboot"           = [char]0xE72C
+        "Install Module"   = [char]0xE896
+    }
+
+    if ($map.ContainsKey($Name)) {
+        return [string]$map[$Name]
+    }
+
+    return [string][char]0xE945
+}
+
+function New-AdminToolsIcon {
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)][System.Drawing.Color]$Color,
+        [int]$Size = 20
+    )
+
+    $bitmap = New-Object System.Drawing.Bitmap($Size, $Size)
+    $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+
+    try {
+        $graphics.Clear([System.Drawing.Color]::Transparent)
+        $graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+
+        $penWidth = [single][Math]::Max(1.4, $Size / 12.0)
+        $pen = New-Object System.Drawing.Pen($Color, $penWidth)
+        $brush = New-Object System.Drawing.SolidBrush($Color)
+
+        try {
+            switch ($Name) {
+                "Full Report" {
+                    # Document outline with a folded upper-right corner and
+                    # three report lines. Drawn directly because the previous
+                    # font glyph rendered like stray brackets on some systems.
+                    $left = [single]($Size * 0.23)
+                    $top = [single]($Size * 0.12)
+                    $right = [single]($Size * 0.77)
+                    $bottom = [single]($Size * 0.88)
+                    $fold = [single]($Size * 0.18)
+
+                    $graphics.DrawLine($pen, $left, $top, $right - $fold, $top)
+                    $graphics.DrawLine($pen, $right - $fold, $top, $right, $top + $fold)
+                    $graphics.DrawLine($pen, $right, $top + $fold, $right, $bottom)
+                    $graphics.DrawLine($pen, $right, $bottom, $left, $bottom)
+                    $graphics.DrawLine($pen, $left, $bottom, $left, $top)
+                    $graphics.DrawLine($pen, $right - $fold, $top, $right - $fold, $top + $fold)
+                    $graphics.DrawLine($pen, $right - $fold, $top + $fold, $right, $top + $fold)
+
+                    foreach ($y in @(0.43, 0.58, 0.73)) {
+                        $graphics.DrawLine(
+                            $pen,
+                            [single]($Size * 0.34),
+                            [single]($Size * $y),
+                            [single]($Size * 0.66),
+                            [single]($Size * $y)
+                        )
+                    }
+                }
+
+                { $_ -in @("SystemInfo","Processor","Top CPU") } {
+                    # CPU/chip icon.
+                    $rect = New-Object System.Drawing.RectangleF(
+                        [single]($Size * 0.25),
+                        [single]($Size * 0.25),
+                        [single]($Size * 0.50),
+                        [single]($Size * 0.50)
+                    )
+                    $graphics.DrawRectangle(
+                        $pen,
+                        $rect.X,
+                        $rect.Y,
+                        $rect.Width,
+                        $rect.Height
+                    )
+
+                    foreach ($v in @(0.34,0.50,0.66)) {
+                        $x = [single]($Size * $v)
+                        $graphics.DrawLine($pen, $x, [single]($Size * 0.10), $x, [single]($Size * 0.25))
+                        $graphics.DrawLine($pen, $x, [single]($Size * 0.75), $x, [single]($Size * 0.90))
+                        $graphics.DrawLine($pen, [single]($Size * 0.10), $x, [single]($Size * 0.25), $x)
+                        $graphics.DrawLine($pen, [single]($Size * 0.75), $x, [single]($Size * 0.90), $x)
+                    }
+                }
+
+                { $_ -in @("Memory","Top Memory") } {
+                    # RAM module icon.
+                    $graphics.DrawRectangle(
+                        $pen,
+                        [single]($Size * 0.14),
+                        [single]($Size * 0.32),
+                        [single]($Size * 0.72),
+                        [single]($Size * 0.36)
+                    )
+
+                    foreach ($xFrac in @(0.28,0.43,0.58,0.73)) {
+                        $graphics.FillRectangle(
+                            $brush,
+                            [single]($Size * $xFrac - $Size * 0.055),
+                            [single]($Size * 0.41),
+                            [single]($Size * 0.11),
+                            [single]($Size * 0.18)
+                        )
+                    }
+
+                    foreach ($xFrac in @(0.24,0.36,0.48,0.60,0.72)) {
+                        $x = [single]($Size * $xFrac)
+                        $graphics.DrawLine(
+                            $pen,
+                            $x,
+                            [single]($Size * 0.68),
+                            $x,
+                            [single]($Size * 0.80)
+                        )
+                    }
+                }
+
+                "Details" {
+                    # Information icon.
+                    $graphics.DrawEllipse(
+                        $pen,
+                        [single]($Size * 0.18),
+                        [single]($Size * 0.18),
+                        [single]($Size * 0.64),
+                        [single]($Size * 0.64)
+                    )
+                    $graphics.FillEllipse(
+                        $brush,
+                        [single]($Size * 0.46),
+                        [single]($Size * 0.32),
+                        [single]($Size * 0.08),
+                        [single]($Size * 0.08)
+                    )
+                    $graphics.DrawLine(
+                        $pen,
+                        [single]($Size * 0.50),
+                        [single]($Size * 0.47),
+                        [single]($Size * 0.50),
+                        [single]($Size * 0.68)
+                    )
+                }
+
+                default {
+                    # All other icons continue to use the Windows shell glyph
+                    # set so the dashboard stays visually native and compact.
+                    $graphics.TextRenderingHint = [System.Drawing.Text.TextRenderingHint]::ClearTypeGridFit
+
+                    $fontSize = [Math]::Max(10, [Math]::Round($Size * 0.68))
+                    $font = New-Object System.Drawing.Font(
+                        "Segoe MDL2 Assets",
+                        [single]$fontSize,
+                        [System.Drawing.FontStyle]::Regular,
+                        [System.Drawing.GraphicsUnit]::Pixel
+                    )
+                    $format = New-Object System.Drawing.StringFormat
+                    $format.Alignment = [System.Drawing.StringAlignment]::Center
+                    $format.LineAlignment = [System.Drawing.StringAlignment]::Center
+
+                    try {
+                        $rect = New-Object System.Drawing.RectangleF(0, 0, $Size, $Size)
+                        $graphics.DrawString((Get-AdminToolsGlyph $Name), $font, $brush, $rect, $format)
+                    }
+                    finally {
+                        $format.Dispose()
+                        $font.Dispose()
+                    }
+                }
+            }
+        }
+        finally {
+            $brush.Dispose()
+            $pen.Dispose()
+        }
+    }
+    finally {
+        $graphics.Dispose()
+    }
+
+    # WinForms does not clone assigned images. Keep each bitmap alive for the
+    # lifetime of the dashboard and dispose them when the form exits.
+    [void]$script:AdminToolsIconCache.Add($bitmap)
+    return $bitmap
+}
+
+function Set-SubNavSelection {
+    param([Parameter(Mandatory)]$Button)
+
+    $parent = $Button.Parent
+    if (-not $parent) {
+        return
+    }
+
+    foreach ($control in $parent.Controls) {
+        if ($control -isnot [System.Windows.Forms.Button]) {
+            continue
+        }
+
+        $control.BackColor = $T.Panel2
+        if ($control.Tag -is [System.Drawing.Color]) {
+            $control.ForeColor = $control.Tag
+        }
+        else {
+            $control.ForeColor = $T.Text
+        }
+    }
+
+    $Button.BackColor = $T.Accent
+    $Button.ForeColor = $T.AccentText
+}
 function New-Button($text, $accent) {
     $b = New-Object System.Windows.Forms.Button
     $b.Text = $text
     $b.Font = $UiFont
     $b.FlatStyle = "Flat"
-    $b.FlatAppearance.BorderSize = 1
-    $b.FlatAppearance.BorderColor = $T.Panel2
+    $b.UseVisualStyleBackColor = $false
+    $b.FlatAppearance.BorderSize = 0
+    $b.FlatAppearance.MouseOverBackColor = $T.Sel
+    $b.FlatAppearance.MouseDownBackColor = $T.Panel
     $b.BackColor = $T.Panel2
-    if ($accent) { $b.ForeColor = $accent } else { $b.ForeColor = $T.Text }
+    $b.ForeColor = $(if ($accent) { $accent } else { $T.Text })
+    $b.Tag = $b.ForeColor
     $b.AutoSize = $false
-    $b.Height = 28
-    $b.Width = 150
-    $b.Margin = New-Object System.Windows.Forms.Padding(3)
+    $b.Height = 42
+    $b.Width = 214
+    $b.Margin = New-Object System.Windows.Forms.Padding(0,0,0,4)
+    $b.Padding = New-Object System.Windows.Forms.Padding(12,0,8,0)
     $b.Cursor = "Hand"
+    $b.TextAlign = "MiddleLeft"
+    $b.ImageAlign = "MiddleLeft"
+    $b.TextImageRelation = "ImageBeforeText"
+    $b.Image = New-AdminToolsIcon -Name $text -Color $b.ForeColor -Size 22
+
+    # This visual handler runs before the action-specific handler added by the
+    # Build-* function. It gives every option menu the same selected-row cue.
+    $b.Add_Click({
+        Set-SubNavSelection $this
+    })
+
     return $b
 }
 
@@ -84,14 +642,14 @@ function New-Label($text, $color) {
     $l.Font = $UiFont
     $l.AutoSize = $true
     if ($color) { $l.ForeColor = $color } else { $l.ForeColor = $T.Gray }
-    $l.Margin = New-Object System.Windows.Forms.Padding(6,8,2,0)
+    $l.Margin = New-Object System.Windows.Forms.Padding(8,8,2,2)
     return $l
 }
 
 function New-Input($width) {
     $tb = New-Object System.Windows.Forms.TextBox
     $tb.Font = $MonoFont
-    $tb.BackColor = $T.Bg
+    $tb.BackColor = $T.Surface
     $tb.ForeColor = $T.Text
     $tb.BorderStyle = "FixedSingle"
     if ($width) { $tb.Width = $width } else { $tb.Width = 120 }
@@ -102,7 +660,7 @@ function New-Input($width) {
 function New-Output {
     $r = New-Object System.Windows.Forms.RichTextBox
     $r.Font = $MonoFont
-    $r.BackColor = $T.Bg
+    $r.BackColor = $T.Surface
     $r.ForeColor = $T.Text
     $r.BorderStyle = "None"
     $r.ReadOnly = $true
@@ -115,9 +673,9 @@ function New-Output {
 function New-Grid {
     $g = New-Object System.Windows.Forms.DataGridView
     $g.Dock = "Fill"
-    $g.BackgroundColor = $T.Bg
-    $g.GridColor = $T.Panel2
-    $g.BorderStyle = "None"
+    $g.BackgroundColor = $T.Surface
+    $g.GridColor = $T.Border
+    $g.BorderStyle = "FixedSingle"
     $g.Font = $MonoFont
     $g.ReadOnly = $true
     $g.AllowUserToAddRows = $false
@@ -129,25 +687,29 @@ function New-Grid {
     $g.EnableHeadersVisualStyles = $false
     $g.AutoSizeColumnsMode = "Fill"
     $g.ColumnHeadersHeightSizeMode = "DisableResizing"
-    $g.ColumnHeadersDefaultCellStyle.BackColor = $T.Panel
-    $g.ColumnHeadersDefaultCellStyle.ForeColor = $T.Cyan
-    $g.ColumnHeadersDefaultCellStyle.Font = $MonoFont
-    $g.DefaultCellStyle.BackColor = $T.Bg
+    $g.ColumnHeadersDefaultCellStyle.BackColor = $T.Panel2
+    $g.ColumnHeadersDefaultCellStyle.ForeColor = $T.Text
+    $g.ColumnHeadersDefaultCellStyle.Font = $UiFont
+    $g.ColumnHeadersDefaultCellStyle.Alignment = "MiddleLeft"
+    $g.DefaultCellStyle.BackColor = $T.Surface
     $g.DefaultCellStyle.ForeColor = $T.Text
-    $g.DefaultCellStyle.SelectionBackColor = $T.Sel
-    $g.DefaultCellStyle.SelectionForeColor = $T.Green
-    $g.AlternatingRowsDefaultCellStyle.BackColor = $T.Panel
+    $g.DefaultCellStyle.SelectionBackColor = $T.Accent
+    $g.DefaultCellStyle.SelectionForeColor = $T.AccentText
+    $g.AlternatingRowsDefaultCellStyle.BackColor = $T.Bg
     return $g
 }
 
 function New-Toolbar {
     $f = New-Object System.Windows.Forms.FlowLayoutPanel
-    $f.Dock = "Top"
-    $f.AutoSize = $true
-    $f.AutoSizeMode = "GrowAndShrink"
-    $f.WrapContents = $true
-    $f.BackColor = $T.Panel
-    $f.Padding = New-Object System.Windows.Forms.Padding(6,6,6,6)
+    $f.Dock = "Left"
+    $f.Width = 236
+    $f.AutoSize = $false
+    $f.WrapContents = $false
+    $f.FlowDirection = [System.Windows.Forms.FlowDirection]::TopDown
+    $f.AutoScroll = $true
+    $f.BackColor = $T.Surface
+    $f.BorderStyle = "FixedSingle"
+    $f.Padding = New-Object System.Windows.Forms.Padding(10,12,10,12)
     return $f
 }
 
@@ -204,8 +766,19 @@ function Run-Busy($scriptblock) {
 }
 
 # ── Promoted tab helpers (script scope so click handlers can see them) ──
-function Write-SiHeader($out, $title) {
-    $out.Clear()
+function Write-SiHeader {
+    param(
+        [Parameter(Mandatory)]$out,
+        [Parameter(Mandatory)][string]$title,
+        [switch]$Append
+    )
+
+    # Individual SystemInfo views replace the current output. Full Report uses
+    # -Append so multiple sections can be rendered into one scrollable report.
+    if (-not $Append) {
+        $out.Clear()
+    }
+
     Out-Line $out "  $title" $T.Mag
     Out-Line $out "  ----------------------------------------------------" $T.Gray
 }
@@ -267,8 +840,8 @@ function Get-ProcRows($procs) {
         [PSCustomObject]@{
             Name      = $_.ProcessName
             PID       = $_.Id
-            "CPU(s)"  = if ($_.CPU) { [Math]::Round($_.CPU,1) } else { 0 }
-            "RAM(MB)" = [Math]::Round($_.WorkingSet64/1MB,1)
+            "CPU Time (s)" = if ($_.CPU) { [Math]::Round($_.CPU,1) } else { 0 }
+            "Memory (MB)" = [Math]::Round($_.WorkingSet64/1MB,1)
         }
     }
 }
@@ -301,62 +874,197 @@ $Form.StartPosition = "CenterScreen"
 $Form.BackColor = $T.Bg
 $Form.ForeColor = $T.Text
 $Form.Font = $UiFont
+$Form.ShowIcon = $true
+# Resolve the icon now; apply it after the form handle exists so Windows can
+# use it consistently for the title bar, Alt+Tab, and taskbar.
+$IconPath = Join-Path $PSScriptRoot "assets\admin-tools.ico"
+
 
 # Status bar
 $StatusStrip = New-Object System.Windows.Forms.Panel
 $StatusStrip.Dock = "Bottom"
-$StatusStrip.Height = 24
-$StatusStrip.BackColor = $T.Panel
+$StatusStrip.Height = 28
+$StatusStrip.BackColor = $T.Surface
 $StatusLabel = New-Object System.Windows.Forms.Label
 $script:StatusLabel = $StatusLabel
 $StatusLabel.Dock = "Fill"
 $StatusLabel.TextAlign = "MiddleLeft"
-$StatusLabel.Font = $MonoFont
+$StatusLabel.Font = $UiFont
 $StatusLabel.ForeColor = $T.Gray
 $StatusLabel.Text = "  Ready  -  $env:USERNAME@$env:COMPUTERNAME"
 $StatusStrip.Controls.Add($StatusLabel)
 
-# Left nav
-$NavPanel = New-Object System.Windows.Forms.Panel
-$NavPanel.Dock = "Left"
-$NavPanel.Width = 196
-$NavPanel.BackColor = $T.Panel
+# Top navigation
+# Primary sections live in one fixed horizontal row. A TableLayoutPanel keeps
+# all eleven tabs on one line and automatically redistributes width as the
+# window is resized instead of wrapping or consuming content space at the left.
+$NavItems = @(
+    "SystemInfo","Power","Updates","Network","Disk",
+    "Events","Services","Watch","Processes","Logs","About"
+)
 
-$NavTitle = New-Object System.Windows.Forms.Label
-$NavTitle.Text = "  Admin Tools"
-$NavTitle.Dock = "Top"
-$NavTitle.Height = 40
-$NavTitle.TextAlign = "MiddleLeft"
-$NavTitle.Font = $MonoBig
-$NavTitle.ForeColor = $T.Cyan
-$NavTitle.BackColor = $T.Panel
+$TopNav = New-Object System.Windows.Forms.TableLayoutPanel
+$TopNav.Dock = "Top"
+$TopNav.Height = 72
+$TopNav.RowCount = 1
+$TopNav.ColumnCount = $NavItems.Count
+$TopNav.GrowStyle = [System.Windows.Forms.TableLayoutPanelGrowStyle]::FixedSize
+$TopNav.BackColor = $T.Surface
+$TopNav.Margin = New-Object System.Windows.Forms.Padding(0)
+$TopNav.Padding = New-Object System.Windows.Forms.Padding(0)
 
-$Nav = New-Object System.Windows.Forms.ListBox
-$Nav.Dock = "Fill"
-$Nav.BackColor = $T.Panel
-$Nav.ForeColor = $T.Text
-$Nav.Font = $MonoFont
-$Nav.BorderStyle = "None"
-$Nav.IntegralHeight = $false
-$Nav.ItemHeight = 30
-[void]$Nav.Items.AddRange(@(
-    "  SystemInfo","  Power","  Updates","  Network","  Disk",
-    "  Events","  Services","  Watch","  Processes","  Logs","  About"
-))
+$columnPercent = [single](100.0 / $NavItems.Count)
+foreach ($null in $NavItems) {
+    $columnStyle = New-Object System.Windows.Forms.ColumnStyle
+    $columnStyle.SizeType = [System.Windows.Forms.SizeType]::Percent
+    $columnStyle.Width = $columnPercent
+    [void]$TopNav.ColumnStyles.Add($columnStyle)
+}
 
-$NavPanel.Controls.Add($Nav)
-$NavPanel.Controls.Add($NavTitle)
+$TopNavButtons = @{}
 
+function Set-TopNavSelection {
+    param([Parameter(Mandatory)][string]$Name)
+
+    foreach ($entry in $TopNavButtons.GetEnumerator()) {
+        $button = $entry.Value
+        $selected = ($entry.Key -eq $Name)
+
+        if ($selected) {
+            $button.BackColor = $T.Accent
+            $button.ForeColor = $T.AccentText
+            $button.Image = New-AdminToolsIcon -Name $entry.Key -Color $T.AccentText -Size 24
+            $button.FlatAppearance.MouseOverBackColor = $T.Accent
+            $button.FlatAppearance.MouseDownBackColor = $T.Accent
+        }
+        else {
+            $button.BackColor = $T.Surface
+            $button.ForeColor = $T.Text
+            $button.Image = New-AdminToolsIcon -Name $entry.Key -Color $T.Text -Size 24
+            $button.FlatAppearance.MouseOverBackColor = $T.Sel
+            $button.FlatAppearance.MouseDownBackColor = $T.Panel
+        }
+    }
+}
+
+for ($i = 0; $i -lt $NavItems.Count; $i++) {
+    $tabName = $NavItems[$i]
+
+    $button = New-Object System.Windows.Forms.Button
+    $button.Text = $tabName
+    $button.Dock = "Fill"
+    $button.Font = $UiFont
+    $button.Image = New-AdminToolsIcon -Name $tabName -Color $T.Text -Size 24
+    $button.ImageAlign = "TopCenter"
+    $button.TextAlign = "BottomCenter"
+    $button.TextImageRelation = "ImageAboveText"
+    $button.Padding = New-Object System.Windows.Forms.Padding(2,8,2,7)
+    $button.FlatStyle = "Flat"
+    $button.UseVisualStyleBackColor = $false
+    $button.FlatAppearance.BorderSize = 0
+    $button.BackColor = $T.Surface
+    $button.ForeColor = $T.Text
+    $button.Margin = New-Object System.Windows.Forms.Padding(1,0,1,0)
+    $button.Cursor = "Hand"
+    $button.Tag = $tabName
+
+    # Capture this iteration's tab name. Without GetNewClosure(), PowerShell
+    # callbacks can all resolve the final loop value after construction ends.
+    $button.Add_Click({
+        Switch-Panel $tabName
+        Set-TopNavSelection $tabName
+        Set-Status $tabName $T.Gray
+    }.GetNewClosure())
+
+    $TopNavButtons[$tabName] = $button
+    $TopNav.Controls.Add($button, $i, 0)
+}
 # Content host
 $Content = New-Object System.Windows.Forms.Panel
 $Content.Dock = "Fill"
 $Content.BackColor = $T.Bg
 
 $Form.Controls.Add($Content)
-$Form.Controls.Add($NavPanel)
+$Form.Controls.Add($TopNav)
 $Form.Controls.Add($StatusStrip)
 
 $Panels = @{}
+
+# WinForms callbacks created inside Build-* functions must use GetNewClosure().
+# Those builder-local variables disappear after the function returns; without an
+# explicit closure, later clicks resolve $out/$grid/etc. as $null (or as an
+# unrelated variable from another scope), producing the null-method errors this
+# dashboard previously emitted.
+
+function Get-DisplayInventory {
+    <#
+    .SYNOPSIS
+        Returns one record for every display Windows currently exposes.
+
+    .DESCRIPTION
+        System.Windows.Forms.Screen is the reliable source for attached desktop
+        displays and their active bounds. WmiMonitorID is used only to enrich
+        those records with monitor manufacturer/model names when Windows exposes
+        EDID data for an active panel.
+
+        WMI monitor enumeration order is not guaranteed to match Screen order,
+        so identity enrichment is best-effort. The important contract is that
+        every active Screen is always listed.
+    #>
+
+    $screens = @([System.Windows.Forms.Screen]::AllScreens)
+
+    $monitorIds = @(
+        Get-CimInstance `
+            -Namespace root\wmi `
+            -ClassName WmiMonitorID `
+            -ErrorAction SilentlyContinue |
+        Where-Object { $_.Active -eq $true }
+    )
+
+    function Convert-MonitorText {
+        param($Value)
+
+        if (-not $Value) {
+            return $null
+        }
+
+        $chars = @($Value | Where-Object { $_ -ne 0 } | ForEach-Object { [char]$_ })
+        if ($chars.Count -eq 0) {
+            return $null
+        }
+
+        return (-join $chars).Trim()
+    }
+
+    for ($i = 0; $i -lt $screens.Count; $i++) {
+        $screen = $screens[$i]
+        $monitor = if ($i -lt $monitorIds.Count) { $monitorIds[$i] } else { $null }
+
+        $manufacturer = if ($monitor) { Convert-MonitorText $monitor.ManufacturerName } else { $null }
+        $model = if ($monitor) { Convert-MonitorText $monitor.UserFriendlyName } else { $null }
+        $serial = if ($monitor) { Convert-MonitorText $monitor.SerialNumberID } else { $null }
+
+        $friendlyName = if ($model) {
+            if ($manufacturer) { "$manufacturer $model" } else { $model }
+        }
+        else {
+            "Display $($i + 1)"
+        }
+
+        [PSCustomObject]@{
+            Number       = $i + 1
+            FriendlyName = $friendlyName
+            DeviceName   = $screen.DeviceName
+            Width        = $screen.Bounds.Width
+            Height       = $screen.Bounds.Height
+            X            = $screen.Bounds.X
+            Y            = $screen.Bounds.Y
+            Primary      = $screen.Primary
+            Serial       = $serial
+        }
+    }
+}
 
 # ══════════════════════════════════════════════════════════════
 #  SYSTEMINFO TAB
@@ -388,7 +1096,7 @@ function Build-SystemInfo {
             Write-SiRow $out "Logged in"     "$env:USERNAME" $T.Text
         }
         Set-Status "System overview" $T.Green
-    })
+    }.GetNewClosure())
 
     $bCpu = New-Button "Processor" $T.Green
     $bCpu.Add_Click({
@@ -403,7 +1111,7 @@ function Build-SystemInfo {
             }
         }
         Set-Status "Processor" $T.Green
-    })
+    }.GetNewClosure())
 
     $bMem = New-Button "Memory" $T.Green
     $bMem.Add_Click({
@@ -424,7 +1132,7 @@ function Build-SystemInfo {
             }
         }
         Set-Status "Memory" $T.Green
-    })
+    }.GetNewClosure())
 
     $bStorage = New-Button "Storage" $T.Green
     $bStorage.Add_Click({
@@ -443,7 +1151,7 @@ function Build-SystemInfo {
             }
         }
         Set-Status "Storage" $T.Green
-    })
+    }.GetNewClosure())
 
     $bGpu = New-Button "Display (GPU)" $T.Green
     $bGpu.Add_Click({
@@ -451,15 +1159,47 @@ function Build-SystemInfo {
             Write-SiHeader $out "DISPLAY ADAPTERS (GPU)"
             foreach ($g in Get-CimInstance Win32_VideoController) {
                 Write-SiRow $out "Name"    $g.Name $T.Green
-                if ($g.AdapterRAM -gt 0) { Write-SiRow $out "  VRAM" ("{0:N0} MB" -f ($g.AdapterRAM/1MB)) $T.Text }
+                if ($g.AdapterRAM -gt 0) {
+                    Write-SiRow $out "  VRAM" ("{0:N0} MB" -f ($g.AdapterRAM / 1MB)) $T.Text
+                }
                 Write-SiRow $out "  Driver" $g.DriverVersion $T.Gray
+
+                # Win32_VideoController reports an adapter's current mode, not a
+                # complete inventory of every attached monitor. Keep this line
+                # as adapter information and list displays separately below.
                 if ($g.CurrentHorizontalResolution) {
-                    Write-SiRow $out "  Resolution" "$($g.CurrentHorizontalResolution)x$($g.CurrentVerticalResolution) @ $($g.CurrentRefreshRate)Hz" $T.Text
+                    Write-SiRow $out "  Active Mode" "$($g.CurrentHorizontalResolution)x$($g.CurrentVerticalResolution) @ $($g.CurrentRefreshRate)Hz" $T.Text
+                }
+
+                Out-Line $out "" $T.Text
+            }
+
+            Write-SiHeader $out "CONNECTED DISPLAYS" -Append
+            $displays = @(Get-DisplayInventory)
+
+            if ($displays.Count -eq 0) {
+                Out-Line $out "    No active displays detected." $T.Yellow
+            }
+            else {
+                foreach ($display in $displays) {
+                    $primarySuffix = if ($display.Primary) { "  [Primary]" } else { "" }
+
+                    Write-SiRow $out "Display $($display.Number)" "$($display.FriendlyName)$primarySuffix" $T.Green
+                    Write-SiRow $out "  Device" $display.DeviceName $T.Gray
+                    Write-SiRow $out "  Resolution" "$($display.Width)x$($display.Height)" $T.Text
+                    Write-SiRow $out "  Position" "$($display.X), $($display.Y)" $T.Gray
+
+                    if ($display.Serial) {
+                        Write-SiRow $out "  Serial" $display.Serial $T.Gray
+                    }
+
+                    Out-Line $out "" $T.Text
                 }
             }
         }
-        Set-Status "GPU" $T.Green
-    })
+
+        Set-Status "GPU / displays" $T.Green
+    }.GetNewClosure())
 
     $bNet = New-Button "Network" $T.Green
     $bNet.Add_Click({
@@ -475,7 +1215,7 @@ function Build-SystemInfo {
             }
         }
         Set-Status "Network" $T.Green
-    })
+    }.GetNewClosure())
 
     $bBatt = New-Button "Battery" $T.Green
     $bBatt.Add_Click({
@@ -492,7 +1232,7 @@ function Build-SystemInfo {
             }
         }
         Set-Status "Battery" $T.Green
-    })
+    }.GetNewClosure())
 
     $bPerf = New-Button "Performance" $T.Yellow
     $bPerf.Add_Click({
@@ -505,28 +1245,210 @@ function Build-SystemInfo {
             Write-SiRow $out "Memory Used"  "$memPct%" $(if ($memPct -ge 85) { $T.Red } elseif ($memPct -ge 70) { $T.Yellow } else { $T.Green })
             $procCount = (Get-Process).Count
             Write-SiRow $out "Processes"    $procCount $T.Text
-            $thr = (Get-Process | Measure-Object -Property Threads -Sum).Sum
+            # Process.Threads is a ProcessThreadCollection, not a numeric value.
+            # Sum each collection's Count rather than asking Measure-Object to
+            # add the collection objects themselves.
+            $thr = (
+                Get-Process -ErrorAction SilentlyContinue |
+                ForEach-Object { $_.Threads.Count } |
+                Measure-Object -Sum
+            ).Sum
             if ($thr) { Write-SiRow $out "Threads" $thr $T.Gray }
         }
         Set-Status "Performance" $T.Green
-    })
+    }.GetNewClosure())
 
     $bFull = New-Button "Full Report" $T.Cyan
     $bFull.Add_Click({
         Run-Busy {
+            Set-Status "Building full system report..." $T.Yellow
             $out.Clear()
-            $bOverview.PerformClick(); Out-Line $out "" $T.Text
-            $bCpu.PerformClick();      Out-Line $out "" $T.Text
-            $bMem.PerformClick();      Out-Line $out "" $T.Text
-            $bStorage.PerformClick();  Out-Line $out "" $T.Text
-            $bGpu.PerformClick();      Out-Line $out "" $T.Text
-            $bNet.PerformClick();      Out-Line $out "" $T.Text
-            $bBatt.PerformClick();     Out-Line $out "" $T.Text
-            $bPerf.PerformClick()
-            $out.SelectionStart = 0; $out.ScrollToCaret()
+
+            # Full Report is rendered directly instead of clicking the other
+            # buttons. Those individual views intentionally clear $out, which
+            # previously meant the "full" report ended with only the final
+            # Performance section visible.
+            Out-Line $out "  ====================================================" $T.Cyan
+            Out-Line $out "  FULL SYSTEM REPORT" $T.Cyan
+            Out-Line $out "  $env:COMPUTERNAME  |  $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" $T.Gray
+            Out-Line $out "  ====================================================" $T.Cyan
+            Out-Line $out "" $T.Text
+
+            # ── System overview ───────────────────────────────
+            Write-SiHeader $out "SYSTEM OVERVIEW" -Append
+            $os   = Get-CimInstance Win32_OperatingSystem
+            $cs   = Get-CimInstance Win32_ComputerSystem
+            $bios = Get-CimInstance Win32_BIOS
+            $up   = (Get-Date) - $os.LastBootUpTime
+
+            Write-SiRow $out "Computer"      $cs.Name $T.Green
+            Write-SiRow $out "Manufacturer"  $cs.Manufacturer $T.Text
+            Write-SiRow $out "Model"         $cs.Model $T.Text
+            Write-SiRow $out "OS"            $os.Caption $T.Green
+            Write-SiRow $out "Version"       "$($os.Version) (build $($os.BuildNumber))" $T.Text
+            Write-SiRow $out "Architecture"  $os.OSArchitecture $T.Text
+            Write-SiRow $out "BIOS"          "$($bios.Manufacturer) $($bios.SMBIOSBIOSVersion)" $T.Text
+            Write-SiRow $out "Uptime"        ("{0}d {1}h {2}m" -f $up.Days, $up.Hours, $up.Minutes) $T.Yellow
+            Write-SiRow $out "Logged in"     $env:USERNAME $T.Text
+            Out-Line $out "" $T.Text
+
+            # ── Processor ────────────────────────────────────
+            Write-SiHeader $out "PROCESSOR (CPU)" -Append
+            foreach ($c in Get-CimInstance Win32_Processor) {
+                Write-SiRow $out "Name"         $c.Name $T.Green
+                Write-SiRow $out "Cores"        $c.NumberOfCores $T.Text
+                Write-SiRow $out "Logical"      $c.NumberOfLogicalProcessors $T.Text
+                Write-SiRow $out "Max Clock"    "$($c.MaxClockSpeed) MHz" $T.Text
+                Write-SiRow $out "Current Load" "$($c.LoadPercentage)%" $(if ($c.LoadPercentage -ge 80) { $T.Red } elseif ($c.LoadPercentage -ge 50) { $T.Yellow } else { $T.Green })
+            }
+            Out-Line $out "" $T.Text
+
+            # ── Memory ───────────────────────────────────────
+            Write-SiHeader $out "MEMORY (RAM)" -Append
+            $totalKB = $os.TotalVisibleMemorySize
+            $freeKB  = $os.FreePhysicalMemory
+            $usedKB  = $totalKB - $freeKB
+            $memPct  = [Math]::Round($usedKB / $totalKB * 100)
+
+            Write-SiRow $out "Total" ("{0:N1} GB" -f ($totalKB / 1MB)) $T.Text
+            Write-SiRow $out "Used"  ("{0:N1} GB  ({1}%)" -f ($usedKB / 1MB), $memPct) $(if ($memPct -ge 85) { $T.Red } elseif ($memPct -ge 70) { $T.Yellow } else { $T.Green })
+            Write-SiRow $out "Free"  ("{0:N1} GB" -f ($freeKB / 1MB)) $T.Green
+
+            foreach ($m in Get-CimInstance Win32_PhysicalMemory) {
+                $cap = [Math]::Round($m.Capacity / 1GB)
+                Write-SiRow $out "Module" "$cap GB @ $($m.Speed) MHz  ($($m.Manufacturer))" $T.Gray
+            }
+            Out-Line $out "" $T.Text
+
+            # ── Storage ──────────────────────────────────────
+            Write-SiHeader $out "STORAGE" -Append
+            $fixedDisks = @(Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3")
+            if ($fixedDisks.Count -eq 0) {
+                Out-Line $out "    No fixed disks found." $T.Yellow
+            }
+            else {
+                foreach ($d in $fixedDisks) {
+                    $totalGB = [Math]::Round($d.Size / 1GB, 1)
+                    $freeGB  = [Math]::Round($d.FreeSpace / 1GB, 1)
+                    $usedGB  = [Math]::Round(($d.Size - $d.FreeSpace) / 1GB, 1)
+                    $pct     = if ($d.Size -gt 0) { [Math]::Round(($d.Size - $d.FreeSpace) / $d.Size * 100) } else { 0 }
+                    $driveColor = if ($pct -ge 90) { $T.Red } elseif ($pct -ge 75) { $T.Yellow } else { $T.Green }
+                    $label = if ([string]::IsNullOrWhiteSpace($d.VolumeName)) { $d.DeviceID } else { "$($d.DeviceID)  $($d.VolumeName)" }
+
+                    Out-Line $out "    $label" $T.Cyan
+                    Write-SiRow $out "  Used"  "$usedGB GB ($pct%)" $driveColor
+                    Write-SiRow $out "  Free"  "$freeGB GB" $T.Green
+                    Write-SiRow $out "  Total" "$totalGB GB" $T.Gray
+                }
+            }
+            Out-Line $out "" $T.Text
+
+            # ── Display adapters / monitors ───────────────────
+            Write-SiHeader $out "DISPLAY ADAPTERS (GPU)" -Append
+            foreach ($g in Get-CimInstance Win32_VideoController) {
+                Write-SiRow $out "Name" $g.Name $T.Green
+                if ($g.AdapterRAM -gt 0) {
+                    Write-SiRow $out "  VRAM" ("{0:N0} MB" -f ($g.AdapterRAM / 1MB)) $T.Text
+                }
+                Write-SiRow $out "  Driver" $g.DriverVersion $T.Gray
+                if ($g.CurrentHorizontalResolution) {
+                    Write-SiRow $out "  Active Mode" "$($g.CurrentHorizontalResolution)x$($g.CurrentVerticalResolution) @ $($g.CurrentRefreshRate)Hz" $T.Text
+                }
+                Out-Line $out "" $T.Text
+            }
+
+            Write-SiHeader $out "CONNECTED DISPLAYS" -Append
+            $displays = @(Get-DisplayInventory)
+            if ($displays.Count -eq 0) {
+                Out-Line $out "    No active displays detected." $T.Yellow
+            }
+            else {
+                foreach ($display in $displays) {
+                    $primarySuffix = if ($display.Primary) { "  [Primary]" } else { "" }
+
+                    Write-SiRow $out "Display $($display.Number)" "$($display.FriendlyName)$primarySuffix" $T.Green
+                    Write-SiRow $out "  Device" $display.DeviceName $T.Gray
+                    Write-SiRow $out "  Resolution" "$($display.Width)x$($display.Height)" $T.Text
+                    Write-SiRow $out "  Position" "$($display.X), $($display.Y)" $T.Gray
+
+                    if ($display.Serial) {
+                        Write-SiRow $out "  Serial" $display.Serial $T.Gray
+                    }
+
+                    Out-Line $out "" $T.Text
+                }
+            }
+
+            # ── Network ──────────────────────────────────────
+            Write-SiHeader $out "NETWORK ADAPTERS" -Append
+            $upAdapters = @(Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object Status -eq "Up")
+            if ($upAdapters.Count -eq 0) {
+                Out-Line $out "    No active network adapters found." $T.Yellow
+            }
+            else {
+                foreach ($a in $upAdapters) {
+                    Out-Line $out "    $($a.Name)" $T.Cyan
+                    Write-SiRow $out "  Interface" $a.InterfaceDescription $T.Text
+                    Write-SiRow $out "  Speed"     $a.LinkSpeed $T.Text
+                    Write-SiRow $out "  MAC"       $a.MacAddress $T.Gray
+
+                    $ips = Get-NetIPAddress -InterfaceIndex $a.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue
+                    foreach ($ip in $ips) {
+                        Write-SiRow $out "  IPv4" $ip.IPAddress $T.Green
+                    }
+                }
+            }
+            Out-Line $out "" $T.Text
+
+            # ── Battery ──────────────────────────────────────
+            Write-SiHeader $out "BATTERY" -Append
+            $batteries = @(Get-CimInstance Win32_Battery -ErrorAction SilentlyContinue)
+            if ($batteries.Count -eq 0) {
+                Out-Line $out "    No battery detected." $T.Yellow
+            }
+            else {
+                $statusMap = @{ 1="Discharging"; 2="AC Power"; 3="Fully Charged"; 4="Low"; 5="Critical" }
+                foreach ($bat in $batteries) {
+                    $charge = [int]$bat.EstimatedChargeRemaining
+                    $chargeColor = if ($charge -le 20) { $T.Red } elseif ($charge -le 40) { $T.Yellow } else { $T.Green }
+                    $st = $statusMap[[int]$bat.BatteryStatus]
+                    if (-not $st) { $st = "Status $($bat.BatteryStatus)" }
+
+                    Write-SiRow $out "Charge" "$charge%" $chargeColor
+                    Write-SiRow $out "Status" $st $T.Text
+                }
+            }
+            Out-Line $out "" $T.Text
+
+            # ── Performance snapshot ─────────────────────────
+            Write-SiHeader $out "PERFORMANCE SNAPSHOT" -Append
+            $cpuLoad = (Get-CimInstance Win32_Processor | Measure-Object -Property LoadPercentage -Average).Average
+            $procList = @(Get-Process -ErrorAction SilentlyContinue)
+            $procCount = $procList.Count
+            $threadCount = (
+                $procList |
+                ForEach-Object { $_.Threads.Count } |
+                Measure-Object -Sum
+            ).Sum
+
+            Write-SiRow $out "CPU Load"    "$([Math]::Round($cpuLoad))%" $(if ($cpuLoad -ge 80) { $T.Red } elseif ($cpuLoad -ge 50) { $T.Yellow } else { $T.Green })
+            Write-SiRow $out "Memory Used" "$memPct%" $(if ($memPct -ge 85) { $T.Red } elseif ($memPct -ge 70) { $T.Yellow } else { $T.Green })
+            Write-SiRow $out "Processes"   $procCount $T.Text
+            if ($threadCount) {
+                Write-SiRow $out "Threads" $threadCount $T.Gray
+            }
+
+            Out-Line $out "" $T.Text
+            Out-Line $out "  ====================================================" $T.Cyan
+            Out-Line $out "  END OF REPORT" $T.Gray
+            Out-Line $out "  ====================================================" $T.Cyan
+
+            $out.SelectionStart = 0
+            $out.ScrollToCaret()
         }
-        Set-Status "Full report complete" $T.Green
-    })
+
+        Set-Status "Full system report complete" $T.Green
+    }.GetNewClosure())
 
     foreach ($b in @($bFull,$bOverview,$bCpu,$bMem,$bStorage,$bGpu,$bNet,$bBatt,$bPerf)) { [void]$bar.Controls.Add($b) }
     return $p
@@ -552,24 +1474,24 @@ function Build-Power {
             Set-Status "Sleeping..." $T.Yellow
             rundll32.exe powrprof.dll,SetSuspendState 0,1,0
         }
-    })
+    }.GetNewClosure())
 
     $bHib = New-Button "Hibernate" $T.Green
     $bHib.Add_Click({
         if (Confirm-Box "Hibernate now?") { Set-Status "Hibernating..." $T.Yellow; shutdown.exe /h }
-    })
+    }.GetNewClosure())
 
     $bLock = New-Button "Lock Screen" $T.Green
-    $bLock.Add_Click({ rundll32.exe user32.dll,LockWorkStation; Set-Status "Locked." $T.Green })
+    $bLock.Add_Click({ rundll32.exe user32.dll,LockWorkStation; Set-Status "Locked." $T.Green }.GetNewClosure())
 
     $bLogoff = New-Button "Log Off" $T.Mag
-    $bLogoff.Add_Click({ if (Confirm-Box "Log off now? Unsaved work will be lost.") { shutdown.exe /l } })
+    $bLogoff.Add_Click({ if (Confirm-Box "Log off now? Unsaved work will be lost.") { shutdown.exe /l } }.GetNewClosure())
 
     $bRestart = New-Button "Restart" $T.Yellow
-    $bRestart.Add_Click({ if (Confirm-Box "Restart now?") { Restart-Computer -Force } })
+    $bRestart.Add_Click({ if (Confirm-Box "Restart now?") { Restart-Computer -Force } }.GetNewClosure())
 
     $bShutdown = New-Button "Shutdown" $T.Red
-    $bShutdown.Add_Click({ if (Confirm-Box "Shut down now?") { Stop-Computer -Force } })
+    $bShutdown.Add_Click({ if (Confirm-Box "Shut down now?") { Stop-Computer -Force } }.GetNewClosure())
 
     $lblMin = New-Label "Delay (min):" $T.Gray
     $txtMin = New-Input 60
@@ -586,7 +1508,7 @@ function Build-Power {
                 Set-Status "Restart scheduled ($m min)" $T.Yellow
             }
         } else { Out-Line $out "  Enter 1-1440 minutes." $T.Red }
-    })
+    }.GetNewClosure())
 
     $bShutdownIn = New-Button "Shutdown in..." $T.Red
     $bShutdownIn.Add_Click({
@@ -599,14 +1521,14 @@ function Build-Power {
                 Set-Status "Shutdown scheduled ($m min)" $T.Red
             }
         } else { Out-Line $out "  Enter 1-1440 minutes." $T.Red }
-    })
+    }.GetNewClosure())
 
     $bCancel = New-Button "Cancel scheduled" $T.Cyan
     $bCancel.Add_Click({
         shutdown.exe /a 2>$null
         Out-Line $out "  Any scheduled shutdown/restart has been cancelled." $T.Green
         Set-Status "Schedule cancelled" $T.Green
-    })
+    }.GetNewClosure())
 
     foreach ($b in @($bSleep,$bHib,$bLock,$bLogoff,$bRestart,$bShutdown,$lblMin,$txtMin,$bRestartIn,$bShutdownIn,$bCancel)) {
         [void]$bar.Controls.Add($b)
@@ -638,7 +1560,7 @@ function Build-Updates {
                 Out-Line $out "  PSWindowsUpdate installed." $T.Green
             } catch { Out-Line $out "  Install failed: $($_.Exception.Message)" $T.Red }
         }
-    })
+    }.GetNewClosure())
 
     $bScan = New-Button "Scan & List" $T.Green
     $bScan.Add_Click({
@@ -652,7 +1574,7 @@ function Build-Updates {
                 Set-Status "Scan complete" $T.Green
             } catch { Out-Line $out "  Scan failed: $($_.Exception.Message)" $T.Red }
         }
-    })
+    }.GetNewClosure())
 
     $bHistory = New-Button "Update History" $T.Green
     $bHistory.Add_Click({
@@ -664,7 +1586,7 @@ function Build-Updates {
                 Set-Status "History loaded" $T.Green
             } catch { Out-Line $out "  History failed: $($_.Exception.Message)" $T.Red }
         }
-    })
+    }.GetNewClosure())
 
     $bInstallAll = New-Button "Install All" $T.Yellow
     $bInstallAll.Add_Click({
@@ -678,7 +1600,7 @@ function Build-Updates {
                 Out-Line $out "  Install pass complete. Reboot may be required." $T.Green
             } catch { Out-Line $out "  Install failed: $($_.Exception.Message)" $T.Red }
         }
-    })
+    }.GetNewClosure())
 
     $bSec = New-Button "Security Only" $T.Yellow
     $bSec.Add_Click({
@@ -691,10 +1613,10 @@ function Build-Updates {
                 Out-Line $out "  Security update pass complete." $T.Green
             } catch { Out-Line $out "  Failed: $($_.Exception.Message)" $T.Red }
         }
-    })
+    }.GetNewClosure())
 
     $bReboot = New-Button "Reboot" $T.Red
-    $bReboot.Add_Click({ if ([System.Windows.Forms.MessageBox]::Show("Reboot now?","Confirm","YesNo","Warning") -eq "Yes") { Restart-Computer -Force } })
+    $bReboot.Add_Click({ if ([System.Windows.Forms.MessageBox]::Show("Reboot now?","Confirm","YesNo","Warning") -eq "Yes") { Restart-Computer -Force } }.GetNewClosure())
 
     foreach ($b in @($bScan,$bHistory,$bInstallAll,$bSec,$bReboot,$bInstallMod)) { [void]$bar.Controls.Add($b) }
     return $p
@@ -735,7 +1657,7 @@ function Build-Network {
             Out-Line $out ("    {0,-22}{1}" -f "DNS Resolution", $(if ($dnsOk) { "Working" } else { "Failed" })) $(if ($dnsOk) { $T.Green } else { $T.Red })
         }
         Set-Status "Health check" $T.Green
-    })
+    }.GetNewClosure())
 
     $bInfo = New-Button "Network Info" $T.Green
     $bInfo.Add_Click({
@@ -750,7 +1672,7 @@ function Build-Network {
             }
         }
         Set-Status "Network info" $T.Green
-    })
+    }.GetNewClosure())
 
     $bWifi = New-Button "Wi-Fi Details" $T.Green
     $bWifi.Add_Click({
@@ -762,7 +1684,7 @@ function Build-Network {
             else { Out-Line $out "  No Wi-Fi interface or netsh unavailable." $T.Yellow }
         }
         Set-Status "Wi-Fi" $T.Green
-    })
+    }.GetNewClosure())
 
     $bPing = New-Button "Ping Host" $T.Green
     $bPing.Add_Click({
@@ -780,7 +1702,7 @@ function Build-Network {
             } catch { Out-Line $out "    Host unreachable: $($_.Exception.Message)" $T.Red }
         }
         Set-Status "Ping" $T.Green
-    })
+    }.GetNewClosure())
 
     $bPort = New-Button "Test Port" $T.Green
     $bPort.Add_Click({
@@ -794,7 +1716,7 @@ function Build-Network {
             else { Out-Line $out "    Port $pt CLOSED / filtered on $h" $T.Red }
         }
         Set-Status "Port test" $T.Green
-    })
+    }.GetNewClosure())
 
     $bDns = New-Button "DNS Lookup" $T.Green
     $bDns.Add_Click({
@@ -810,7 +1732,7 @@ function Build-Network {
             } catch { Out-Line $out "    Lookup failed: $($_.Exception.Message)" $T.Red }
         }
         Set-Status "DNS lookup" $T.Green
-    })
+    }.GetNewClosure())
 
     $bTrace = New-Button "Traceroute" $T.Green
     $bTrace.Add_Click({
@@ -825,7 +1747,7 @@ function Build-Network {
             }
         }
         Set-Status "Traceroute done" $T.Green
-    })
+    }.GetNewClosure())
 
     $bPubIp = New-Button "Public IP" $T.Green
     $bPubIp.Add_Click({
@@ -837,7 +1759,7 @@ function Build-Network {
             } catch { Out-Line $out "  Lookup failed: $($_.Exception.Message)" $T.Red }
         }
         Set-Status "Public IP" $T.Green
-    })
+    }.GetNewClosure())
 
     $bTcp = New-Button "Active TCP" $T.Green
     $bTcp.Add_Click({
@@ -851,7 +1773,7 @@ function Build-Network {
             }
         }
         Set-Status "Active TCP" $T.Green
-    })
+    }.GetNewClosure())
 
     $bListen = New-Button "Listening Ports" $T.Green
     $bListen.Add_Click({
@@ -865,7 +1787,7 @@ function Build-Network {
             }
         }
         Set-Status "Listening ports" $T.Green
-    })
+    }.GetNewClosure())
 
     foreach ($b in @($bHealth,$bInfo,$bWifi,$lblHost,$txtHost,$lblPort,$txtPort,$bPing,$bPort,$bDns,$bTrace,$bPubIp,$bTcp,$bListen)) {
         [void]$bar.Controls.Add($b)
@@ -909,7 +1831,7 @@ function Build-Disk {
             Set-Grid $grid $rows
         }
         Set-Status "Drive usage" $T.Green
-    })
+    }.GetNewClosure())
 
     $bFolders = New-Button "Largest Folders" $T.Green
     $bFolders.Add_Click({
@@ -923,7 +1845,7 @@ function Build-Disk {
             Set-Grid $grid $rows
         }
         Set-Status "Folders scanned" $T.Green
-    })
+    }.GetNewClosure())
 
     $bFiles = New-Button "Largest Files" $T.Green
     $bFiles.Add_Click({
@@ -936,7 +1858,7 @@ function Build-Disk {
             Set-Grid $grid $rows
         }
         Set-Status "Files scanned" $T.Green
-    })
+    }.GetNewClosure())
 
     $bCleanUser = New-Button "Clean User Temp" $T.Yellow
     $bCleanUser.Add_Click({
@@ -952,7 +1874,7 @@ function Build-Disk {
             Out-Line $out "  Removed $del item(s) from user temp." $T.Green
         }
         Set-Status "User temp cleaned" $T.Green
-    })
+    }.GetNewClosure())
 
     $bCleanWin = New-Button "Clean Win Temp" $T.Yellow
     $bCleanWin.Add_Click({
@@ -969,14 +1891,14 @@ function Build-Disk {
             Out-Line $out "  Removed $del item(s) from Windows temp." $T.Green
         }
         Set-Status "Windows temp cleaned" $T.Green
-    })
+    }.GetNewClosure())
 
     $bRecycle = New-Button "Empty Recycle Bin" $T.Red
     $bRecycle.Add_Click({
         if ([System.Windows.Forms.MessageBox]::Show("Empty the Recycle Bin?","Confirm","YesNo","Warning") -ne "Yes") { return }
         try { Clear-RecycleBin -Force -ErrorAction Stop; Out-Line $out "  Recycle Bin emptied." $T.Green }
         catch { Out-Line $out "  Failed: $($_.Exception.Message)" $T.Red }
-    })
+    }.GetNewClosure())
 
     $bExport = New-Button "Export CSV" $T.Cyan
     $bExport.Add_Click({
@@ -989,7 +1911,7 @@ function Build-Disk {
         } | Export-Csv -Path $dlg.FileName -NoTypeInformation
         Out-Line $out "  Exported to $($dlg.FileName)" $T.Green
         Set-Status "CSV exported" $T.Green
-    })
+    }.GetNewClosure())
 
     foreach ($b in @($bUsage,$lblPath,$txtPath,$bFolders,$bFiles,$bCleanUser,$bCleanWin,$bRecycle,$bExport)) { [void]$bar.Controls.Add($b) }
     return $p
@@ -1007,13 +1929,13 @@ function Build-Events {
 
 
     $bSysErr = New-Button "System Errors" $T.Green
-    $bSysErr.Add_Click({ Show-EventLog $grid "System" 2 "System errors" })
+    $bSysErr.Add_Click({ Show-EventLog $grid "System" 2 "System errors" }.GetNewClosure())
     $bAppErr = New-Button "App Errors" $T.Green
-    $bAppErr.Add_Click({ Show-EventLog $grid "Application" 2 "Application errors" })
+    $bAppErr.Add_Click({ Show-EventLog $grid "Application" 2 "Application errors" }.GetNewClosure())
     $bWarn = New-Button "Warnings" $T.Green
-    $bWarn.Add_Click({ Show-EventLog $grid "System" 3 "System warnings" })
+    $bWarn.Add_Click({ Show-EventLog $grid "System" 3 "System warnings" }.GetNewClosure())
     $bPsErr = New-Button "PowerShell Errors" $T.Green
-    $bPsErr.Add_Click({ Show-EventLog $grid "Windows PowerShell" 2 "PowerShell errors" })
+    $bPsErr.Add_Click({ Show-EventLog $grid "Windows PowerShell" 2 "PowerShell errors" }.GetNewClosure())
 
     $bLogon = New-Button "Failed Logons" $T.Green
     $bLogon.Add_Click({
@@ -1027,7 +1949,7 @@ function Build-Events {
                 Set-Status "Failed logons - $($ev.Count)" $T.Green
             } catch { Set-Grid $grid @([PSCustomObject]@{ Note = "No failed logons or access denied." }) }
         }
-    })
+    }.GetNewClosure())
 
     $bReboot = New-Button "Reboot/Shutdown" $T.Green
     $bReboot.Add_Click({
@@ -1041,7 +1963,7 @@ function Build-Events {
                 Set-Status "Power events - $($ev.Count)" $T.Green
             } catch { Set-Grid $grid @([PSCustomObject]@{ Note = "None found." }) }
         }
-    })
+    }.GetNewClosure())
 
     $bExport = New-Button "Export CSV" $T.Cyan
     $bExport.Add_Click({
@@ -1051,7 +1973,7 @@ function Build-Events {
         if ($dlg.ShowDialog() -ne "OK") { return }
         $grid.Tag | Export-Csv -Path $dlg.FileName -NoTypeInformation
         Set-Status "Exported to $($dlg.FileName)" $T.Green
-    })
+    }.GetNewClosure())
 
     foreach ($b in @($bSysErr,$bAppErr,$bWarn,$bPsErr,$bLogon,$bReboot,$bExport)) { [void]$bar.Controls.Add($b) }
     return $p
@@ -1076,27 +1998,27 @@ function Build-Services {
 
 
     $bRunning = New-Button "Running" $T.Green
-    $bRunning.Add_Click({ Load-ServiceList $grid $txtSearch "Running" })
+    $bRunning.Add_Click({ Load-ServiceList $grid $txtSearch "Running" }.GetNewClosure())
     $bStopped = New-Button "Stopped" $T.Green
-    $bStopped.Add_Click({ Load-ServiceList $grid $txtSearch "Stopped" })
+    $bStopped.Add_Click({ Load-ServiceList $grid $txtSearch "Stopped" }.GetNewClosure())
     $bAll = New-Button "All" $T.Green
-    $bAll.Add_Click({ Load-ServiceList $grid $txtSearch "All" })
+    $bAll.Add_Click({ Load-ServiceList $grid $txtSearch "All" }.GetNewClosure())
 
     $bStart = New-Button "Start" $T.Yellow
     $bStart.Add_Click({
         $n = Get-SelectedSvc $grid; if (-not $n) { Out-Line $out "  Select a service first." $T.Yellow; return }
         try { Start-Service -Name $n -ErrorAction Stop; Out-Line $out "  Started $n" $T.Green } catch { Out-Line $out "  Failed: $($_.Exception.Message)" $T.Red }
-    })
+    }.GetNewClosure())
     $bStop = New-Button "Stop" $T.Yellow
     $bStop.Add_Click({
         $n = Get-SelectedSvc $grid; if (-not $n) { Out-Line $out "  Select a service first." $T.Yellow; return }
         try { Stop-Service -Name $n -Force -ErrorAction Stop; Out-Line $out "  Stopped $n" $T.Green } catch { Out-Line $out "  Failed: $($_.Exception.Message)" $T.Red }
-    })
+    }.GetNewClosure())
     $bRestart = New-Button "Restart" $T.Yellow
     $bRestart.Add_Click({
         $n = Get-SelectedSvc $grid; if (-not $n) { Out-Line $out "  Select a service first." $T.Yellow; return }
         try { Restart-Service -Name $n -Force -ErrorAction Stop; Out-Line $out "  Restarted $n" $T.Green } catch { Out-Line $out "  Failed: $($_.Exception.Message)" $T.Red }
-    })
+    }.GetNewClosure())
 
     $cmbStart = New-Object System.Windows.Forms.ComboBox
     $cmbStart.DropDownStyle = "DropDownList"
@@ -1111,7 +2033,7 @@ function Build-Services {
         $n = Get-SelectedSvc $grid; if (-not $n) { Out-Line $out "  Select a service first." $T.Yellow; return }
         try { Set-Service -Name $n -StartupType $cmbStart.SelectedItem -ErrorAction Stop; Out-Line $out "  $n startup set to $($cmbStart.SelectedItem)" $T.Green }
         catch { Out-Line $out "  Failed: $($_.Exception.Message)" $T.Red }
-    })
+    }.GetNewClosure())
 
     foreach ($b in @($bRunning,$bStopped,$bAll,$lblSearch,$txtSearch,$bStart,$bStop,$bRestart,$cmbStart,$bSetStart)) { [void]$bar.Controls.Add($b) }
     return $p
@@ -1137,9 +2059,9 @@ function Build-Processes {
 
 
     $bCpu = New-Button "Top CPU" $T.Green
-    $bCpu.Add_Click({ Run-Busy { Set-Grid $grid (Get-ProcRows (Get-Process | Sort-Object CPU -Descending | Select-Object -First 25)) }; Set-Status "Top CPU" $T.Green })
+    $bCpu.Add_Click({ Run-Busy { Set-Grid $grid (Get-ProcRows (Get-Process | Sort-Object CPU -Descending | Select-Object -First 25)) }; Set-Status "Top CPU" $T.Green }.GetNewClosure())
     $bMem = New-Button "Top Memory" $T.Green
-    $bMem.Add_Click({ Run-Busy { Set-Grid $grid (Get-ProcRows (Get-Process | Sort-Object WorkingSet64 -Descending | Select-Object -First 25)) }; Set-Status "Top memory" $T.Green })
+    $bMem.Add_Click({ Run-Busy { Set-Grid $grid (Get-ProcRows (Get-Process | Sort-Object WorkingSet64 -Descending | Select-Object -First 25)) }; Set-Status "Top memory" $T.Green }.GetNewClosure())
 
     $bSearch = New-Button "Search" $T.Green
     $bSearch.Add_Click({
@@ -1150,7 +2072,7 @@ function Build-Processes {
             Set-Grid $grid (Get-ProcRows $procs)
         }
         Set-Status "Search done" $T.Green
-    })
+    }.GetNewClosure())
 
     $bByPort = New-Button "By Port" $T.Green
     $bByPort.Add_Click({
@@ -1162,7 +2084,7 @@ function Build-Processes {
             Set-Grid $grid (Get-ProcRows $procs)
         }
         Set-Status "Port lookup" $T.Green
-    })
+    }.GetNewClosure())
 
     $bDetails = New-Button "Details" $T.Cyan
     $bDetails.Add_Click({
@@ -1176,14 +2098,14 @@ function Build-Processes {
             Out-Line $out "    RAM:  $([Math]::Round($proc.WorkingSet64/1MB,1)) MB    Threads: $($proc.Threads.Count)" $T.Text
             if ($cim) { Out-Line $out "    Cmd:  $($cim.CommandLine)" $T.Gray }
         } catch { Out-Line $out "  Failed: $($_.Exception.Message)" $T.Red }
-    })
+    }.GetNewClosure())
 
     $bKill = New-Button "Kill" $T.Red
     $bKill.Add_Click({
         $procPid = Get-SelectedPid $grid; if (-not $procPid) { Out-Line $out "  Select a row." $T.Yellow; return }
         if ([System.Windows.Forms.MessageBox]::Show("Kill PID $procPid ?","Confirm","YesNo","Warning") -ne "Yes") { return }
         try { Stop-Process -Id $procPid -Force -ErrorAction Stop; Out-Line $out "  Killed PID $procPid" $T.Green } catch { Out-Line $out "  Failed: $($_.Exception.Message)" $T.Red }
-    })
+    }.GetNewClosure())
 
     $bSuspend = New-Button "Suspend" $T.Yellow
     $bSuspend.Add_Click({
@@ -1196,7 +2118,7 @@ function Build-Processes {
             }
             Out-Line $out "  Suspended PID $procPid" $T.Green
         } catch { Out-Line $out "  Failed: $($_.Exception.Message)" $T.Red }
-    })
+    }.GetNewClosure())
 
     $bResume = New-Button "Resume" $T.Yellow
     $bResume.Add_Click({
@@ -1209,7 +2131,7 @@ function Build-Processes {
             }
             Out-Line $out "  Resumed PID $procPid" $T.Green
         } catch { Out-Line $out "  Failed: $($_.Exception.Message)" $T.Red }
-    })
+    }.GetNewClosure())
 
     $bExport = New-Button "Export CSV" $T.Cyan
     $bExport.Add_Click({
@@ -1219,7 +2141,7 @@ function Build-Processes {
         if ($dlg.ShowDialog() -ne "OK") { return }
         $grid.Tag | Export-Csv -Path $dlg.FileName -NoTypeInformation
         Out-Line $out "  Exported to $($dlg.FileName)" $T.Green
-    })
+    }.GetNewClosure())
 
     foreach ($b in @($bCpu,$bMem,$lblName,$txtName,$bSearch,$lblPort,$txtPort,$bByPort,$bDetails,$bKill,$bSuspend,$bResume,$bExport)) { [void]$bar.Controls.Add($b) }
     return $p
@@ -1257,11 +2179,11 @@ function Build-Watch {
         switch ($cmbWhat.SelectedItem) {
             "Top CPU" {
                 Set-Grid $grid (Get-Process | Sort-Object CPU -Descending | Select-Object -First 15 |
-                    ForEach-Object { [PSCustomObject]@{ Name=$_.ProcessName; PID=$_.Id; "CPU(s)"=if($_.CPU){[Math]::Round($_.CPU,1)}else{0}; "RAM(MB)"=[Math]::Round($_.WorkingSet64/1MB,1) } })
+                    ForEach-Object { [PSCustomObject]@{ Name=$_.ProcessName; PID=$_.Id; "CPU Time (s)"=if($_.CPU){[Math]::Round($_.CPU,1)}else{0}; "Memory (MB)"=[Math]::Round($_.WorkingSet64/1MB,1) } })
             }
             "Top Memory" {
                 Set-Grid $grid (Get-Process | Sort-Object WorkingSet64 -Descending | Select-Object -First 15 |
-                    ForEach-Object { [PSCustomObject]@{ Name=$_.ProcessName; PID=$_.Id; "RAM(MB)"=[Math]::Round($_.WorkingSet64/1MB,1); "CPU(s)"=if($_.CPU){[Math]::Round($_.CPU,1)}else{0} } })
+                    ForEach-Object { [PSCustomObject]@{ Name=$_.ProcessName; PID=$_.Id; "Memory (MB)"=[Math]::Round($_.WorkingSet64/1MB,1); "CPU Time (s)"=if($_.CPU){[Math]::Round($_.CPU,1)}else{0} } })
             }
             "Active TCP" {
                 Set-Grid $grid (Get-NetTCPConnection -State Established -ErrorAction SilentlyContinue | Select-Object -First 30 |
@@ -1285,6 +2207,7 @@ function Build-Watch {
         }
         Set-Status "Watching: $($cmbWhat.SelectedItem)  -  $(Get-Date -Format HH:mm:ss)" $T.Cyan
     }
+    $refresh = $refresh.GetNewClosure()
     $timer.Add_Tick($refresh)
 
     $bStart = New-Button "Start" $T.Green
@@ -1293,9 +2216,9 @@ function Build-Watch {
         & $refresh
         $timer.Start()
         Set-Status "Watching: $($cmbWhat.SelectedItem)" $T.Cyan
-    })
+    }.GetNewClosure())
     $bStop = New-Button "Stop" $T.Red
-    $bStop.Add_Click({ $timer.Stop(); Set-Status "Watch stopped" $T.Gray })
+    $bStop.Add_Click({ $timer.Stop(); Set-Status "Watch stopped" $T.Gray }.GetNewClosure())
 
     foreach ($b in @($lblWhat,$cmbWhat,$lblInt,$numInt,$bStart,$bStop)) { [void]$bar.Controls.Add($b) }
     return $p
@@ -1322,15 +2245,15 @@ function Build-Logs {
         $dlg = New-Object System.Windows.Forms.OpenFileDialog
         $dlg.Filter = "Log files (*.log;*.txt)|*.log;*.txt|All files (*.*)|*.*"
         if ($dlg.ShowDialog() -eq "OK") { $txtFile.Text = $dlg.FileName }
-    })
+    }.GetNewClosure())
 
 
     $b25 = New-Button "Last 25" $T.Green
-    $b25.Add_Click({ Show-LogTail $out $txtFile 25 })
+    $b25.Add_Click({ Show-LogTail $out $txtFile 25 }.GetNewClosure())
     $b100 = New-Button "Last 100" $T.Green
-    $b100.Add_Click({ Show-LogTail $out $txtFile 100 })
+    $b100.Add_Click({ Show-LogTail $out $txtFile 100 }.GetNewClosure())
     $bFull = New-Button "Full Log" $T.Green
-    $bFull.Add_Click({ Show-LogTail $out $txtFile 0 })
+    $bFull.Add_Click({ Show-LogTail $out $txtFile 0 }.GetNewClosure())
 
     $bInfo = New-Button "Log Info" $T.Cyan
     $bInfo.Add_Click({
@@ -1342,7 +2265,7 @@ function Build-Logs {
         Out-Line $out "  Size     : $(Format-Bytes $fi.Length)" $T.Green
         Out-Line $out "  Lines    : $lc" $T.Green
         Out-Line $out "  Modified : $($fi.LastWriteTime)" $T.Gray
-    })
+    }.GetNewClosure())
 
     $bClear = New-Button "Clear Log" $T.Red
     $bClear.Add_Click({
@@ -1351,7 +2274,7 @@ function Build-Logs {
         if ([System.Windows.Forms.MessageBox]::Show("Erase all entries in`n$f ?","Confirm","YesNo","Warning") -ne "Yes") { return }
         Clear-Content -LiteralPath $f
         Out-Line $out "  Log cleared." $T.Green
-    })
+    }.GetNewClosure())
 
     $bTest = New-Button "Test Entries" $T.Yellow
     $bTest.Add_Click({
@@ -1363,7 +2286,7 @@ function Build-Logs {
         Add-Content -LiteralPath $f -Value "[$ts] [WARN] Sample warning"
         Add-Content -LiteralPath $f -Value "[$ts] [ERROR] Sample error"
         Out-Line $out "  Appended 3 test entries to $f" $T.Green
-    })
+    }.GetNewClosure())
 
     foreach ($b in @($lblFile,$txtFile,$bBrowse,$b25,$b100,$bFull,$bInfo,$bClear,$bTest)) { [void]$bar.Controls.Add($b) }
     return $p
@@ -1379,7 +2302,7 @@ function Build-About {
     $p.Controls.Add($out)
     Out-Line $out "" $T.Text
     Out-Line $out "  Admin Tools  -  GUI dashboard" $T.Cyan
-    Out-Line $out "  v1.0.0  by Mike Redd" $T.Gray
+    Out-Line $out "  v1.2.1  by Mike Redd" $T.Gray
     Out-Line $out "" $T.Text
     Out-Line $out "  A single front-end for the admin console menus:" $T.Text
     Out-Line $out "    SystemInfo - Power - Updates - Network - Disk" $T.Green
@@ -1396,12 +2319,144 @@ function Build-About {
                 Start-Process powershell.exe -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -STA -File `"$PSCommandPath`""
                 $Form.Close()
             } catch { Out-Line $out "  Elevation cancelled." $T.Red }
-        })
+        }.GetNewClosure())
         $p.Controls.Add($btn)
         $btn.BringToFront()
     }
     return $p
 }
+
+# ── Live ThemeEngine refresh ──────────────────────────────────
+function New-AdminToolsPalette {
+    param([Parameter(Mandatory)]$Theme)
+
+    return @{
+        Bg         = Convert-HexToDrawingColor $Theme["BG"]
+        Surface    = Convert-HexToDrawingColor $Theme["SURFACE"]
+        Panel      = Convert-HexToDrawingColor $Theme["SURFACE_ALT"]
+        Panel2     = Convert-HexToDrawingColor $Theme["FOCUSED_BG"]
+        Border     = Convert-HexToDrawingColor $Theme["BORDER"]
+        Text       = Convert-HexToDrawingColor $Theme["TEXT"]
+        Gray       = Convert-HexToDrawingColor $Theme["MUTED"]
+        Accent     = Convert-HexToDrawingColor $Theme["ACCENT"]
+        AccentText = Convert-HexToDrawingColor $Theme["BG"]
+        Green      = Convert-HexToDrawingColor $Theme["SUCCESS"]
+        Cyan       = Convert-HexToDrawingColor $Theme["INFO"]
+        Yellow     = Convert-HexToDrawingColor $Theme["WARNING"]
+        Red        = Convert-HexToDrawingColor $Theme["ERROR"]
+        Mag        = Convert-HexToDrawingColor $Theme["SECONDARY"]
+        Sel        = Convert-HexToDrawingColor $Theme["SURFACE_ALT"]
+    }
+}
+
+function Update-AdminToolsLiveTheme {
+    $theme = Read-AdminToolsTheme
+
+    if (-not $theme) {
+        throw "Unable to read active ThemeEngine theme."
+    }
+
+    $activePanel = if ($script:ActivePanel) {
+        $script:ActivePanel
+    }
+    else {
+        "SystemInfo"
+    }
+
+    if ($script:WatchTimer) {
+        $script:WatchTimer.Stop()
+        $script:WatchTimer.Dispose()
+        $script:WatchTimer = $null
+    }
+
+    $script:T = New-AdminToolsPalette $theme
+    Set-Variable -Name T -Scope Script -Value $script:T
+
+    $Form.SuspendLayout()
+
+    try {
+        $Form.BackColor = $T.Bg
+        $Form.ForeColor = $T.Text
+
+        $Content.BackColor = $T.Bg
+        $TopNav.BackColor = $T.Surface
+
+        $StatusStrip.BackColor = $T.Surface
+        $StatusLabel.ForeColor = $T.Gray
+
+        $Content.Controls.Clear()
+
+        foreach ($panel in @($Panels.Values)) {
+            if ($panel) {
+                $panel.Dispose()
+            }
+        }
+
+        $Panels.Clear()
+
+        $Panels["SystemInfo"] = Build-SystemInfo
+        $Panels["Power"]      = Build-Power
+        $Panels["Updates"]    = Build-Updates
+        $Panels["Network"]    = Build-Network
+        $Panels["Disk"]       = Build-Disk
+        $Panels["Events"]     = Build-Events
+        $Panels["Services"]   = Build-Services
+        $Panels["Watch"]      = Build-Watch
+        $Panels["Processes"]  = Build-Processes
+        $Panels["Logs"]       = Build-Logs
+        $Panels["About"]      = Build-About
+
+        foreach ($key in $Panels.Keys) {
+            $Content.Controls.Add($Panels[$key])
+        }
+
+        Switch-Panel $activePanel
+        Set-TopNavSelection $activePanel
+
+        $StatusLabel.Text = "  Theme refreshed: $($theme['THEME_NAME'])"
+        $StatusLabel.ForeColor = $T.Green
+    }
+    finally {
+        $Form.ResumeLayout($true)
+        $Form.Refresh()
+    }
+}
+
+$script:CurrentAdminToolsThemeId = if ($Theme) {
+    [string]$Theme["THEME_ID"]
+}
+else {
+    $null
+}
+
+$script:ThemeTimer = New-Object System.Windows.Forms.Timer
+$script:ThemeTimer.Interval = 750
+
+$script:ThemeTimer.Add_Tick({
+    try {
+        $currentFile = Join-Path `
+            (Join-Path $env:LOCALAPPDATA "Typezero\ThemeEngine") `
+            "current-theme"
+
+        if (-not (Test-Path -LiteralPath $currentFile)) {
+            return
+        }
+
+        $activeId = (Get-Content -LiteralPath $currentFile -Raw).Trim()
+
+        if (
+            $activeId -and
+            $activeId -ne $script:CurrentAdminToolsThemeId
+        ) {
+            Update-AdminToolsLiveTheme
+            $script:CurrentAdminToolsThemeId = $activeId
+        }
+    }
+    catch {
+        $StatusLabel.Text = "  Theme refresh failed: $($_.Exception.Message)"
+        $StatusLabel.ForeColor = $T.Red
+    }
+})
 
 # ══════════════════════════════════════════════════════════════
 #  WIRE UP
@@ -1421,22 +2476,44 @@ $Panels["About"]      = Build-About
 foreach ($key in $Panels.Keys) { $Content.Controls.Add($Panels[$key]) }
 
 function Switch-Panel($name) {
+    $script:ActivePanel = $name
     foreach ($key in $Panels.Keys) { $Panels[$key].Visible = $false }
     if ($Panels.ContainsKey($name)) { $Panels[$name].Visible = $true; $Panels[$name].BringToFront() }
     if ($script:WatchTimer -and $name -ne "Watch") { $script:WatchTimer.Stop() }
 }
 
-$Nav.Add_SelectedIndexChanged({
-    if ($Nav.SelectedItem) {
-        $name = ([string]$Nav.SelectedItem).Trim()
-        Switch-Panel $name
-        Set-Status $name $T.Gray
+$Form.Add_FormClosing({
+    if ($script:ThemeTimer) {
+        $script:ThemeTimer.Stop()
+        $script:ThemeTimer.Dispose()
+    }
+
+    if ($script:WatchTimer) {
+        $script:WatchTimer.Stop()
+        $script:WatchTimer.Dispose()
+    }
+
+    foreach ($image in @($script:AdminToolsIconCache)) {
+        if ($image) {
+            $image.Dispose()
+        }
     }
 })
 
-$Form.Add_FormClosing({ if ($script:WatchTimer) { $script:WatchTimer.Stop(); $script:WatchTimer.Dispose() } })
-
-$Nav.SelectedIndex = 0
+# Start on SystemInfo and keep the visual tab selection synchronized with the
+# content panel from the first frame.
+Switch-Panel "SystemInfo"
+Set-TopNavSelection "SystemInfo"
+Set-Status "SystemInfo" $T.Gray
 
 # ── Run ───────────────────────────────────────────────────────
+$Form.Add_Shown({
+    Enable-WindowsDarkTitleBar -Form $Form
+    Set-AdminToolsTaskbarIdentity -Form $Form -IconPath $IconPath
+}.GetNewClosure())
+
+
+
+$script:ThemeTimer.Start()
+
 [void]$Form.ShowDialog()

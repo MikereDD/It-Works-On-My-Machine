@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+
+set -u
+
+LOCKFILE="${XDG_RUNTIME_DIR:-/tmp}/arakiel-wallpaper-rotate.lock"
+
+exec 9>"$LOCKFILE"
+flock -n 9 || exit 0
+
+WALLPAPER_DIR="$HOME/wallpapers/arakiel-wallpapers"
+INTERVAL="${1:-300}"
+
+mapfile -t WALLPAPERS < <(
+    find "$WALLPAPER_DIR" \
+        -maxdepth 1 \
+        -type f \
+        -name 'arakiel-wallpaper-*.png' \
+        | sort
+)
+
+if (( ${#WALLPAPERS[@]} == 0 )); then
+    echo "No Arakiel wallpapers found in $WALLPAPER_DIR" >&2
+    exit 1
+fi
+
+while true; do
+    for wallpaper in "${WALLPAPERS[@]}"; do
+        applied=0
+
+        # i3 can launch us before the X root window is fully ready.
+        # Retry briefly instead of exiting or sleeping for the full interval.
+        for _ in {1..30}; do
+            if xset q >/dev/null 2>&1 &&
+               feh --no-fehbg --bg-fill "$wallpaper"; then
+                applied=1
+                break
+            fi
+
+            sleep 1
+        done
+
+        (( applied )) || exit 0
+
+        elapsed=0
+
+        while (( elapsed < INTERVAL )); do
+            sleep 1
+            ((elapsed++))
+
+            # Exit promptly when this X session disappears.
+            xset q >/dev/null 2>&1 || exit 0
+        done
+    done
+done

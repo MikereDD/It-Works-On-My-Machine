@@ -36,6 +36,22 @@ if (Test-Path $envFile) {
     Write-Host "  [profile] env.ps1 not found at $envFile" -ForegroundColor Yellow
 }
 
+# ── Load ThemeEngine bridge ──────────────────────────────────
+# ThemeEngine is loaded after the base environment establishes the shared
+# PowerShell paths and before the UI layer is initialized. This makes the
+# generated TE_Theme semantic palette available to presentation helpers while
+# keeping profile startup usable if ThemeEngine is missing or unavailable.
+$themeFile = Join-Path $ProfileDir "theme.ps1"
+if (Test-Path $themeFile) {
+    try {
+        . $themeFile
+    } catch {
+        Write-Host "  [profile] failed to load theme.ps1: $($_.Exception.Message)" -ForegroundColor Yellow
+    }
+} else {
+    Write-Host "  [profile] theme.ps1 not found at $themeFile" -ForegroundColor Yellow
+}
+
 # ── Load aliases ─────────────────────────────────────────────
 $aliasFile = Join-Path $ProfileDir "aliases.ps1"
 if (Test-Path $aliasFile) {
@@ -84,6 +100,23 @@ if (Test-Path $coreFile) {
     Write-Host "  [profile] core.ps1 not found at $coreFile" -ForegroundColor Yellow
 }
 
+# ── Load Pathmarks ───────────────────────────────────────────
+# Persistent directory bookmarks shared conceptually with the Bash
+# implementation on Arakiel. Bookmark data is stored outside the
+# repository so adding or removing marks never dirties the Git tree.
+$pathmarksFile = Join-Path $ProfileDir "pathmarks.ps1"
+
+if (Test-Path $pathmarksFile) {
+    try {
+        . $pathmarksFile
+        Write-Host "  pathmarks loaded" -ForegroundColor DarkCyan
+    } catch {
+        Write-Host "  [profile] failed to load pathmarks.ps1: $($_.Exception.Message)" -ForegroundColor Yellow
+    }
+} else {
+    Write-Host "  [profile] pathmarks.ps1 not found at $pathmarksFile" -ForegroundColor Yellow
+}
+
 # ── Load SSH aliases ─────────────────────────────────────────
 $sshAliasFile = Join-Path $ProfileDir "ssh-aliases.ps1"
 
@@ -98,4 +131,12 @@ if (Test-Path $sshAliasFile) {
 }
 
 # ── Ready message ────────────────────────────────────────────
-Write-Host "  profile ready" -ForegroundColor DarkCyan
+# A successful startup gets one concise identity line. Individual components
+# remain quiet unless ShowProfileLoad is enabled for troubleshooting; their
+# warning/error paths remain visible regardless.
+if ($global:UI_Theme) {
+    $ui = $global:UI_Theme
+    Write-Host "$($ui.Accent)$($ui.Bold)  Netzach$($ui.Reset)$($ui.Muted) • $($ui.Reset)$($ui.Text)$($ui.Name)$($ui.Reset)$($ui.Muted) • $($ui.Reset)$($ui.Success)ready$($ui.Reset)"
+} else {
+    Write-Host "  Netzach • ready" -ForegroundColor DarkCyan
+}

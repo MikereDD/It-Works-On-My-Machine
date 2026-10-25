@@ -1,0 +1,10 @@
+// synthetic JSONC with comment-like content inside strings
+{
+  "homepage": "https://example.invalid//not-a-comment", // real comment
+  "note": "literal /* text */ and // text",
+  "profiles": {
+    "defaults": {
+      "font": { "face": "JetBrainsMono Nerd Font", },
+    },
+  },
+}

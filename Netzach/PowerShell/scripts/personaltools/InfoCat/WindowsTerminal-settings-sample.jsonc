@@ -1,0 +1,9 @@
+// Synthetic Windows Terminal settings for regression tests only.
+{
+  "profiles": {
+    "defaults": { "font": { "face": "JetBrainsMono Nerd Font", "size": 12, }, },
+    "list": [
+      { "guid": "{aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa}", "name": "Test Profile", },
+    ],
+  },
+}

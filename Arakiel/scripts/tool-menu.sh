@@ -2,10 +2,11 @@
 #
 # file:    tool-menu.sh
 # author:  Mike Redd
-# version: 1.3
+# version: 1.5
 # desc:    Main launcher (Admin + Personal)
 #
 
+# shellcheck source=/dev/null
 source "$HOME/lib/core.sh"
 # core.sh enables errexit/nounset; relax so the menu survives a child script
 # that exits non-zero (e.g. a tool whose dependency is missing).
@@ -70,7 +71,7 @@ admin_menu() {
 
         case "$choice" in
             1)  run_script "admintools/system-info.sh" ;;
-            2)  run_script "admintools/rp5-systeminfo.sh" ;;
+            2)  run_script "admintools/rp5-systeminfo-menu.sh" ;;
             3)  run_script "admintools/logview.sh" ;;
             4)  run_script "admintools/disk-cleanup.sh" ;;
             5)  run_script "admintools/backup.sh" ;;

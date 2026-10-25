@@ -16,17 +16,18 @@ fi
 # (missing tools, empty greps), so relax them. Keep pipefail off as original.
 set +e +u 2>/dev/null || true
 
-# Map this script's color names onto the shared palette (single source of
-# truth), with literal-escape fallbacks if the lib isn't present. BOLD/NC have
-# no ui.sh equivalent, so define them here.
-RED="${UI_RED:-$'\e[0;31m'}"
-GREEN="${UI_GRN:-$'\e[0;32m'}"
-YELLOW="${UI_YLW:-$'\e[1;33m'}"
-BLUE="${UI_BLU:-$'\e[0;34m'}"
-CYAN="${UI_CYN:-$'\e[0;36m'}"
-MAGENTA="${UI_MAG:-$'\e[0;35m'}"
-WHITE="${UI_WHT:-$'\e[1;37m'}"
-NC="${UI_R:-$'\e[0m'}"
+# Map legacy local names onto Arakiel's shared ThemeEngine-backed palette.
+# If the shared UI is unavailable, output remains readable without color.
+RED="${UI_RED:-}"
+GREEN="${UI_GRN:-}"
+YELLOW="${UI_YLW:-}"
+BLUE="${UI_INFO:-${UI_CYN:-}}"
+CYAN="${UI_CYN:-}"
+MAGENTA="${UI_MAG:-}"
+WHITE="${UI_TEXT:-${UI_WHT:-}}"
+NC="${UI_RST:-${UI_R:-}}"
+
+# Text attribute, not a theme color.
 BOLD=$'\e[1m'
 
 # Function to print section headers

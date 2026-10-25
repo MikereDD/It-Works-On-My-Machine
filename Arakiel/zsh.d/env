@@ -1,25 +1,15 @@
 #!/usr/bin/env zsh
-
 #--------------------------------------------
-# file: ~/.zsh.d/env
-# author: Mike Redd
-# version: 1.0
-# desc: Environment variables
+# file:     ~/.zsh.d/env
+# author:   Mike Redd
+# version:  2.0
+# desc:     Zsh loader for shared Arakiel environment defaults
 #--------------------------------------------
 
-export EDITOR=vim
-export VISUAL=vim
-export PAGER=less
+if [[ -r "$HOME/lib/env.sh" ]]; then
+    source "$HOME/lib/env.sh"
+fi
 
-export PATH="$HOME/bin:$HOME/.local/bin:$PATH"
-
-# Remove duplicate entries while preserving PATH order
+# Zsh ties PATH to the $path array. Keep entries unique while preserving
+# their first occurrence and therefore their search priority.
 typeset -U path PATH
-
-export LESS_TERMCAP_mb=$'\E[01;31m'
-export LESS_TERMCAP_md=$'\E[01;31m'
-export LESS_TERMCAP_me=$'\E[0m'
-export LESS_TERMCAP_se=$'\E[0m'
-export LESS_TERMCAP_so=$'\E[01;44;33m'
-export LESS_TERMCAP_ue=$'\E[0m'
-export LESS_TERMCAP_us=$'\E[01;32m'

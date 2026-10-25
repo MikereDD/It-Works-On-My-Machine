@@ -59,14 +59,14 @@ function Show-Header {
         $item = Get-Item $global:CORE_LOG_FILE -ErrorAction SilentlyContinue
         if ($item) {
             $sizeKB = [Math]::Round($item.Length / 1KB, 2)
-            Write-UiRow "Log File" $global:CORE_LOG_FILE $global:UI_GRY
-            Write-UiRow "Log Size" "$sizeKB KB" $global:UI_GRY
+            Write-UiRow "Log File" $global:CORE_LOG_FILE $global:UI_Theme.Muted
+            Write-UiRow "Log Size" "$sizeKB KB" $global:UI_Theme.Muted
         } else {
-            Write-UiRow "Log File" $global:CORE_LOG_FILE $global:UI_GRY
+            Write-UiRow "Log File" $global:CORE_LOG_FILE $global:UI_Theme.Muted
         }
     } else {
-        Write-UiRow "Log File" "Not created yet" $global:UI_YLW
-        Write-UiRow "Path" $global:CORE_LOG_FILE $global:UI_GRY
+        Write-UiRow "Log File" "Not created yet" $global:UI_Theme.Warning
+        Write-UiRow "Path" $global:CORE_LOG_FILE $global:UI_Theme.Muted
     }
 
     Write-UiBlankLine
@@ -75,16 +75,16 @@ function Show-Header {
 # ── Menu ──────────────────────────────────────────────────────
 function Show-Menu {
     Write-UiDivider
-    Write-Host "  $($global:UI_GRN)  1)$($global:UI_R)  Show last 25 log lines"
-    Write-Host "  $($global:UI_GRN)  2)$($global:UI_R)  Show last 100 log lines"
-    Write-Host "  $($global:UI_GRN)  3)$($global:UI_R)  Follow log (tail mode)"
-    Write-Host "  $($global:UI_GRN)  4)$($global:UI_R)  Show full log"
+    Write-Host "  $($global:UI_Theme.Accent)  1)$($global:UI_Theme.Reset)  Show last 25 log lines"
+    Write-Host "  $($global:UI_Theme.Accent)  2)$($global:UI_Theme.Reset)  Show last 100 log lines"
+    Write-Host "  $($global:UI_Theme.Accent)  3)$($global:UI_Theme.Reset)  Follow log (tail mode)"
+    Write-Host "  $($global:UI_Theme.Accent)  4)$($global:UI_Theme.Reset)  Show full log"
     Write-UiDivider
-    Write-Host "  $($global:UI_YLW)  5)$($global:UI_R)  Show log file info"
-    Write-Host "  $($global:UI_RED)  6)$($global:UI_R)  Clear log file"
-	Write-Host "  $($global:UI_CYN)  7)$($global:UI_R)  Generate test log entries"
+    Write-Host "  $($global:UI_Theme.Accent)  5)$($global:UI_Theme.Reset)  Show log file info"
+    Write-Host "  $($global:UI_Theme.Error)  6)$($global:UI_Theme.Reset)  Clear log file"
+	Write-Host "  $($global:UI_Theme.Info)  7)$($global:UI_Theme.Reset)  Generate test log entries"
     Write-UiDivider
-    Write-Host "  $($global:UI_GRY)  Q)$($global:UI_R)  Quit"
+    Write-Host "  $($global:UI_Theme.Muted)  Q)$($global:UI_Theme.Reset)  Quit"
     Write-UiBlankLine
 }
 
@@ -114,7 +114,7 @@ function Show-LogInfo {
 
     Ensure-LogPath
 
-    Write-Host "  $($global:UI_DIM)$($global:UI_WHT)  Path        $($global:UI_R)  $($global:UI_GRY)$global:CORE_LOG_FILE$($global:UI_R)"
+    Write-Host "  $($global:UI_Theme.Dim)$($global:UI_Theme.Text)  Path        $($global:UI_Theme.Reset)  $($global:UI_Theme.Muted)$global:CORE_LOG_FILE$($global:UI_Theme.Reset)"
 
     if (Test-Path $global:CORE_LOG_FILE) {
         $item = Get-Item $global:CORE_LOG_FILE -ErrorAction Stop
@@ -123,12 +123,12 @@ function Show-LogInfo {
         $lastWrite = $item.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss")
         $lineCount = (Get-Content $global:CORE_LOG_FILE -ErrorAction SilentlyContinue | Measure-Object -Line).Lines
 
-        Write-Host "  $($global:UI_DIM)$($global:UI_WHT)  Exists      $($global:UI_R)  $($global:UI_GRN)Yes$($global:UI_R)"
-        Write-Host "  $($global:UI_DIM)$($global:UI_WHT)  Size        $($global:UI_R)  $($global:UI_GRN)$sizeKB KB$($global:UI_R)  $($global:UI_GRY)($sizeBytes bytes)$($global:UI_R)"
-        Write-Host "  $($global:UI_DIM)$($global:UI_WHT)  Lines       $($global:UI_R)  $($global:UI_GRN)$lineCount$($global:UI_R)"
-        Write-Host "  $($global:UI_DIM)$($global:UI_WHT)  Modified    $($global:UI_R)  $($global:UI_GRY)$lastWrite$($global:UI_R)"
+        Write-Host "  $($global:UI_Theme.Dim)$($global:UI_Theme.Text)  Exists      $($global:UI_Theme.Reset)  $($global:UI_Theme.Success)Yes$($global:UI_Theme.Reset)"
+        Write-Host "  $($global:UI_Theme.Dim)$($global:UI_Theme.Text)  Size        $($global:UI_Theme.Reset)  $($global:UI_Theme.Accent)$sizeKB KB$($global:UI_Theme.Reset)  $($global:UI_Theme.Muted)($sizeBytes bytes)$($global:UI_Theme.Reset)"
+        Write-Host "  $($global:UI_Theme.Dim)$($global:UI_Theme.Text)  Lines       $($global:UI_Theme.Reset)  $($global:UI_Theme.Accent)$lineCount$($global:UI_Theme.Reset)"
+        Write-Host "  $($global:UI_Theme.Dim)$($global:UI_Theme.Text)  Modified    $($global:UI_Theme.Reset)  $($global:UI_Theme.Muted)$lastWrite$($global:UI_Theme.Reset)"
     } else {
-        Write-Host "  $($global:UI_DIM)$($global:UI_WHT)  Exists      $($global:UI_R)  $($global:UI_RED)No$($global:UI_R)"
+        Write-Host "  $($global:UI_Theme.Dim)$($global:UI_Theme.Text)  Exists      $($global:UI_Theme.Reset)  $($global:UI_Theme.Error)No$($global:UI_Theme.Reset)"
     }
 }
 
@@ -151,19 +151,19 @@ function Show-LogTail {
     try {
         $content = Get-Content -Path $global:CORE_LOG_FILE -Tail $Lines -ErrorAction Stop
         if (-not $content) {
-            Write-Host "  $($global:UI_GRY)  Log file is empty.$($global:UI_R)"
+            Write-Host "  $($global:UI_Theme.Muted)  Log file is empty.$($global:UI_Theme.Reset)"
             return
         }
 
         foreach ($line in $content) {
             if ($line -match "ERROR:") {
-                Write-Host "  $($global:UI_RED)$line$($global:UI_R)"
+                Write-Host "  $($global:UI_Theme.Error)$line$($global:UI_Theme.Reset)"
             } elseif ($line -match "SUCCESS:") {
-                Write-Host "  $($global:UI_GRN)$line$($global:UI_R)"
+                Write-Host "  $($global:UI_Theme.Success)$line$($global:UI_Theme.Reset)"
             } elseif ($line -match "EXPORT:") {
-                Write-Host "  $($global:UI_CYN)$line$($global:UI_R)"
+                Write-Host "  $($global:UI_Theme.Info)$line$($global:UI_Theme.Reset)"
             } else {
-                Write-Host "  $($global:UI_GRY)$line$($global:UI_R)"
+                Write-Host "  $($global:UI_Theme.Muted)$line$($global:UI_Theme.Reset)"
             }
         }
     } catch {
@@ -185,19 +185,19 @@ function Show-FullLog {
     try {
         $content = Get-Content -Path $global:CORE_LOG_FILE -ErrorAction Stop
         if (-not $content) {
-            Write-Host "  $($global:UI_GRY)  Log file is empty.$($global:UI_R)"
+            Write-Host "  $($global:UI_Theme.Muted)  Log file is empty.$($global:UI_Theme.Reset)"
             return
         }
 
         foreach ($line in $content) {
             if ($line -match "ERROR:") {
-                Write-Host "  $($global:UI_RED)$line$($global:UI_R)"
+                Write-Host "  $($global:UI_Theme.Error)$line$($global:UI_Theme.Reset)"
             } elseif ($line -match "SUCCESS:") {
-                Write-Host "  $($global:UI_GRN)$line$($global:UI_R)"
+                Write-Host "  $($global:UI_Theme.Success)$line$($global:UI_Theme.Reset)"
             } elseif ($line -match "EXPORT:") {
-                Write-Host "  $($global:UI_CYN)$line$($global:UI_R)"
+                Write-Host "  $($global:UI_Theme.Info)$line$($global:UI_Theme.Reset)"
             } else {
-                Write-Host "  $($global:UI_GRY)$line$($global:UI_R)"
+                Write-Host "  $($global:UI_Theme.Muted)$line$($global:UI_Theme.Reset)"
             }
         }
     } catch {
@@ -221,8 +221,8 @@ function Follow-Log {
             Clear-UiScreen
             $w = Get-UiBoxWidth -MaxWidth 52 -MinWidth 40
             Write-UiHeader -Title "$ScriptName -- FOLLOW LOG" -Width $w
-            Write-Host "  $($global:UI_GRY)  Ctrl+C to return to menu$($global:UI_R)"
-            Write-Host "  $($global:UI_DIM)$global:CORE_LOG_FILE$($global:UI_R)"
+            Write-Host "  $($global:UI_Theme.Muted)  Ctrl+C to return to menu$($global:UI_Theme.Reset)"
+            Write-Host "  $($global:UI_Theme.Dim)$global:CORE_LOG_FILE$($global:UI_Theme.Reset)"
             Write-UiBlankLine
 
             try {
@@ -230,17 +230,17 @@ function Follow-Log {
                 if ($content) {
                     foreach ($line in $content) {
                         if ($line -match "ERROR:") {
-                            Write-Host "  $($global:UI_RED)$line$($global:UI_R)"
+                            Write-Host "  $($global:UI_Theme.Error)$line$($global:UI_Theme.Reset)"
                         } elseif ($line -match "SUCCESS:") {
-                            Write-Host "  $($global:UI_GRN)$line$($global:UI_R)"
+                            Write-Host "  $($global:UI_Theme.Success)$line$($global:UI_Theme.Reset)"
                         } elseif ($line -match "EXPORT:") {
-                            Write-Host "  $($global:UI_CYN)$line$($global:UI_R)"
+                            Write-Host "  $($global:UI_Theme.Info)$line$($global:UI_Theme.Reset)"
                         } else {
-                            Write-Host "  $($global:UI_GRY)$line$($global:UI_R)"
+                            Write-Host "  $($global:UI_Theme.Muted)$line$($global:UI_Theme.Reset)"
                         }
                     }
                 } else {
-                    Write-Host "  $($global:UI_GRY)  Log file is empty.$($global:UI_R)"
+                    Write-Host "  $($global:UI_Theme.Muted)  Log file is empty.$($global:UI_Theme.Reset)"
                 }
             } catch {
                 Write-CoreError "Failed to follow log: $($_.Exception.Message)"
@@ -271,15 +271,15 @@ function Clear-LogFile {
     Ensure-LogPath
 
     if (-not (Test-Path $global:CORE_LOG_FILE)) {
-        Write-Host "  $($global:UI_GRY)  Log file does not exist yet.$($global:UI_R)"
+        Write-Host "  $($global:UI_Theme.Muted)  Log file does not exist yet.$($global:UI_Theme.Reset)"
         return
     }
 
-    Write-Host "  $($global:UI_YLW)  This will erase all current log entries.$($global:UI_R)"
+    Write-Host "  $($global:UI_Theme.Warning)  This will erase all current log entries.$($global:UI_Theme.Reset)"
     Write-UiBlankLine
 
     if (-not (Confirm-Action "Clear the log file?")) {
-        Write-Host "  $($global:UI_GRY)  Cancelled.$($global:UI_R)"
+        Write-Host "  $($global:UI_Theme.Muted)  Cancelled.$($global:UI_Theme.Reset)"
         return
     }
 
@@ -315,7 +315,7 @@ while ($true) {
 
         "Q" {
             Write-UiBlankLine
-            Write-Host "  $($global:UI_CYN)  Bye.$($global:UI_R)"
+            Write-Host "  $($global:UI_Theme.Accent)  Bye.$($global:UI_Theme.Reset)"
             Write-UiBlankLine
             return
         }

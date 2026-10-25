@@ -1,0 +1,699 @@
+# ThemeEngine
+
+ThemeEngine is the shared cross-platform theming subsystem of **It-Works-On-My-Machine**.
+
+It defines a theme once using semantic roles, then renders that theme into the native formats used by Netzach and Arakiel.
+
+The intent is simple:
+
+> Define appearance once by semantic role, then render it natively for each platform.
+
+ThemeEngine owns appearance. Applications and platforms keep ownership of their behavior.
+
+---
+
+## Current Themes
+
+ThemeEngine currently includes:
+
+- **Obsidian Silver**
+- **Catppuccin Mocha**
+- **Dusty's Pink AF Theme**
+- **Everforest Dark**
+- **Gruvbox**
+- **Kanagawa Paper**
+- **Molokai**
+- **Nord**
+- **Oceanic Next**
+- **PaperColor**
+- **OneDark**
+
+Each theme is stored as:
+
+```text
+ThemeEngine/themes/<theme-id>/theme.conf
+```
+
+Theme definitions describe colors by purpose rather than by application-specific settings.
+
+---
+
+## What ThemeEngine Controls
+
+### Netzach
+
+ThemeEngine currently coordinates:
+
+- Windows Terminal color scheme
+- Windows Terminal application chrome
+- PowerShell semantic UI colors
+- Vim colors
+- Lightline colors
+
+Renderer:
+
+```text
+Netzach/PowerShell/ThemeEngine/ThemeEngine.ps1
+```
+
+PowerShell bridge:
+
+```text
+Netzach/PowerShell/profile.d/theme.ps1
+```
+
+---
+
+### Arakiel
+
+ThemeEngine currently coordinates:
+
+- Xresources / URxvt
+- i3
+- i3blocks
+- tmux
+- shell UI colors
+- Vim colors
+- Lightline colors
+
+Renderer:
+
+```text
+Arakiel/local/bin/themeengine
+```
+
+---
+
+## Architecture
+
+ThemeEngine follows this flow:
+
+```text
+theme.conf
+    ↓
+bootstrap installs themes + templates
+    ↓
+platform renderer
+    ↓
+generated native files
+    ↓
+application / shell consumers
+    ↓
+runtime refresh where supported
+```
+
+A theme defines semantic roles such as:
+
+```text
+BG
+SURFACE
+SURFACE_ALT
+BORDER_DARK
+BORDER
+MUTED
+TEXT
+BRIGHT
+ACCENT
+ACCENT_BRIGHT
+SUCCESS
+WARNING
+ERROR
+SECONDARY
+INFO
+```
+
+It also defines:
+
+- focused / active / inactive / urgent desktop roles
+- typography metadata
+- a complete 16-color ANSI palette
+
+Platform renderers decide how those roles map into native application configuration.
+
+---
+
+## Repository Layout
+
+```text
+ThemeEngine/
+├── README.md
+├── INTEGRATIONS.md
+├── theme.conf.template
+├── themes/
+│   ├── catppuccin-mocha/
+│   ├── dustys-pink-af/
+│   ├── everforest-dark/
+│   ├── gruvbox/
+│   ├── kanagawa-paper/
+│   ├── molokai/
+│   ├── nord/
+│   ├── oceanic-next/
+│   ├── obsidian-silver/
+│   └── onedark/
+└── templates/
+    ├── arakiel/
+    │   ├── Xresources.tpl
+    │   ├── i3-theme.conf.tpl
+    │   ├── i3blocks.conf.tpl
+    │   └── tmux.conf.tpl
+    └── shared/
+        ├── vim-colors.vim.tpl
+        └── vim-lightline.vim.tpl
+```
+
+The `ThemeEngine/` directory contains the portable theme definitions, templates, and documentation.
+
+Platform-specific renderers remain under the Netzach and Arakiel trees because they also contain machine-specific paths, runtime behavior, and application integration logic.
+
+---
+
+## Theme Definitions
+
+Theme files use simple `KEY=VALUE` assignments.
+
+Example:
+
+```text
+THEME_ID=onedark
+THEME_NAME="OneDark"
+
+BG=#282C34
+TEXT=#ABB2BF
+ACCENT=#61AFEF
+SUCCESS=#98C379
+WARNING=#E5C07B
+ERROR=#E86671
+```
+
+The complete documented authoring contract is:
+
+```text
+ThemeEngine/theme.conf.template
+```
+
+Use that file as the starting point for new themes.
+
+Important parser rule:
+
+> Keep comments on their own lines.
+
+ThemeEngine treats everything after the first `=` as the value, so inline comments should not be appended to assignments.
+
+---
+
+## Templates
+
+Templates translate semantic roles into application-specific configuration.
+
+### Shared templates
+
+```text
+ThemeEngine/templates/shared/vim-colors.vim.tpl
+ThemeEngine/templates/shared/vim-lightline.vim.tpl
+```
+
+These are used by both Netzach and Arakiel.
+
+They generate the native Vim colorscheme and Lightline palette named:
+
+```text
+typezero
+```
+
+---
+
+### Arakiel templates
+
+```text
+ThemeEngine/templates/arakiel/Xresources.tpl
+ThemeEngine/templates/arakiel/i3-theme.conf.tpl
+ThemeEngine/templates/arakiel/i3blocks.conf.tpl
+ThemeEngine/templates/arakiel/tmux.conf.tpl
+```
+
+These generate the native files consumed by URxvt, i3, i3blocks, and tmux.
+
+---
+
+## Quick Start
+
+ThemeEngine uses installed copies of the repository themes and templates.
+
+After changing or adding themes, bootstrap the current repository data before testing.
+
+### Netzach
+
+From the repository root:
+
+```powershell
+themeengine bootstrap -RepoRoot $PWD
+```
+
+List installed themes:
+
+```powershell
+themeengine list
+```
+
+Preview a theme:
+
+```powershell
+themeengine preview onedark
+```
+
+Apply a theme:
+
+```powershell
+themeengine apply onedark
+```
+
+Show the current theme:
+
+```powershell
+themeengine current
+```
+
+Rollback:
+
+```powershell
+themeengine rollback
+```
+
+Run diagnostics:
+
+```powershell
+themeengine doctor
+```
+
+---
+
+### Arakiel
+
+From the repository root:
+
+```bash
+themeengine bootstrap "$PWD"
+```
+
+List installed themes:
+
+```bash
+themeengine list
+```
+
+Preview a theme:
+
+```bash
+themeengine preview onedark
+```
+
+Apply a theme:
+
+```bash
+themeengine apply onedark
+```
+
+Show the current theme:
+
+```bash
+themeengine current
+```
+
+Rollback:
+
+```bash
+themeengine rollback
+```
+
+Run diagnostics:
+
+```bash
+themeengine doctor
+```
+
+When applying a theme over SSH to Arakiel's live X session, target that session explicitly:
+
+```bash
+export DISPLAY=:0
+export XAUTHORITY="$HOME/.Xauthority"
+
+themeengine apply onedark
+```
+
+---
+
+## Commands
+
+The ThemeEngine interface includes:
+
+```text
+list
+current
+preview
+apply
+reload
+rollback
+wallpaper
+doctor
+bootstrap
+help
+```
+
+`current` is the canonical way to query the active theme.
+
+`reload` reapplies the currently selected theme without changing theme history.
+
+`rollback` returns to the previously active theme when previous-theme state exists.
+
+`wallpaper` is a Netzach-only command for managing DisplayFusion wallpaper profiles and theme mappings.
+
+See [Wallpaper Collections](WALLPAPERS.md) for the approved artwork, monitor layouts, and installation instructions.
+
+---
+
+## Generated Outputs
+
+Generated files are deployment outputs.
+
+They are not the source of truth.
+
+The source of truth is:
+
+```text
+ThemeEngine/themes/
+ThemeEngine/templates/
+```
+
+### Arakiel generated outputs
+
+Theme application currently generates:
+
+```text
+~/.config/i3/theme.conf
+~/.config/i3/i3blocks.conf
+~/.Xresources.theme
+~/.config/tmux/theme.conf
+~/.config/vim/colors/typezero.vim
+~/.config/vim/autoload/lightline/colorscheme/typezero.vim
+~/.config/typezero/themeengine/current.sh
+```
+
+ThemeEngine also maintains current and previous theme state under:
+
+```text
+~/.config/typezero/themeengine/
+```
+
+Installed themes and templates live under:
+
+```text
+~/.local/share/typezero/themeengine/
+```
+
+---
+
+### Netzach generated state
+
+ThemeEngine runtime data lives under:
+
+```text
+%LOCALAPPDATA%\Typezero\ThemeEngine
+```
+
+This includes installed themes and templates, current / previous theme state, and the generated PowerShell theme state.
+
+Generated Vim files live under the existing Netzach Vim configuration tree:
+
+```text
+$HOME\config\vim\colors\typezero.vim
+$HOME\config\vim\autoload\lightline\colorscheme\typezero.vim
+```
+
+ThemeEngine also updates its own Windows Terminal color scheme and application theme.
+
+---
+
+## Vim and Lightline
+
+Vim and Lightline use shared ThemeEngine templates on both platforms.
+
+Vim colors:
+
+```text
+ThemeEngine/templates/shared/vim-colors.vim.tpl
+```
+
+Lightline colors:
+
+```text
+ThemeEngine/templates/shared/vim-lightline.vim.tpl
+```
+
+Both are rendered from the same semantic roles used by the rest of ThemeEngine.
+
+This keeps terminal, shell, desktop, Vim, and Lightline colors synchronized without depending on a third-party Vim colorscheme at runtime.
+
+Existing Vim processes do not automatically reload newly generated colors.
+
+Start a fresh Vim instance after applying a new theme.
+
+---
+
+## Creating a Theme
+
+Start with:
+
+```text
+ThemeEngine/theme.conf.template
+```
+
+Then:
+
+1. copy it to `ThemeEngine/themes/<theme-id>/theme.conf`
+2. replace every placeholder
+3. preserve the upstream/source palette where practical
+4. map source colors into ThemeEngine semantic roles
+5. bootstrap the repository data
+6. preview and apply the theme
+7. test it on both Netzach and Arakiel
+8. verify rollback
+9. run `git diff --check` before committing
+
+A good ThemeEngine theme should preserve the identity of its source palette while still respecting ThemeEngine's semantic contract.
+
+---
+
+## Ownership Rule
+
+ThemeEngine owns **semantic appearance**.
+
+Applications and platforms own **behavior**.
+
+Examples of ThemeEngine-owned concerns:
+
+- semantic palette values
+- ANSI palettes
+- terminal colors
+- Vim colors
+- Lightline colors
+- i3 theme colors
+- i3blocks colors
+- tmux colors
+- URxvt theme-dependent appearance
+- PowerShell semantic UI colors
+- ThemeEngine-managed Windows Terminal scheme/chrome
+
+Examples of application-owned concerns:
+
+- i3 keybindings
+- workspace behavior
+- Vim editing behavior
+- shell command behavior
+- tmux workflow behavior
+- application business logic
+- unrelated Windows Terminal profile preferences
+- wallpaper content and wallpaper rotation logic
+
+This boundary prevents ThemeEngine from becoming a general configuration manager.
+
+---
+
+## Integration Reference
+
+The complete source → renderer → generated output → consumer map is documented in:
+
+```text
+ThemeEngine/INTEGRATIONS.md
+```
+
+That document should be reviewed when changing:
+
+- ThemeEngine paths
+- state-file names
+- renderer behavior
+- generated-file locations
+- semantic role names
+- application integration points
+- runtime refresh behavior
+
+---
+
+## Design Direction
+
+ThemeEngine currently belongs to **It-Works-On-My-Machine** because it directly coordinates the visual environment of Netzach and Arakiel.
+
+Its internal structure intentionally keeps portable pieces separate from platform-specific integration:
+
+```text
+portable:
+    themes
+    templates
+    theme authoring contract
+
+platform-specific:
+    renderers
+    application paths
+    runtime refresh logic
+    machine integration
+```
+
+That separation keeps the subsystem understandable and reusable without requiring it to become a standalone project.
+
+If ThemeEngine ever graduates into its own repository, its theme definitions, templates, authoring contract, and architecture are already separated cleanly enough to make that transition practical.
+
+
+---
+## Windows 11 Native Appearance
+
+Netzach integrates Windows 11 native themes through
+`Netzach/PowerShell/ThemeEngine/WindowsAppearance.ps1`.
+
+### Accent policy
+
+The default Windows accent policy is **theme**. ThemeEngine renders the active
+`theme.conf` `ACCENT` into the generated Windows `.theme` file and sets
+`AutoColorization=0` to request manual, theme-defined accent selection. With
+Windows dark mode and taskbar/title-bar accent visibility enabled, Windows may
+render a darker variation of that color on Start and the taskbar. Exact RGB
+rendering across Windows surfaces is not guaranteed.
+
+To opt into wallpaper-derived Windows colors, create the plain text file
+`%LOCALAPPDATA%\Typezero\ThemeEngine\windows-accent-policy` containing exactly
+`automatic`, then reapply the theme. In that mode the generator sets
+`AutoColorization=1` and Windows owns the accent selection. Delete the policy
+file, or put `theme` in it, to return to the default.
+
+Application integrations (Windows Terminal, PowerShell, Vim, Lightline) always
+use the ThemeEngine semantic palette regardless of Windows accent policy.
+
+### Wallpapers and ownership
+
+DisplayFusion owns wallpapers, wallpaper rotation, and per-monitor layouts.
+ThemeEngine copies the active Windows theme's wallpaper reference without
+intentionally changing DisplayFusion configuration. Windows applying a theme
+can still refresh wallpaper settings; visually verify all monitors.
+
+### Diagnostics and limitations
+
+`themeengine doctor` reports the selected accent policy and the
+`AutoColorization` setting saved in Windows' active `.theme` file. The latter
+is **not** an authoritative live Windows Settings API. It also reports
+transparency, title-bar/taskbar accent visibility and DisplayFusion process
+presence. Process detection does not verify the wallpaper arrangement.
+
+Native theme activation is asynchronous, but the provider now waits up to 15
+seconds for Windows' active saved theme file to match the requested display
+name, accent policy, and configured RGB when the policy is `theme`. If the
+requested theme was already active, the provider reports that reapplication
+was not independently verified. This confirms saved theme selection, not
+pixel-level completion of all Windows visual refreshes.
+
+Current and previous theme state is written after native confirmation and
+application rendering succeed. This is not a fully atomic transaction:
+generated Vim/Lightline files or native personalization may change before a
+later failure. Windows may create numbered installed theme copies; ThemeEngine
+does not automatically delete them.
+---
+
+<!-- BEGIN TYPEZERO DISPLAYFUSION WALLPAPER PROVIDER -->
+## Optional DisplayFusion Wallpaper Profiles (Netzach)
+
+ThemeEngine can optionally select an existing **DisplayFusion wallpaper profile** when `themeengine apply <theme-id>` succeeds. This does not make ThemeEngine responsible for wallpaper image files, slideshow scheduling, monitor geometry, or rendering: DisplayFusion continues to own those behaviors.
+
+The feature is **disabled by default**. Unmapped themes do not change the wallpaper. The wallpaper action is invoked only for `apply` (not `reload` or `rollback`) and only after the Windows/terminal/color theme application succeeds. A wallpaper error produces a warning without reverting a successful color-theme application. Wallpaper switching is not part of ThemeEngine's color rollback transaction.
+
+The provider and mapping modules live at:
+
+```text
+Netzach/PowerShell/ThemeEngine/WallpaperProvider-DisplayFusion.ps1
+Netzach/PowerShell/ThemeEngine/WallpaperMapping-DisplayFusion.ps1
+```
+
+The local-only configuration file is:
+
+```text
+%LOCALAPPDATA%\Typezero\ThemeEngine\wallpaper-displayfusion.json
+```
+
+It stores an `Enabled` flag and theme-ID-to-DisplayFusion-profile-name mappings. It is machine-local configuration, **not** a portable palette definition. Create and save wallpaper profiles within DisplayFusion before mapping their names. Do not overwrite the existing Default Profile during testing.
+
+### Wallpaper CLI (Stage 7)
+
+The Netzach renderer includes an optional DisplayFusion wallpaper CLI.
+
+```powershell
+themeengine wallpaper status
+themeengine wallpaper profiles
+themeengine wallpaper mappings
+themeengine wallpaper map nord "ThemeEngine-Test"
+themeengine wallpaper test nord
+themeengine wallpaper enable
+themeengine wallpaper disable
+themeengine wallpaper unmap nord
+themeengine wallpaper backup
+themeengine wallpaper switch "Default Profile"
+```
+These commands are examples, not a sequence to execute.
+In particular, `unmap nord` removes the existing Nord mapping.
+
+Automatic wallpaper switching is disabled by default. Enabling
+integration allows mapped profiles to activate during a later
+`themeengine apply`.
+
+Manual switching requires confirmation and a verified backup.
+`themeengine doctor` reports integration status, mapping count,
+and the active DisplayFusion profile.
+
+### PowerShell example (Netzach)
+
+```powershell
+. "$HOME\PS\ThemeEngine\WallpaperProvider-DisplayFusion.ps1"
+. "$HOME\PS\ThemeEngine\WallpaperMapping-DisplayFusion.ps1"
+
+Get-TypezeroDisplayFusionProfiles | Format-Table -AutoSize
+Set-TypezeroWallpaperProfileMapping -ThemeId 'nord' -ProfileName 'ThemeEngine-Test'
+Test-TypezeroWallpaperThemeMapping -ThemeId 'nord' | Format-List
+
+# This enables automatic selection on later `themeengine apply` commands.
+Set-TypezeroWallpaperMappingEnabled -Enabled $true
+
+# Disable again without removing saved mappings.
+Set-TypezeroWallpaperMappingEnabled -Enabled $false
+```
+
+With integration enabled and a unique valid mapping, applying a theme activates its named saved profile using DisplayFusion's supported `DisplayFusionCommand.exe -WallpaperLoadProfile` action. The guarded provider backs up its wallpaper-profile registry subtree and checks the backup hash before switching, then verifies the active profile ID. Backups are stored under:
+
+```text
+%LOCALAPPDATA%\Typezero\ThemeEngine\backups\displayfusion\
+```
+
+To restore a previous wallpaper profile independently of theme color history:
+
+```powershell
+Invoke-TypezeroDisplayFusionProfileSwitch -ProfileName 'Default Profile' -Execute
+```
+
+The direct switch operation requests confirmation; review the profile and confirm intentionally. Registry profile data is **read-only** for discovery; do not modify DisplayFusion's private registry values to perform profile switching. The backup is recovery data, not a tested automated registry-restore procedure. Inspect the monitors after changes, especially when profiles have different monitor layouts.
+
+The initial Netzach validation used DisplayFusion 12.1.1 (Steam), a temporary `ThemeEngine-Test` profile with the same Gold/Bronze/Silver wallpaper assignments, and an explicit return to `Default Profile`. The native Windows per-monitor wallpaper provider is a separate future integration.
+<!-- END TYPEZERO DISPLAYFUSION WALLPAPER PROVIDER -->

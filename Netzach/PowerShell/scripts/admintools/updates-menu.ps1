@@ -57,10 +57,10 @@ function Ensure-PSWindowsUpdate {
     }
 
     Write-UiBlankLine
-    Write-Host "  $($global:UI_YLW)$($global:UI_B)  PSWindowsUpdate module not found.$($global:UI_R)"
-    Write-Host "  $($global:UI_GRY)  Required to manage updates.$($global:UI_R)"
+    Write-Host "  $($global:UI_Theme.Warning)$($global:UI_Theme.Bold)  PSWindowsUpdate module not found.$($global:UI_Theme.Reset)"
+    Write-Host "  $($global:UI_Theme.Muted)  Required to manage updates.$($global:UI_Theme.Reset)"
     Write-UiBlankLine
-    Write-Host -NoNewline "  $($global:UI_YLW)  Install now? (y/n): $($global:UI_R)"
+    Write-Host -NoNewline "  $($global:UI_Theme.Warning)  Install now? (y/n): $($global:UI_Theme.Reset)"
     $ans = Read-Host
 
     if ($ans -notmatch '^[Yy]$') { return $false }
@@ -99,9 +99,9 @@ function Show-Header {
     Write-UiRow "User" "$env:USERNAME@$env:COMPUTERNAME"
 
     if (Test-Admin) {
-        Write-UiRow "Admin" "Yes" $global:UI_GRN
+        Write-UiRow "Admin" "Yes" $global:UI_Theme.Success
     } else {
-        Write-UiRow "Admin" "No (limited)" $global:UI_RED
+        Write-UiRow "Admin" "No (limited)" $global:UI_Theme.Error
     }
 
     if ($script:LastScanTime) {
@@ -111,7 +111,7 @@ function Show-Header {
     }
 
     if ($script:RebootRequired -or (Test-RebootPending)) {
-        Write-UiRow "Reboot" "REQUIRED" $global:UI_RED
+        Write-UiRow "Reboot" "REQUIRED" $global:UI_Theme.Error
     }
 
     Write-UiBlankLine

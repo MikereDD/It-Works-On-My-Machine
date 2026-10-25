@@ -9,17 +9,14 @@
 
 # ── Remote host config ────────────────────────────────────────
 $global:ArakielUser = "typezero"
-$global:ArakielHost = "192.168.4.85"
+$global:ArakielHost = "arakiel.local"
 $global:ArakielSSH  = "$global:ArakielUser@$global:ArakielHost"
 
 # ── Local paths ───────────────────────────────────────────────
-$global:LocalRepoDir = Join-Path $HOME "GitHub\It-Works-On-My-Machine"
-$global:LocalBotsDir = Join-Path $global:LocalRepoDir "Bots"
 $global:LocalLogPullDir = Join-Path $HOME "Downloads\arakiel-logs"
 
 # ── Remote paths ──────────────────────────────────────────────
 $global:RemoteWorkDir = "/mnt/nvme1/work"
-$global:RemoteBotsDir = "/mnt/nvme1/work/bots"
 $global:RemoteLogsDir = "/mnt/nvme1/work/bots/logs"
 
 # ── SSH helpers ───────────────────────────────────────────────
@@ -61,16 +58,6 @@ function arakiel-fastfetch {
 }
 
 # ── File copy helpers ─────────────────────────────────────────
-function push-bots {
-    if (-not (Test-Path $global:LocalBotsDir)) {
-        Write-Host "  Local Bots directory not found: $global:LocalBotsDir" -ForegroundColor Yellow
-        return
-    }
-
-    scp -r `
-        $global:LocalBotsDir `
-        "$global:ArakielSSH`:$global:RemoteWorkDir/"
-}
 
 function pull-logs {
     New-Item -ItemType Directory -Force -Path $global:LocalLogPullDir | Out-Null
@@ -82,5 +69,5 @@ function pull-logs {
 
 # ── Load message ──────────────────────────────────────────────
 if ($global:ShowProfileLoad) {
-    Write-Host "  ssh aliases loaded" -ForegroundColor DarkGray
+    Write-Host "  $($global:UI_Theme.Muted)ssh aliases loaded$($global:UI_Theme.Reset)"
 }

@@ -42,14 +42,14 @@ $ScriptVersion = "2.4"
 $ScriptAuthor  = "Mike Redd"
 
 # ── Helpers ───────────────────────────────────────────────────
-function Row($label, $value, $color = $global:UI_GRN) {
-    Write-Host "  $($global:UI_DIM)$($label.PadRight(20))$($global:UI_R)  ${color}$value$($global:UI_R)"
+function Row($label, $value, $color = $global:UI_Theme.Accent) {
+    Write-Host "  $($global:UI_Theme.Dim)$($label.PadRight(20))$($global:UI_Theme.Reset)  ${color}$value$($global:UI_Theme.Reset)"
 }
 
 function SectionHead($title) {
     Write-UiBlankLine
-    Write-Host "  $($global:UI_MAG)$($global:UI_B)>> $title$($global:UI_R)"
-    Write-Host "  $($global:UI_GRY)  ----------------------------------------------------$($global:UI_R)"
+    Write-Host "  $($global:UI_Theme.Secondary)$($global:UI_Theme.Bold)>> $title$($global:UI_Theme.Reset)"
+    Write-Host "  $($global:UI_Theme.Muted)  ----------------------------------------------------$($global:UI_Theme.Reset)"
 }
 
 # ── Pause ─────────────────────────────────────────────────────
@@ -76,8 +76,8 @@ function Test-PingHost($target, $count = 1) {
 
 # ── Status badge ──────────────────────────────────────────────
 function Status($ok, $trueStr = "OK", $falseStr = "FAIL") {
-    if ($ok) { return "$($global:UI_GRN)$($global:UI_B)  $trueStr  $($global:UI_R)" }
-    else     { return "$($global:UI_RED)$($global:UI_B)  $falseStr $($global:UI_R)" }
+    if ($ok) { return "$($global:UI_Theme.Success)$($global:UI_Theme.Bold)  $trueStr  $($global:UI_Theme.Reset)" }
+    else     { return "$($global:UI_Theme.Error)$($global:UI_Theme.Bold)  $falseStr $($global:UI_Theme.Reset)" }
 }
 
 # ── Header & Menu ────────────────────────────────────────────
@@ -92,25 +92,25 @@ function Show-Header {
 
 function Show-Menu {
     Write-UiDivider
-    Write-Host "  $($global:UI_GRN)  1)$($global:UI_R)  Quick Network Health Check"
-    Write-Host "  $($global:UI_GRN)  2)$($global:UI_R)  Network Info"
-    Write-Host "  $($global:UI_GRN)  3)$($global:UI_R)  Wi-Fi Details"
+    Write-Host "  $($global:UI_Theme.Accent)  1)$($global:UI_Theme.Reset)  Quick Network Health Check"
+    Write-Host "  $($global:UI_Theme.Accent)  2)$($global:UI_Theme.Reset)  Network Info"
+    Write-Host "  $($global:UI_Theme.Accent)  3)$($global:UI_Theme.Reset)  Wi-Fi Details"
     Write-UiDivider
-    Write-Host "  $($global:UI_GRN)  4)$($global:UI_R)  Ping Host List"
-    Write-Host "  $($global:UI_GRN)  5)$($global:UI_R)  Test Port"
-    Write-Host "  $($global:UI_GRN)  6)$($global:UI_R)  DNS Lookup"
-    Write-Host "  $($global:UI_GRN)  7)$($global:UI_R)  Traceroute"
-    Write-Host "  $($global:UI_GRN)  8)$($global:UI_R)  Public IP Lookup"
+    Write-Host "  $($global:UI_Theme.Accent)  4)$($global:UI_Theme.Reset)  Ping Host List"
+    Write-Host "  $($global:UI_Theme.Accent)  5)$($global:UI_Theme.Reset)  Test Port"
+    Write-Host "  $($global:UI_Theme.Accent)  6)$($global:UI_Theme.Reset)  DNS Lookup"
+    Write-Host "  $($global:UI_Theme.Accent)  7)$($global:UI_Theme.Reset)  Traceroute"
+    Write-Host "  $($global:UI_Theme.Accent)  8)$($global:UI_Theme.Reset)  Public IP Lookup"
     Write-UiDivider
-    Write-Host "  $($global:UI_GRN)  9)$($global:UI_R)  Active TCP Connections"
-    Write-Host "  $($global:UI_GRN) 10)$($global:UI_R)  Listening Ports"
-    Write-Host "  $($global:UI_GRN) 11)$($global:UI_R)  Find Process on Port"
+    Write-Host "  $($global:UI_Theme.Accent)  9)$($global:UI_Theme.Reset)  Active TCP Connections"
+    Write-Host "  $($global:UI_Theme.Accent) 10)$($global:UI_Theme.Reset)  Listening Ports"
+    Write-Host "  $($global:UI_Theme.Accent) 11)$($global:UI_Theme.Reset)  Find Process on Port"
     Write-UiDivider
-    Write-Host "  $($global:UI_GRN) 12)$($global:UI_R)  Watch Connectivity"
-    Write-Host "  $($global:UI_YLW) 13)$($global:UI_R)  Adapter Enable / Disable"
-    Write-Host "  $($global:UI_RED) 14)$($global:UI_R)  Network Reset"
+    Write-Host "  $($global:UI_Theme.Accent) 12)$($global:UI_Theme.Reset)  Watch Connectivity"
+    Write-Host "  $($global:UI_Theme.Warning) 13)$($global:UI_Theme.Reset)  Adapter Enable / Disable"
+    Write-Host "  $($global:UI_Theme.Error) 14)$($global:UI_Theme.Reset)  Network Reset"
     Write-UiDivider
-    Write-Host "  $($global:UI_GRY)  Q)$($global:UI_R)  Quit"
+    Write-Host "  $($global:UI_Theme.Muted)  Q)$($global:UI_Theme.Reset)  Quit"
     Write-UiBlankLine
 }
 
@@ -126,10 +126,10 @@ function Invoke-QuickHealthCheck {
         $activeAdapters = Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq "Up" }
         if ($activeAdapters) {
             foreach ($a in $activeAdapters) {
-                Write-Host "  $($global:UI_GRN)  * $($a.Name)$($global:UI_R)  $($global:UI_GRY)$($a.LinkSpeed)  MAC: $($a.MacAddress)$($global:UI_R)"
+                Write-Host "  $($global:UI_Theme.Success)  * $($a.Name)$($global:UI_Theme.Reset)  $($global:UI_Theme.Muted)$($a.LinkSpeed)  MAC: $($a.MacAddress)$($global:UI_Theme.Reset)"
             }
         } else {
-            Write-Host "  $($global:UI_RED)  No active adapters found.$($global:UI_R)"
+            Write-Host "  $($global:UI_Theme.Error)  No active adapters found.$($global:UI_Theme.Reset)"
         }
 
         # IPs
@@ -141,7 +141,7 @@ function Invoke-QuickHealthCheck {
                 Row "$($ip.InterfaceAlias)" "$($ip.IPAddress)/$($ip.PrefixLength)"
             }
         } else {
-            Write-Host "  $($global:UI_RED)  No routable IPv4 addresses.$($global:UI_R)"
+            Write-Host "  $($global:UI_Theme.Error)  No routable IPv4 addresses.$($global:UI_Theme.Reset)"
         }
 
         # Gateway
@@ -151,22 +151,22 @@ function Invoke-QuickHealthCheck {
 
         if ($gateway) {
             $gwPing = Test-PingHost $gateway
-            $rttStr = if ($gwPing.RTT) { "  $($global:UI_GRY)($($gwPing.RTT)ms)$($global:UI_R)" } else { "" }
-            Write-Host "  $($global:UI_DIM)$($global:UI_WHT)Gateway            $($global:UI_R)  $($global:UI_GRN)$gateway$($global:UI_R)  $(Status $gwPing.Success 'Reachable' 'Unreachable')$rttStr"
+            $rttStr = if ($gwPing.RTT) { "  $($global:UI_Theme.Muted)($($gwPing.RTT)ms)$($global:UI_Theme.Reset)" } else { "" }
+            Write-Host "  $($global:UI_Theme.Dim)$($global:UI_Theme.Text)Gateway            $($global:UI_Theme.Reset)  $($global:UI_Theme.Accent)$gateway$($global:UI_Theme.Reset)  $(Status $gwPing.Success 'Reachable' 'Unreachable')$rttStr"
         } else {
-            Write-Host "  $($global:UI_DIM)$($global:UI_WHT)Gateway            $($global:UI_R)  $(Status $false 'OK' 'No gateway found')"
+            Write-Host "  $($global:UI_Theme.Dim)$($global:UI_Theme.Text)Gateway            $($global:UI_Theme.Reset)  $(Status $false 'OK' 'No gateway found')"
         }
 
         $intPing = Test-PingHost "1.1.1.1"
-        $rttStr  = if ($intPing.RTT) { "  $($global:UI_GRY)($($intPing.RTT)ms)$($global:UI_R)" } else { "" }
-        Write-Host "  $($global:UI_DIM)$($global:UI_WHT)Internet (1.1.1.1)  $($global:UI_R)  $(Status $intPing.Success 'Reachable' 'Unreachable')$rttStr"
+        $rttStr  = if ($intPing.RTT) { "  $($global:UI_Theme.Muted)($($intPing.RTT)ms)$($global:UI_Theme.Reset)" } else { "" }
+        Write-Host "  $($global:UI_Theme.Dim)$($global:UI_Theme.Text)Internet (1.1.1.1)  $($global:UI_Theme.Reset)  $(Status $intPing.Success 'Reachable' 'Unreachable')$rttStr"
 
         # DNS
         try {
             $dnsTest = Resolve-DnsName "cloudflare.com" -ErrorAction Stop
             $dnsOk   = $true
         } catch { $dnsOk = $false }
-        Write-Host "  $($global:UI_DIM)$($global:UI_WHT)DNS Resolution     $($global:UI_R)  $(Status $dnsOk 'Working' 'Failed')"
+        Write-Host "  $($global:UI_Theme.Dim)$($global:UI_Theme.Text)DNS Resolution     $($global:UI_Theme.Reset)  $(Status $dnsOk 'Working' 'Failed')"
 
         # DNS servers
         SectionHead "DNS SERVERS"
@@ -181,19 +181,19 @@ function Invoke-QuickHealthCheck {
 
         # Optional SSH test
         Write-UiBlankLine
-        Write-Host -NoNewline "  $($global:UI_GRY)Optional SSH host to test (Enter to skip): $($global:UI_R)"
+        Write-Host -NoNewline "  $($global:UI_Theme.Muted)Optional SSH host to test (Enter to skip): $($global:UI_Theme.Reset)"
         $sshHost = Read-Host
         if ($sshHost) {
             try {
                 $sshTest = Test-NetConnection -ComputerName $sshHost -Port 22 -WarningAction SilentlyContinue
-                Write-Host "  $($global:UI_DIM)$($global:UI_WHT)SSH $sshHost :22   $($global:UI_R)  $(Status $sshTest.TcpTestSucceeded 'Open' 'Closed')"
+                Write-Host "  $($global:UI_Theme.Dim)$($global:UI_Theme.Text)SSH $sshHost :22   $($global:UI_Theme.Reset)  $(Status $sshTest.TcpTestSucceeded 'Open' 'Closed')"
             } catch {
-                Write-Host "  $($global:UI_RED)  SSH test failed: $($_.Exception.Message)$($global:UI_R)"
+                Write-Host "  $($global:UI_Theme.Error)  SSH test failed: $($_.Exception.Message)$($global:UI_Theme.Reset)"
             }
         }
 
     } catch {
-        Write-Host "  $($global:UI_RED)  Health check failed: $($_.Exception.Message)$($global:UI_R)"
+        Write-Host "  $($global:UI_Theme.Error)  Health check failed: $($_.Exception.Message)$($global:UI_Theme.Reset)"
     }
 }
 
@@ -205,8 +205,8 @@ function Show-NetworkInfo {
 
     SectionHead "ADAPTERS"
     Get-NetAdapter -ErrorAction SilentlyContinue | ForEach-Object {
-        $statusColor = if ($_.Status -eq "Up") { $global:UI_GRN } else { $global:UI_GRY }
-        Write-Host "  ${statusColor}$($global:UI_B)  $($_.Name)$($global:UI_R)  $($global:UI_GRY)[$($_.Status)]$($global:UI_R)"
+        $statusColor = if ($_.Status -eq "Up") { $global:UI_Theme.Success } else { $global:UI_Theme.Muted }
+        Write-Host "  ${statusColor}$($global:UI_Theme.Bold)  $($_.Name)$($global:UI_Theme.Reset)  $($global:UI_Theme.Muted)[$($_.Status)]$($global:UI_Theme.Reset)"
         Row "  Speed"  $_.LinkSpeed
         Row "  MAC"    $_.MacAddress
         Write-UiBlankLine
@@ -234,7 +234,7 @@ function Show-NetworkInfo {
     SectionHead "DEFAULT ROUTES"
     Get-NetRoute -DestinationPrefix "0.0.0.0/0" -ErrorAction SilentlyContinue |
         Sort-Object RouteMetric | ForEach-Object {
-            Write-Host "  $($global:UI_GRN)  $($_.InterfaceAlias)$($global:UI_R)  $($global:UI_GRY)via $($global:UI_R)$($global:UI_WHT)$($_.NextHop)$($global:UI_R)  $($global:UI_GRY)metric $($_.RouteMetric)$($global:UI_R)"
+            Write-Host "  $($global:UI_Theme.Accent)  $($_.InterfaceAlias)$($global:UI_Theme.Reset)  $($global:UI_Theme.Muted)via $($global:UI_Theme.Reset)$($global:UI_Theme.Text)$($_.NextHop)$($global:UI_Theme.Reset)  $($global:UI_Theme.Muted)metric $($_.RouteMetric)$($global:UI_Theme.Reset)"
         }
 }
 
@@ -248,7 +248,7 @@ function Show-WiFiDetails {
         $wifi = netsh wlan show interfaces 2>$null
         if (-not ($wifi -match "SSID")) {
             Write-UiBlankLine
-            Write-Host "  $($global:UI_YLW)  No Wi-Fi interface found or not connected.$($global:UI_R)"
+            Write-Host "  $($global:UI_Theme.Warning)  No Wi-Fi interface found or not connected.$($global:UI_Theme.Reset)"
             return
         }
 
@@ -262,10 +262,10 @@ function Show-WiFiDetails {
                 $parts = $line -split ":", 2
                 if ($parts.Count -eq 2) {
                     $val   = $parts[1].Trim()
-                    $color = $global:UI_GRN
+                    $color = $global:UI_Theme.Accent
                     if ($field -eq "Signal") {
                         $sigNum = [int]($val -replace "[^0-9]","")
-                        $color  = if ($sigNum -ge 80) { $global:UI_GRN } elseif ($sigNum -ge 50) { $global:UI_YLW } else { $global:UI_RED }
+                        $color  = if ($sigNum -ge 80) { $global:UI_Theme.Success } elseif ($sigNum -ge 50) { $global:UI_Theme.Warning } else { $global:UI_Theme.Error }
                     }
                     Row $field $val $color
                 }
@@ -286,12 +286,12 @@ function Show-WiFiDetails {
             for ($i = 0; $i -lt $ssids.Count; $i++) {
                 $sig      = if ($i -lt $signals.Count) { $signals[$i] } else { "?" }
                 $sigNum   = [int]($sig -replace "[^0-9]","")
-                $sigColor = if ($sigNum -ge 80) { $global:UI_GRN } elseif ($sigNum -ge 50) { $global:UI_YLW } else { $global:UI_RED }
-                Write-Host "  $($global:UI_WHT)  $($ssids[$i].PadRight(32))$($global:UI_R)  ${sigColor}Signal: $sig$($global:UI_R)"
+                $sigColor = if ($sigNum -ge 80) { $global:UI_Theme.Success } elseif ($sigNum -ge 50) { $global:UI_Theme.Warning } else { $global:UI_Theme.Error }
+                Write-Host "  $($global:UI_Theme.Text)  $($ssids[$i].PadRight(32))$($global:UI_Theme.Reset)  ${sigColor}Signal: $sig$($global:UI_Theme.Reset)"
             }
         }
     } catch {
-        Write-Host "  $($global:UI_RED)  Wi-Fi query failed: $($_.Exception.Message)$($global:UI_R)"
+        Write-Host "  $($global:UI_Theme.Error)  Wi-Fi query failed: $($_.Exception.Message)$($global:UI_Theme.Reset)"
     }
 }
 
@@ -300,20 +300,20 @@ function Invoke-PingList {
     Show-Header
     $w = Get-UiBoxWidth -MaxWidth 52 -MinWidth 40
     Write-UiBoxTitle -Title "PING HOST LIST" -Width $w
-    Write-Host -NoNewline "  $($global:UI_YLW)  Enter hosts separated by commas: $($global:UI_R)"
+    Write-Host -NoNewline "  $($global:UI_Theme.Warning)  Enter hosts separated by commas: $($global:UI_Theme.Reset)"
     $inputHosts = Read-Host
-    if (-not $inputHosts) { Write-Host "  $($global:UI_GRY)  No hosts entered.$($global:UI_R)"; return }
+    if (-not $inputHosts) { Write-Host "  $($global:UI_Theme.Muted)  No hosts entered.$($global:UI_Theme.Reset)"; return }
 
     $hosts = $inputHosts.Split(",") | ForEach-Object { $_.Trim() } | Where-Object { $_ }
     Write-UiBlankLine
 
     foreach ($target in $hosts) {
         $ping   = Test-PingHost $target 2
-        $rttStr = if ($ping.RTT) { "  $($global:UI_GRY)(RTT: $($ping.RTT)ms)$($global:UI_R)" } else { "" }
+        $rttStr = if ($ping.RTT) { "  $($global:UI_Theme.Muted)(RTT: $($ping.RTT)ms)$($global:UI_Theme.Reset)" } else { "" }
         if ($ping.Success) {
-            Write-Host "  $($global:UI_GRN)  [UP]   $target$($global:UI_R)$rttStr"
+            Write-Host "  $($global:UI_Theme.Success)  [UP]   $target$($global:UI_Theme.Reset)$rttStr"
         } else {
-            Write-Host "  $($global:UI_RED)  [DOWN] $target$($global:UI_R)"
+            Write-Host "  $($global:UI_Theme.Error)  [DOWN] $target$($global:UI_Theme.Reset)"
         }
     }
 }
@@ -323,26 +323,26 @@ function Invoke-TestPort {
     Show-Header
     $w = Get-UiBoxWidth -MaxWidth 52 -MinWidth 40
     Write-UiBoxTitle -Title "TEST PORT" -Width $w
-    Write-Host -NoNewline "  $($global:UI_YLW)  Host: $($global:UI_R)"; $hostName = Read-Host
-    Write-Host -NoNewline "  $($global:UI_YLW)  Port: $($global:UI_R)"; $port = Read-Host
+    Write-Host -NoNewline "  $($global:UI_Theme.Warning)  Host: $($global:UI_Theme.Reset)"; $hostName = Read-Host
+    Write-Host -NoNewline "  $($global:UI_Theme.Warning)  Port: $($global:UI_Theme.Reset)"; $port = Read-Host
 
     if (-not $hostName -or -not $port) {
-        Write-Host "  $($global:UI_RED)  Host and port required.$($global:UI_R)"
+        Write-Host "  $($global:UI_Theme.Error)  Host and port required.$($global:UI_Theme.Reset)"
         return
     }
 
     try {
         Write-UiBlankLine
-        Write-Host "  $($global:UI_CYN)  Testing $hostName : $port ...$($global:UI_R)"
+        Write-Host "  $($global:UI_Theme.Info)  Testing $hostName : $port ...$($global:UI_Theme.Reset)"
         $result = Test-NetConnection -ComputerName $hostName -Port ([int]$port) -WarningAction SilentlyContinue
         Write-UiBlankLine
         Row "Host"           $hostName
         Row "Port"           $port
         Row "Remote Address" "$($result.RemoteAddress)"
         Row "Result"         ""
-        Write-Host "  $($global:UI_DIM)$("Result".PadRight(20))$($global:UI_R)  $(Status $result.TcpTestSucceeded 'OPEN' 'CLOSED')"
+        Write-Host "  $($global:UI_Theme.Dim)$("Result".PadRight(20))$($global:UI_Theme.Reset)  $(Status $result.TcpTestSucceeded 'OPEN' 'CLOSED')"
     } catch {
-        Write-Host "  $($global:UI_RED)  Port test failed: $($_.Exception.Message)$($global:UI_R)"
+        Write-Host "  $($global:UI_Theme.Error)  Port test failed: $($_.Exception.Message)$($global:UI_Theme.Reset)"
     }
 }
 
@@ -351,8 +351,8 @@ function Invoke-DnsLookup {
     Show-Header
     $w = Get-UiBoxWidth -MaxWidth 52 -MinWidth 40
     Write-UiBoxTitle -Title "DNS LOOKUP" -Width $w
-    Write-Host -NoNewline "  $($global:UI_YLW)  Enter host/domain: $($global:UI_R)"; $name = Read-Host
-    if (-not $name) { Write-Host "  $($global:UI_GRY)  No host entered.$($global:UI_R)"; return }
+    Write-Host -NoNewline "  $($global:UI_Theme.Warning)  Enter host/domain: $($global:UI_Theme.Reset)"; $name = Read-Host
+    if (-not $name) { Write-Host "  $($global:UI_Theme.Muted)  No host entered.$($global:UI_Theme.Reset)"; return }
 
     Write-UiBlankLine
     try {
@@ -360,17 +360,17 @@ function Invoke-DnsLookup {
         foreach ($r in $results) {
             $type = "$($r.Type)".PadRight(8)
             switch ($r.Type) {
-                "A"     { Write-Host "  $($global:UI_GRN)  [$type]$($global:UI_R)  $($global:UI_WHT)$($r.IPAddress)$($global:UI_R)" }
-                "AAAA"  { Write-Host "  $($global:UI_BLU)  [$type]$($global:UI_R)  $($global:UI_WHT)$($r.IPAddress)$($global:UI_R)" }
-                "CNAME" { Write-Host "  $($global:UI_YLW)  [$type]$($global:UI_R)  $($global:UI_WHT)$($r.NameHost)$($global:UI_R)" }
-                "MX"    { Write-Host "  $($global:UI_MAG)  [$type]$($global:UI_R)  $($global:UI_WHT)$($r.NameExchange)  pref $($r.Preference)$($global:UI_R)" }
-                "TXT"   { Write-Host "  $($global:UI_CYN)  [$type]$($global:UI_R)  $($global:UI_WHT)$($r.Strings -join ' ')$($global:UI_R)" }
-                "NS"    { Write-Host "  $($global:UI_GRY)  [$type]$($global:UI_R)  $($global:UI_WHT)$($r.NameHost)$($global:UI_R)" }
-                default { Write-Host "  $($global:UI_GRY)  [$type]$($global:UI_R)  $($global:UI_WHT)$r$($global:UI_R)" }
+                "A"     { Write-Host "  $($global:UI_Theme.Accent)  [$type]$($global:UI_Theme.Reset)  $($global:UI_Theme.Text)$($r.IPAddress)$($global:UI_Theme.Reset)" }
+                "AAAA"  { Write-Host "  $($global:UI_Theme.Accent)  [$type]$($global:UI_Theme.Reset)  $($global:UI_Theme.Text)$($r.IPAddress)$($global:UI_Theme.Reset)" }
+                "CNAME" { Write-Host "  $($global:UI_Theme.Secondary)  [$type]$($global:UI_Theme.Reset)  $($global:UI_Theme.Text)$($r.NameHost)$($global:UI_Theme.Reset)" }
+                "MX"    { Write-Host "  $($global:UI_Theme.Secondary)  [$type]$($global:UI_Theme.Reset)  $($global:UI_Theme.Text)$($r.NameExchange)  pref $($r.Preference)$($global:UI_Theme.Reset)" }
+                "TXT"   { Write-Host "  $($global:UI_Theme.Info)  [$type]$($global:UI_Theme.Reset)  $($global:UI_Theme.Text)$($r.Strings -join ' ')$($global:UI_Theme.Reset)" }
+                "NS"    { Write-Host "  $($global:UI_Theme.Muted)  [$type]$($global:UI_Theme.Reset)  $($global:UI_Theme.Text)$($r.NameHost)$($global:UI_Theme.Reset)" }
+                default { Write-Host "  $($global:UI_Theme.Muted)  [$type]$($global:UI_Theme.Reset)  $($global:UI_Theme.Text)$r$($global:UI_Theme.Reset)" }
             }
         }
     } catch {
-        Write-Host "  $($global:UI_RED)  DNS lookup failed: $($_.Exception.Message)$($global:UI_R)"
+        Write-Host "  $($global:UI_Theme.Error)  DNS lookup failed: $($_.Exception.Message)$($global:UI_Theme.Reset)"
     }
 }
 
@@ -379,15 +379,15 @@ function Invoke-Traceroute {
     Show-Header
     $w = Get-UiBoxWidth -MaxWidth 52 -MinWidth 40
     Write-UiBoxTitle -Title "TRACEROUTE" -Width $w
-    Write-Host -NoNewline "  $($global:UI_YLW)  Enter host/IP: $($global:UI_R)"; $target = Read-Host
-    if (-not $target) { Write-Host "  $($global:UI_GRY)  No host entered.$($global:UI_R)"; return }
+    Write-Host -NoNewline "  $($global:UI_Theme.Warning)  Enter host/IP: $($global:UI_Theme.Reset)"; $target = Read-Host
+    if (-not $target) { Write-Host "  $($global:UI_Theme.Muted)  No host entered.$($global:UI_Theme.Reset)"; return }
 
     Write-UiBlankLine
-    Write-Host "  $($global:UI_CYN)  Tracing route to $target (max 30 hops)...$($global:UI_R)"
-    Write-Host "  $($global:UI_GRY)  Press Ctrl+C to stop.$($global:UI_R)"
+    Write-Host "  $($global:UI_Theme.Info)  Tracing route to $target (max 30 hops)...$($global:UI_Theme.Reset)"
+    Write-Host "  $($global:UI_Theme.Muted)  Press Ctrl+C to stop.$($global:UI_Theme.Reset)"
     Write-UiBlankLine
-    Write-Host "  $($global:UI_GRY)  Hop   RTT        Address$($global:UI_R)"
-    Write-Host "  $($global:UI_GRY)  ----  ---------  -------$($global:UI_R)"
+    Write-Host "  $($global:UI_Theme.Muted)  Hop   RTT        Address$($global:UI_Theme.Reset)"
+    Write-Host "  $($global:UI_Theme.Muted)  ----  ---------  -------$($global:UI_Theme.Reset)"
 
     try {
         $hop = 1
@@ -404,18 +404,18 @@ function Invoke-Traceroute {
             $rest   = $Matches[2].Trim()
 
             if ($rest -match "Request timed out") {
-                Write-Host "  $($global:UI_GRY)  $hopNum  * * *      Request timed out$($global:UI_R)"
+                Write-Host "  $($global:UI_Theme.Muted)  $hopNum  * * *      Request timed out$($global:UI_Theme.Reset)"
             } elseif ($rest -match "(\d+)\s+ms.*?(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})") {
                 $rtt  = $Matches[1]
                 $addr = $Matches[2]
-                $rttColor = if ([int]$rtt -lt 20) { $global:UI_GRN } elseif ([int]$rtt -lt 100) { $global:UI_YLW } else { $global:UI_RED }
-                Write-Host "  $($global:UI_GRY)  $hopNum  $($global:UI_R)${rttColor}${rtt}ms$($global:UI_R)$([string]::Empty.PadRight([Math]::Max(1,9-$rtt.Length)))  $($global:UI_WHT)$addr$($global:UI_R)"
+                $rttColor = if ([int]$rtt -lt 20) { $global:UI_Theme.Success } elseif ([int]$rtt -lt 100) { $global:UI_Theme.Warning } else { $global:UI_Theme.Error }
+                Write-Host "  $($global:UI_Theme.Muted)  $hopNum  $($global:UI_Theme.Reset)${rttColor}${rtt}ms$($global:UI_Theme.Reset)$([string]::Empty.PadRight([Math]::Max(1,9-$rtt.Length)))  $($global:UI_Theme.Text)$addr$($global:UI_Theme.Reset)"
             } else {
-                Write-Host "  $($global:UI_GRY)  $hopNum  $rest$($global:UI_R)"
+                Write-Host "  $($global:UI_Theme.Muted)  $hopNum  $rest$($global:UI_Theme.Reset)"
             }
         } elseif ($line -match "Trace complete") {
             Write-UiBlankLine
-            Write-Host "  $($global:UI_GRN)  Trace complete.$($global:UI_R)"
+            Write-Host "  $($global:UI_Theme.Success)  Trace complete.$($global:UI_Theme.Reset)"
         }
     }
 }
@@ -425,7 +425,7 @@ function Get-PublicIP {
     Show-Header
     $w = Get-UiBoxWidth -MaxWidth 52 -MinWidth 40
     Write-UiBoxTitle -Title "PUBLIC IP LOOKUP" -Width $w
-    Write-Host "  $($global:UI_CYN)  Looking up public IP...$($global:UI_R)"
+    Write-Host "  $($global:UI_Theme.Info)  Looking up public IP...$($global:UI_Theme.Reset)"
 
     # Find curl.exe
     $curlExe = $null
@@ -452,10 +452,10 @@ function Get-PublicIP {
             $ip = (Invoke-RestMethod -Uri "https://api.ipify.org?format=text" -TimeoutSec 10)
             Row "Public IP" $ip
             Write-UiBlankLine
-            Write-Host "  $($global:UI_GRY)  Install curl.exe for full geo info.$($global:UI_R)"
+            Write-Host "  $($global:UI_Theme.Muted)  Install curl.exe for full geo info.$($global:UI_Theme.Reset)"
         }
     } catch {
-        Write-Host "  $($global:UI_RED)  Public IP lookup failed: $($_.Exception.Message)$($global:UI_R)"
+        Write-Host "  $($global:UI_Theme.Error)  Public IP lookup failed: $($_.Exception.Message)$($global:UI_Theme.Reset)"
     }
 }
 
@@ -470,25 +470,25 @@ function Show-ActiveConnections {
             Where-Object { $_.State -ne "Listen" } |
             Sort-Object LocalPort
 
-        Write-Host "  $($global:UI_GRY)  LocalAddr         LPort  RemoteAddr        RPort  State         Process$($global:UI_R)"
-        Write-Host "  $($global:UI_GRY)  ----------------  -----  ----------------  -----  ------------  -------$($global:UI_R)"
+        Write-Host "  $($global:UI_Theme.Muted)  LocalAddr         LPort  RemoteAddr        RPort  State         Process$($global:UI_Theme.Reset)"
+        Write-Host "  $($global:UI_Theme.Muted)  ----------------  -----  ----------------  -----  ------------  -------$($global:UI_Theme.Reset)"
 
         foreach ($c in $conns) {
             $proc     = Get-Process -Id $c.OwningProcess -ErrorAction SilentlyContinue
             $procName = if ($proc) { $proc.ProcessName } else { "?" }
             $stateColor = switch ($c.State) {
-                "Established" { $global:UI_GRN }
-                "TimeWait"    { $global:UI_YLW }
-                "CloseWait"   { $global:UI_YLW }
-                "SynSent"     { $global:UI_CYN }
-                default       { $global:UI_GRY }
+                "Established" { $global:UI_Theme.Success }
+                "TimeWait"    { $global:UI_Theme.Warning }
+                "CloseWait"   { $global:UI_Theme.Warning }
+                "SynSent"     { $global:UI_Theme.Info }
+                default       { $global:UI_Theme.Muted }
             }
             $la = $c.LocalAddress.PadRight(16)
             $ra = $c.RemoteAddress.PadRight(16)
             $lp = "$($c.LocalPort)".PadRight(5)
             $rp = "$($c.RemotePort)".PadRight(5)
             $st = "$($c.State)".PadRight(12)
-            Write-Host "  $($global:UI_DIM)  $la  $lp  $ra  $rp  $($global:UI_R)${stateColor}$st$($global:UI_R)  $($global:UI_WHT)$procName$($global:UI_R)"
+            Write-Host "  $($global:UI_Theme.Dim)  $la  $lp  $ra  $rp  $($global:UI_Theme.Reset)${stateColor}$st$($global:UI_Theme.Reset)  $($global:UI_Theme.Text)$procName$($global:UI_Theme.Reset)"
         }
     } catch {
         Write-CoreError "Failed: $($_.Exception.Message)"
@@ -504,15 +504,15 @@ function Show-ListeningPorts {
     try {
         $ports = Get-NetTCPConnection -State Listen -ErrorAction Stop | Sort-Object LocalPort
 
-        Write-Host "  $($global:UI_GRY)  Port   Address           Process$($global:UI_R)"
-        Write-Host "  $($global:UI_GRY)  -----  ----------------  -------$($global:UI_R)"
+        Write-Host "  $($global:UI_Theme.Muted)  Port   Address           Process$($global:UI_Theme.Reset)"
+        Write-Host "  $($global:UI_Theme.Muted)  -----  ----------------  -------$($global:UI_Theme.Reset)"
 
         foreach ($p in $ports) {
             $proc     = Get-Process -Id $p.OwningProcess -ErrorAction SilentlyContinue
             $procName = if ($proc) { $proc.ProcessName } else { "?" }
             $port     = "$($p.LocalPort)".PadRight(5)
             $addr     = $p.LocalAddress.PadRight(16)
-            Write-Host "  $($global:UI_GRN)  $port$($global:UI_R)  $($global:UI_GRY)$addr$($global:UI_R)  $($global:UI_WHT)$procName$($global:UI_R)"
+            Write-Host "  $($global:UI_Theme.Accent)  $port$($global:UI_Theme.Reset)  $($global:UI_Theme.Muted)$addr$($global:UI_Theme.Reset)  $($global:UI_Theme.Text)$procName$($global:UI_Theme.Reset)"
         }
     } catch {
         Write-CoreError "Failed: $($_.Exception.Message)"
@@ -524,13 +524,13 @@ function Invoke-WhoPort {
     Show-Header
     $w = Get-UiBoxWidth -MaxWidth 52 -MinWidth 40
     Write-UiBoxTitle -Title "FIND PROCESS ON PORT" -Width $w
-    Write-Host -NoNewline "  $($global:UI_YLW)  Enter local port: $($global:UI_R)"; $port = Read-Host
-    if (-not $port) { Write-Host "  $($global:UI_GRY)  No port entered.$($global:UI_R)"; return }
+    Write-Host -NoNewline "  $($global:UI_Theme.Warning)  Enter local port: $($global:UI_Theme.Reset)"; $port = Read-Host
+    if (-not $port) { Write-Host "  $($global:UI_Theme.Muted)  No port entered.$($global:UI_Theme.Reset)"; return }
 
     try {
         $conns = Get-NetTCPConnection -LocalPort ([int]$port) -ErrorAction SilentlyContinue
         if (-not $conns) {
-            Write-Host "  $($global:UI_GRY)  Nothing found on port $port.$($global:UI_R)"
+            Write-Host "  $($global:UI_Theme.Muted)  Nothing found on port $port.$($global:UI_Theme.Reset)"
             return
         }
 
@@ -549,7 +549,7 @@ function Invoke-WhoPort {
             Write-UiBlankLine
         }
     } catch {
-        Write-Host "  $($global:UI_RED)  Port lookup failed: $($_.Exception.Message)$($global:UI_R)"
+        Write-Host "  $($global:UI_Theme.Error)  Port lookup failed: $($_.Exception.Message)$($global:UI_Theme.Reset)"
     }
 }
 
@@ -558,19 +558,19 @@ function Invoke-WatchConnectivity {
     Show-Header
     $w = Get-UiBoxWidth -MaxWidth 52 -MinWidth 40
     Write-UiBoxTitle -Title "WATCH CONNECTIVITY" -Width $w
-    Write-Host -NoNewline "  $($global:UI_YLW)  Host to watch (default: 1.1.1.1): $($global:UI_R)"
+    Write-Host -NoNewline "  $($global:UI_Theme.Warning)  Host to watch (default: 1.1.1.1): $($global:UI_Theme.Reset)"
     $target = Read-Host
     if (-not $target) { $target = "1.1.1.1" }
 
-    Write-Host -NoNewline "  $($global:UI_YLW)  Interval seconds (default: 2): $($global:UI_R)"
+    Write-Host -NoNewline "  $($global:UI_Theme.Warning)  Interval seconds (default: 2): $($global:UI_Theme.Reset)"
     $intervalStr = Read-Host
     $interval    = if ($intervalStr -match '^\d+$') { [int]$intervalStr } else { 2 }
 
     Write-UiBlankLine
-    Write-Host "  $($global:UI_CYN)  Watching $($global:UI_B)$target$($global:UI_R)$($global:UI_CYN) every ${interval}s.  Press Ctrl+C to stop.$($global:UI_R)"
+    Write-Host "  $($global:UI_Theme.Info)  Watching $($global:UI_Theme.Bold)$target$($global:UI_Theme.Reset)$($global:UI_Theme.Info) every ${interval}s.  Press Ctrl+C to stop.$($global:UI_Theme.Reset)"
     Write-UiBlankLine
-    Write-Host "  $($global:UI_GRY)  Time                  Status   RTT      Streak$($global:UI_R)"
-    Write-Host "  $($global:UI_GRY)  -------------------   ------   -------  ------$($global:UI_R)"
+    Write-Host "  $($global:UI_Theme.Muted)  Time                  Status   RTT      Streak$($global:UI_Theme.Reset)"
+    Write-Host "  $($global:UI_Theme.Muted)  -------------------   ------   -------  ------$($global:UI_Theme.Reset)"
 
     $upStreak   = 0
     $downStreak = 0
@@ -586,15 +586,15 @@ function Invoke-WatchConnectivity {
             $downStreak = 0
             $totalUp++
             $rttStr    = if ($ping.RTT) { "$($ping.RTT)ms".PadRight(7) } else { "?ms    " }
-            $rttColor  = if ($ping.RTT -lt 20) { $global:UI_GRN } elseif ($ping.RTT -lt 100) { $global:UI_YLW } else { $global:UI_RED }
-            $streakStr = "$($global:UI_GRN)up x$upStreak$($global:UI_R)"
-            Write-Host "  $($global:UI_GRY)  $time   $($global:UI_R)$($global:UI_GRN)$($global:UI_B)[UP]  $($global:UI_R)   ${rttColor}$rttStr$($global:UI_R)  $streakStr"
+            $rttColor  = if ($ping.RTT -lt 20) { $global:UI_Theme.Success } elseif ($ping.RTT -lt 100) { $global:UI_Theme.Warning } else { $global:UI_Theme.Error }
+            $streakStr = "$($global:UI_Theme.Success)up x$upStreak$($global:UI_Theme.Reset)"
+            Write-Host "  $($global:UI_Theme.Muted)  $time   $($global:UI_Theme.Reset)$($global:UI_Theme.Success)$($global:UI_Theme.Bold)[UP]  $($global:UI_Theme.Reset)   ${rttColor}$rttStr$($global:UI_Theme.Reset)  $streakStr"
         } else {
             $downStreak++
             $upStreak = 0
             $totalDown++
-            $streakStr = "$($global:UI_RED)down x$downStreak$($global:UI_R)"
-            Write-Host "  $($global:UI_GRY)  $time   $($global:UI_R)$($global:UI_RED)$($global:UI_B)[DOWN]$($global:UI_R)   $($global:UI_GRY)-------$($global:UI_R)  $streakStr"
+            $streakStr = "$($global:UI_Theme.Error)down x$downStreak$($global:UI_Theme.Reset)"
+            Write-Host "  $($global:UI_Theme.Muted)  $time   $($global:UI_Theme.Reset)$($global:UI_Theme.Error)$($global:UI_Theme.Bold)[DOWN]$($global:UI_Theme.Reset)   $($global:UI_Theme.Muted)-------$($global:UI_Theme.Reset)  $streakStr"
         }
 
         Start-Sleep -Seconds $interval
@@ -609,52 +609,52 @@ function Invoke-AdapterToggle {
 
     $adapters = Get-NetAdapter -ErrorAction SilentlyContinue | Sort-Object Name
     if (-not $adapters) {
-        Write-Host "  $($global:UI_RED)  No adapters found.$($global:UI_R)"
+        Write-Host "  $($global:UI_Theme.Error)  No adapters found.$($global:UI_Theme.Reset)"
         return
     }
 
     $i = 1
     foreach ($a in $adapters) {
-        $statusColor = if ($a.Status -eq "Up") { $global:UI_GRN } else { $global:UI_GRY }
+        $statusColor = if ($a.Status -eq "Up") { $global:UI_Theme.Success } else { $global:UI_Theme.Muted }
         $statusLabel = "$($a.Status)".PadRight(10)
-        Write-Host "  $($global:UI_YLW)  $i)$($global:UI_R)  ${statusColor}[$statusLabel]$($global:UI_R)  $($global:UI_WHT)$($a.Name)$($global:UI_R)  $($global:UI_GRY)$($a.InterfaceDescription)$($global:UI_R)"
+        Write-Host "  $($global:UI_Theme.Warning)  $i)$($global:UI_Theme.Reset)  ${statusColor}[$statusLabel]$($global:UI_Theme.Reset)  $($global:UI_Theme.Text)$($a.Name)$($global:UI_Theme.Reset)  $($global:UI_Theme.Muted)$($a.InterfaceDescription)$($global:UI_Theme.Reset)"
         $i++
     }
 
     Write-UiBlankLine
-    Write-Host -NoNewline "  $($global:UI_YLW)  Select adapter number (or Enter to cancel): $($global:UI_R)"
+    Write-Host -NoNewline "  $($global:UI_Theme.Warning)  Select adapter number (or Enter to cancel): $($global:UI_Theme.Reset)"
     $sel = Read-Host
     if (-not $sel -or $sel -notmatch '^\d+$') { return }
 
     $idx     = [int]$sel - 1
     $adapter = @($adapters)[$idx]
     if (-not $adapter) {
-        Write-Host "  $($global:UI_RED)  Invalid selection.$($global:UI_R)"
+        Write-Host "  $($global:UI_Theme.Error)  Invalid selection.$($global:UI_Theme.Reset)"
         return
     }
 
     Write-UiBlankLine
-    Write-Host "  $($global:UI_WHT)  Selected: $($global:UI_YLW)$($adapter.Name)$($global:UI_R)  $($global:UI_GRY)[Status: $($adapter.Status)]$($global:UI_R)"
+    Write-Host "  $($global:UI_Theme.Text)  Selected: $($global:UI_Theme.Accent)$($adapter.Name)$($global:UI_Theme.Reset)  $($global:UI_Theme.Muted)[Status: $($adapter.Status)]$($global:UI_Theme.Reset)"
     Write-UiBlankLine
 
     if ($adapter.Status -eq "Up") {
         if (Confirm-Action "Disable $($adapter.Name)?") {
             try {
                 Disable-NetAdapter -Name $adapter.Name -Confirm:$false -ErrorAction Stop
-                Write-Host "  $($global:UI_YLW)  $($adapter.Name) disabled.$($global:UI_R)"
+                Write-Host "  $($global:UI_Theme.Warning)  $($adapter.Name) disabled.$($global:UI_Theme.Reset)"
             } catch {
                 Write-CoreError "Failed: $($_.Exception.Message)"
-                Write-Host "  $($global:UI_YLW)  Try running as Administrator.$($global:UI_R)"
+                Write-Host "  $($global:UI_Theme.Warning)  Try running as Administrator.$($global:UI_Theme.Reset)"
             }
         }
     } else {
         if (Confirm-Action "Enable $($adapter.Name)?") {
             try {
                 Enable-NetAdapter -Name $adapter.Name -Confirm:$false -ErrorAction Stop
-                Write-Host "  $($global:UI_GRN)  $($adapter.Name) enabled.$($global:UI_R)"
+                Write-Host "  $($global:UI_Theme.Success)  $($adapter.Name) enabled.$($global:UI_Theme.Reset)"
             } catch {
                 Write-CoreError "Failed: $($_.Exception.Message)"
-                Write-Host "  $($global:UI_YLW)  Try running as Administrator.$($global:UI_R)"
+                Write-Host "  $($global:UI_Theme.Warning)  Try running as Administrator.$($global:UI_Theme.Reset)"
             }
         }
     }
@@ -665,48 +665,48 @@ function Invoke-NetworkReset {
     Show-Header
     $w = Get-UiBoxWidth -MaxWidth 52 -MinWidth 40
     Write-UiBoxTitle -Title "NETWORK RESET" -Width $w
-    Write-Host "  $($global:UI_YLW)$($global:UI_B)  Warning:$($global:UI_R)$($global:UI_YLW) This will temporarily drop your connection.$($global:UI_R)"
-    Write-Host "  $($global:UI_GRY)  Includes: flush DNS, release/renew DHCP, winsock reset.$($global:UI_R)"
-    Write-Host "  $($global:UI_GRY)  A reboot may be required after winsock reset.$($global:UI_R)"
+    Write-Host "  $($global:UI_Theme.Warning)$($global:UI_Theme.Bold)  Warning:$($global:UI_Theme.Reset)$($global:UI_Theme.Warning) This will temporarily drop your connection.$($global:UI_Theme.Reset)"
+    Write-Host "  $($global:UI_Theme.Muted)  Includes: flush DNS, release/renew DHCP, winsock reset.$($global:UI_Theme.Reset)"
+    Write-Host "  $($global:UI_Theme.Muted)  A reboot may be required after winsock reset.$($global:UI_Theme.Reset)"
     Write-UiBlankLine
 
-    Write-Host "  $($global:UI_GRN)  A)$($global:UI_R)  DNS flush only         $($global:UI_GRY)(safe, no disconnect)$($global:UI_R)"
-    Write-Host "  $($global:UI_YLW)  B)$($global:UI_R)  DNS flush + DHCP renew $($global:UI_GRY)(brief disconnect)$($global:UI_R)"
-    Write-Host "  $($global:UI_RED)  C)$($global:UI_R)  Full reset             $($global:UI_GRY)(DNS + DHCP + winsock, reboot needed)$($global:UI_R)"
-    Write-Host "  $($global:UI_GRY)  Q)$($global:UI_R)  Cancel"
+    Write-Host "  $($global:UI_Theme.Accent)  A)$($global:UI_Theme.Reset)  DNS flush only         $($global:UI_Theme.Muted)(safe, no disconnect)$($global:UI_Theme.Reset)"
+    Write-Host "  $($global:UI_Theme.Warning)  B)$($global:UI_Theme.Reset)  DNS flush + DHCP renew $($global:UI_Theme.Muted)(brief disconnect)$($global:UI_Theme.Reset)"
+    Write-Host "  $($global:UI_Theme.Error)  C)$($global:UI_Theme.Reset)  Full reset             $($global:UI_Theme.Muted)(DNS + DHCP + winsock, reboot needed)$($global:UI_Theme.Reset)"
+    Write-Host "  $($global:UI_Theme.Muted)  Q)$($global:UI_Theme.Reset)  Cancel"
     Write-UiBlankLine
     $choice = (Read-UiChoice "Choice:").Trim().ToUpper()
 
     switch ($choice) {
         "A" {
             Write-UiBlankLine
-            Write-Host "  $($global:UI_CYN)  Flushing DNS...$($global:UI_R)"
+            Write-Host "  $($global:UI_Theme.Info)  Flushing DNS...$($global:UI_Theme.Reset)"
             ipconfig /flushdns
             Write-CoreSuccess "Done."
         }
         "B" {
             if (Confirm-Action "Flush DNS and renew DHCP? (brief disconnect)") {
                 Write-UiBlankLine
-                Write-Host "  $($global:UI_CYN)  Flushing DNS...$($global:UI_R)";   ipconfig /flushdns
-                Write-Host "  $($global:UI_CYN)  Releasing DHCP...$($global:UI_R)"; ipconfig /release
-                Write-Host "  $($global:UI_CYN)  Renewing DHCP...$($global:UI_R)";  ipconfig /renew
+                Write-Host "  $($global:UI_Theme.Info)  Flushing DNS...$($global:UI_Theme.Reset)";   ipconfig /flushdns
+                Write-Host "  $($global:UI_Theme.Info)  Releasing DHCP...$($global:UI_Theme.Reset)"; ipconfig /release
+                Write-Host "  $($global:UI_Theme.Info)  Renewing DHCP...$($global:UI_Theme.Reset)";  ipconfig /renew
                 Write-CoreSuccess "Done."
             }
         }
         "C" {
             if (Confirm-Action "Run full network reset? (reboot required after)") {
                 Write-UiBlankLine
-                Write-Host "  $($global:UI_CYN)  Flushing DNS...$($global:UI_R)";       ipconfig /flushdns
-                Write-Host "  $($global:UI_CYN)  Releasing DHCP...$($global:UI_R)";     ipconfig /release
-                Write-Host "  $($global:UI_CYN)  Renewing DHCP...$($global:UI_R)";      ipconfig /renew
-                Write-Host "  $($global:UI_CYN)  Resetting winsock...$($global:UI_R)";  netsh winsock reset
-                Write-Host "  $($global:UI_CYN)  Resetting IP stack...$($global:UI_R)"; netsh int ip reset
+                Write-Host "  $($global:UI_Theme.Info)  Flushing DNS...$($global:UI_Theme.Reset)";       ipconfig /flushdns
+                Write-Host "  $($global:UI_Theme.Info)  Releasing DHCP...$($global:UI_Theme.Reset)";     ipconfig /release
+                Write-Host "  $($global:UI_Theme.Info)  Renewing DHCP...$($global:UI_Theme.Reset)";      ipconfig /renew
+                Write-Host "  $($global:UI_Theme.Info)  Resetting winsock...$($global:UI_Theme.Reset)";  netsh winsock reset
+                Write-Host "  $($global:UI_Theme.Info)  Resetting IP stack...$($global:UI_Theme.Reset)"; netsh int ip reset
                 Write-UiBlankLine
-                Write-Host "  $($global:UI_YLW)$($global:UI_B)  Full reset complete. Please reboot now.$($global:UI_R)"
+                Write-Host "  $($global:UI_Theme.Warning)$($global:UI_Theme.Bold)  Full reset complete. Please reboot now.$($global:UI_Theme.Reset)"
             }
         }
         default {
-            Write-Host "  $($global:UI_GRY)  Cancelled.$($global:UI_R)"
+            Write-Host "  $($global:UI_Theme.Muted)  Cancelled.$($global:UI_Theme.Reset)"
         }
     }
 }
@@ -736,7 +736,7 @@ while ($true) {
 
         "Q"  {
             Write-UiBlankLine
-            Write-Host "  $($global:UI_CYN)  Bye.$($global:UI_R)"
+            Write-Host "  $($global:UI_Theme.Accent)  Bye.$($global:UI_Theme.Reset)"
             Write-UiBlankLine
             return
         }

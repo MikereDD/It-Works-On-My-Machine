@@ -8,7 +8,11 @@
 
 `It-Works-On-My-Machine` is the working systems repository for **Netzach**, the Windows development workstation, and **Arakiel**, the Arch Linux / Raspberry Pi 5 server and automation node.
 
-This is where dotfiles, shell environments, administration scripts, personal tools, machine setup, reusable pieces, experiments, and prototypes live. It is also a workshop: small ideas can begin here, prove themselves useful, and eventually become standalone repositories without losing the lineage that started them.
+This is where dotfiles, shell environments, administration scripts, personal tools, machine setup, reusable pieces, experiments, and prototypes live.
+
+The repository is intentionally machine-aware rather than generic. Windows and Linux keep their native tools and behavior, while shared conventions make moving between the two environments feel as familiar as practical.
+
+A shared ThemeEngine coordinates supported visual surfaces across both systems, and the shell environments aim for comparable navigation, naming, status language, and day-to-day workflow without hiding platform differences.
 
 ## Systems
 
@@ -20,6 +24,7 @@ Windows development, build, testing, media tooling, and daily workstation automa
 - Administration and utility scripts
 - Personal tools and historical PowerShell prototypes
 - Vim configuration
+- ThemeEngine integration for PowerShell, Windows Terminal, Vim, and Lightline
 - Machine setup and workstation-specific experiments
 
 The PowerShell versions of projects such as **Cadence**, **MediaForge**, **Parallax**, and **AtomicClock** remain here as part of their development lineage even when their modern descendants live in standalone repositories.
@@ -29,10 +34,12 @@ The PowerShell versions of projects such as **Cadence**, **MediaForge**, **Paral
 Arch Linux on Raspberry Pi 5, providing the always-on side of the environment.
 
 - Bash and Zsh environments
+- Shared shell libraries used by both shells
 - tmux, Vim, i3, X11, and Wi-Fi configuration
 - Raspberry Pi administration and health tools
 - Network, backup, update, and system utilities
 - Media and personal shell tools
+- ThemeEngine integration for URxvt, i3, i3blocks, tmux, shell UI, Vim, and Lightline
 - Service and setup material for the server
 
 ## Repository Layout
@@ -41,8 +48,10 @@ Arch Linux on Raspberry Pi 5, providing the always-on side of the environment.
 It-Works-On-My-Machine/
 ├── Netzach/
 │   ├── PowerShell/
+│   │   ├── ThemeEngine/
 │   │   ├── profile.d/
-│   │   └── scripts/
+│   │   ├── scripts/
+│   │   └── profile.ps1
 │   ├── config/
 │   │   └── vim/
 │   ├── setup/
@@ -53,6 +62,7 @@ It-Works-On-My-Machine/
 │   ├── bin/
 │   ├── scripts/
 │   ├── lib/
+│   ├── local/
 │   ├── config/
 │   │   ├── i3/
 │   │   ├── shell/
@@ -62,6 +72,13 @@ It-Works-On-My-Machine/
 │   │   └── x11/
 │   ├── services/
 │   └── setup/
+├── ThemeEngine/
+│   ├── README.md
+│   ├── INTEGRATIONS.md
+│   ├── RUNTIME.md
+│   ├── theme.conf.template
+│   ├── themes/
+│   └── templates/
 ├── Shared/
 │   ├── scripts/
 │   ├── tools/
@@ -80,15 +97,179 @@ It-Works-On-My-Machine/
 └── README.md
 ```
 
+## Configuration Model
+
+The repository is the canonical source for maintained machine configuration.
+Live files are deployed from the tracked machine trees, while generated,
+runtime, cache, secret, and native dependency files remain local where
+appropriate.
+
+### Netzach
+
+Tracked PowerShell source:
+
+    Netzach/PowerShell/
+
+Live PowerShell deployment:
+
+    $HOME\PS\
+
+Tracked Vim source:
+
+    Netzach/config/vim/
+
+Live Vim configuration:
+
+    $HOME\_vimrc
+    $HOME\config\vim\vimrc
+
+`$HOME\_vimrc` is only a compatibility loader. The canonical live Vim
+configuration is `$HOME\config\vim\vimrc`.
+
+Detailed Netzach architecture and synchronization rules are documented in
+[`Netzach/README.md`](Netzach/README.md).
+
+### Arakiel
+
+Tracked machine configuration lives under:
+
+    Arakiel/
+
+Live configuration follows the corresponding Linux locations under `$HOME`,
+`$HOME/.config`, `$HOME/.local/bin`, and the system locations documented by
+the individual components.
+
+Shared shell implementations live under `Arakiel/lib/`, while Bash and Zsh
+loaders remain deliberately small.
+
+Detailed Arakiel architecture and synchronization rules are documented in
+[`Arakiel/README.md`](Arakiel/README.md).
+
+### Generated and local-only state
+
+Generated ThemeEngine output, application caches, logs, local credentials,
+runtime configuration, editor state, and native dependencies are not treated
+as source drift when intentionally excluded from version control.
+
+Home-relative paths should use `$HOME` in scripts and documentation rather
+than embedding a specific Windows or Linux username.
+
+Environment-owned Windows paths should use variables such as
+`$env:LOCALAPPDATA`, `$env:APPDATA`, and `$env:TEMP`.
+
+### Repository flow
+
+Forgejo is the primary working remote and GitHub is the public mirror.
+
+Maintained configuration changes should normally follow this flow:
+
+    tracked source
+        -> validation
+        -> live deployment
+        -> runtime verification
+        -> Forgejo
+        -> GitHub
+
+The desired steady state is:
+
+    tracked source == live deployed source
+
+except for explicitly documented generated, secret, cache, log, state, and
+runtime-only files.
+
+## Shell Environment
+
+Netzach and Arakiel are different operating systems, but the interactive shell experience is intended to remain familiar between them.
+
+The goal is **consistency of intent**, not artificial implementation symmetry.
+
+Examples include:
+
+- familiar prompt structure and Git context
+- comparable navigation helpers
+- shared naming where commands serve the same purpose
+- semantic status and diagnostic colors
+- small shell-specific loaders around shared implementations where practical
+- explicit documentation where native platform behavior must differ
+
+On Arakiel, Bash and Zsh loaders under `bash.d/` and `zsh.d/` intentionally stay small while shared implementations live under `Arakiel/lib/`.
+
+On Netzach, the PowerShell environment is modularized under `Netzach/PowerShell/profile.d/`, with the main profile controlling load order.
+
+Platform-specific behavior should remain visible and documented rather than hidden behind fragile abstraction.
+
+## ThemeEngine
+
+`ThemeEngine/` is the shared cross-platform theming subsystem for Netzach and Arakiel.
+
+Themes define semantic appearance once and the platform renderers translate those roles into native configuration.
+
+ThemeEngine currently coordinates:
+
+- Windows Terminal and PowerShell semantic UI on Netzach
+- Xresources / URxvt, i3, i3blocks, tmux, and shell UI on Arakiel
+- Vim and Lightline on both systems
+
+Current themes:
+
+- **Obsidian Silver**
+- **Catppuccin Mocha**
+- **Everforest Dark**
+- **Gruvbox**
+- **Kanagawa Paper**
+- **OneDark**
+- **Dusty's Pink AF Theme**
+
+ThemeEngine also supports optional interaction-state roles:
+
+```text
+SELECTION → BORDER
+CURSOR    → ACCENT_BRIGHT
+FOCUS     → ACCENT
+```
+
+Themes that do not define those roles retain their existing appearance through the documented fallbacks.
+
+ThemeEngine documentation is split by purpose:
+
+- [`ThemeEngine/README.md`](ThemeEngine/README.md) — overview, architecture, and quick start
+- [`ThemeEngine/INTEGRATIONS.md`](ThemeEngine/INTEGRATIONS.md) — source, renderer, generated-output, and consumer map
+- [`ThemeEngine/RUNTIME.md`](ThemeEngine/RUNTIME.md) — installed state, runtime behavior, reloads, and troubleshooting
+- [`ThemeEngine/theme.conf.template`](ThemeEngine/theme.conf.template) — authoritative theme authoring contract
+
+The ownership rule is simple:
+
+> **ThemeEngine owns appearance. Applications and platforms own behavior.**
+
 ## Shared
 
-`Shared/` is reserved for material that genuinely belongs to both machines: reusable scripts, common tools, portable dotfiles, and templates. Machine-specific files stay with their machine rather than being forced into a common abstraction.
+`Shared/` is reserved for material that genuinely belongs to both machines: reusable scripts, common tools, portable dotfiles, and templates.
+
+Machine-specific files stay with their machine rather than being forced into a common abstraction merely to make the directory tree look symmetrical.
 
 ## Experiments
 
-`Experiments/` is the workshop. It currently preserves 3D-printing projects, Android work including **PCloudTV**, Android and PowerShell games, and space for new prototypes.
+`Experiments/` is the workshop. It preserves 3D-printing projects, Android work, games, and space for new prototypes.
 
-An experiment does not need to become a product. If one grows into a maintained standalone application, it can graduate into its own repository while the useful prototype or historical ancestor can remain here when it documents how the project began.
+An experiment does not need to become a product.
+
+If one grows into a maintained standalone application or tool, it can graduate into its own repository while useful prototype or lineage material may remain here when it explains how the project began.
+
+## Documentation Standard
+
+Maintained configuration files and scripts should be documented well enough that someone unfamiliar with the environment can understand:
+
+- what the file is for
+- what loads or consumes it
+- important dependencies
+- non-obvious behavior
+- platform-specific decisions
+- safety considerations
+- why a configuration choice exists when the reason is not obvious
+
+Comments should explain intent and operational context rather than merely restating commands.
+
+The repository should be understandable without requiring commit-history archaeology or private knowledge of Netzach and Arakiel.
 
 ## Philosophy
 
