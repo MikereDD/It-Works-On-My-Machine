@@ -446,6 +446,13 @@ NUMERIC ALIGNMENT
         if ($hex -notmatch '^#[a-fA-F0-9]{6}$') { $hex = $fallback }
         [Windows.Media.BrushConverter]::new().ConvertFromString($hex)
     }
+    # Capture the helpers $refresh calls while the function body can resolve them. Like Edit
+    # Colors, GetNewClosure() handlers cannot see ThemeEngine.ps1's script scope when the
+    # engine is launched via '& ThemeEngine.ps1' (themeengine-dev). A missing snapshot helper
+    # still fails inside the existing try, leaving Shell scopes disabled as before.
+    $getSettingsSnapshot = Get-Command Get-TypezeroAppearanceSettingsSnapshot -CommandType Function -ErrorAction SilentlyContinue
+    $getFontWeights = Get-Command Get-TypezeroTerminalFontWeights -CommandType Function
+    $toWpfFontWeight = Get-Command ConvertTo-TypezeroWpfFontWeight -CommandType Function
     $refresh = {
         $id = if ($themeBox.SelectedItem) { [string]$themeBox.SelectedItem.Tag } else { '' }
         $face = if ($fontBox.SelectedItem) { [string]$fontBox.SelectedItem.Tag } else { '' }
@@ -457,7 +464,7 @@ NUMERIC ALIGNMENT
         $previewState.ExpectedSha256 = $null
         if ($themes.Contains($id)) {
             try {
-                $previewState.ExpectedSha256 = Get-TypezeroAppearanceSettingsSnapshot
+                $previewState.ExpectedSha256 = & $getSettingsSnapshot
                 $applyShell.IsEnabled = $true
                 $applyDesktopShell.IsEnabled = $true
             } catch { }
@@ -466,7 +473,7 @@ NUMERIC ALIGNMENT
          $valid = [double]::TryParse([string]$sizeBox.Text,[Globalization.NumberStyles]::Float,[Globalization.CultureInfo]::InvariantCulture,[ref]$size)
         if (-not $themes.Contains($id) -or -not $fontNames.Contains($face) -or -not $valid -or
             [double]::IsNaN($size) -or [double]::IsInfinity($size) -or $size -lt 6 -or $size -gt 36 -or $size -ne [math]::Round($size,2) -or
-            $weight -cnotin @((Get-TypezeroTerminalFontWeights).Keys)) {
+            $weight -cnotin @((& $getFontWeights).Keys)) {
             $use.IsEnabled = $false
             $applyFont.IsEnabled = $false
             $savePreset.IsEnabled = $false
@@ -515,7 +522,7 @@ NUMERIC ALIGNMENT
             $sample = [Windows.Controls.StackPanel]$entry.Content
             if ($sample.Children.Count -gt 1) {
                 $sample.Children[1].FontFamily = [Windows.Media.FontFamily]::new($face)
-                $sample.Children[1].FontWeight = ConvertTo-TypezeroWpfFontWeight -Weight $weight
+                $sample.Children[1].FontWeight = & $toWpfFontWeight -Weight $weight
             }
         }
         foreach ($entry in $weightBox.Items) {
@@ -524,7 +531,7 @@ NUMERIC ALIGNMENT
         }
         $preview.FontFamily = [Windows.Media.FontFamily]::new($face)
         $preview.FontSize = $size * 96.0 / 72.0
-        $preview.FontWeight = ConvertTo-TypezeroWpfFontWeight -Weight $weight
+        $preview.FontWeight = & $toWpfFontWeight -Weight $weight
         $success.Foreground = & $brush (& $get 'SUCCESS' '#7dbb69') '#7dbb69'
         $warning.Foreground = & $brush (& $get 'WARNING' '#e5b454') '#e5b454'
         $errorText.Foreground = & $brush (& $get 'ERROR' '#e05f65') '#e05f65'

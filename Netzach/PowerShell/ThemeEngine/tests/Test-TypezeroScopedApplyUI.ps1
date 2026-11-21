@@ -176,6 +176,49 @@ try {
         $cancel=Show-TypezeroThemeFontPreview -ThemesRoot $f.Themes -OnLoaded {param($window,$controls) Click $controls.CancelButton}
         Assert-True ($null -eq $cancel -and (Snapshot $f.Root) -ceq $before) 'WPF cancellation wrote files.'
     }
+    Case 'Real WPF readiness survives the themeengine-dev launch shape (function -> & script -> dot-sourced modules)' {
+        $f=New-Fixture;$before=Snapshot $f.Root
+        $probe=Join-Path $f.Root 'nested-probe.json'
+        $launcher=Join-Path $f.Root 'nested launch.ps1'
+        # Mirrors ThemeEngine.ps1 'font theme-preview': modules are dot-sourced into a script
+        # scope that GetNewClosure() handlers cannot resolve names from. The child keeps the
+        # default error preference and no try, as the real launch does, so name failures are
+        # recorded in $Error instead of aborting the window.
+        Write-Text $launcher @"
+. '$($source.Replace("'","''"))\ThemeFontPreview-WindowsTerminal.ps1'
+`$null = Show-TypezeroThemeFontPreview -ThemesRoot '$($f.Themes.Replace("'","''"))' -OnLoaded {
+    param(`$window,`$controls)
+    `$names = 'ApplyShellButton','ApplyDesktopShellButton','ApplyDesktopButton','ApplyShellFontButton','ApplyFontButton','UseButton'
+    `$state = [ordered]@{}
+    foreach (`$n in `$names) { `$state["Initial`$n"] = `$controls[`$n].IsEnabled }
+    try {
+        `$i = `$controls.ThemeBox.SelectedIndex; `$controls.ThemeBox.SelectedIndex = -1; `$controls.ThemeBox.SelectedIndex = `$i
+        `$state.ReselectError = ''
+    } catch { `$state.ReselectError = `$_.Exception.Message }
+    foreach (`$n in `$names) { `$state["Reselect`$n"] = `$controls[`$n].IsEnabled }
+    `$state.NotRecognized = @(`$global:Error | ForEach-Object { `$_.Exception.Message } | Where-Object { `$_ -like '*is not recognized*' } | Select-Object -Unique)
+    [IO.File]::WriteAllText('$($probe.Replace("'","''"))', (`$state | ConvertTo-Json -Depth 4))
+    `$controls.CancelButton.RaiseEvent([Windows.RoutedEventArgs]::new([Windows.Controls.Button]::ClickEvent))
+}
+"@
+        $child=Join-Path $f.Root 'nested-check.ps1'
+        Write-Text $child @"
+function global:Invoke-NestedThemePreview { & '$($launcher.Replace("'","''"))' }
+Invoke-NestedThemePreview
+"@
+        $out=(& (Get-Process -Id $PID).Path -NoProfile -NonInteractive -STA -File $child 2>&1) -join "`n"
+        Assert-True (Test-Path -LiteralPath $probe) "Nested launch did not reach the window: $out"
+        $state=[IO.File]::ReadAllText($probe)|ConvertFrom-Json
+        Remove-Item -LiteralPath $probe,$launcher,$child
+        Assert-True (@($state.NotRecognized).Count -eq 0) "Handler name resolution failed in nested launch: $(@($state.NotRecognized) -join ' | ')"
+        foreach($phase in @('Initial','Reselect')) {
+            foreach($n in @('ApplyShellButton','ApplyDesktopShellButton','ApplyDesktopButton','ApplyShellFontButton','ApplyFontButton','UseButton')) {
+                Assert-True ($state."$phase$n" -eq $true) "$phase ${n} disabled in nested launch."
+            }
+        }
+        Assert-True ([string]::IsNullOrEmpty($state.ReselectError)) "Theme reselection failed in nested launch: $($state.ReselectError)"
+        Assert-True ((Snapshot $f.Root) -ceq $before) 'Nested readiness check changed files.'
+    }
     Write-Host "All $script:passed scoped UI regression groups passed ($script:caseNumber disposable fixtures). Fixtures: $root"
 }
 finally {if($null -eq $originalLocalAppData){Remove-Item Env:\LOCALAPPDATA -ErrorAction SilentlyContinue}else{$env:LOCALAPPDATA=$originalLocalAppData}}
