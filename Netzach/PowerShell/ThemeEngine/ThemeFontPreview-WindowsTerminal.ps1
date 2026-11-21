@@ -2,6 +2,10 @@
 # Preview and selection are read-only. The caller executes explicit actions.
 . (Join-Path $PSScriptRoot 'FontWeights-WindowsTerminal.ps1')
 . (Join-Path $PSScriptRoot 'AppearanceSelection-WindowsTerminal.ps1')
+# Optional: the color editor is unavailable (and Edit Colors disabled) when its
+# modules are absent, e.g. in a partial or older installed copy.
+$typezeroColorEditorModule = Join-Path $PSScriptRoot 'ThemeColorEditor.ps1'
+if (Test-Path -LiteralPath $typezeroColorEditorModule -PathType Leaf) { . $typezeroColorEditorModule }
 
 function Show-TypezeroThemeFontPreview {
     [CmdletBinding()]
@@ -11,8 +15,13 @@ function Show-TypezeroThemeFontPreview {
         [ValidateRange(6,36)][double]$InitialSize = 12,
         [string]$InitialWeight = 'normal',
         [string]$PresetsPath = (Join-Path $env:LOCALAPPDATA 'Typezero\ThemeEngine\custom-presets.json'),
+        # Shared repository ThemeEngine/themes; Edit Colors saves new themes here and to ThemesRoot.
+        [AllowEmptyString()][string]$SharedThemesRoot = $(
+            if (Get-Command Resolve-TypezeroSharedThemesRoot -ErrorAction SilentlyContinue) { Resolve-TypezeroSharedThemesRoot } else { '' }),
         # Test hook: receives the initialized window and controls without showing it.
-        [scriptblock]$OnLoaded
+        [scriptblock]$OnLoaded,
+        # Test hook passed to the color editor opened by Edit Colors.
+        [scriptblock]$OnColorEditorLoaded
     )
     Assert-TypezeroTerminalFontWeight -Weight $InitialWeight
     if ([Threading.Thread]::CurrentThread.ApartmentState -ne 'STA') {
@@ -66,9 +75,10 @@ function Show-TypezeroThemeFontPreview {
     Add-Type -AssemblyName WindowsBase
 
     $themes = [ordered]@{}
-    foreach ($dir in (Get-ChildItem -LiteralPath $ThemesRoot -Directory | Sort-Object Name)) {
-        $conf = Join-Path $dir.FullName 'theme.conf'
-        if (-not (Test-Path -LiteralPath $conf -PathType Leaf)) { continue }
+    $readThemePalette = {
+        param([string]$Folder)
+        $conf = Join-Path $Folder 'theme.conf'
+        if (-not (Test-Path -LiteralPath $conf -PathType Leaf)) { return $null }
         $values = @{}
         foreach ($raw in [IO.File]::ReadAllLines($conf)) {
             $line = $raw.Trim()
@@ -84,9 +94,12 @@ function Show-TypezeroThemeFontPreview {
             }
             $values[$key] = $value
         }
-        if ($values.ContainsKey('BG') -and $values.ContainsKey('TEXT')) {
-            $themes[$dir.Name] = $values
-        }
+        if ($values.ContainsKey('BG') -and $values.ContainsKey('TEXT')) { return $values }
+        return $null
+    }
+    foreach ($dir in (Get-ChildItem -LiteralPath $ThemesRoot -Directory | Sort-Object Name)) {
+        $values = & $readThemePalette $dir.FullName
+        if ($null -ne $values) { $themes[$dir.Name] = $values }
     }
     if ($themes.Count -eq 0) { throw 'No themes with BG and TEXT palette values were found.' }
 
@@ -231,7 +244,8 @@ function Show-TypezeroThemeFontPreview {
       <StackPanel Margin="0,0,14,10"><TextBlock Text="THEME" Foreground="{DynamicResource TzMuted}" Margin="0,0,0,4"/><ComboBox Name="ThemeBox" Width="215" Height="35" /></StackPanel>
       <StackPanel Margin="0,0,14,10"><TextBlock Text="FONT" Foreground="{DynamicResource TzMuted}" Margin="0,0,0,4"/><ComboBox Name="FontBox" Width="360" Height="35" IsEditable="False" IsTextSearchEnabled="True" /></StackPanel>
       <StackPanel Margin="0,0,14,10"><TextBlock Text="SIZE (PT)" Foreground="{DynamicResource TzMuted}" Margin="0,0,0,4"/><ComboBox Name="SizeBox" Width="95" Height="35" IsEditable="True" IsTextSearchEnabled="False" TextSearch.TextPath="Tag" /></StackPanel>
-      <StackPanel Margin="0,0,0,10"><TextBlock Text="WEIGHT" Foreground="{DynamicResource TzMuted}" Margin="0,0,0,4"/><ComboBox Name="WeightBox" Width="145" Height="35" /></StackPanel>
+      <StackPanel Margin="0,0,14,10"><TextBlock Text="WEIGHT" Foreground="{DynamicResource TzMuted}" Margin="0,0,0,4"/><ComboBox Name="WeightBox" Width="145" Height="35" /></StackPanel>
+      <StackPanel Margin="0,0,0,10"><TextBlock Text="THEME COLORS" Foreground="{DynamicResource TzMuted}" Margin="0,0,0,4"/><Button Name="EditColorsButton" Content="Edit Colors..." Width="150" Height="35" /></StackPanel>
     </WrapPanel>
     <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,12">
       <StackPanel Margin="0,0,14,10"><TextBlock Text="LOAD CUSTOM PRESET" Foreground="{DynamicResource TzMuted}" Margin="0,0,0,4"/><ComboBox Name="PresetBox" Width="310" Height="35" /></StackPanel>
@@ -294,6 +308,15 @@ function Show-TypezeroThemeFontPreview {
     $saveHint = $window.FindName('SaveHintLabel')
     $use = $window.FindName('UseButton')
     $cancel = $window.FindName('CancelButton')
+    $editColors = $window.FindName('EditColorsButton')
+    # Capture the editor while the function body can resolve it. WPF handlers below are
+    # GetNewClosure() blocks, which resolve names only in their own module and the global
+    # scope, not in ThemeEngine.ps1's script scope where these modules are dot-sourced.
+    $showColorEditor = Get-Command Show-TypezeroThemeColorEditor -CommandType Function -ErrorAction SilentlyContinue
+    if (-not $showColorEditor) {
+        $editColors.IsEnabled = $false
+        $editColors.ToolTip = 'Color editor modules (ThemeColorEditor.ps1, ThemeEditor-ThemeConf.ps1) are not installed beside this script.'
+    }
     $border = $window.FindName('PreviewBorder')
     $title = $window.FindName('ThemeTitle')
     $preview = $window.FindName('PreviewText')
@@ -349,7 +372,8 @@ NUMERIC ALIGNMENT
         $item.Content = $layout
         return $item
     }
-    foreach ($id in $themes.Keys) {
+    $addThemeItem = {
+        param([string]$id)
         $pal = $themes[$id]
         $friendly = if ($pal.ContainsKey('THEME_NAME') -and $pal['THEME_NAME']) { [string]$pal['THEME_NAME'] } else { [string]$id }
         $item = & $newEntry $id $friendly '' '' 14 ''
@@ -367,7 +391,8 @@ NUMERIC ALIGNMENT
         }
         $layout.Children.Add($swatches) | Out-Null
         [void]$themeBox.Items.Add($item)
-    }
+    }.GetNewClosure()
+    foreach ($id in $themes.Keys) { & $addThemeItem $id }
     foreach ($font in $fontNames) {
         [void]$fontBox.Items.Add((& $newEntry $font $font 'Aa Bb 012345  {} []' $font 14 'normal'))
     }
@@ -574,6 +599,27 @@ NUMERIC ALIGNMENT
     }.GetNewClosure())
     $cancel.Add_Click({ $window.Tag = $null; $window.Close() }.GetNewClosure())
     $previewButton.Add_Click({ & $refresh }.GetNewClosure())
+    # Edit Colors writes only a NEW theme (create-only, shared source + installed
+    # copy). The returned intent below is unchanged; activation stays explicit.
+    $editColors.Add_Click({
+        $id = if ($themeBox.SelectedItem) { [string]$themeBox.SelectedItem.Tag } else { '' }
+        if (-not $themes.Contains($id)) { return }
+        $editorArgs = @{ InstalledThemesRoot = $ThemesRoot; SharedThemesRoot = $SharedThemesRoot; ThemeId = $id }
+        if ($window.IsVisible) { $editorArgs.Owner = $window }
+        if ($OnColorEditorLoaded) { $editorArgs.OnLoaded = $OnColorEditorLoaded }
+        try { $saved = & $showColorEditor @editorArgs }
+        catch { $status.Text = "Color editor unavailable: $($_.Exception.Message)"; return }
+        if ($null -eq $saved) { return }
+        if ($saved.InstalledPath) {
+            $values = & $readThemePalette (Split-Path -Parent $saved.InstalledPath)
+            if ($null -ne $values -and -not $themes.Contains($saved.Id)) {
+                $themes[$saved.Id] = $values
+                & $addThemeItem $saved.Id
+            }
+            $themeBox.SelectedItem = & $getChoice $themeBox $saved.Id
+        }
+        $status.Text = [string]$saved.Message + "`n" + $status.Text
+    }.GetNewClosure())
     $finish = {
         param([string]$Action)
         $ready = switch ($Action) {
@@ -623,6 +669,7 @@ NUMERIC ALIGNMENT
             ApplyShellButton = $applyShell; ApplyDesktopButton = $applyDesktop
             ApplyShellFontButton = $applyShellFont; ApplyDesktopShellButton = $applyDesktopShell
             SavePresetButton = $savePreset; ReplacePresetBox = $replacePreset; SaveHintLabel = $saveHint; CancelButton = $cancel
+            EditColorsButton = $editColors
         }
         try { $null = & $OnLoaded $window $controls }
         finally { $window.Close() }
